@@ -1,0 +1,49 @@
+_build/
+.opam/
+.opam-oxcaml/
+_opam/
+*.install
+.pi/
+.reference/
+.backlog/
+backlog/
+.objectives/
+.review/
+.scratch/*
+!.scratch/research/
+!.scratch/research/**
+.scratch/research/**/_build/
+.scratch/research/**/__pycache__/
+.scratch/research/**/_opam/
+.scratch/research/**/*.install
+docs/big-picture/
+docs/gpt-pro/
+/journal.md
+/OBJECTIVE.md
+/objective.md
+/gpt-review*.md
+/gpt-pro-review*.md
+.motel-data/
+.nema/
+bench/fixtures/cache/*.bin
+bench/results/*.json
+bench/runtime_overhead_ts/node_modules/
+bench/runtime_overhead_zio/.scala-build/
+bench/runtime_overhead_zio/.bsp/
+http-testsuite/results/
+# Autoresearch local artifacts (not tracked)
+autoresearch.md
+autoresearch.sh
+autoresearch.checks.sh
+autoresearch.ideas.md
+autoresearch.jsonl
+
+# Local automation state
+.auto/
+.hill-climbing/
+
+# Alternate js_of_ocaml build directory and Python caches
+_build.jsoo/
+__pycache__/
+# Per-agent Dune build directories
+_build-*/

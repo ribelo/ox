@@ -1,0 +1,15 @@
+# Dune cannot express alternatives between package names. Keep this real conf
+# package in Eta's root so makeOpamRepo discovers it for downstream consumers.
+flags: conf
+depends: [
+  "ocaml" {= "5.4.0"}
+  ("ocaml-variants" {= "5.4.0+ox"} | "ocaml-system" {= "5.4.0"})
+]
+build: [
+  ["sh" "-ec" """
+ocamlc -version | grep -Fx '5.4.0+ox' || {
+  echo 'Eta requires OxCaml 5.4.0+ox; selected compiler is unsupported' >&2
+  exit 1
+}
+"""]
+]
