@@ -11,7 +11,8 @@
    ^nobs-iedi  Redact.t prints <redacted> through every path
    ^nobs-262i  a per-logger minimum level and a rate limit for one message
    ^nobs-xovg  span logs start and end with elapsed time and an outcome
-   ^nobs-6x58  the package depends on eta, eio and eta_json only
+   ^nobs-6x58  the package depends on eta, eio and eta_json only (row 16 adds
+               yojson for Redact.t's codecs, ^nnoschema-ifg0)
 
    The clocks are eta_test's mock clocks: the wall clock for timestamps, the
    monotonic clock for span elapsed time and rate-limit windows. *)
@@ -82,6 +83,23 @@ let test_redact_in_record () =
       check_bool "the field renders redacted" true
         (contains line "\"api_key\":\"<redacted>\"");
       check_bool "the secret is absent" false (contains line "sk-live-1234"))
+
+(* ^nnoschema-ifg0: the yojson codecs are the pair the deriver calls for a field of
+   type Redact.t, so a secret is redacted by being of that type: encoded it is
+   "<redacted>", decoded it is wrapped, and a non-string is refused with the
+   offending subtree. *)
+let test_redact_yojson () =
+  let secret = Redact.make "sk-live-1234" in
+  check_string "encoded redacted" "\"<redacted>\""
+    (Yojson.Safe.to_string (Redact.yojson_of_t secret));
+  (match Redact.t_of_yojson (`String "sk-live-1234") with
+  | Ok decoded ->
+      check_string "decoded wrapped and exposable" "sk-live-1234" (Redact.expose decoded)
+  | Error message -> Alcotest.failf "string decodes: %s" message);
+  match Redact.t_of_yojson (`Int 7) with
+  | Ok _ -> Alcotest.fail "a non-string must not decode"
+  | Error message ->
+      check_bool "the refusal names the subtree" true (contains message "7")
 
 (* ^nobs-2d4r: fields attached with with_fields reach records logged inside its
    extent and stop when it ends. *)
@@ -441,7 +459,8 @@ let test_span_minimum_level () =
       check_string "and it is the end record" "end" (field_text record "event");
       check_string "with the failure outcome" "failed" (field_text record "outcome"))
 
-(* ^nobs-6x58: the package depends on eta, eio and eta_json only. The generated
+(* ^nobs-6x58: the package depends on eta, eio and eta_json only — plus yojson,
+   which row 16 admits for Redact.t's codecs (^nnoschema-ifg0, ADR-0007). The generated
    opam file is the contract, so this reads it: every runtime dependency must be
    one of those (plus Eio's own mtime type for the monotonic clock, and the
    compiler and build-tool entries dune generates). *)
@@ -479,7 +498,7 @@ let test_dependency_ceiling () =
       depends
   in
   let allowed =
-    [ "dune"; "ocaml"; "conf-eta-oxcaml"; "eta"; "eio"; "eta_json"; "mtime" ]
+    [ "dune"; "ocaml"; "conf-eta-oxcaml"; "eta"; "eio"; "eta_json"; "yojson"; "mtime" ]
   in
   List.iter
     (fun name ->
@@ -490,7 +509,7 @@ let test_dependency_ceiling () =
     (fun name ->
       if not (List.mem name runtime) then
         Alcotest.failf "%s is missing from eta_observability's runtime deps" name)
-    [ "eta"; "eio"; "eta_json" ]
+    [ "eta"; "eio"; "eta_json"; "yojson" ]
 
 let () =
   Alcotest.run "eta_observability"
@@ -502,6 +521,8 @@ let () =
               test_redact_paths;
             Alcotest.test_case "a record never carries the secret (^nobs-iedi)" `Quick
               test_redact_in_record;
+            Alcotest.test_case "yojson codecs redact and wrap (^nnoschema-ifg0)" `Quick
+              test_redact_yojson;
           ] );
         ( "Context",
           [
@@ -556,7 +577,8 @@ let () =
           ] );
         ( "Package",
           [
-            Alcotest.test_case "depends on eta, eio and eta_json only (^nobs-6x58)" `Quick
-              test_dependency_ceiling;
+            Alcotest.test_case
+              "depends on eta, eio, eta_json and yojson only (^nobs-6x58 ^nnoschema-ifg0)"
+              `Quick test_dependency_ceiling;
           ] );
       ])

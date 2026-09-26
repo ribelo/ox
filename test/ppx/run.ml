@@ -219,6 +219,32 @@ let test_number_coercions () =
     "extra fields are ignored" true
     (Result.is_ok (user_of_yojson (user_json with_extra)))
 
+(* ^nnoschema-ifg0: a field whose type lives in another module is written with its
+   own converters. A qualified name may be several modules deep, which is how a
+   config record names its secret's type without opening the package that owns
+   it. The [Mark] module stands in for [Eta_observability.Redact]. *)
+module Mark = struct
+  type t = string
+
+  let yojson_of_t value = `String value
+
+  let t_of_yojson = function
+    | `String value -> Ok value
+    | json -> Error ("mark: expected string, got " ^ Yojson.Safe.to_string json)
+end
+
+type marked = { mark : Mark.t; nested : Mark.t list } [@@deriving yojson]
+
+let test_qualified_module_path () =
+  let value = { mark = "a"; nested = [ "b" ] } in
+  let back =
+    expect_ok "qualified field decodes" (marked_of_yojson (yojson_of_marked value))
+  in
+  Alcotest.(check bool) "the qualified converters round-trip" true (back = value);
+  expect_error_contains "qualified failure"
+    [ "marked.mark"; "mark:"; "7" ]
+    (marked_of_yojson (`Assoc [ ("mark", `Int 7); ("nested", `List []) ]))
+
 (* ^nppx-mao8: the preprocessor itself is pinned as a pure function. *)
 
 let process filename source = Ppx_yojson_minimal.Derive.process ~filename ~source
@@ -327,6 +353,8 @@ let () =
           Alcotest.test_case "nppx-mao8 tuple arity" `Quick test_tuple_arity;
           Alcotest.test_case "nppx-mao8 list index path" `Quick test_list_index_path;
           Alcotest.test_case "nppx-mao8 number coercions" `Quick test_number_coercions;
+          Alcotest.test_case "nppx-h4gz ^nnoschema-ifg0 qualified module path" `Quick
+            test_qualified_module_path;
         ] );
       ( "preprocessor",
         [

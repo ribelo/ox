@@ -118,9 +118,16 @@ module type SERVICE = sig
   val status : t -> Status.t
 end
 
+(* Config is a plain record with [@@deriving yojson]; the Door takes its derived
+   decoder and encoder plus the environment function (ADR-0008). *)
+let config : Leash.Config.t Eta_app.Config.t =
+  { of_yojson = Leash.Config.t_of_yojson;
+    yojson_of_t = Leash.Config.yojson_of_t;
+    env = Leash.Config.env }
+
 let () =
-  Eta_app.run ~name:"leash" ~config:Config.schema @@ fun env config ->
-  Eio.Switch.run @@ fun sw ->
+  Eta_app.run ~name:"leash" ~config ~validate:Leash.Config.validate
+  @@ fun env config sw ->
   let open Result.Syntax in
   let* chrome  = Chrome.create  ~sw config.chrome  { process_mgr = env#process_mgr; clock = env#clock } in
   let* tabs    = Tabs.create    ~sw config.tabs    { chrome; clock = env#clock } in
@@ -129,7 +136,7 @@ let () =
   Eta_app.serve ~sw ()
 ```
 
-The dependency graph is the order of the `let*` chain. Release order is the Switch's, reverse of acquisition. Tests create a Service with fake Deps. Status is read from the values themselves. The Door owns Env construction, config decoding through `eta_schema`, SIGINT/SIGTERM as interruption of the Program, rendering of the *full* Cause on failure, and the exit code. There is no registry, no reconciliation, no desired state: v1's component runtime became a shadow of the real data path within a month of adoption, and this model is what Pie converged on after deleting it.
+The dependency graph is the order of the `let*` chain. Release order is the Switch's, reverse of acquisition. Tests create a Service with fake Deps. Status is read from the values themselves. The Door owns Env construction, config decoding through the config type's derived codec (ADR-0008), SIGINT/SIGTERM as interruption of the Program, rendering of the *full* Cause on failure, and the exit code. There is no registry, no reconciliation, no desired state: v1's component runtime became a shadow of the real data path within a month of adoption, and this model is what Pie converged on after deleting it.
 
 ### Testing
 

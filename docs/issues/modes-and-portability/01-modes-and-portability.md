@@ -42,3 +42,4 @@ Parallelism itself (`eta_par` comes with a consumer); unboxed types in public AP
 
 Verification: `nix develop -c dune build @install`, `nix develop -c dune test`, and `nix develop -c dune build @fmt` passed for the full tree; `test/modes/portability.ml` ran on Eio domains and `bench/correlator_alloc.ml` measured 291.03 allocated words/call.
 Verification: `docs/modes.md` records all closure decisions and pinned Eio/tooling gaps; unrestricted stored callbacks prevent arbitrary portable `Schedule.t`, and compiler-rejected allocations prevent a truthful `Schedule.step [@@zero_alloc]` without redesign.
+Further note: row 16 (`^nnoschema-ttb5`) removed `Eta_schema` and `Eta_schema_yojson`; the rows and portability claims this pass made for them went with the packages, and `docs/modes.md` records that in their place. Nothing else this pass decided changed.

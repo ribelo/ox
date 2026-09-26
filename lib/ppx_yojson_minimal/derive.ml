@@ -180,6 +180,33 @@ let rec is_option_type (ty : Parsetree.core_type) : bool =
   | Parsetree.Ptyp_alias (inner, _, _) -> is_option_type inner
   | _ -> false
 
+(** [longident_path lid] is [Some "A.B.t"] for a [Lident]/[Ldot] chain and [None] for
+    anything else. *)
+let rec longident_path (lid : Longident.t) : string option =
+  match lid with
+  | Longident.Lident name -> Some name
+  | Longident.Ldot (prefix, name) ->
+      Option.map
+        (fun path -> path ^ "." ^ name.Location.txt)
+        (longident_path prefix.Location.txt)
+  | Longident.Lapply _ -> None
+
+(** [qualified_name lid] is [Some (module_path, type_name)] when [lid] names a type in
+    another module — ["Other.t"] is [("Other", "t")], ["A.B.t"] is [("A.B", "t")] — and
+    [None] for a bare name. The generated code calls that module's public converters
+    ([Other.yojson_of_t]/[Other.t_of_yojson]), so a qualified reference needs no [open].
+*)
+let qualified_name (lid : Longident.t) : (string * string) option =
+  match longident_path lid with
+  | None -> None
+  | Some path -> (
+      match String.rindex_opt path '.' with
+      | None -> None
+      | Some dot ->
+          Some
+            ( String.sub path 0 dot,
+              String.sub path (dot + 1) (String.length path - dot - 1) ))
+
 (* ---------- Converter generation ---------- *)
 
 (** [encode env ty v] is an expression string computing the [Yojson.Safe.t] for the value
@@ -211,13 +238,11 @@ let rec encode env (ty : Parsetree.core_type) (v : string) : string =
             (encode env arg "_ppx_yojson_x")
             v
       | _ -> failf "type application %s is not supported by [@@deriving yojson]" name)
-  | Parsetree.Ptyp_constr
-      ( {
-          txt = Longident.Ldot ({ txt = Longident.Lident mod_name; _ }, { txt = name; _ });
-          _;
-        },
-        [] ) ->
-      Printf.sprintf "(%s.yojson_of_%s %s)" mod_name name v
+  | Parsetree.Ptyp_constr ({ txt = lid; _ }, []) -> (
+      match qualified_name lid with
+      | Some (module_path, name) ->
+          Printf.sprintf "(%s.yojson_of_%s %s)" module_path name v
+      | None -> failf "this type is not supported by [@@deriving yojson]")
   | Parsetree.Ptyp_tuple pairs ->
       let tys = cores_of_tuple pairs in
       let binders = List.mapi (fun i _ -> Printf.sprintf "_ppx_yojson_x%d" i) tys in
@@ -288,16 +313,14 @@ let rec decode env (ty : Parsetree.core_type) ~path j : string =
              _ppx_yojson_items) | Error _ppx_yojson_e -> Error _ppx_yojson_e)"
             (decode_list env arg ~path j)
       | _ -> failf "type application %s is not supported by [@@deriving yojson]" name)
-  | Parsetree.Ptyp_constr
-      ( {
-          txt = Longident.Ldot ({ txt = Longident.Lident mod_name; _ }, { txt = name; _ });
-          _;
-        },
-        [] ) ->
-      Printf.sprintf
-        "(match %s.%s_of_yojson %s with Ok _ as _ppx_yojson_ok -> _ppx_yojson_ok | Error \
-         _ppx_yojson_e -> Error (%s ^ \": \" ^ _ppx_yojson_e))"
-        mod_name name j path
+  | Parsetree.Ptyp_constr ({ txt = lid; _ }, []) -> (
+      match qualified_name lid with
+      | Some (module_path, name) ->
+          Printf.sprintf
+            "(match %s.%s_of_yojson %s with Ok _ as _ppx_yojson_ok -> _ppx_yojson_ok | \
+             Error _ppx_yojson_e -> Error (%s ^ \": \" ^ _ppx_yojson_e))"
+            module_path name j path
+      | None -> failf "this type is not supported by [@@deriving yojson]")
   | Parsetree.Ptyp_tuple pairs -> decode_tuple env (cores_of_tuple pairs) ~path j
   | Parsetree.Ptyp_alias (inner, _, _) -> decode env inner ~path j
   | _ -> failf "this type is not supported by [@@deriving yojson]"

@@ -1,7 +1,12 @@
 (* Story IDs covered: ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
-   ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-yplu ^napp-tuvw
-   ^napp-svkp ^napp-o6d6 ^napp-mbpr ^napp-433c ^napp-fu4q
-   ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678. *)
+   ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-o6d6 ^napp-mbpr ^napp-433c
+   ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps and, after
+   ^nnoschema-ttb5 removed the schema DSL: ^nnoschema-5mdj (derived config,
+   environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
+   (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
+   ^nnoschema-boxo (TOML-to-JSON stays here), ^nnoschema-p7fv (a two-Service
+   program on a derived config type). ^napp-yplu's unknown-key refusal and
+   ^napp-tuvw's schema-declared overrides are superseded. *)
 open Eta_app
 
 let check_int = Alcotest.(check int)
@@ -16,24 +21,38 @@ let contains hay needle =
 
 let expect_part where needle = Alcotest.(check bool) needle true (contains where needle)
 
-type models = { api_key : string }
-type settings = { models : models; port : int }
+(* ^nnoschema-5mdj: the consumer's config is a plain record with [@@deriving
+   yojson]. The secret is typed [Redact.t], so it is redacted by being of that
+   type; it is an option because the environment, not the file, supplies it. *)
+type models = { api_key : Eta_observability.Redact.t option } [@@deriving yojson]
+type settings = { models : models; port : int } [@@deriving yojson]
 
-let models_schema =
-  Eta_schema.(
-    record1 ~name:"models"
-      (fun api_key -> { api_key })
-      (required ~secret:true ~env:"OPENROUTER_API_KEY" "api_key" string (fun m ->
-           m.api_key))
-      ~equal:( = ) ())
-
-let schema =
-  Eta_schema.(
-    record2 ~name:"settings"
-      (fun models port -> { models; port })
-      (required "models" models_schema (fun c -> c.models))
-      (required ~env:"PORT" "port" int (fun c -> c.port))
-      ~equal:( = ) ())
+(* ^nnoschema-5mdj: what the Door takes is the type's derived decoder, its
+   derived encoder (for [config check]) and the environment function. Applied
+   after decoding, so a field the environment supplies is optional or carries
+   [@default]; an override that does not parse is ignored. *)
+let config : settings Config.t =
+  {
+    of_yojson = settings_of_yojson;
+    yojson_of_t = yojson_of_settings;
+    env =
+      (fun ~getenv (settings : settings) ->
+        let settings =
+          match getenv "OPENROUTER_API_KEY" with
+          | Some key ->
+              {
+                settings with
+                models = { api_key = Some (Eta_observability.Redact.make key) };
+              }
+          | None -> settings
+        in
+        match getenv "PORT" with
+        | Some raw -> (
+            match int_of_string_opt raw with
+            | Some port -> { settings with port }
+            | None -> settings)
+        | None -> settings);
+  }
 
 let good = "port = 42\n[models]\napi_key = \"file-secret\"\n"
 let getenv = function "HOME" -> Some "/home/demo" | _ -> None
@@ -52,7 +71,7 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ?validate ~env ~name:"demo" ~config:schema ~pp_err
+        run_for_test ?on_switch ?validate ~env ~name:"demo" ~config ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -64,11 +83,37 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       in
       (code, Buffer.contents output, Buffer.contents errors, memory))
 
+(* ^nnoschema-5mdj: the derived decoder and encoder are the config's single
+   description; ^nnoschema-ifg0: a secret field encodes as "<redacted>". *)
+let decode_json text =
+  match config.of_yojson (Yojson.Safe.from_string text) with
+  | Ok settings -> settings
+  | Error message -> Alcotest.failf "derived decode of %s: %s" text message
+
+let test_derived_config () =
+  let settings = decode_json {|{"models":{"api_key":"file-secret"},"port":42}|} in
+  check_int "^nnoschema-5mdj a typed field decodes" 42 settings.port;
+  check_string "^nnoschema-ifg0 the secret arrives wrapped" "file-secret"
+    (Eta_observability.Redact.expose (Option.get settings.models.api_key));
+  let encoded = Yojson.Safe.to_string (config.yojson_of_t settings) in
+  expect_part encoded "\"api_key\":\"<redacted>\"";
+  Alcotest.(check bool)
+    "^nnoschema-ifg0 the secret is absent from the encoded config" false
+    (contains encoded "file-secret");
+  let absent = Yojson.Safe.from_string {|{"models":{"api_key":null},"port":7}|} in
+  let decoded = decode_json {|{"models":{"api_key":null},"port":7}|} in
+  Alcotest.(check (option string))
+    "an absent secret is None" None
+    (Option.map Eta_observability.Redact.expose decoded.models.api_key);
+  Alcotest.(check bool)
+    "^nnoschema-5mdj yojson_of_t round-trips a config without secrets" true
+    (Yojson.Safe.equal absent (config.yojson_of_t decoded))
+
 let test_clean () =
   let started = ref false in
-  let program env config _ =
+  let program env settings _ =
     started := true;
-    check_int "config" 42 config.port;
+    check_int "^nnoschema-5mdj derived config reaches the program" 42 settings.port;
     Eta_observability.Logger.info env.Env.logger "started";
     Ok ()
   in
@@ -98,19 +143,21 @@ let test_failures () =
   expect_part err "primary example";
   expect_part err "release example"
 
+(* ^nnoschema-p7fv: the two-Service program takes the derived config type, so the
+   shape consumers write is the shape tested. *)
 module First :
   SERVICE
     with type t = int ref
-     and type config = unit
+     and type config = settings
      and type deps = string list ref
      and type error = [ `Problem of string ] = struct
   type t = int ref
-  type config = unit
+  type config = settings
   type deps = string list ref
   type error = [ `Problem of string ]
 
-  let create ~sw () events =
-    events := !events @ [ "first" ];
+  let create ~sw (settings : settings) events =
+    events := !events @ [ "first:" ^ string_of_int settings.port ];
     Eio.Switch.on_release sw (fun () -> events := !events @ [ "release-first" ]);
     Ok (ref 1)
 
@@ -120,16 +167,16 @@ end
 module Second :
   SERVICE
     with type t = int ref
-     and type config = unit
+     and type config = settings
      and type deps = int ref * string list ref
      and type error = [ `Problem of string ] = struct
   type t = int ref
-  type config = unit
+  type config = settings
   type deps = int ref * string list ref
   type error = [ `Problem of string ]
 
-  let create ~sw () (first, events) =
-    events := !events @ [ "second" ];
+  let create ~sw (settings : settings) (first, events) =
+    events := !events @ [ "second:" ^ string_of_int settings.port ];
     Eio.Switch.on_release sw (fun () -> events := !events @ [ "release-second" ]);
     Ok first
 
@@ -148,15 +195,15 @@ let render status = status.Status.name ^ ":" ^ state_name status.Status.state
 module Reporter :
   SERVICE
     with type t = unit -> Status.t list
-     and type config = unit
+     and type config = settings
      and type deps = unit -> Status.t list
      and type error = [ `Problem of string ] = struct
   type t = unit -> Status.t list
-  type config = unit
+  type config = settings
   type deps = unit -> Status.t list
   type error = [ `Problem of string ]
 
-  let create ~sw:_ () query = Ok query
+  let create ~sw:_ _settings query = Ok query
 
   let status query =
     let seen = List.map (fun status -> status.Status.name) (query ()) in
@@ -168,14 +215,14 @@ let test_status_query_before_serve () =
   let id = Eta.Interrupt_id.create () in
   let live = ref [] and counter = ref "" and seen = ref "" and reporter = ref "" in
   let status_count = ref 0 in
-  let program _ _ sw =
+  let program _ settings sw =
     let open Result in
-    let* first = First.create ~sw () events in
-    let* second = Second.create ~sw () (first, events) in
+    let* first = First.create ~sw settings events in
+    let* second = Second.create ~sw settings (first, events) in
     let query =
       status_query [ (fun () -> First.status first); (fun () -> Second.status second) ]
     in
-    let* reporter_service = Reporter.create ~sw () query in
+    let* reporter_service = Reporter.create ~sw settings query in
     Eio.Fiber.fork_daemon ~sw (fun () ->
         Eio.Fiber.yield ();
         first := 9;
@@ -197,8 +244,9 @@ let test_status_query_before_serve () =
   check_int "^napp-78pf signal path exits zero" 0 code;
   check_string "clean stop silent" "" err;
   Alcotest.(check (list string))
-    "^napp-78pf reverse release ^napp-qg7n two services"
-    [ "first"; "second"; "release-second"; "release-first" ]
+    "^napp-78pf reverse release ^napp-qg7n two services ^nnoschema-p7fv both got the \
+     derived config"
+    [ "first:42"; "second:42"; "release-second"; "release-first" ]
     !events;
   Alcotest.(check int) "^napp-433c complete program in-process" 2 !status_count;
   Alcotest.(check (list string))
@@ -246,36 +294,64 @@ let test_config () =
   check_int "XDG" 0 code;
   check_string "XDG path" "/xdg/demo/config.toml" !seen
 
-let test_validation () =
-  let cases =
-    [
-      ("unknown", good ^ "surprise = 1\n", "/models/surprise");
-      ("missing", "port = 1\n[models]\n", "/models/api_key");
-      ("wrong", "port = \"bad\"\n[models]\napi_key = \"a\"\n", "/port");
-    ]
+(* ^nnoschema-zi2m: a decode failure prints the deriver's message — the dotted
+   path of the offending value plus the value itself, bounded — and exits 2
+   without starting. Extra fields are ignored, which supersedes ^napp-yplu's
+   unknown-key refusal. *)
+let test_decode_failure () =
+  let refused name text =
+    let started = ref false in
+    let code, _, err, _ =
+      run ~text
+        ~program:(fun _ _ _ ->
+          started := true;
+          Ok ())
+        ()
+    in
+    check_int ("^nnoschema-zi2m " ^ name) 2 code;
+    Alcotest.(check bool) "never starts" false !started;
+    err
   in
-  List.iter
-    (fun (name, text, pointer) ->
-      let started = ref false in
-      let code, _, err, _ =
-        run ~text
-          ~program:(fun _ _ _ ->
-            started := true;
-            Ok ())
-          ()
-      in
-      check_int ("^napp-yplu " ^ name) 2 code;
-      expect_part err pointer;
-      Alcotest.(check bool) "never starts" false !started)
-    cases
+  let err = refused "a missing field" "[models]\napi_key = \"a\"\n" in
+  expect_part err "missing field port";
+  let err = refused "a wrong type" "port = \"bad\"\n[models]\n" in
+  expect_part err "settings.port";
+  expect_part err "expected int";
+  expect_part err "\"bad\"";
+  (* The path restarts at the nested type, as the deriver documents: the message names
+     the field, the nested type's own path, and the value. *)
+  let err =
+    refused "a wrong type in a nested record" "port = 1\n[models]\napi_key = 7\n"
+  in
+  expect_part err "settings.models";
+  expect_part err "models.api_key";
+  expect_part err "expected string";
+  expect_part err "got 7";
+  let code, _, err, _ = run ~text:"port = 1\n[models]\napi_key = \"a\"\nextra = 1\n" () in
+  check_int "^nnoschema-zi2m an extra field is ignored" 0 code;
+  check_string "and reported nowhere" "" err
 
-let test_check_and_env () =
+(* ^nnoschema-5mdj ^nnoschema-36cj ^nnoschema-ifg0: the environment function runs
+   on the decoded value, and config check prints the effective config after the
+   overrides with secrets redacted by type. *)
+let test_env_override_and_check () =
   let envvars = function
     | "OPENROUTER_API_KEY" -> Some "override-secret"
-    | "HOME" -> Some "/home/demo"
     | "PORT" -> Some "73"
+    | "HOME" -> Some "/home/demo"
     | _ -> None
   in
+  let code, _, err, _ =
+    run ~envvars ~text:"port = 3\n[models]\n"
+      ~program:(fun _ cfg _ ->
+        check_int "^nnoschema-5mdj typed environment override" 73 cfg.port;
+        check_string "the environment fills the optional secret" "override-secret"
+          (Eta_observability.Redact.expose (Option.get cfg.models.api_key));
+        Ok ())
+      ()
+  in
+  check_int "the Door accepts the effective config" 0 code;
+  check_string "no diagnostics" "" err;
   let code, out, err, _ =
     run
       ~argv:[| "demo"; "config"; "check" |]
@@ -283,27 +359,21 @@ let test_check_and_env () =
       ~program:(fun _ _ _ -> failwith "must not start")
       ()
   in
-  check_int "^napp-svkp check" 0 code;
+  check_int "^nnoschema-36cj check exits zero" 0 code;
   check_string "no error" "" err;
-  expect_part out "<redacted>";
+  expect_part out "\"port\":73";
+  expect_part out "\"api_key\":\"<redacted>\"";
   Alcotest.(check bool)
-    "^napp-svkp no secret output" false
+    "^nnoschema-ifg0 the environment secret never reaches the check output" false
     (contains out "override-secret");
-  let found = ref "" and parsed_port = ref 0 in
-  let code, _, _, _ =
-    run ~envvars ~text:"port = 3\n[models]\n"
-      ~program:(fun _ cfg _ ->
-        found := cfg.models.api_key;
-        parsed_port := cfg.port;
-        Ok ())
-      ()
+  Alcotest.(check bool)
+    "^nnoschema-ifg0 nor does the one in the file" false (contains out "file-secret");
+  let code, out, err, _ =
+    run ~text:"port = \"bad\"\n[models]\n" ~argv:[| "demo"; "config"; "check" |] ()
   in
-  check_int "^napp-tuvw env fills missing required" 0 code;
-  check_string "env overrides" "override-secret" !found;
-  check_int "numeric env override" 73 !parsed_port;
-  let code, _, err, _ = run ~text:"port = 3\n" ~argv:[| "demo"; "config"; "check" |] () in
-  check_int "^napp-svkp invalid check" 2 code;
-  expect_part err "/models"
+  check_int "^nnoschema-36cj check of an invalid config exits 2" 2 code;
+  check_string "and prints nothing" "" out;
+  expect_part err "settings.port"
 
 (* ^napp-57qi ^napp-dnru: a failing validator stops the Door before the program's switch,
    and its errors render like decode issues. *)
@@ -330,7 +400,8 @@ let test_validate_blocks () =
   expect_part err "chrome is not executable";
   Alcotest.(check bool) "^napp-57qi program never entered" false !started
 
-(* ^napp-57qi: the validator runs after decoding and env overrides, with the Door's Env. *)
+(* ^napp-57qi: the validator runs after decoding and the environment overrides, with the
+   Door's Env. *)
 let test_validate_env_and_config () =
   let envvars = function
     | "OPENROUTER_API_KEY" -> Some "override-secret"
@@ -358,8 +429,12 @@ let test_validate_env_and_config () =
 let test_validate_uses_door_fs () =
   let path = Filename.temp_file "eta-app-validate-" ".bin" in
   let validate env cfg =
-    if Eio.Path.is_file Eio.Path.(env.Env.base#fs / cfg.models.api_key) then Ok ()
-    else Error [ { Config.pointer = "/models/api_key"; message = "no such file" } ]
+    match cfg.models.api_key with
+    | Some key
+      when Eio.Path.is_file
+             Eio.Path.(env.Env.base#fs / Eta_observability.Redact.expose key) ->
+        Ok ()
+    | _ -> Error [ { Config.pointer = "/models/api_key"; message = "no such file" } ]
   in
   let text = Printf.sprintf "port = 42\n[models]\napi_key = %S\n" path in
   Fun.protect
@@ -385,7 +460,7 @@ let test_validate_defect () =
   expect_part err "validator exploded"
 
 (* ^napp-noiv: config check runs the validator, reports its errors with their pointers and
-   prints the redacted config only when it accepts. *)
+   prints the config only when it accepts. *)
 let test_check_validates () =
   let calls = ref 0 in
   let validate _ cfg =
@@ -432,7 +507,7 @@ let test_cli_hook () =
                 7))
       in
       let code =
-        run_for_test ~commands:[ hook ] ~env ~name:"demo" ~config:schema ~pp_err
+        run_for_test ~commands:[ hook ] ~env ~name:"demo" ~config ~pp_err
           ~journal:
             (Eta_observability.Logger.Memory.reporter
                (Eta_observability.Logger.Memory.create ()))
@@ -473,8 +548,14 @@ let test_cli_and_io_errors () =
   check_int "^napp-f7d6 bad command" 2 code;
   expect_part err "nope";
   let code, _, err, _ = run ~text:"[models\n" () in
-  check_int "^napp-yplu malformed TOML" 2 code;
+  check_int "^nnoschema-boxo malformed TOML" 2 code;
   expect_part err "TOML line";
+  (* ^nnoschema-boxo: the TOML-to-JSON step stays in the Door and still refuses
+     what JSON cannot carry, naming the pointer of the value. *)
+  let code, _, err, _ = run ~text:"port = 1\nat = 1979-05-27\n[models]\n" () in
+  check_int "a TOML date exits 2" 2 code;
+  expect_part err "TOML dates have no JSON representation";
+  expect_part err "/at";
   Eta_test.run (fun base _ ->
       let env =
         object
@@ -484,7 +565,7 @@ let test_cli_and_io_errors () =
       in
       let err = Buffer.create 32 in
       let code =
-        run_for_test ~env ~name:"demo" ~config:schema ~pp_err
+        run_for_test ~env ~name:"demo" ~config ~pp_err
           ~journal:
             (Eta_observability.Logger.Memory.reporter
                (Eta_observability.Logger.Memory.create ()))
@@ -595,17 +676,21 @@ let () =
         [
           Alcotest.test_case "^napp-3j07 ^napp-o6d6 ^napp-mbpr clean door" `Quick
             test_clean;
+          Alcotest.test_case "^nnoschema-5mdj ^nnoschema-ifg0 derived config" `Quick
+            test_derived_config;
           Alcotest.test_case "^napp-f7d6 typed defect composite" `Quick test_failures;
           Alcotest.test_case "^napp-f7d6 foreign interruption" `Quick
             test_foreign_interruption;
           Alcotest.test_case
-            "^napp-78pf ^napp-qg7n ^napp-pn0a ^napp-kq3b ^napp-433c ^nfix-j678" `Quick
-            test_status_query_before_serve;
+            "^napp-78pf ^napp-qg7n ^napp-pn0a ^napp-kq3b ^napp-433c ^nfix-j678 \
+             ^nnoschema-p7fv"
+            `Quick test_status_query_before_serve;
           Alcotest.test_case "^napp-78pf child fiber stop" `Quick test_daemon_stop;
           Alcotest.test_case "^napp-2aa6 path precedence" `Quick test_config;
-          Alcotest.test_case "^napp-yplu validation pointers" `Quick test_validation;
-          Alcotest.test_case "^napp-tuvw ^napp-svkp env and check" `Quick
-            test_check_and_env;
+          Alcotest.test_case "^nnoschema-zi2m decode failures" `Quick test_decode_failure;
+          Alcotest.test_case
+            "^nnoschema-5mdj ^nnoschema-36cj ^nnoschema-ifg0 env and check" `Quick
+            test_env_override_and_check;
           Alcotest.test_case "^napp-57qi ^napp-dnru validator blocks" `Quick
             test_validate_blocks;
           Alcotest.test_case "^napp-57qi validator env and effective config" `Quick
@@ -616,9 +701,9 @@ let () =
             test_validate_defect;
           Alcotest.test_case "^napp-noiv check runs the validator" `Quick
             test_check_validates;
-          Alcotest.test_case "^napp-3j07 command hook ^napp-fu4q deps" `Quick
+          Alcotest.test_case "^napp-3j07 command hook ^napp-deps deps" `Quick
             test_cli_hook;
-          Alcotest.test_case "^napp-2aa6 ^napp-yplu CLI and IO errors" `Quick
+          Alcotest.test_case "^napp-2aa6 ^nnoschema-boxo CLI and IO errors" `Quick
             test_cli_and_io_errors;
           Alcotest.test_case "^napp-57qi run runs the validator" `Quick test_run_validates;
           Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick

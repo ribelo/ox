@@ -13,5 +13,4 @@ lib/eta/schedule.mli
 lib/json/eta_json.mli
 lib/observability/logger.ml
 lib/observability/logger.mli
-lib/schema/eta_schema.mli
 test/modes/portability.ml

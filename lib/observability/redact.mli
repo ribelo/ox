@@ -30,3 +30,16 @@ val to_string : t -> string
 
 val to_json : t -> Eta_json.t
 (** [to_json t] is the JSON string ["<redacted>"], never the wrapped text. *)
+
+val yojson_of_t : t -> Yojson.Safe.t
+(** [yojson_of_t t] is the JSON string ["<redacted>"], never the wrapped text. It is the
+    encoder {!Ppx_yojson_minimal} derives for a record field of type {!t}, so a secret is
+    redacted by being of that type — in a log line, in a nested record, and in
+    [config check] output. *)
+
+val t_of_yojson : Yojson.Safe.t -> (t, string) result
+(** [t_of_yojson json] is [Ok (make text)] when [json] is a JSON string, and [Error]
+    naming the offending subtree otherwise. It is the decoder the deriver calls for a
+    field of type {!t}: the text is wrapped the moment it is decoded, so it can only be
+    rendered through the redacting paths. Pure and synchronous: it reads no environment,
+    suspends on nothing and registers no finalizer. *)

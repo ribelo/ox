@@ -1,4 +1,0 @@
-(library
- (name eta_schema)
- (public_name eta_schema)
- (synopsis "Schema definitions, JSON codecs, and field marks"))

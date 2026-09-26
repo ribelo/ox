@@ -35,7 +35,7 @@ Eio's standard environment plus the observability handles the Door creates. Prog
 _Avoid_: capability, runtime, environment (unqualified)
 
 **Config**:
-The decoded, validated configuration a Program receives from the Door, described by a schema that also declares which environment variables may override which fields.
+The decoded, validated configuration a Program receives from the Door: a plain type with `[@@deriving yojson]` (ADR-0008) whose derived decoder and encoder plus an environment function of its own make up the `Eta_app.Config.t` bundle the Door is handed.
 
 **Status**:
 What a Service reports about itself when asked, read from its real state at that moment.

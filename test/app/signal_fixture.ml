@@ -1,14 +1,16 @@
 (* nlimit-s3f4: independently spawned Door for real OS signals.
    ^napp-57qi: it is also the only executable that proves Eta_app.run, not only
-   run_for_test, runs ?validate before the program. *)
-type config = { port : int }
+   run_for_test, runs ?validate before the program.
+   ^nnoschema-5mdj: the config type is a plain record with a derived codec — the
+   shape a consumer writes — so this fixture exercises the Door's real config path. *)
+type config = { port : int } [@@deriving yojson]
 
-let config =
-  Eta_schema.(
-    record1 ~name:"signal-fixture"
-      (fun port -> { port })
-      (required "port" int (fun c -> c.port))
-      ~equal:( = ) ())
+let config : config Eta_app.Config.t =
+  {
+    of_yojson = config_of_yojson;
+    yojson_of_t = yojson_of_config;
+    env = (fun ~getenv:_ settings -> settings);
+  }
 
 (* Port 7 is this fixture's rejectable value: the test that writes it expects the
    validator to stop the Door before the program prints anything. *)

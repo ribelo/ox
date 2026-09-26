@@ -1,14 +1,18 @@
 (executable
  (name signal_fixture)
- (libraries eta_app eta_schema eta_observability eio))
+ (modules signal_fixture)
+ (libraries eta_app eta_observability eio)
+ (preprocess
+  (action
+   (run %{bin:ppx-yojson-minimal} %{input-file}))))
 
 (test
  (name run)
+ (modules run)
  (deps ../../eta_app.opam signal_fixture.exe)
  (libraries
   eta_app
   eta
-  eta_schema
   eta_observability
   eta_test
   eta_process
@@ -17,4 +21,8 @@
   eio
   eio.mock
   cmdliner
-  alcotest))
+  yojson
+  alcotest)
+ (preprocess
+  (action
+   (run %{bin:ppx-yojson-minimal} %{input-file}))))

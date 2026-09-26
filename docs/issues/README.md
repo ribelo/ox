@@ -22,7 +22,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 13 | `port-v1-tests/01-port-v1-tests.md` | `test/` | 1, 4, 9 | trust in the combinators | [x] |
 | 14 | `door-validate/01-door-validate.md` | `eta_app` | 5 | Leash L1 (svc-ljl3, svc-tkor) | [x] |
 | 15 | `ppx-on-oxcaml/01-ppx-on-oxcaml.md` | toolchain | 10 | deriving anywhere | [x] |
-| 16 | `remove-eta-schema/01-remove-eta-schema.md` | `eta_app`, `eta_observability`; removes `eta_schema*` | 15 | Leash L1 (Config, protocol types) | [ ] |
+| 16 | `remove-eta-schema/01-remove-eta-schema.md` | `eta_app`, `eta_observability`; removes `eta_schema*` | 15 | Leash L1 (Config, protocol types) | [x] |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. HTTP, AI (OpenRouter), SQL, par/blocking and stream have no spec yet: they are written when Leash milestone 5 or another consumer pulls them (ADR-0003).
 

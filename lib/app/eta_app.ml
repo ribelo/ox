@@ -66,7 +66,7 @@ let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env
   in
   let execute check file () =
     let path = Config.path ~name ~config:file ~getenv in
-    match Config.load ~schema:config ~getenv ~read ~path with
+    match Config.load ~spec:config ~getenv ~read ~path with
     | Error (`Config message) ->
         stderr (message ^ "\n");
         2
@@ -80,21 +80,11 @@ let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env
         | Some code -> code
         | None ->
             if check then (
-              match Eta_schema.encode_redacted config settings with
-              | Error issues ->
-                  stderr
-                    (String.concat "; "
-                       (List.map
-                          (fun issue ->
-                            Eta_schema.render_issue issue ^ " ("
-                            ^ Eta_schema.issue_to_json_pointer issue
-                            ^ ")")
-                          issues)
-                    ^ "\n");
-                  2
-              | Ok value ->
-                  stdout (Eta_schema.Json.to_string value ^ "\n");
-                  0)
+              (* ^nnoschema-36cj: the effective config after environment overrides,
+                 rendered by the type's derived encoder; secrets are Redact.t and
+                 encode as "<redacted>". *)
+              stdout (Yojson.Safe.to_string (config.yojson_of_t settings) ^ "\n");
+              0)
             else
               let requested = ref [] in
               let outcome =

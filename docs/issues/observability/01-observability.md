@@ -20,10 +20,10 @@ A service needs structured logs in the journal with the fields that identify the
 2. As a service author, I want `Context.with_fields [("tab", …); ("owner", …)] f` to attach fields to everything logged inside `f`, including in fibers forked inside, so that identity is not threaded by hand. ^nobs-2d4r
 3. As an operator, I want the journal reporter to write one compact JSON object per line to stderr with a stable key order, so that `journalctl` output is greppable and parseable. ^nobs-ek28
 4. As a test author, I want an in-memory reporter with a query by level and field, so that tests assert what was logged and what was not. ^nobs-rayu
-5. As a service author, I want `Redact.t` values to print as `<redacted>` through every path (`pp`, JSON, string), so that a secret cannot leak by accident. ^nobs-iedi
+5. As a service author, I want `Redact.t` values to print as `<redacted>` through every path (`pp`, JSON, string) and to carry the yojson codecs a derived record field needs (`yojson_of_t` redacts, `t_of_yojson` wraps a decoded string), so that a secret cannot leak by accident and is redacted by being of that type. ^nobs-iedi
 6. As a service author, I want a per-logger minimum level and a rate limit for a named repeated message, so that a flapping component cannot flood the journal. ^nobs-262i
 7. As a service author, I want `Logger.span name f` to log start and end with elapsed time and an outcome (ok, failed with cause summary), so that tracing exists as structured logs before any exporter. ^nobs-xovg
-8. As a kernel maintainer, I want the package to depend on `eta`, `eio` and `eta_json` only, so that OTLP export is a later, separate package. ^nobs-6x58
+8. As a kernel maintainer, I want the package to depend on `eta`, `eio` and `eta_json` only, so that OTLP export is a later, separate package. Row 16 adds `yojson` for `Redact.t`'s codecs (^nnoschema-ifg0, admitted by ADR-0007); the ceiling is otherwise unchanged. ^nobs-6x58
 
 ## Implementation Decisions
 
@@ -41,3 +41,4 @@ OTLP, metrics, sampling, trace propagation headers — each a later spec when Le
 
 Verification: `nix develop -c env DUNE_BUILD_DIR=_build_obs dune build @install` passed for the whole tree and `dune test test/observability` passed 20 tests; every story ID (^nobs-og4h, ^nobs-2d4r, ^nobs-ek28, ^nobs-rayu, ^nobs-iedi, ^nobs-262i, ^nobs-xovg, ^nobs-6x58) is cited by name in `test/observability/run.ml`.
 Verification: eta_test's mock clocks drive the wall-clock timestamp (asserted byte-for-byte in the journal line), the rate-limit window, and span elapsed time; context inheritance across `Eio.Fiber.fork`, redaction through `pp`/`to_string`/JSON/record, and span outcomes on Ok, typed Error, raise and cancellation are all asserted.
+Verification (row 16, ^nnoschema-ifg0): `dune test test/observability` runs 24 cases green, including the yojson codecs — `yojson_of_t` encodes ["<redacted>"], `t_of_yojson` wraps a decoded string and refuses a non-string with the offending subtree — and the dependency-ceiling test now admits `yojson`.

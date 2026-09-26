@@ -49,7 +49,7 @@ val run_for_test :
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
   name:string ->
-  config:'cfg Eta_schema.t ->
+  config:'cfg Config.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->
   getenv:(string -> string option) ->
   read:(string -> (string, string) result) ->
@@ -63,8 +63,10 @@ val run_for_test :
     {!request_stop}. Cmdliner help is sent to [stdout], diagnostics to [stderr]. All
     switch finalizers finish before return.
 
-    [validate] runs after the config file is decoded and the schema's environment
-    overrides are applied, with this Door's {!Env}, and before the root switch exists. An
+    [config] is the Door's three functions over the consumer's config type: the derived
+    [of_yojson], the derived [yojson_of_t] `config check` prints, and [env], which applies
+    environment overrides to the decoded value. [validate] runs after decoding and after
+    those overrides, with this Door's {!Env}, and before the root switch exists. An
     [Error] list is rendered to [stderr] and returned as exit 2 without entering the
     program; a validator that raises is a defect, rendered with `Cause.pp` and also
     exiting 2. The `config check` path runs it too, and prints the redacted config only
@@ -74,7 +76,7 @@ val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
   name:string ->
-  config:'cfg Eta_schema.t ->
+  config:'cfg Config.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->
   (Eio_unix.Stdenv.base Env.t -> 'cfg -> Eio.Switch.t -> (unit, 'err) result) ->
   int

@@ -9,7 +9,12 @@
    ^njson-nc66: [parse] refuses input over a byte bound with a typed error that
    names the bound and the length, and malformed text with a different error,
    so a peer cannot make the caller allocate unboundedly and the caller can
-   still tell the two refusals apart without matching on message text. *)
+   still tell the two refusals apart without matching on message text.
+
+   The protocol group is the Leash request as a derived type (^nnoschema-44wj,
+   ^nnoschema-zi2m) beside a CDP-shaped document that stays unchecked through
+   Eta_json (^njson-cdp0): shapes we own derive their codec, shapes a peer owns
+   do not. *)
 
 (* ^njson-7pjx: the value type is [Yojson.Safe.t] itself, not a copy. *)
 let (_ : Eta_json.t -> Yojson.Safe.t) = fun value -> value
@@ -254,6 +259,72 @@ let test_accessors_ignore_absent_members () =
       (fun () -> Eta_json.object_member "absent" document = None);
     ]
 
+(* ^nnoschema-44wj: the Leash control-protocol smoke test, rewritten as a derived
+   round-trip. The two request types are plain records with [@@deriving yojson] and
+   the example is Leash's docs/protocol.md envelope, copied verbatim (the ellipsis
+   is U+2026). It replaces ^nschema-yyfu's schema-built version: the shape is the
+   type, so there is nothing to keep in step with it. *)
+type leash_args = { tab : string; index : int } [@@deriving yojson]
+
+type leash_request = { v : int; owner : string; cmd : string; args : leash_args }
+[@@deriving yojson]
+
+let contains haystack needle =
+  let haystack_length = String.length haystack in
+  let needle_length = String.length needle in
+  let rec search index =
+    if index + needle_length > haystack_length then false
+    else if String.equal (String.sub haystack index needle_length) needle then true
+    else search (index + 1)
+  in
+  needle_length = 0 || search 0
+
+let leash_example =
+  {|{"v":1,"owner":"dsh:4f2a…","cmd":"click","args":{"tab":"t_9xk…","index":7}}|}
+
+let test_leash_protocol_derived () =
+  let external_json = Yojson.Safe.from_string leash_example in
+  let decoded =
+    match leash_request_of_yojson external_json with
+    | Ok request -> request
+    | Error message -> Alcotest.failf "leash example: %s" message
+  in
+  Alcotest.(check int) "v" 1 decoded.v;
+  Alcotest.(check string) "owner" "dsh:4f2a…" decoded.owner;
+  Alcotest.(check string) "cmd" "click" decoded.cmd;
+  Alcotest.(check string) "args.tab" "t_9xk…" decoded.args.tab;
+  Alcotest.(check int) "args.index" 7 decoded.args.index;
+  Alcotest.(check bool)
+    "the derived encoder reproduces the example byte for byte" true
+    (Yojson.Safe.equal external_json (yojson_of_leash_request decoded));
+  (* ^nnoschema-zi2m: a wrong-typed field names its path, restarts it at the nested
+     type, and carries the offending subtree — what invalid-request renders. *)
+  let bad =
+    Yojson.Safe.from_string
+      {|{"v":1,"owner":"dsh:x","cmd":"click","args":{"tab":"t","index":"seven"}}|}
+  in
+  match leash_request_of_yojson bad with
+  | Ok _ -> Alcotest.fail "expected a decode failure"
+  | Error message ->
+      List.iter
+        (fun needle ->
+          Alcotest.(check bool) ("error names " ^ needle) true (contains message needle))
+        [ "leash_request.args"; "index"; "expected int"; "\"seven\"" ];
+      (* ^njson-cdp0: JSON whose shape belongs to a peer — a CDP frame, say — stays
+         unchecked through Eta_json and survives a parse/compact round-trip whatever
+         fields it carries. *)
+      let cdp =
+        {|{"id":7,"method":"Page.navigate","params":{"url":"about:blank"},"consumed":true}|}
+      in
+      let parsed =
+        match Eta_json.parse cdp with
+        | Ok value -> value
+        | Error error ->
+            Alcotest.failf "unchecked JSON parses: %a" Eta_json.pp_parse_error error
+      in
+      Alcotest.(check string)
+        "the peer's shape round-trips byte for byte" cdp (Eta_json.to_string parsed)
+
 let () =
   Alcotest.run "eta_json"
     [
@@ -273,5 +344,11 @@ let () =
             test_member_accessors;
           Alcotest.test_case "njson-7pjx njson-3ph9 absent members stay absent" `Quick
             test_accessors_ignore_absent_members;
+        ] );
+      ( "protocol",
+        [
+          Alcotest.test_case
+            "^nnoschema-44wj ^nnoschema-zi2m ^njson-cdp0 leash request as a derived type"
+            `Quick test_leash_protocol_derived;
         ] );
     ]

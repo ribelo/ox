@@ -23,12 +23,14 @@
     other types by name: a name in the same [type ... and ...] group threads the dotted
     path through, while any other name delegates to its public converters ([Other.t] to
     [Other.yojson_of_t]/[Other.t_of_yojson]), restarting the path at that type:
-    [user.home] failing inside [address] reports [user.home: address.city: ...]. Extra
-    object fields are ignored on decode. Anything else — type parameters, functions,
-    objects, polymorphic variants, GADTs, inline record constructors, [@@deriving]
-    anything but [yojson] on a top-level type, a [@@deriving yojson] below the top level —
-    is a loud [Error], never a silent pass-through, because the compiler itself silently
-    ignores unknown derivers.
+    [user.home] failing inside [address] reports [user.home: address.city: ...]. A
+    qualified name works the same way at any depth ([A.B.t] calls [A.B.yojson_of_t] and
+    [A.B.t_of_yojson]), so a field of another package's type needs no [open]. Extra object
+    fields are ignored on decode. Anything else — type parameters, functions, objects,
+    polymorphic variants, GADTs, inline record constructors, [@@deriving] anything but
+    [yojson] on a top-level type, a [@@deriving yojson] below the top level — is a loud
+    [Error], never a silent pass-through, because the compiler itself silently ignores
+    unknown derivers.
 
     Generated identifiers all carry the [ppx_yojson_] prefix. Generated code refers to
     [Yojson.Safe], which must be visible where the attribute is used, and to
