@@ -101,13 +101,13 @@ let test_derived_config () =
   Alcotest.(check bool)
     "^nnoschema-ifg0 the secret is absent from the encoded config" false
     (contains encoded "file-secret");
-  let absent = Yojson.Safe.from_string {|{"models":{"api_key":null},"port":7}|} in
+  let absent = Yojson.Safe.from_string {|{"models":{},"port":7}|} in
   let decoded = decode_json {|{"models":{"api_key":null},"port":7}|} in
   Alcotest.(check (option string))
     "an absent secret is None" None
     (Option.map Eta_observability.Redact.expose decoded.models.api_key);
   Alcotest.(check bool)
-    "^nnoschema-5mdj yojson_of_t round-trips a config without secrets" true
+    "^nnoschema-5mdj ^nderive-mmnx missing or null secret encodes omitted" true
     (Yojson.Safe.equal absent (config.yojson_of_t decoded))
 
 let test_clean () =

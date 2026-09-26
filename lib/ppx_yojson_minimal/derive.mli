@@ -10,16 +10,18 @@
 
     A file without [[@@deriving yojson]] is returned byte-identical: the preprocessor is
     safe to run over every file of a stanza. A file with the attribute gets that
-    attribute's span — and the span of [[@@yojson.allow_extra_fields]], when it is there —
-    blanked (same length) and the converters inserted right after the declaration behind a
-    [#]-line directive pointing at it, so an error inside generated code is reported at
-    the declaration that requested it; a second directive after the insert restores the
+    attribute's span — and any declaration-level yojson attribute spans — blanked (same
+    length) and the converters inserted right after the declaration behind a [#]-line
+    directive pointing at it, so an error inside generated code is reported at the
+    declaration that requested it; a second directive after the insert restores the
     original numbering for the code that follows.
 
     Supported shapes: records (with [@key "name"] renames and [@default expr]
     missing-field defaults), variants (nullary constructors as strings, payload
-    constructors as [[tag, values...]] arrays), aliases over any supported shape, options
-    (absent or null is [None]), lists, arrays, tuples, [string], [int] (accepting integer
+    constructors as [[tag, values...]] arrays, [@name "wire_tag"] on either kind), aliases
+    over any supported shape, options (absent or null is [None]; a [None] record field is
+    omitted on encoding unless it carries [@yojson.null]), raw [Yojson.Safe.t] (passed
+    through unchanged), lists, arrays, tuples, [string], [int] (accepting integer
     literals), [float] (accepting integers), [bool], [unit] (as null), and references to
     other types by name: a name in the same [type ... and ...] group threads the dotted
     path through, while any other name delegates to its public converters ([Other.t] to
@@ -27,6 +29,11 @@
     [user.home] failing inside [address] reports [user.home: address.city: ...]. A
     qualified name works the same way at any depth ([A.B.t] calls [A.B.yojson_of_t] and
     [A.B.t_of_yojson]), so a field of another package's type needs no [open].
+
+    OxCaml cannot parse [type t = {}]. For the same one-value shape on the wire,
+    [type t = unit [@@deriving yojson] [@@yojson.empty_record]] encodes as [{}] and
+    decodes only an empty object (not [null] or an object with keys). The marker takes no
+    payload and is valid only on a unit alias. Plain [unit] remains encoded as null.
 
     Unknown object fields are refused, as [<path>: unknown field <key>]: a key the type
     does not name is a typo in a config file or a request, so a record decoder reports it
@@ -49,8 +56,9 @@
     performs I/O, blocks, forks a fiber, or registers a finalizer, so no call can be
     interrupted and nothing is released afterwards.
 
-    ^nppx-h4gz: this module is the yojson deriver the row delivers. ^nppx-mao8: its
-    contract is pinned by [test/ppx/run.ml]. *)
+    ^nppx-h4gz: this module is the yojson deriver the row delivers. ^nppx-mao8 and
+    ^nderive-mmnx ^nderive-0wzg ^nderive-fpd4 ^nderive-q2om ^nderive-qk91: its contract is
+    pinned by [test/ppx/run.ml]. *)
 
 val process : filename:string -> source:string -> (string, string) result
 (** [process ~filename ~source] is [Ok output] with the converters spliced in, or

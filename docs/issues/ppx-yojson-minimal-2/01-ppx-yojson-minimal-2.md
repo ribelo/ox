@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: ppx_yojson_minimal
 consumer: Leash (protocol and config types; the four gaps were hit writing docs/protocol.md's types in L1)
 ---
@@ -27,10 +27,14 @@ Extend the deriver with the four behaviours, each opt-in by attribute where the 
 
 - Default for `option`: omit when `None` (story 1); the previous null behaviour is behind `[@yojson.null]` (story 2). Update any `eta_app` config test that depended on null.
 - Variant wire names apply to both encoding and decoding; unknown tags fail with the offending subtree as today.
+- OxCaml 5.4.0+ox rejects `type t = {}` at parse time. Express its one-value wire shape as `type t = unit [@@deriving yojson] [@@yojson.empty_record]`; it encodes as `{}` and decodes only `{}`, refusing unknown keys.
 
 ## Testing Decisions
 
 - `test/ppx/`: one test per story. Leash removes its hand-written variant codecs afterwards (a Leash change, not this row).
+
+Verified: ^nderive-mmnx ^nderive-0wzg ^nderive-fpd4 ^nderive-q2om ^nderive-qk91 ^nderive-l1y6 have round-trip and rejection coverage in `test/ppx/`; the `test/app/` config assertion now expects omitted `None`.
+All three gates pass: `nix develop -c dune build @install`, `nix develop -c dune test`, `nix develop -c dune build @fmt`.
 
 ## Out of Scope
 

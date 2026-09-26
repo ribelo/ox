@@ -17,6 +17,25 @@ type role = Admin | Member of string | Guest of int * bool [@@deriving yojson]
 
 type unit_alias = unit [@@deriving yojson]
 
+(* ^nderive-mmnx ^nderive-0wzg: optional fields are absent by default, with an
+   explicit-null escape hatch. *)
+type option_wire = { omitted : string option; retained : int option [@yojson.null] }
+[@@deriving yojson]
+
+(* ^nderive-fpd4: raw JSON is opaque to the deriver, even inside containers. *)
+type raw_wire = { content : Yojson.Safe.t; pieces : Yojson.Safe.t list }
+[@@deriving yojson]
+
+(* ^nderive-q2om: nullary and payload constructors can both name their wire tag. *)
+type renamed_wire =
+  | With_human [@name "with_human"]
+  | With_agent of string [@name "with_agent"]
+  | With_both of string * int [@name "with_both"]
+[@@deriving yojson]
+
+(* ^nderive-qk91: OxCaml rejects [type t = {}], so unit is the single inhabitant. *)
+type empty_args = unit [@@deriving yojson] [@@yojson.empty_record]
+
 (** A recursive type exercises the [let rec] group. *)
 type tree = Leaf of int | Node of tree * tree [@@deriving yojson]
 
@@ -97,6 +116,81 @@ let test_key_rename () =
     expect_ok "renamed key decodes" (address_of_yojson (yojson_of_address home))
   in
   Alcotest.(check bool) "renamed key round-trips" true (back = home)
+
+(* ^nderive-l1y6: exercise the actual generated converters, not just output text. *)
+let test_option_omission () =
+  let value = { omitted = None; retained = None } in
+  let encoded = yojson_of_option_wire value in
+  Alcotest.(check string)
+    "None is omitted by default" "{\"retained\":null}"
+    (Yojson.Safe.to_string encoded);
+  List.iter
+    (fun json ->
+      let decoded =
+        expect_ok "absent or null decodes as None" (option_wire_of_yojson json)
+      in
+      Alcotest.(check (option string)) "optional omitted" None decoded.omitted)
+    [ encoded; `Assoc [ ("omitted", `Null); ("retained", `Null) ] ];
+  let present = { omitted = Some "yes"; retained = Some 3 } in
+  Alcotest.(check bool)
+    "Some fields round-trip" true
+    (expect_ok "option round-trip" (option_wire_of_yojson (yojson_of_option_wire present))
+    = present)
+
+let test_explicit_null () =
+  let encoded = yojson_of_option_wire { omitted = None; retained = None } in
+  Alcotest.(check bool)
+    "explicit-null option is present" true
+    (List.assoc_opt "retained" (match encoded with `Assoc fields -> fields | _ -> [])
+    = Some `Null);
+  let decoded = expect_ok "null decodes" (option_wire_of_yojson encoded) in
+  Alcotest.(check (option int)) "explicit-null decodes as None" None decoded.retained
+
+let test_raw_json_passthrough () =
+  let content = `Assoc [ ("nested", `List [ `Null; `Bool true; `Int 4 ]) ] in
+  let value = { content; pieces = [ `String "literal"; `Assoc [ ("x", `Int 7) ] ] } in
+  let encoded = yojson_of_raw_wire value in
+  Alcotest.(check string)
+    "raw field unchanged"
+    (Yojson.Safe.to_string content)
+    (Yojson.Safe.to_string
+       (match encoded with `Assoc fields -> List.assoc "content" fields | _ -> `Null));
+  Alcotest.(check bool)
+    "nested raw values round-trip" true
+    (expect_ok "raw JSON decodes" (raw_wire_of_yojson encoded) = value)
+
+let test_constructor_wire_names () =
+  List.iter
+    (fun (value, wire) ->
+      Alcotest.(check string)
+        "renamed tag encoded" wire
+        (Yojson.Safe.to_string (yojson_of_renamed_wire value));
+      Alcotest.(check bool)
+        "renamed tag decodes" true
+        (expect_ok "renamed tag" (renamed_wire_of_yojson (yojson_of_renamed_wire value))
+        = value))
+    [
+      (With_human, "\"with_human\"");
+      (With_agent "a", "[\"with_agent\",\"a\"]");
+      (With_both ("b", 2), "[\"with_both\",\"b\",2]");
+    ];
+  expect_error_contains "unknown original constructor name"
+    [ "renamed_wire"; "With_human" ]
+    (renamed_wire_of_yojson (`String "With_human"))
+
+let test_empty_object () =
+  Alcotest.(check string)
+    "empty arguments encode as object" "{}"
+    (Yojson.Safe.to_string (yojson_of_empty_args ()));
+  Alcotest.(check bool)
+    "empty object decodes" true
+    (expect_ok "empty arguments" (empty_args_of_yojson (`Assoc [])) = ());
+  expect_error_contains "unknown empty-object key"
+    [ "empty_args"; "unknown field"; "x" ]
+    (empty_args_of_yojson (`Assoc [ ("x", `Int 1) ]));
+  expect_error_contains "not null"
+    [ "empty_args"; "expected object" ]
+    (empty_args_of_yojson `Null)
 
 let test_role_round_trip () =
   List.iter
@@ -333,6 +427,22 @@ let test_unsupported_shapes_are_loud () =
         "type " ^ tick ^ "a t = " ^ tick ^ "a list [@@deriving yojson]\n" );
       ("function", "not supported", "type t = int -> int [@@deriving yojson]\n");
       ("abstract", "abstract", "type t [@@deriving yojson]\n");
+      ( "explicit-null only on option",
+        "requires an option type",
+        "type t = { x : int [@yojson.null] } [@@deriving yojson]\n" );
+      ( "bad constructor wire name",
+        "expects a string literal",
+        "type t = A [@name 3] [@@deriving yojson]\n" );
+      ( "duplicate constructor wire names",
+        "duplicate variant wire name",
+        "type t = A [@name \"same\"] | B [@name \"same\"] [@@deriving yojson]\n" );
+      ( "empty record marker on non-unit",
+        "requires a unit alias",
+        "type t = int [@@deriving yojson] [@@yojson.empty_record]\n" );
+      ( "empty record does not allow extra fields",
+        "cannot allow extra fields",
+        "type t = unit [@@deriving yojson] [@@yojson.empty_record] \
+         [@@yojson.allow_extra_fields]\n" );
       ( "nested module",
         "below the top level",
         "module M = struct\n  type t = int [@@deriving yojson]\nend\n" );
@@ -363,6 +473,16 @@ let () =
           Alcotest.test_case "nppx-mao8 nppx-h4gz record round-trips" `Quick
             test_address_round_trip;
           Alcotest.test_case "nppx-mao8 key rename" `Quick test_key_rename;
+          Alcotest.test_case "nderive-mmnx nderive-l1y6 option omission" `Quick
+            test_option_omission;
+          Alcotest.test_case "nderive-0wzg nderive-l1y6 explicit null" `Quick
+            test_explicit_null;
+          Alcotest.test_case "nderive-fpd4 nderive-l1y6 raw JSON" `Quick
+            test_raw_json_passthrough;
+          Alcotest.test_case "nderive-q2om nderive-l1y6 wire constructor names" `Quick
+            test_constructor_wire_names;
+          Alcotest.test_case "nderive-qk91 nderive-l1y6 empty object" `Quick
+            test_empty_object;
           Alcotest.test_case "nppx-mao8 variant round-trips" `Quick test_role_round_trip;
           Alcotest.test_case "nppx-mao8 nested record round-trips" `Quick
             test_user_round_trip;

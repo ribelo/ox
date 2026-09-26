@@ -151,11 +151,19 @@ type field_info = {
   key : string;
   fty : Parsetree.core_type;
   default : string option;
+  encode_null : bool;
 }
+
+let rec is_option_type (ty : Parsetree.core_type) : bool =
+  match ty.Parsetree.ptyp_desc with
+  | Parsetree.Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ _ ]) -> true
+  | Parsetree.Ptyp_alias (inner, _, _) -> is_option_type inner
+  | _ -> false
 
 let field_of_label env (label : Parsetree.label_declaration) : field_info =
   let key = ref label.Parsetree.pld_name.txt in
   let default = ref None in
+  let encode_null = ref false in
   List.iter
     (fun attr ->
       match attr.Parsetree.attr_name.txt with
@@ -171,6 +179,16 @@ let field_of_label env (label : Parsetree.label_declaration) : field_info =
           | None ->
               failf "field %s: [@default] expects one expression"
                 label.Parsetree.pld_name.txt)
+      | "yojson.null" -> (
+          match attr.Parsetree.attr_payload with
+          | Parsetree.PStr [] when is_option_type label.Parsetree.pld_type ->
+              encode_null := true
+          | Parsetree.PStr [] ->
+              failf "field %s: [@yojson.null] requires an option type"
+                label.Parsetree.pld_name.txt
+          | _ ->
+              failf "field %s: [@yojson.null] takes no payload"
+                label.Parsetree.pld_name.txt)
       | _ -> ())
     label.Parsetree.pld_attributes;
   {
@@ -178,6 +196,7 @@ let field_of_label env (label : Parsetree.label_declaration) : field_info =
     key = !key;
     fty = label.Parsetree.pld_type;
     default = !default;
+    encode_null = !encode_null;
   }
 
 let cores_of_tuple (pairs : (string option * Parsetree.core_type) list) :
@@ -189,12 +208,6 @@ let cores_of_tuple (pairs : (string option * Parsetree.core_type) list) :
       | Some name ->
           failf "labeled tuple element %s is not supported by [@@deriving yojson]" name)
     pairs
-
-let rec is_option_type (ty : Parsetree.core_type) : bool =
-  match ty.Parsetree.ptyp_desc with
-  | Parsetree.Ptyp_constr ({ txt = Longident.Lident "option"; _ }, [ _ ]) -> true
-  | Parsetree.Ptyp_alias (inner, _, _) -> is_option_type inner
-  | _ -> false
 
 (** [longident_path lid] is [Some "A.B.t"] for a [Lident]/[Ldot] chain and [None] for
     anything else. *)
@@ -255,10 +268,13 @@ let rec encode env (ty : Parsetree.core_type) (v : string) : string =
             v
       | _ -> failf "type application %s is not supported by [@@deriving yojson]" name)
   | Parsetree.Ptyp_constr ({ txt = lid; _ }, []) -> (
-      match qualified_name lid with
-      | Some (module_path, name) ->
-          Printf.sprintf "(%s.yojson_of_%s %s)" module_path name v
-      | None -> failf "this type is not supported by [@@deriving yojson]")
+      match longident_path lid with
+      | Some "Yojson.Safe.t" -> v
+      | _ -> (
+          match qualified_name lid with
+          | Some (module_path, name) ->
+              Printf.sprintf "(%s.yojson_of_%s %s)" module_path name v
+          | None -> failf "this type is not supported by [@@deriving yojson]"))
   | Parsetree.Ptyp_tuple pairs ->
       let tys = cores_of_tuple pairs in
       let binders = List.mapi (fun i _ -> Printf.sprintf "_ppx_yojson_x%d" i) tys in
@@ -330,13 +346,16 @@ let rec decode env (ty : Parsetree.core_type) ~path j : string =
             (decode_list env arg ~path j)
       | _ -> failf "type application %s is not supported by [@@deriving yojson]" name)
   | Parsetree.Ptyp_constr ({ txt = lid; _ }, []) -> (
-      match qualified_name lid with
-      | Some (module_path, name) ->
-          Printf.sprintf
-            "(match %s.%s_of_yojson %s with Ok _ as _ppx_yojson_ok -> _ppx_yojson_ok | \
-             Error _ppx_yojson_e -> Error (%s ^ \": \" ^ _ppx_yojson_e))"
-            module_path name j path
-      | None -> failf "this type is not supported by [@@deriving yojson]")
+      match longident_path lid with
+      | Some "Yojson.Safe.t" -> Printf.sprintf "(Ok %s)" j
+      | _ -> (
+          match qualified_name lid with
+          | Some (module_path, name) ->
+              Printf.sprintf
+                "(match %s.%s_of_yojson %s with Ok _ as _ppx_yojson_ok -> _ppx_yojson_ok \
+                 | Error _ppx_yojson_e -> Error (%s ^ \": \" ^ _ppx_yojson_e))"
+                module_path name j path
+          | None -> failf "this type is not supported by [@@deriving yojson]"))
   | Parsetree.Ptyp_tuple pairs -> decode_tuple env (cores_of_tuple pairs) ~path j
   | Parsetree.Ptyp_alias (inner, _, _) -> decode env inner ~path j
   | _ -> failf "this type is not supported by [@@deriving yojson]"
@@ -400,10 +419,14 @@ let encode_record env fields v =
   let parts =
     List.map
       (fun field ->
-        Printf.sprintf "(%S, %s)" field.key (encode env field.fty (v ^ "." ^ field.fname)))
+        let value = v ^ "." ^ field.fname in
+        let pair = Printf.sprintf "(%S, %s)" field.key (encode env field.fty value) in
+        if is_option_type field.fty && not field.encode_null then
+          Printf.sprintf "(match %s with None -> [] | Some _ -> [%s])" value pair
+        else Printf.sprintf "[%s]" pair)
       fields
   in
-  Printf.sprintf "(`Assoc [%s])" (String.concat "; " parts)
+  Printf.sprintf "(`Assoc (Stdlib.List.concat [%s]))" (String.concat "; " parts)
 
 (** [reject_unknown_fields fields record] wraps the [Ok { ... }] expression [record] in a
     check that the decoded object names no field the type does not: the first unknown key
@@ -438,32 +461,52 @@ let decode_record env ~allow_extra_fields fields =
     (chain "_ppx_yojson_path" fields)
     (error_at ~path:"_ppx_yojson_path" "object" "_ppx_yojson_json")
 
+let wire_name type_name (ctor : Parsetree.constructor_declaration) =
+  let names =
+    List.filter
+      (fun attr -> attr.Parsetree.attr_name.txt = "name")
+      ctor.Parsetree.pcd_attributes
+  in
+  match names with
+  | [] -> ctor.Parsetree.pcd_name.txt
+  | [ attr ] -> (
+      match string_of_key_payload attr with
+      | Some name -> name
+      | None ->
+          failf "type %s constructor %s: [@name] expects a string literal" type_name
+            ctor.Parsetree.pcd_name.txt)
+  | _ ->
+      failf "type %s constructor %s: duplicate [@name]" type_name
+        ctor.Parsetree.pcd_name.txt
+
 let encode_constructor env type_name (ctor : Parsetree.constructor_declaration) =
   let tag = ctor.Parsetree.pcd_name.txt in
+  let wire = wire_name type_name ctor in
   match ctor.Parsetree.pcd_args with
-  | Parsetree.Pcstr_tuple [] -> Printf.sprintf "%s -> `String %S" tag tag
+  | Parsetree.Pcstr_tuple [] -> Printf.sprintf "%s -> `String %S" tag wire
   | Parsetree.Pcstr_tuple [ arg ] ->
-      Printf.sprintf "%s _ppx_yojson_x -> `List [`String %S; %s]" tag tag
+      Printf.sprintf "%s _ppx_yojson_x -> `List [`String %S; %s]" tag wire
         (encode env arg.Parsetree.pca_type "_ppx_yojson_x")
   | Parsetree.Pcstr_tuple args ->
       let tys = List.map (fun a -> a.Parsetree.pca_type) args in
       let binders = List.mapi (fun i _ -> Printf.sprintf "_ppx_yojson_x%d" i) tys in
       let parts = List.mapi (fun i ty -> encode env ty (List.nth binders i)) tys in
       Printf.sprintf "%s (%s) -> `List [`String %S; %s]" tag (String.concat ", " binders)
-        tag (String.concat "; " parts)
+        wire (String.concat "; " parts)
   | Parsetree.Pcstr_record _ ->
       failf "type %s: inline record constructors are not supported" type_name
 
 let decode_constructor env type_name path (ctor : Parsetree.constructor_declaration) =
   let tag = ctor.Parsetree.pcd_name.txt in
-  let sub = Printf.sprintf "(%s ^ %S)" path ("." ^ tag) in
+  let wire = wire_name type_name ctor in
+  let sub = Printf.sprintf "(%s ^ %S)" path ("." ^ wire) in
   match ctor.Parsetree.pcd_args with
-  | Parsetree.Pcstr_tuple [] -> Printf.sprintf "| `String %S -> Ok %s" tag tag
+  | Parsetree.Pcstr_tuple [] -> Printf.sprintf "| `String %S -> Ok %s" wire tag
   | Parsetree.Pcstr_tuple [ arg ] ->
       Printf.sprintf
         "| `List [`String %S; _ppx_yojson_j] -> (match %s with Ok _ppx_yojson_x -> Ok \
          (%s _ppx_yojson_x) | Error _ppx_yojson_e -> Error _ppx_yojson_e)"
-        tag
+        wire
         (decode env arg.Parsetree.pca_type ~path:sub "_ppx_yojson_j")
         tag
   | Parsetree.Pcstr_tuple args ->
@@ -482,7 +525,7 @@ let decode_constructor env type_name path (ctor : Parsetree.constructor_declarat
             i
             (chain (i + 1))
       in
-      Printf.sprintf "| `List [`String %S; %s] -> %s" tag (String.concat "; " binders)
+      Printf.sprintf "| `List [`String %S; %s] -> %s" wire (String.concat "; " binders)
         (chain 0)
   | Parsetree.Pcstr_record _ ->
       failf "type %s: inline record constructors are not supported" type_name
@@ -510,47 +553,91 @@ let check_decl (decl : Parsetree.type_declaration) : string =
   | Asttypes.Public -> ());
   name
 
+(** An explicit marker is needed because OxCaml cannot parse an empty record type. *)
+let is_empty_record (decl : Parsetree.type_declaration) =
+  let attrs =
+    List.filter
+      (fun attr -> attr.Parsetree.attr_name.txt = "yojson.empty_record")
+      decl.Parsetree.ptype_attributes
+  in
+  match attrs with
+  | [] -> false
+  | [ attr ] -> (
+      match
+        ( attr.Parsetree.attr_payload,
+          decl.Parsetree.ptype_kind,
+          decl.Parsetree.ptype_manifest )
+      with
+      | ( Parsetree.PStr [],
+          Parsetree.Ptype_abstract,
+          Some
+            {
+              Parsetree.ptyp_desc =
+                Parsetree.Ptyp_constr ({ txt = Longident.Lident "unit"; _ }, []);
+              _;
+            } ) ->
+          true
+      | _ ->
+          failf "type %s: [@@yojson.empty_record] requires a unit alias and no payload"
+            decl.Parsetree.ptype_name.txt)
+  | _ -> failf "type %s: duplicate [@@yojson.empty_record]" decl.Parsetree.ptype_name.txt
+
 (** One declaration contributes its encoder and private path-threading decoder to the
     group chain, plus a standalone public wrapper [let] afterwards: simultaneous
     non-recursive bindings cannot see each other, so the wrapper (which calls the private
     decoder) must follow the chain. *)
 let gen_structure_decl env (decl : Parsetree.type_declaration) : string list * string =
   let name = check_decl decl in
+  let empty_record = is_empty_record decl in
+  if empty_record && allows_extra_fields decl then
+    failf "type %s: [@@yojson.empty_record] cannot allow extra fields" name;
   let encoded, decoded =
-    match decl.Parsetree.ptype_kind with
-    | Parsetree.Ptype_record labels ->
-        let fields = List.map (field_of_label env) labels in
-        ( encode_record env fields "_ppx_yojson_v",
-          decode_record env ~allow_extra_fields:(allows_extra_fields decl) fields )
-    | Parsetree.Ptype_variant ctors ->
-        (match ctors with
-        | [] -> failf "type %s: empty variants are not supported" name
-        | _ -> ());
-        List.iter (check_constructor name) ctors;
-        let tags =
-          String.concat " | "
-            (List.map (fun ctor -> Printf.sprintf "%S" ctor.Parsetree.pcd_name.txt) ctors)
-        in
-        let enc_cases =
-          String.concat " | " (List.map (encode_constructor env name) ctors)
-        in
-        let dec_cases =
-          String.concat " "
-            (List.map (decode_constructor env name "_ppx_yojson_path") ctors)
-        in
-        ( Printf.sprintf "(match _ppx_yojson_v with %s)" enc_cases,
-          Printf.sprintf "(match _ppx_yojson_json with %s | _ -> Error %s)" dec_cases
-            (error_at ~path:"_ppx_yojson_path" tags "_ppx_yojson_json") )
-    | Parsetree.Ptype_abstract -> (
-        match decl.Parsetree.ptype_manifest with
-        | Some core ->
-            ( encode env core "_ppx_yojson_v",
-              decode env core ~path:"_ppx_yojson_path" "_ppx_yojson_json" )
-        | None -> failf "type %s: abstract types cannot derive yojson" name)
-    | Parsetree.Ptype_open ->
-        failf "type %s: extensible variant types are not supported" name
-    | Parsetree.Ptype_record_unboxed_product _ ->
-        failf "type %s: unboxed record products are not supported" name
+    if empty_record then
+      ( "(`Assoc [])",
+        Printf.sprintf
+          "(match _ppx_yojson_json with `Assoc _ppx_yojson_fields -> %s | _ -> Error %s)"
+          (reject_unknown_fields [] "(Ok ())")
+          (error_at ~path:"_ppx_yojson_path" "object" "_ppx_yojson_json") )
+    else
+      match decl.Parsetree.ptype_kind with
+      | Parsetree.Ptype_record labels ->
+          let fields = List.map (field_of_label env) labels in
+          ( encode_record env fields "_ppx_yojson_v",
+            decode_record env ~allow_extra_fields:(allows_extra_fields decl) fields )
+      | Parsetree.Ptype_variant ctors ->
+          (match ctors with
+          | [] -> failf "type %s: empty variants are not supported" name
+          | _ -> ());
+          List.iter (check_constructor name) ctors;
+          let names = List.map (wire_name name) ctors in
+          let seen = Hashtbl.create (List.length names) in
+          List.iter
+            (fun wire ->
+              if Hashtbl.mem seen wire then
+                failf "type %s: duplicate variant wire name %S" name wire;
+              Hashtbl.add seen wire ())
+            names;
+          let tags = String.concat " | " (List.map (Printf.sprintf "%S") names) in
+          let enc_cases =
+            String.concat " | " (List.map (encode_constructor env name) ctors)
+          in
+          let dec_cases =
+            String.concat " "
+              (List.map (decode_constructor env name "_ppx_yojson_path") ctors)
+          in
+          ( Printf.sprintf "(match _ppx_yojson_v with %s)" enc_cases,
+            Printf.sprintf "(match _ppx_yojson_json with %s | _ -> Error %s)" dec_cases
+              (error_at ~path:"_ppx_yojson_path" tags "_ppx_yojson_json") )
+      | Parsetree.Ptype_abstract -> (
+          match decl.Parsetree.ptype_manifest with
+          | Some core ->
+              ( encode env core "_ppx_yojson_v",
+                decode env core ~path:"_ppx_yojson_path" "_ppx_yojson_json" )
+          | None -> failf "type %s: abstract types cannot derive yojson" name)
+      | Parsetree.Ptype_open ->
+          failf "type %s: extensible variant types are not supported" name
+      | Parsetree.Ptype_record_unboxed_product _ ->
+          failf "type %s: unboxed record products are not supported" name
   in
   ( [
       Printf.sprintf "yojson_of_%s (_ppx_yojson_v : %s) : Yojson.Safe.t = %s" name name
@@ -567,6 +654,7 @@ let gen_structure_decl env (decl : Parsetree.type_declaration) : string list * s
 
 let gen_signature_decl (decl : Parsetree.type_declaration) : string list =
   let name = check_decl decl in
+  ignore (is_empty_record decl);
   (match decl.Parsetree.ptype_kind with
   | Parsetree.Ptype_abstract when decl.Parsetree.ptype_manifest = None ->
       failf "type %s: abstract types cannot derive yojson" name
@@ -609,7 +697,9 @@ let blanks_of_decl ~source (decl : Parsetree.type_declaration) : (int * int) lis
             failf "[@@deriving %s] is not supported: only [@@deriving yojson] is" name
         | Complex ->
             failf "unsupported [@@deriving] payload: write one deriver per attribute"
-      else if is_allow_extra_fields attr then Some (attribute_span ~source attr)
+      else if
+        is_allow_extra_fields attr || attr.Parsetree.attr_name.txt = "yojson.empty_record"
+      then Some (attribute_span ~source attr)
       else None)
     decl.Parsetree.ptype_attributes
 
