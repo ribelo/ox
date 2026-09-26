@@ -8,7 +8,7 @@ You are the only agent working here. Uncommitted work is lost work: commit each 
 
 ## The one rule
 
-Nothing enters this tree without a consumer. A change is justified by a user story in a consumer's spec (`<consumer>/docs/issues/<slug>/01-<slug>.md`, to-spec format) and cites its story ID. When a change is Eta-internal with no consumer story — the Door's own shape, say — it gets a spec of the same format under `docs/specs/`. There are no tickets, no requirement prose, no status essays in this repository.
+Nothing enters this tree without a consumer. A change is justified by a user story in a consumer's spec (`<consumer>/docs/issues/<slug>/01-<slug>.md`, to-spec format) and cites its story ID. When a change is Eta-internal with no consumer story — the Door's own shape, say — it gets a spec of the same format under `docs/issues/<slug>/01-<slug>.md`, and `docs/issues/README.md` is the delivery map. There are no tickets, no requirement prose, no status essays in this repository.
 
 ## How code is written
 
