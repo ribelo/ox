@@ -494,68 +494,69 @@ let test_dependency_ceiling () =
 
 let () =
   Alcotest.run "eta_observability"
-    [
-      ( "Redact",
-        [
-          Alcotest.test_case "prints <redacted> on every path (^nobs-iedi)" `Quick
-            test_redact_paths;
-          Alcotest.test_case "a record never carries the secret (^nobs-iedi)" `Quick
-            test_redact_in_record;
-        ] );
-      ( "Context",
-        [
-          Alcotest.test_case "fields reach records inside their extent (^nobs-2d4r)"
-            `Quick test_context_extent;
-          Alcotest.test_case "a forked fiber inherits the fields (^nobs-2d4r)" `Quick
-            test_context_fork_inheritance;
-          Alcotest.test_case "nesting replaces and restores (^nobs-2d4r)" `Quick
-            test_context_nesting;
-          Alcotest.test_case "outside an Eio fiber the context is empty (^nobs-2d4r)"
-            `Quick test_context_outside_fiber;
-        ] );
-      ( "Logger",
-        [
-          Alcotest.test_case
-            "one record with timestamp, level, message, fields and context (^nobs-og4h)"
-            `Quick test_log_record;
-          Alcotest.test_case "base fields are defaults (^nobs-og4h)" `Quick
-            test_base_fields;
-          Alcotest.test_case "a minimum level drops records below it (^nobs-262i)" `Quick
-            test_minimum_level;
-          Alcotest.test_case "a message is rate limited per window (^nobs-262i)" `Quick
-            test_rate_limit;
-        ] );
-      ( "Journal",
-        [
-          Alcotest.test_case
-            "one compact JSON object per line, fixed key order (^nobs-ek28)" `Quick
-            test_journal_lines;
-          Alcotest.test_case "timestamps are UTC milliseconds (^nobs-ek28)" `Quick
-            test_journal_timestamp;
-        ] );
-      ( "Memory",
-        [
-          Alcotest.test_case "queries by level and by field (^nobs-rayu)" `Quick
-            test_memory_find;
-        ] );
-      ( "Span",
-        [
-          Alcotest.test_case "start and end with elapsed time (^nobs-xovg)" `Quick
-            test_span_ok;
-          Alcotest.test_case "a typed failure is summarized (^nobs-xovg)" `Quick
-            test_span_failure;
-          Alcotest.test_case "a raise is a defect and propagates (^nobs-xovg)" `Quick
-            test_span_defect;
-          Alcotest.test_case "cancellation is an interruption (^nobs-xovg)" `Quick
-            test_span_interrupt;
-          Alcotest.test_case "spans carry fields and context (^nobs-xovg)" `Quick
-            test_span_fields_and_context;
-          Alcotest.test_case "a span respects the minimum level (^nobs-262i ^nobs-xovg)"
-            `Quick test_span_minimum_level;
-        ] );
-      ( "Package",
-        [
-          Alcotest.test_case "depends on eta, eio and eta_json only (^nobs-6x58)" `Quick
-            test_dependency_ceiling;
-        ] );
-    ]
+    (V1_logger.tests
+    @ [
+        ( "Redact",
+          [
+            Alcotest.test_case "prints <redacted> on every path (^nobs-iedi)" `Quick
+              test_redact_paths;
+            Alcotest.test_case "a record never carries the secret (^nobs-iedi)" `Quick
+              test_redact_in_record;
+          ] );
+        ( "Context",
+          [
+            Alcotest.test_case "fields reach records inside their extent (^nobs-2d4r)"
+              `Quick test_context_extent;
+            Alcotest.test_case "a forked fiber inherits the fields (^nobs-2d4r)" `Quick
+              test_context_fork_inheritance;
+            Alcotest.test_case "nesting replaces and restores (^nobs-2d4r)" `Quick
+              test_context_nesting;
+            Alcotest.test_case "outside an Eio fiber the context is empty (^nobs-2d4r)"
+              `Quick test_context_outside_fiber;
+          ] );
+        ( "Logger",
+          [
+            Alcotest.test_case
+              "one record with timestamp, level, message, fields and context (^nobs-og4h)"
+              `Quick test_log_record;
+            Alcotest.test_case "base fields are defaults (^nobs-og4h)" `Quick
+              test_base_fields;
+            Alcotest.test_case "a minimum level drops records below it (^nobs-262i)"
+              `Quick test_minimum_level;
+            Alcotest.test_case "a message is rate limited per window (^nobs-262i)" `Quick
+              test_rate_limit;
+          ] );
+        ( "Journal",
+          [
+            Alcotest.test_case
+              "one compact JSON object per line, fixed key order (^nobs-ek28)" `Quick
+              test_journal_lines;
+            Alcotest.test_case "timestamps are UTC milliseconds (^nobs-ek28)" `Quick
+              test_journal_timestamp;
+          ] );
+        ( "Memory",
+          [
+            Alcotest.test_case "queries by level and by field (^nobs-rayu)" `Quick
+              test_memory_find;
+          ] );
+        ( "Span",
+          [
+            Alcotest.test_case "start and end with elapsed time (^nobs-xovg)" `Quick
+              test_span_ok;
+            Alcotest.test_case "a typed failure is summarized (^nobs-xovg)" `Quick
+              test_span_failure;
+            Alcotest.test_case "a raise is a defect and propagates (^nobs-xovg)" `Quick
+              test_span_defect;
+            Alcotest.test_case "cancellation is an interruption (^nobs-xovg)" `Quick
+              test_span_interrupt;
+            Alcotest.test_case "spans carry fields and context (^nobs-xovg)" `Quick
+              test_span_fields_and_context;
+            Alcotest.test_case "a span respects the minimum level (^nobs-262i ^nobs-xovg)"
+              `Quick test_span_minimum_level;
+          ] );
+        ( "Package",
+          [
+            Alcotest.test_case "depends on eta, eio and eta_json only (^nobs-6x58)" `Quick
+              test_dependency_ceiling;
+          ] );
+      ])

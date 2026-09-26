@@ -39,3 +39,22 @@ Port the v1 suites whose subject survives, case by case, onto eta-next's direct-
 ## Out of Scope
 
 HTTP, AI, SQL, stream, signal, crux suites: ported with their packages when a consumer pulls them.
+
+## Port status (in progress)
+
+The historical inventory counts Alcotest registrations in each `v1:test/core_common/*_common_suites.ml` (and named scenarios in the shared interruptibility helper). A single eta-next test function can contain several independently labelled historical scenarios. Counts below distinguish historical cases from the number of new Alcotest registrations; cases still being audited are **not** counted as dropped. Do not mark this spec complete while any pending cases remain.
+
+| Historical suite | v1 cases | Ported | Dropped | Pending | Drop reason or remaining work |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `cause_exit` | 11 | 2 | 9 | 0 | No captured finalizer strings, diagnostic equality, materialized die identity or `finalizer_of_cause` in the smaller Cause/Exit API (9). Classification and combinator behavior are covered by the labelled core tests. |
+| `cause_render` | 13 | 13 | 0 | 0 | All corpus cases, newline freedom and multiline pretty output asserted by name; the compact grammar reflects eta-next's Cause constructors. |
+| `effect_resource_timeout` | 41 | 14 | 9 | 18 | No daemon runtime (3), `timeout_as` (5), or `with_resource let@` syntax (1). Pending: parallel acquisition rollback, bracket subcases and ownership/finalizer variants. |
+| `effect_retry_repeat` | 41 | 17 | 15 | 9 | No `retry_or_else` (9), `forever` (4), or composite Cause recovery through Retry (2); remaining schedule, defect and resource-lifetime cases need explicit assertions. |
+| `supervisor` | 42 | 9 | 15 | 18 | No managed child handle/cancel request API (6), supervised-background handle (3), runtime cancel/fail_scope (2), or named/traced background variants (4). Remaining background/par/race winner and cleanup interleavings need individual scenarios. |
+| `resource` | 25 | 1 | 20 | 4 | No refreshable manual/automatic resource cache (20); virtual sleep cases remain pending. LIFO finalizers are ported. |
+| `stress` | 14 | 3 | 5 | 6 | No pool, semaphore, channel, all_settled or map_par APIs (5); remaining reduced-size combinations need explicit checks. |
+| `logger` | 7 | 4 | 3 | 0 | No logfmt label encoder, stdout/stderr console routing, or v1 writer critical-section implementation (3). JSON escaping, levels/fields, minimum severity and writer recovery are covered. |
+| `effect_interruptible_shared` | 19 named helper cases | 0 | 19 | 0 | No interpreter, SPI runtime contract or `Effect.interruptible` mask; Eio cancellation is tested separately via scope release and retry interruptions. |
+
+**Kernel findings:** `Concurrent.race` tried to cancel already-finished contexts after a later branch succeeded; skip finished contexts according to `Eio.Cancel.get_error`. `Cause.pp_compact` let a typed printer place raw newlines in its promised one-line output; escape carriage returns and newlines. `Concurrent.with_background` swallowed loser cleanup defects once body had published a typed failure; propagate the cleanup exception from the child switch. Because its result type is `('a, 'e) result`, that defect can override, but cannot contain, the typed body error as a `Cause.Suppressed` without changing the public API.
+

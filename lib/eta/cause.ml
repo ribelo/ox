@@ -24,9 +24,19 @@ let rec pp pp_error fmt = function
            (pp pp_error))
         causes
 
+let one_line text =
+  let buffer = Buffer.create (String.length text) in
+  String.iter
+    (function
+      | '\n' -> Buffer.add_string buffer "\\n"
+      | '\r' -> Buffer.add_string buffer "\\r"
+      | character -> Buffer.add_char buffer character)
+    text;
+  Buffer.contents buffer
+
 let rec pp_compact pp_error fmt = function
-  | Fail e -> Format.fprintf fmt "Fail(%a)" pp_error e
-  | Die (ex, _) -> Format.fprintf fmt "Die(%s)" (Printexc.to_string ex)
+  | Fail e -> Format.fprintf fmt "Fail(%s)" (one_line (Format.asprintf "%a" pp_error e))
+  | Die (ex, _) -> Format.fprintf fmt "Die(%s)" (one_line (Printexc.to_string ex))
   | Interrupt None -> Format.pp_print_string fmt "Interrupt(external)"
   | Interrupt (Some id) -> Format.fprintf fmt "Interrupt(%a)" Interrupt_id.pp id
   | Finalizer c -> Format.fprintf fmt "Finalizer(%a)" (pp_compact pp_error) c

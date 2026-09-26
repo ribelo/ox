@@ -550,7 +550,7 @@ let test_package_contract () =
 
 let () =
   Alcotest.run "eta core"
-    (Pure.tests
+    (Pure.tests @ V1_port.tests @ V1_more.tests
     @ [
         ( "Core causes ncore-e8jg ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg \
            ncore-p30f",

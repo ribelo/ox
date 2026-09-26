@@ -21,7 +21,14 @@ let stop_other id contexts except =
   Array.iteri
     (fun i ctx ->
       if i <> except then
-        Option.iter (fun c -> Eio.Cancel.cancel c (Interrupt_id.stop id)) !ctx)
+        Option.iter
+          (fun c ->
+            (* A branch may have completed before a later branch wins. Eio rejects
+               cancellation of a finished context, even though it was published. *)
+            match Eio.Cancel.get_error c with
+            | Some (Invalid_argument _) -> ()
+            | _ -> Eio.Cancel.cancel c (Interrupt_id.stop id))
+          !ctx)
     contexts
 
 let race ~sw fs =
@@ -154,6 +161,7 @@ let with_background ~sw bg body =
               | Value (Ok ()) -> ()
               | Value (Error e) -> publish 0 (Value (Error e))
               | Raised (ex, _) when !settled && stopped stop_id ex -> ()
+              | Raised (ex, bt) when !settled -> Printexc.raise_with_backtrace ex bt
               | Raised (ex, bt) -> publish 0 (Raised (ex, bt))));
       if not !settled then
         Eio.Fiber.fork ~sw:child (fun () ->
@@ -162,5 +170,6 @@ let with_background ~sw bg body =
                 match capture body with
                 | Value result -> publish 1 (Value result)
                 | Raised (ex, _) when !settled && stopped stop_id ex -> ()
+                | Raised (ex, bt) when !settled -> Printexc.raise_with_backtrace ex bt
                 | Raised (ex, bt) -> publish 1 (Raised (ex, bt))));
       unwrap (Eio.Promise.await published))
