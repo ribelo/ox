@@ -20,7 +20,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 11 | `limits-1/01-limits-1.md` | `eta_test`, `eta_app`, `eta_process`, `eta_rpc`, `eta_ipc` docs | 1–8 | Leash milestone 1 tests | [x] |
 | 12 | `modes-and-portability/01-modes-and-portability.md` | all | 1–9 | stable signatures before Leash pins | [x] |
 | 13 | `port-v1-tests/01-port-v1-tests.md` | `test/` | 1, 4, 9 | trust in the combinators | [x] |
-| 16 | `door-validate/01-door-validate.md` | `eta_app` | 5 | Leash L1 (svc-ljl3, svc-tkor) | [x] |
+| 14 | `door-validate/01-door-validate.md` | `eta_app` | 5 | Leash L1 (svc-ljl3, svc-tkor) | [x] |
 | 15 | `ppx-on-oxcaml/01-ppx-on-oxcaml.md` | toolchain | 10 | deriving anywhere | [ ] |
 | 16 | `remove-eta-schema/01-remove-eta-schema.md` | `eta_app`, `eta_observability`; removes `eta_schema*` | 15 | Leash L1 (Config, protocol types) | [ ] |
 
