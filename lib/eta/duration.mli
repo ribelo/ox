@@ -1,7 +1,9 @@
+@@ portable
+
 (** Millisecond-precision durations copied from v1. Pure operations do not suspend,
     observe cancellation, or register finalizers. *)
 
-type t
+type t : value mod portable contended
 
 val zero : t
 val ms : int -> t

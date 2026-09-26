@@ -184,7 +184,7 @@ val span :
   ?fields:(string * value) list ->
   ?pp_err:(Format.formatter -> 'e -> unit) ->
   string ->
-  (unit -> ('a, 'e) result) ->
+  (unit -> ('a, 'e) result) @ local ->
   ('a, 'e) result
 (** [span logger name f] logs the start and the end of one unit of work and returns what
     [f ()] returned: tracing as structured logs, before any exporter exists.

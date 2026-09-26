@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: every eta-next package
 consumer: Leash (all milestones): the API must not need reshaping later to connect domains, parallel work, or local closures
 ---
@@ -39,3 +39,6 @@ One pass over every `.mli` with a written decision per signature, applied consis
 ## Out of Scope
 
 Parallelism itself (`eta_par` comes with a consumer); unboxed types in public APIs; rewriting Eio.
+
+Verification: `nix develop -c dune build @install`, `nix develop -c dune test`, and `nix develop -c dune build @fmt` passed for the full tree; `test/modes/portability.ml` ran on Eio domains and `bench/correlator_alloc.ml` measured 291.03 allocated words/call.
+Verification: `docs/modes.md` records all closure decisions and pinned Eio/tooling gaps; unrestricted stored callbacks prevent arbitrary portable `Schedule.t`, and compiler-rejected allocations prevent a truthful `Schedule.step [@@zero_alloc]` without redesign.

@@ -1,3 +1,5 @@
+@@ portable
+
 (** Untyped JSON accessors shared by Eta packages.
 
     This module is the single owner of Eta's unchecked Yojson helpers: a bounded parse,
@@ -9,7 +11,7 @@
     performs I/O, blocks, forks a fiber, or registers a finalizer, so no call can be
     interrupted and nothing is released afterwards. *)
 
-type t = Yojson.Safe.t
+type t : value mod portable = Yojson.Safe.t
 (** JSON values are exactly {!Yojson.Safe.t}. *)
 
 type too_large = { limit : int; length : int }
@@ -20,7 +22,7 @@ type parse_error = [ `Malformed of string | `Too_large of too_large ]
     is not one JSON document, and [`Too_large] carries the byte bound and the input's
     actual length for input the bound refused before any JSON value was built. *)
 
-val parse : ?max_bytes:int -> string -> (t, parse_error) result
+val parse : ?max_bytes:int -> string -> (t, parse_error) result @@ nonportable
 (** [parse raw] is [Ok json] when [raw] is one complete JSON document, and a
     {!parse_error} when it is not. Malformed input is reported as a result, never as an
     exception.
@@ -34,11 +36,11 @@ val parse : ?max_bytes:int -> string -> (t, parse_error) result
       when [max_bytes] is negative. A negative bound is a programming defect, not a parse
       failure. *)
 
-val to_string : t -> string
+val to_string : t -> string @@ nonportable
 (** [to_string json] is the compact JSON text of [json]: one line, no indentation, no
     whitespace outside strings. *)
 
-val compact : t -> string
+val compact : t -> string @@ nonportable
 (** [compact] is {!to_string}: both emit the same compact text. *)
 
 val pp_parse_error : Format.formatter -> parse_error -> unit

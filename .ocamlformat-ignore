@@ -1,0 +1,17 @@
+# ocamlformat 0.29 cannot parse OxCaml modalities, kinds, or @@ portable.
+# Retain the compiler-checked source while the formatter catches up.
+lib/app/status.mli
+lib/eta/cause.mli
+lib/eta/duration.mli
+lib/eta/exit.mli
+lib/eta/interrupt_id.mli
+lib/eta/resource.ml
+lib/eta/resource.mli
+lib/eta/retry.ml
+lib/eta/retry.mli
+lib/eta/schedule.mli
+lib/json/eta_json.mli
+lib/observability/logger.ml
+lib/observability/logger.mli
+lib/schema/eta_schema.mli
+test/modes/portability.ml

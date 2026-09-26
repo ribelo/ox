@@ -1,3 +1,5 @@
+@@ portable
+
 (** Pure schemas and JSON codecs.
 
     An [eta_schema] value describes a data contract: it decodes a checked JSON value,
@@ -10,15 +12,15 @@
     performs I/O, blocks, forks a fiber, or registers a finalizer, so no call can be
     interrupted and nothing is released afterwards. *)
 
-type path_segment = Field of string | Index of int
+type path_segment : value mod portable = Field of string | Index of int
 
-type issue_kind =
+type issue_kind : value mod portable =
   | Type_mismatch of { expected : string; got : string }
   | Missing_field of string
   | Custom of string
   | Refinement_failed of { name : string; reason : string }
 
-type issue = { path : path_segment list; schema_name : string option; kind : issue_kind }
+type issue : value mod portable = { path : path_segment list; schema_name : string option; kind : issue_kind }
 (** A structured decode or validation problem.
 
     [path] is ordered from the outermost field/index to the innermost field/index.
@@ -29,9 +31,9 @@ type issue = { path : path_segment list; schema_name : string option; kind : iss
 (** Minimal JSON representation used by the core package. Adapters keep
     dependency-specific JSON values outside user schemas. *)
 module Json : sig
-  type number = Int of int | Intlit of string | Float of float
+  type number : value mod portable = Int of int | Intlit of string | Float of float
 
-  type t = private
+  type t : value mod portable = private
     | Null
     | Bool of bool
     | Number of number

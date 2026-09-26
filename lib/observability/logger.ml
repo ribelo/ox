@@ -243,7 +243,7 @@ let info t ?fields ?limit msg = log t Info ~msg ?fields ?limit ()
 let warn t ?fields ?limit msg = log t Warn ~msg ?fields ?limit ()
 let error t ?fields ?limit msg = log t Error ~msg ?fields ?limit ()
 
-let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
+let span t ?(level = Info) ?(fields = []) ?pp_err msg (f @ local) =
   let started = t.mono_now () in
   let pp_err =
     match pp_err with

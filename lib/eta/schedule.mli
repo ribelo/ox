@@ -1,3 +1,5 @@
+@@ portable
+
 (** Pure recurrence policies copied from v1. Stepping does not suspend, observe
     cancellation, or register finalizers. *)
 

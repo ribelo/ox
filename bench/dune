@@ -1,0 +1,3 @@
+(executable
+ (name correlator_alloc)
+ (libraries eta_rpc eta eio eio_main))

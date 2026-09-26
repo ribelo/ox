@@ -1,3 +1,5 @@
+@@ portable
+
 (** Result of a finished scope. Inspection is pure: no cancellation or finalizers run
     here. *)
 type ('a, 'e) t = Success of 'a | Failure of 'e Cause.t

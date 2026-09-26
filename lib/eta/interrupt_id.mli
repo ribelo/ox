@@ -1,4 +1,6 @@
-type t
+@@ portable
+
+type t : value mod portable
 (** Identity of an Eta-owned interruption. Pure operations have no cancellation or
     finalizer effects; IDs are allocated only when a combinator stops work. *)
 

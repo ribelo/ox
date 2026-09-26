@@ -1,3 +1,5 @@
+@@ portable
+
 (** Structured failures. Construction and rendering do not suspend, observe cancellation,
     or register finalizers. *)
 type 'e t =

@@ -1,4 +1,4 @@
-let acquire_release ~sw ~acquire ~release =
+let acquire_release ~sw ~(acquire @ local) ~release =
   match acquire () with
   | Error _ as error -> error
   | Ok resource ->
