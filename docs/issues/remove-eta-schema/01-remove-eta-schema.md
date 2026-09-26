@@ -30,12 +30,14 @@ Delete `eta_schema` and `eta_schema_yojson`. `Eta_app`'s config takes a derived 
 - Row 14 (`door-validate`) added a Door validator for environment-dependent checks (binary exists, directory readable). Keep that hook exactly as delivered; this row only replaces the *decoding* half: `of_yojson` (derived) replaces the schema decode, and pure constraints move into smart-constructor modules or the existing `validate`. Do not build a second validation path.
 
 - The config record for a consumer is a plain type with `[@@deriving yojson]`; optional fields use `[@default]` (or the deriver's equivalent); `validate` is where bounds and enumerations live; `env` is explicit code (`match getenv "OPENROUTER_API_KEY" with Some k -> { c with models = { c.models with api_key = Redact.make k } } | None -> c`).
+- A derived record decoder refuses an object field its type does not name, as `<path>: unknown field <key>`: an unknown key is a typo in a config file or a request, so the schema's unknown-key rule is kept, not lost — a config with an extra key still fails at boot (^napp-yplu, Leash svc-ljl3), and an unknown protocol argument is still `invalid-request`. A record that carries `[@@yojson.allow_extra_fields]` opts out and ignores what it does not know, which is what a shape we do not own (a peer's payload, a forward-compatible reply) needs. This is the deriver's default because the alternative — silently dropping a misplaced key — is the failure mode an operator cannot see.
 - `Eta_json` stays for unchecked JSON (CDP); derived codecs are for shapes we own.
 - No compatibility layer: `Eta_schema` disappears in one commit after the Door is switched.
 
 ## Testing Decisions
 
-- `test/app`: derived config round-trip, decode failure output, env override, redaction in `config check` — stories 2–5, 8.
+- `test/app`: derived config round-trip, decode failure output (missing field, wrong type, nested path, unknown key), env override, redaction in `config check` — stories 2–5, 8.
+- `test/ppx`: unknown fields refused by default, `[@@yojson.allow_extra_fields]` accepting them, and a nested record reporting its own path — ^nnoschema-zi2m.
 - Grep the tree for `Eta_schema` after removal; only `docs/issues` history may mention it.
 
 ## Delivered signatures
@@ -82,7 +84,9 @@ JSON Schema generation for AI tool definitions (its own row when the AI package 
 
 ## Verification
 
-`nix develop -c dune build @install`, `nix develop -c dune test` and `nix develop -c dune build @fmt` are green for the whole tree: 19 `test/app` cases (derived config round-trip, decode failure output, environment override, redaction in `config check`, the two-Service program on a derived config type, and row 14's unchanged validator cases), 8 `test/json` cases including the derived Leash protocol round-trip, 24 `test/observability` cases including the new `Redact` codecs, 22 `test/ppx` cases, and every other suite unchanged.
+`nix develop -c dune build @install`, `nix develop -c dune test` and `nix develop -c dune build @fmt` are green for the whole tree: 19 `test/app` cases (derived config round-trip, decode failure output, environment override, redaction in `config check`, the two-Service program on a derived config type, and row 14's unchanged validator cases), 8 `test/json` cases including the derived Leash protocol round-trip, 24 `test/observability` cases including the new `Redact` codecs, 23 `test/ppx` cases, and every other suite unchanged.
+
+An unknown object field is a decode failure, not a silent drop: the derived record decoder reports `<path>: unknown field <key>` unless the declaration carries `[@@yojson.allow_extra_fields]`, so `test/app` proves an unknown config key exits 2 without entering the program (^napp-yplu, ^nnoschema-zi2m) and `test/ppx` pins both the refusal and the opt-out.
 
 The grep for `Eta_schema` outside `_build` finds no code, build or configuration file: `lib/schema`, `lib/schema_yojson`, `test/schema`, `test/schema_yojson`, their `dune-project` stanzas and opam files, the flake's derived package list and the README rows are gone; the surviving mentions are this row's history under `docs/issues/` and ADR-0008, which decided the removal.
 

@@ -5,8 +5,9 @@
    environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
    (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
    ^nnoschema-boxo (TOML-to-JSON stays here), ^nnoschema-p7fv (a two-Service
-   program on a derived config type). ^napp-yplu's unknown-key refusal and
-   ^napp-tuvw's schema-declared overrides are superseded. *)
+   program on a derived config type). ^napp-yplu's unknown-key refusal stands
+   (^nnoschema-zi2m carries it into the derived decoder); ^napp-tuvw's
+   schema-declared overrides are superseded. *)
 open Eta_app
 
 let check_int = Alcotest.(check int)
@@ -296,8 +297,9 @@ let test_config () =
 
 (* ^nnoschema-zi2m: a decode failure prints the deriver's message — the dotted
    path of the offending value plus the value itself, bounded — and exits 2
-   without starting. Extra fields are ignored, which supersedes ^napp-yplu's
-   unknown-key refusal. *)
+   without starting. A key the type does not name is such a failure: ^napp-yplu's
+   unknown-key rule stands, now with the deriver's path and key in the message,
+   which is what Leash svc-ljl3 needs at boot. *)
 let test_decode_failure () =
   let refused name text =
     let started = ref false in
@@ -327,9 +329,16 @@ let test_decode_failure () =
   expect_part err "models.api_key";
   expect_part err "expected string";
   expect_part err "got 7";
-  let code, _, err, _ = run ~text:"port = 1\n[models]\napi_key = \"a\"\nextra = 1\n" () in
-  check_int "^nnoschema-zi2m an extra field is ignored" 0 code;
-  check_string "and reported nowhere" "" err
+  (* ^napp-yplu ^nnoschema-zi2m: an unknown key fails at boot, naming the path and
+     the key, and the program is never entered. *)
+  let err = refused "an unknown key" "port = 1\n[models]\napi_key = \"a\"\nextra = 1\n" in
+  expect_part err "settings";
+  expect_part err "unknown field extra";
+  let err =
+    refused "an unknown key in a nested table" "port = 1\n[models]\nextra = 1\n"
+  in
+  expect_part err "settings.models";
+  expect_part err "unknown field extra"
 
 (* ^nnoschema-5mdj ^nnoschema-36cj ^nnoschema-ifg0: the environment function runs
    on the decoded value, and config check prints the effective config after the

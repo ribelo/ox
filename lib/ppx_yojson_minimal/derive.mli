@@ -9,11 +9,12 @@
     tree this compiler parses.
 
     A file without [[@@deriving yojson]] is returned byte-identical: the preprocessor is
-    safe to run over every file of a stanza. A file with the attribute gets its attribute
-    spans blanked (same length) and the converters inserted right after the declaration
-    behind a [#]-line directive pointing at it, so an error inside generated code is
-    reported at the declaration that requested it; a second directive after the insert
-    restores the original numbering for the code that follows.
+    safe to run over every file of a stanza. A file with the attribute gets that
+    attribute's span — and the span of [[@@yojson.allow_extra_fields]], when it is there —
+    blanked (same length) and the converters inserted right after the declaration behind a
+    [#]-line directive pointing at it, so an error inside generated code is reported at
+    the declaration that requested it; a second directive after the insert restores the
+    original numbering for the code that follows.
 
     Supported shapes: records (with [@key "name"] renames and [@default expr]
     missing-field defaults), variants (nullary constructors as strings, payload
@@ -25,12 +26,19 @@
     [Other.yojson_of_t]/[Other.t_of_yojson]), restarting the path at that type:
     [user.home] failing inside [address] reports [user.home: address.city: ...]. A
     qualified name works the same way at any depth ([A.B.t] calls [A.B.yojson_of_t] and
-    [A.B.t_of_yojson]), so a field of another package's type needs no [open]. Extra object
-    fields are ignored on decode. Anything else — type parameters, functions, objects,
-    polymorphic variants, GADTs, inline record constructors, [@@deriving] anything but
-    [yojson] on a top-level type, a [@@deriving yojson] below the top level — is a loud
-    [Error], never a silent pass-through, because the compiler itself silently ignores
-    unknown derivers.
+    [A.B.t_of_yojson]), so a field of another package's type needs no [open].
+
+    Unknown object fields are refused, as [<path>: unknown field <key>]: a key the type
+    does not name is a typo in a config file or a request, so a record decoder reports it
+    instead of dropping it. A record declaration that carries
+    [[@@yojson.allow_extra_fields]] opts out and ignores the fields it does not know —
+    what a shape we do not own (a peer's payload, a forward-compatible reply) needs. The
+    attribute applies to that declaration only, takes no payload, and is blanked like the
+    deriving attribute, so the compiler never sees either. Anything else — type
+    parameters, functions, objects, polymorphic variants, GADTs, inline record
+    constructors, [@@deriving] anything but [yojson] on a top-level type, a
+    [@@deriving yojson] below the top level — is a loud [Error], never a silent
+    pass-through, because the compiler itself silently ignores unknown derivers.
 
     Generated identifiers all carry the [ppx_yojson_] prefix. Generated code refers to
     [Yojson.Safe], which must be visible where the attribute is used, and to

@@ -68,15 +68,17 @@ let classify_deriving_payload (payload : Parsetree.payload) : deriving =
 let is_deriving (attr : Parsetree.attribute) =
   match attr.Parsetree.attr_name with { txt = "deriving"; _ } -> true | _ -> false
 
-(** The source span of the whole [[@@deriving yojson]] attribute, from the opening
-    brackets to the closing one. Anything unexpected in between is a loud failure rather
-    than a guessed span. *)
+(** The source span of a whole attribute, from the opening brackets to the closing one:
+    [[@@deriving yojson]] (one expression payload) and payload-less attributes like
+    [[@@yojson.allow_extra_fields]]. Anything unexpected is a loud failure rather than a
+    guessed span. *)
 let attribute_span ~source (attr : Parsetree.attribute) : int * int =
   let payload_end =
     match attr.Parsetree.attr_payload with
+    | Parsetree.PStr [] -> attr.Parsetree.attr_name.loc.Location.loc_end.pos_cnum
     | Parsetree.PStr [ { Parsetree.pstr_desc = Parsetree.Pstr_eval (expr, _); _ } ] ->
         expr.Parsetree.pexp_loc.Location.loc_end.pos_cnum
-    | _ -> failf "unsupported [@@deriving] payload: write one deriver per attribute"
+    | _ -> failf "unsupported attribute payload"
   in
   let name_start = attr.Parsetree.attr_name.loc.Location.loc_start.pos_cnum in
   let open_start =
@@ -85,7 +87,7 @@ let attribute_span ~source (attr : Parsetree.attribute) : int * int =
       decr i
     done;
     if !i >= 3 && String.sub source (!i - 3) 3 = "[@@" then !i - 3
-    else failf "could not find the opening of [@@deriving yojson]"
+    else failf "could not find the opening of an attribute"
   in
   let close_end =
     let n = String.length source in
@@ -94,7 +96,7 @@ let attribute_span ~source (attr : Parsetree.attribute) : int * int =
       incr j
     done;
     if !j < n && source.[!j] = ']' then !j + 1
-    else failf "could not find the closing of [@@deriving yojson]"
+    else failf "could not find the closing of an attribute"
   in
   (open_start, close_end)
 
@@ -123,6 +125,20 @@ let expr_of_default_payload ~source (attr : Parsetree.attribute) : string option
   | Parsetree.PStr [ { Parsetree.pstr_desc = Parsetree.Pstr_eval (expr, _); _ } ] ->
       Some (slice source expr.Parsetree.pexp_loc)
   | _ -> None
+
+(** [[@@yojson.allow_extra_fields]] on a type declaration: the decoded record then ignores
+    object fields its type does not name. A payload is a loud failure rather than a guess
+    at what it meant. *)
+let is_allow_extra_fields (attr : Parsetree.attribute) =
+  match attr.Parsetree.attr_name.txt with
+  | "yojson.allow_extra_fields" -> (
+      match attr.Parsetree.attr_payload with
+      | Parsetree.PStr [] -> true
+      | _ -> failf "[@@yojson.allow_extra_fields] takes no payload")
+  | _ -> false
+
+let allows_extra_fields (decl : Parsetree.type_declaration) : bool =
+  List.exists is_allow_extra_fields decl.Parsetree.ptype_attributes
 
 (* ---------- Type shapes ---------- *)
 
@@ -389,7 +405,23 @@ let encode_record env fields v =
   in
   Printf.sprintf "(`Assoc [%s])" (String.concat "; " parts)
 
-let decode_record env fields =
+(** [reject_unknown_fields fields record] wraps the [Ok { ... }] expression [record] in a
+    check that the decoded object names no field the type does not: the first unknown key
+    is reported with the record's dotted path, which is what a config or request decode
+    must do (an unknown key is a typo, not forward compatibility). A type carrying
+    [[@@yojson.allow_extra_fields]] skips the check and ignores what it does not know. *)
+let reject_unknown_fields fields record =
+  let known =
+    String.concat "; " (List.map (fun field -> Printf.sprintf "%S" field.key) fields)
+  in
+  Printf.sprintf
+    "(match Stdlib.List.filter_map (fun (_ppx_yojson_key, _) -> if Stdlib.List.mem      \
+     _ppx_yojson_key [%s] then None else Some _ppx_yojson_key) _ppx_yojson_fields with \
+     []      -> %s | _ppx_yojson_key :: _ -> Error (_ppx_yojson_path ^ \": unknown field \
+     \" ^      _ppx_yojson_key))"
+    known record
+
+let decode_record env ~allow_extra_fields fields =
   let rec chain parent_path = function
     | [] ->
         let parts =
@@ -397,7 +429,8 @@ let decode_record env fields =
             (fun field -> Printf.sprintf "%s = _ppx_yojson_v_%s" field.fname field.fname)
             fields
         in
-        Printf.sprintf "(Ok { %s })" (String.concat "; " parts)
+        let record = Printf.sprintf "(Ok { %s })" (String.concat "; " parts) in
+        if allow_extra_fields then record else reject_unknown_fields fields record
     | field :: rest -> decode_record_field env parent_path field (chain parent_path rest)
   in
   Printf.sprintf
@@ -487,7 +520,8 @@ let gen_structure_decl env (decl : Parsetree.type_declaration) : string list * s
     match decl.Parsetree.ptype_kind with
     | Parsetree.Ptype_record labels ->
         let fields = List.map (field_of_label env) labels in
-        (encode_record env fields "_ppx_yojson_v", decode_record env fields)
+        ( encode_record env fields "_ppx_yojson_v",
+          decode_record env ~allow_extra_fields:(allows_extra_fields decl) fields )
     | Parsetree.Ptype_variant ctors ->
         (match ctors with
         | [] -> failf "type %s: empty variants are not supported" name
@@ -562,19 +596,21 @@ type group = {
   insert_line : int;
 }
 
-(** The deriving attributes on one declaration: blank spans for [yojson], loud failures
-    for anything else a top-level type should not carry. *)
+(** The attributes on one declaration that the compiler must not see again: blank spans
+    for [yojson] and for [[@@yojson.allow_extra_fields]], loud failures for anything else
+    a top-level type should not carry. *)
 let blanks_of_decl ~source (decl : Parsetree.type_declaration) : (int * int) list =
   List.filter_map
     (fun attr ->
-      if not (is_deriving attr) then None
-      else
+      if is_deriving attr then
         match classify_deriving_payload attr.Parsetree.attr_payload with
         | Yojson -> Some (attribute_span ~source attr)
         | Other name ->
             failf "[@@deriving %s] is not supported: only [@@deriving yojson] is" name
         | Complex ->
-            failf "unsupported [@@deriving] payload: write one deriver per attribute")
+            failf "unsupported [@@deriving] payload: write one deriver per attribute"
+      else if is_allow_extra_fields attr then Some (attribute_span ~source attr)
+      else None)
     decl.Parsetree.ptype_attributes
 
 (** Any [@@deriving yojson] below the top level is a loud failure: the generator only
@@ -687,20 +723,29 @@ let line_at_offset source offset =
   done;
   !line
 
-(** Top-level [type ... and ...]: a group job when any declaration carries
-    [@@deriving yojson], in which case every declaration is derived. The converters are
-    inserted right after the declaration (OCaml needs definition before use); a [#]-line
-    directive after the insert restores the original numbering for everything that
-    follows. *)
+(** Top-level [type ... and ...]: a group job when any declaration carries a [@@deriving]
+    attribute, in which case every declaration is derived. The converters are inserted
+    right after the declaration (OCaml needs definition before use); a [#]-line directive
+    after the insert restores the original numbering for everything that follows. A group
+    with no [@@deriving] is left alone, even when it carries
+    [[@@yojson.allow_extra_fields]]: there is nothing to derive and so nothing to allow.
+*)
 let group_of_decls ~source ~insert_at (decls : Parsetree.type_declaration list) :
     group option =
-  let blanks = List.concat_map (blanks_of_decl ~source) decls in
-  match blanks with
-  | [] -> None
-  | _ ->
-      let line = line_of_decl (List.hd decls) in
-      let insert_line = line_at_offset source insert_at in
-      Some { decls; line; blanks; insert_at; insert_line }
+  let derives =
+    List.exists
+      (fun decl -> List.exists is_deriving decl.Parsetree.ptype_attributes)
+      decls
+  in
+  if not derives then None
+  else
+    let blanks = List.concat_map (blanks_of_decl ~source) decls in
+    match blanks with
+    | [] -> None
+    | _ ->
+        let line = line_of_decl (List.hd decls) in
+        let insert_line = line_at_offset source insert_at in
+        Some { decls; line; blanks; insert_at; insert_line }
 
 let collect_structure ~source (items : Parsetree.structure) : group list =
   List.filter_map

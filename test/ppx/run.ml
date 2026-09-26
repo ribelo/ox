@@ -213,11 +213,37 @@ let test_number_coercions () =
   in
   expect_error_contains "overflowing int"
     [ "user.age"; "expected int" ]
-    (user_of_yojson (user_json big));
-  let with_extra = ("zzz", `Int 1) :: base_fields () in
+    (user_of_yojson (user_json big))
+
+(* ^nnoschema-zi2m: a record decoder refuses an object field the type does not name —
+   an unknown key is a typo in a config file or a request — and reports the path and the
+   key. A declaration that carries [@@yojson.allow_extra_fields] opts out and ignores
+   what it does not know, which is what a shape we do not own needs. *)
+type strict_record = { kept : int } [@@deriving yojson]
+type tolerant_record = { kept : int } [@@deriving yojson] [@@yojson.allow_extra_fields]
+type wrapper = { inner : strict_record } [@@deriving yojson]
+
+let test_unknown_fields () =
+  let known = `Assoc [ ("kept", `Int 1) ] in
+  let extra = `Assoc [ ("kept", `Int 1); ("surprise", `Bool true) ] in
   Alcotest.(check bool)
-    "extra fields are ignored" true
-    (Result.is_ok (user_of_yojson (user_json with_extra)))
+    "a document with only known fields decodes" true
+    (Result.is_ok (strict_record_of_yojson known));
+  expect_error_contains "unknown field refused"
+    [ "strict_record"; "unknown field"; "surprise" ]
+    (strict_record_of_yojson extra);
+  (* The opt-out is per declaration: a tolerant record ignores the same key ... *)
+  (match tolerant_record_of_yojson extra with
+  | Ok { kept = 1 } -> ()
+  | Ok _ -> Alcotest.fail "the tolerant record keeps the known field"
+  | Error message -> Alcotest.failf "allow_extra_fields accepts: %s" message);
+  (* ... while a record that merely refers to it is strict about its own fields. *)
+  expect_error_contains "the outer record still refuses"
+    [ "wrapper"; "unknown field"; "surprise" ]
+    (wrapper_of_yojson (`Assoc [ ("inner", extra); ("surprise", `Int 2) ]));
+  expect_error_contains "a nested record reports its own path"
+    [ "wrapper.inner"; "unknown field"; "surprise" ]
+    (wrapper_of_yojson (`Assoc [ ("inner", extra) ]))
 
 (* ^nnoschema-ifg0: a field whose type lives in another module is written with its
    own converters. A qualified name may be several modules deep, which is how a
@@ -355,6 +381,8 @@ let () =
           Alcotest.test_case "nppx-mao8 number coercions" `Quick test_number_coercions;
           Alcotest.test_case "nppx-h4gz ^nnoschema-ifg0 qualified module path" `Quick
             test_qualified_module_path;
+          Alcotest.test_case "nppx-h4gz ^nnoschema-zi2m unknown fields" `Quick
+            test_unknown_fields;
         ] );
       ( "preprocessor",
         [
