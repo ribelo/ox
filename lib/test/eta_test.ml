@@ -7,7 +7,41 @@ type env =
   ; process_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t
   ; backend_id : string >
 
-let active = ref 0
+(* Eio emits both creation and exit on every fiber, including forks not made here. *)
+let live : (int, int) Hashtbl.t = Hashtbl.create 128
+let serial = ref 0
+let lost = ref false
+
+let callbacks =
+  Eio_runtime_events.add_callbacks
+    (fun _ _ -> function
+      | `Create (id, `Fiber_in _) ->
+          incr serial;
+          Hashtbl.replace live id !serial
+      | `Exit_fiber id -> Hashtbl.remove live id
+      | _ -> ())
+    (Runtime_events.Callbacks.create ~lost_events:(fun _ _ -> lost := true) ())
+
+let cursor =
+  Runtime_events.start ();
+  Runtime_events.create_cursor None
+
+let drain () =
+  while Runtime_events.read_poll cursor callbacks None > 0 do
+    ()
+  done;
+  if !lost then Alcotest.fail "fiber census lost runtime events"
+
+let baseline = ref 0
+
+let with_census f =
+  drain ();
+  let before = !serial in
+  let _ = f () in
+  drain ();
+  Hashtbl.fold
+    (fun _ created count -> if created > before then count + 1 else count)
+    live 0
 
 let run fn =
   Eio_main.run @@ fun real ->
@@ -24,7 +58,10 @@ let run fn =
       method backend_id = real#backend_id
     end
   in
-  Eio.Switch.run (fn env)
+  Eio.Switch.run (fun sw ->
+      drain ();
+      baseline := !serial;
+      fn env sw)
 
 let advance clock duration =
   Eio_mock.Clock.set_time clock
@@ -35,21 +72,19 @@ type ('a, 'e) handle = ('a, 'e) Eta.Exit.t Eio.Promise.t
 
 let fork_run ~sw fn =
   let promise, resolve = Eio.Promise.create () in
-  incr active;
-  (try
-     Eio.Fiber.fork ~sw (fun () ->
-         Fun.protect
-           ~finally:(fun () -> decr active)
-           (fun () -> Eio.Promise.resolve resolve (Eta.Scope.run fn)))
-   with ex ->
-     decr active;
-     raise ex);
+  Eio.Fiber.fork ~sw (fun () -> Eio.Promise.resolve resolve (Eta.Scope.run fn));
   promise
 
 let await = Eio.Promise.await
 
 let assert_no_fibers_left () =
-  if !active <> 0 then Alcotest.failf "leaked %d tracked fiber(s)" !active
+  drain ();
+  let leaked =
+    Hashtbl.fold
+      (fun _ created count -> if created > !baseline then count + 1 else count)
+      live 0
+  in
+  if leaked <> 0 then Alcotest.failf "leaked %d Eio fiber(s)" leaked
 
 let rec cause_equal eq a b =
   let open Eta.Cause in

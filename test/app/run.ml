@@ -386,6 +386,53 @@ let test_cli_and_io_errors () =
       check_int "^napp-2aa6 unreadable config" 2 code;
       expect_part (Buffer.contents err) "no such file")
 
+(* nlimit-s3f4: real SIGTERM and SIGINT travel through the Door. *)
+let test_real_signal signo () =
+  let config_path = Filename.temp_file "eta-app-signal-" ".toml" in
+  Fun.protect
+    ~finally:(fun () -> Sys.remove config_path)
+    (fun () ->
+      let output = open_out config_path in
+      output_string output "port = 42\n";
+      close_out output;
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let fixture =
+                Filename.concat
+                  (Filename.dirname Sys.executable_name)
+                  "signal_fixture.exe"
+              in
+              let child =
+                match
+                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                    ~argv:[ fixture; "--config"; config_path ]
+                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                with
+                | Ok child -> child
+                | Error _ -> Alcotest.fail "invalid signal fixture spawn"
+              in
+              let source = Option.get (Eta_process.Child.stdout child) in
+              let ready =
+                Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                    Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:1024 source))
+              in
+              check_string "Door ready" "ready" ready;
+              Eta_process.Child.signal child signo;
+              let status =
+                Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                    Eta_process.Child.await child)
+              in
+              Alcotest.(check bool)
+                "signal maps to exit code zero" true
+                (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
+              Eta_process.Child.signal child signo;
+              ignore (Eta_process.Child.stop child);
+              let journal =
+                Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+              in
+              expect_part journal "\"msg\":\"signal stopped\"")))
+
 let () =
   Alcotest.run "eta_app"
     [
@@ -408,5 +455,9 @@ let () =
             test_cli_hook;
           Alcotest.test_case "^napp-2aa6 ^napp-yplu CLI and IO errors" `Quick
             test_cli_and_io_errors;
+          Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick
+            (test_real_signal Sys.sigterm);
+          Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick
+            (test_real_signal Sys.sigint);
         ] );
     ]

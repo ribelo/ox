@@ -111,6 +111,14 @@ let test_supervision () =
       | _ -> Alcotest.fail "exhausted");
       Alcotest.(check int) "generation" 2 (S.generation supervisor);
       S.stop supervisor;
+      (match Eio.Stream.take events with
+      | S.Stopped -> ()
+      | _ -> Alcotest.fail "nlimit-a407: Gave_up must precede Stopped");
+      Alcotest.(check (option bool))
+        "terminal last" None
+        (Option.map
+           (function S.Stopped -> true | _ -> false)
+           (Eio.Stream.take_nonblocking events));
       Eta_test.assert_no_fibers_left ())
 
 let test_stop () =
@@ -127,6 +135,14 @@ let test_stop () =
       | _ -> Alcotest.fail "started");
       S.stop s;
       S.stop s;
+      (match Eio.Stream.take (S.events s) with
+      | S.Stopped -> ()
+      | _ -> Alcotest.fail "nlimit-a407: stop must end stream");
+      Alcotest.(check (option bool))
+        "no duplicate Stopped" None
+        (Option.map
+           (function S.Stopped -> true | _ -> false)
+           (Eio.Stream.take_nonblocking (S.events s)));
       Alcotest.(check int) "single generation" 1 (S.generation s);
       Alcotest.(check (list int))
         "TERM on shutdown" [ Sys.sigterm ]
@@ -144,7 +160,10 @@ let test_spawn_failure () =
       | S.Gave_up (Eta.Cause.Fail (`Spawn `Unavailable)) -> ()
       | _ -> Alcotest.fail "typed spawn failure");
       Alcotest.(check int) "no successful spawn" 0 (S.generation s);
-      S.stop s)
+      S.stop s;
+      match Eio.Stream.take (S.events s) with
+      | S.Stopped -> ()
+      | _ -> Alcotest.fail "nlimit-a407: typed Gave_up then Stopped")
 
 let test_overflow () =
   (* nproc-pnnm nproc-msz4 *)
@@ -197,6 +216,25 @@ let test_fd_and_output () =
                 (Eio.Flow.read_all (some (C.stderr child)));
               check_exit (C.Exited 3) (C.await child);
               check_exit (C.Exited 3) (C.stop child))))
+
+let test_retired_output_eof () =
+  (* nlimit-nzur *)
+  with_script "printf output; printf error >&2" (fun script ->
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let child =
+                ok
+                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr ~argv:[ script ]
+                     ~grace:(Eta.Duration.ms 30) ~stdout:C.Pipe ~stderr:C.Pipe ~fds:[] ())
+              in
+              check_exit (C.Exited 0) (C.await child);
+              check_exit (C.Exited 0) (C.stop child);
+              Alcotest.(check string)
+                "stdout buffered through retirement then EOF" "output"
+                (Eio.Flow.read_all (some (C.stdout child)));
+              Alcotest.(check string)
+                "stderr buffered through retirement then EOF" "error"
+                (Eio.Flow.read_all (some (C.stderr child))))))
 
 let wait_ready clock marker =
   match
@@ -298,8 +336,11 @@ let () =
           Alcotest.test_case "typed spawn failure" `Quick test_spawn_failure;
           Alcotest.test_case "bounded event overflow" `Quick test_overflow;
         ] );
-      ( "nproc-1x05 nproc-giyu nproc-bqik",
-        [ Alcotest.test_case "real fd pipes and output" `Quick test_fd_and_output ] );
+      ( "nproc-1x05 nproc-giyu nproc-bqik nlimit-nzur",
+        [
+          Alcotest.test_case "real fd pipes and output" `Quick test_fd_and_output;
+          Alcotest.test_case "retired output reaches EOF" `Quick test_retired_output_eof;
+        ] );
       ( "nproc-xmat nproc-e5zc nproc-ypzm",
         [
           Alcotest.test_case "real escalation" `Quick

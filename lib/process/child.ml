@@ -8,12 +8,21 @@ type t = {
   stderr : Eio.Flow.source_ty Eio.Resource.t option;
   request : unit Eio.Promise.u;
   finished : exit Eio.Promise.or_exn;
+  mutable reaped : bool;
 }
 
 let stdout t = t.stdout
 let stderr t = t.stderr
 let status = function `Exited n -> Exited n | `Signaled n -> Signaled n
-let await t = status (Eio.Process.await t.process)
+
+let await t =
+  let result = status (Eio.Process.await t.process) in
+  t.reaped <- true;
+  result
+
+let signal t signum =
+  if (not t.reaped) && not (Eio.Promise.is_resolved t.finished) then
+    Eio.Process.signal t.process signum
 
 let stop t =
   Eio.Cancel.protect (fun () ->
@@ -50,7 +59,7 @@ let spawn ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard
                      let output mode =
                        match mode with
                        | Pipe ->
-                           let input, write = Eio_unix.pipe private_sw in
+                           let input, write = Eio_unix.pipe sw in
                            ( Some (input :> Eio.Flow.source_ty Eio.Resource.t),
                              fd write,
                              Some write )
@@ -86,6 +95,7 @@ let spawn ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard
                          stderr = err;
                          request = request_u;
                          finished;
+                         reaped = false;
                        }
                      in
                      Eio.Promise.resolve ready_u (Ok child);

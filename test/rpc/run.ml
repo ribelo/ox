@@ -55,6 +55,11 @@ let wait_until condition =
   in
   loop 1000
 
+let take_message q =
+  match Eio.Stream.take q with
+  | Correlator.Message m -> m
+  | Correlator.Closed _ -> Alcotest.fail "expected notification before closure"
+
 let check_reply expected = function
   | Ok m -> Alcotest.(check int) "reply" expected m.value
   | Error _ -> Alcotest.fail "expected matching reply"
@@ -83,7 +88,7 @@ let routing () =
       let q = Correlator.notifications c in
       Alcotest.(check (list int))
         "unmatched FIFO" [ 10; 11; 12 ]
-        (List.init 3 (fun _ -> (Eio.Stream.take q).value));
+        (List.init 3 (fun _ -> (take_message q).value));
       Alcotest.(check int) "no pending requests" 0 (Correlator.stats c).pending;
       Correlator.close c)
 
@@ -96,10 +101,16 @@ let overflow () =
       wait_until (fun () -> (Correlator.stats c).dropped_notifications = 2);
       Alcotest.(check int) "bounded" 2 (Correlator.stats c).buffered_notifications;
       let q = Correlator.notifications c in
-      Alcotest.(check (list int))
-        "newest retained" [ 3; 4 ]
-        (List.init 2 (fun _ -> (Eio.Stream.take q).value));
-      Correlator.close c)
+      Correlator.close c;
+      Alcotest.(check int)
+        "terminal evicts oldest when full" 3 (Correlator.stats c).dropped_notifications;
+      Alcotest.(check int) "newest message retained" 4 (take_message q).value;
+      (match Eio.Stream.take q with
+      | Correlator.Closed `Closed -> ()
+      | _ -> Alcotest.fail "nlimit-ruzp terminal must survive overflow");
+      Alcotest.(check bool)
+        "terminal is last" true
+        (Option.is_none (Eio.Stream.take_nonblocking q)))
 
 (* nrpc-amni nrpc-d96a: mock time and late reply *)
 let deadline () =
@@ -119,8 +130,7 @@ let deadline () =
       push f (msg ~id:(Option.get (List.hd f.writes).id) 99);
       wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
       Alcotest.(check int)
-        "late reply is notification" 99
-        (Eio.Stream.take (Correlator.notifications c)).value;
+        "late reply is notification" 99 (take_message (Correlator.notifications c)).value;
       Correlator.close c)
 
 (* nrpc-1glx nrpc-d96a: interruption, no fabricated response *)
@@ -145,7 +155,7 @@ let cancellation () =
       push f (msg ~id:(Option.get (List.hd f.writes).id) 12);
       wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
       Alcotest.(check int)
-        "late reply" 12 (Eio.Stream.take (Correlator.notifications c)).value;
+        "late reply" 12 (take_message (Correlator.notifications c)).value;
       Correlator.close c)
 
 (* nrpc-hjv6 nrpc-lf9n nrpc-wkrp nrpc-d96a *)
@@ -184,6 +194,14 @@ let closures () =
           Alcotest.(check int) "all pending settled" 0 (Correlator.stats c).pending;
           expect (Correlator.call c (msg 3));
           Correlator.close c;
+          (match Eio.Stream.take (Correlator.notifications c) with
+          | Correlator.Closed `Eof when reason = `Eof -> ()
+          | Correlator.Closed (`Read_failed (Failure _)) when reason = `Read_failed -> ()
+          | Correlator.Closed `Closed when reason = `Closed -> ()
+          | _ -> Alcotest.fail "nlimit-ruzp: wrong terminal reason");
+          Alcotest.(check bool)
+            "nlimit-ruzp terminal exactly once" true
+            (Option.is_none (Eio.Stream.take_nonblocking (Correlator.notifications c)));
           if reason = `Closed then
             Alcotest.(check bool) "reader joined" true f.reader_cancelled;
           Correlator.close c))

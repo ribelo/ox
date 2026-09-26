@@ -4,6 +4,7 @@ type error =
   [ `Transport_closed of close_reason | `Write_failed of exn | `Timeout | `Id_exhausted ]
 
 type stats = { pending : int; buffered_notifications : int; dropped_notifications : int }
+type 'msg notification = Message of 'msg | Closed of close_reason
 
 type 'msg slot = {
   reply : ('msg, error) result Eio.Promise.t;
@@ -17,7 +18,7 @@ type 'msg t = {
   set_id : 'msg -> int -> 'msg;
   session : 'msg -> string option;
   slots : (int * string option, 'msg slot) Hashtbl.t;
-  notices : 'msg Eio.Stream.t;
+  notices : 'msg notification Eio.Stream.t;
   max_notifications : int;
   mutable dropped : int;
   mutable next_id : int;
@@ -37,7 +38,11 @@ let settle t reason =
         (fun _ slot ->
           Eio.Promise.resolve slot.resolve (Error (`Transport_closed reason)))
         t.slots;
-      Hashtbl.clear t.slots
+      Hashtbl.clear t.slots;
+      if Eio.Stream.length t.notices = t.max_notifications then (
+        ignore (Eio.Stream.take_nonblocking t.notices);
+        t.dropped <- t.dropped + 1);
+      Eio.Stream.add t.notices (Closed reason)
 
 let stats t =
   {
@@ -52,18 +57,21 @@ let offer t message =
   if Eio.Stream.length t.notices = t.max_notifications then (
     ignore (Eio.Stream.take_nonblocking t.notices);
     t.dropped <- t.dropped + 1);
-  Eio.Stream.add t.notices message
+  Eio.Stream.add t.notices (Message message)
 
 let route t message =
-  match t.id message with
-  | Some id -> (
-      let key = (id, t.session message) in
-      match Hashtbl.find_opt t.slots key with
-      | Some slot ->
-          Hashtbl.remove t.slots key;
-          Eio.Promise.resolve slot.resolve (Ok message)
+  match t.closed with
+  | Some _ -> ()
+  | None -> (
+      match t.id message with
+      | Some id -> (
+          let key = (id, t.session message) in
+          match Hashtbl.find_opt t.slots key with
+          | Some slot ->
+              Hashtbl.remove t.slots key;
+              Eio.Promise.resolve slot.resolve (Ok message)
+          | None -> offer t message)
       | None -> offer t message)
-  | None -> offer t message
 
 let close t =
   settle t `Closed;

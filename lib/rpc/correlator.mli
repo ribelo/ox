@@ -10,6 +10,7 @@ type error =
   [ `Transport_closed of close_reason | `Write_failed of exn | `Timeout | `Id_exhausted ]
 
 type stats = { pending : int; buffered_notifications : int; dropped_notifications : int }
+type 'msg notification = Message of 'msg | Closed of close_reason
 type 'msg t
 
 val create :
@@ -37,11 +38,12 @@ val call :
     [create]. Timeout and external cancellation remove the slot; the latter propagates as
     interruption. No finalizers are installed. *)
 
-val notifications : 'msg t -> 'msg Eio.Stream.t
+val notifications : 'msg t -> 'msg notification Eio.Stream.t
 (** Bounded FIFO for unmatched, duplicate and late messages. Consumers may suspend in
     [Eio.Stream.take], which observes cancellation. A slow consumer loses oldest messages,
-    counted in [stats]; this stream does not signal EOF on close, so consumers must stop
-    under their own switch. No finalizer. *)
+    counted in [stats]. [Closed reason] is delivered exactly once, last, for EOF, read
+    failure, explicit close or switch teardown; consumers stop at [Closed]. No finalizer.
+*)
 
 val stats : 'msg t -> stats
 (** Snapshot of counters; does not suspend or install finalizers. *)

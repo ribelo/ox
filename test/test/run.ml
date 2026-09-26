@@ -67,21 +67,27 @@ let test_structural () =
     (Alcotest.equal e (Eta.Exit.Success 1) (Eta.Exit.Failure (Eta.Cause.Fail "e")))
 
 let test_census () =
-  (* ntest-8ug3 *)
+  (* ntest-8ug3 nlimit-gmur nlimit-9e19 nlimit-i8pu *)
   Eta_test.run (fun _ sw ->
       let p, resolve = Eio.Promise.create () in
-      let h =
-        Eta_test.fork_run ~sw (fun _child_sw ->
-            Eio.Promise.await p;
-            Ok ())
+      let done_, complete = Eio.Promise.create () in
+      let count =
+        Eta_test.with_census (fun () ->
+            Eio.Fiber.fork ~sw (fun () ->
+                Eio.Promise.await p;
+                Eio.Promise.resolve complete ());
+            Eio.Fiber.yield ())
       in
-      Eio.Fiber.yield ();
+      Alcotest.(check int) "plain Eio fork detected" 1 count;
       let detected =
         match Eta_test.assert_no_fibers_left () with exception _ -> true | () -> false
       in
-      Alcotest.(check bool) "a genuinely blocked fiber fails census" true detected;
+      Alcotest.(check bool) "untracked blocked fiber fails census" true detected;
+      Alcotest.(check int)
+        "unrelated running root excluded" 0
+        (Eta_test.with_census (fun () -> ()));
       Eio.Promise.resolve resolve ();
-      ignore (Eta_test.await h);
+      Eio.Promise.await done_;
       Eta_test.assert_no_fibers_left ())
 
 let test_flow () =
@@ -144,7 +150,10 @@ let test_package () =
   (* ntest-n53y *)
   Alcotest.(check bool)
     "eta_test functions link with eta and eio" true
-    (Alcotest.equal (Eta_test.cause Alcotest.int) (Eta.Cause.Fail 1) (Eta.Cause.Fail 1))
+    (Alcotest.equal (Eta_test.cause Alcotest.int) (Eta.Cause.Fail 1) (Eta.Cause.Fail 1));
+  Alcotest.(check int)
+    "runtime_events and eio.runtime_events linked" 0
+    (Eta_test.with_census (fun () -> ()))
 
 let () =
   Alcotest.run "eta_test"

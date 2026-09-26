@@ -22,16 +22,20 @@ val advance : Eio_mock.Clock.t -> Eta.Duration.t -> unit
 type ('a, 'e) handle
 
 val fork_run : sw:Eio.Switch.t -> (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) handle
-(** Starts [Eta.Scope.run] in [sw], recording the active fiber. External cancellation is
-    classified by Scope.run and cleanup is awaited. *)
+(** Starts [Eta.Scope.run] in [sw]. External cancellation is classified by Scope.run and
+    cleanup is awaited. *)
 
 val await : ('a, 'e) handle -> ('a, 'e) Eta.Exit.t
 (** Waits for the classified Exit; cancellation of the waiter propagates. *)
 
+val with_census : (unit -> 'a) -> int
+(** Count still-live Eio fibers created during the call. Events are drained before and
+    after the call; pre-existing fibers are excluded. Does not cancel fibers. *)
+
 val assert_no_fibers_left : unit -> unit
-(** Fails when a fiber started by [fork_run] is still active. This is a census of tracked
-    test fibers, not arbitrary Eio fibers. Does not cancel leaked fibers or run their
-    finalizers. *)
+(** Fails when any Eio fiber created since the current [run] began is still alive.
+    Includes forks outside [fork_run]; excludes the calling root fiber. A lost trace event
+    fails closed. Does not cancel fibers or run their finalizers. *)
 
 val cause : 'e Alcotest.testable -> 'e Eta.Cause.t Alcotest.testable
 

@@ -1,12 +1,19 @@
+(executable
+ (name signal_fixture)
+ (libraries eta_app eta_schema eta_observability eio))
+
 (test
  (name run)
- (deps ../../eta_app.opam)
+ (deps ../../eta_app.opam signal_fixture.exe)
  (libraries
   eta_app
   eta
   eta_schema
   eta_observability
   eta_test
+  eta_process
+  eio_main
+  eio.unix
   eio
   eio.mock
   cmdliner

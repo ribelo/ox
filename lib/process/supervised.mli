@@ -9,6 +9,7 @@ type 'e event =
   | Started of int
   | Exited of int * Child.exit
   | Gave_up of 'e reason Eta.Cause.t
+  | Stopped
 
 type 'e t
 
@@ -28,10 +29,11 @@ val generation : 'e t -> int
 val events : 'e t -> 'e event Eio.Stream.t
 (** Bounded to 32 events. Overflow drops the oldest event, never blocks the process
     worker, and increments [dropped]. Taking an empty stream suspends and observes
-    cancellation; taking an event runs no finalizer. *)
+    cancellation; taking an event runs no finalizer. [Stopped] is delivered exactly once,
+    last, after either [stop] or [Gave_up]; stop reading at [Stopped]. *)
 
 val dropped : 'e t -> int
 
 val stop : 'e t -> unit
-(** Idempotent, cancellation-protected, joins worker and child finalizers. The event
-    stream is not closed; consumers must stop waiting themselves. *)
+(** Idempotent, cancellation-protected, joins worker and child finalizers. Terminal
+    [Stopped] is enqueued before this returns. *)

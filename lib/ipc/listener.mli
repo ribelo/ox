@@ -1,6 +1,8 @@
-(** A private, one-line Unix socket listener. Pathname ownership assumes a private
-    namespace without hostile mutation by another process of the same UID; OCaml's
-    Unix.open_flag has no O_NOFOLLOW. *)
+(** nlimit-ylvw: a private, one-line Unix socket listener. Pathname ownership assumes a
+    private namespace without hostile mutation by another process of the same UID; OCaml's
+    Unix.open_flag has no O_NOFOLLOW. Same-user processes are trusted: ownership and
+    identity checks protect against stale state, accidental changes and other users, not
+    against a hostile same-user process. *)
 
 type policy = {
   peers : int;

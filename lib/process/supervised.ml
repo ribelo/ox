@@ -4,6 +4,7 @@ type 'e event =
   | Started of int
   | Exited of int * Child.exit
   | Gave_up of 'e reason Eta.Cause.t
+  | Stopped
 
 type 'e t = {
   mutable generation : int;
@@ -84,13 +85,20 @@ let start ~sw ~clock ~schedule ~spawn =
             in
             loop (Eta.Schedule.start schedule))
       in
-      (match run () with
-      | () -> Eio.Promise.resolve_ok finished_u ()
-      | exception Eio.Cancel.Cancelled _ -> Eio.Promise.resolve_ok finished_u ()
-      | exception ex ->
-          let bt = Printexc.get_raw_backtrace () in
-          emit t (Gave_up (Eta.Cause.Die (ex, bt)));
-          Eio.Promise.resolve_error finished_u ex);
+      let result =
+        match run () with
+        | () -> Ok ()
+        | exception Eio.Cancel.Cancelled _ -> Ok ()
+        | exception ex ->
+            let bt = Printexc.get_raw_backtrace () in
+            emit t (Gave_up (Eta.Cause.Die (ex, bt)));
+            Error ex
+      in
+      Eio.Cancel.protect (fun () ->
+          emit t Stopped;
+          match result with
+          | Ok () -> Eio.Promise.resolve_ok finished_u ()
+          | Error ex -> Eio.Promise.resolve_error finished_u ex);
       `Stop_daemon);
   Eio.Switch.on_release sw (fun () -> stop t);
   t

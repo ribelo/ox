@@ -28,7 +28,7 @@ A real fiber census through Eio's runtime events; a real-signal Door test throug
 ## Implementation Decisions
 
 - Census: `Runtime_events.start ()` in the test process, a cursor with callbacks on Eio's custom events (see `eio/core/trace.mli`: `create_fiber`, and the exit event), a counter keyed by fiber id; `with_census` snapshots before and after. If the pinned Eio does not emit an exit event, record that in the spec and count against `create_fiber` plus `Fiber` completion observed via `Runtime_events` "ring" of the fiber's context; stop if neither is available and report.
-- Real-signal test: a small test executable in `test/app/` built with `eta_app`; the test spawns it with `Child.spawn`, waits for a "ready" line on stdout, signals with `Eio.Process.signal`, asserts exit 0 for SIGTERM/SIGINT and the journal's stop line.
+- Real-signal test: a small test executable in `test/app/` built with `eta_app`; the test spawns it with `Child.spawn`, waits for a "ready" line on stdout, signals with `Child.signal` (which calls `Eio.Process.signal` on its retained process handle), asserts exit 0 for SIGTERM/SIGINT and the journal's stop line.
 - Stream terminal events are additive variants; `Stopped`/`Closed` is delivered exactly once, last.
 
 ## Testing Decisions
