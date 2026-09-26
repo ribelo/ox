@@ -1,0 +1,3 @@
+(test
+ (name run)
+ (libraries eta_rpc eta eta_test eio eio_main eio.mock alcotest))

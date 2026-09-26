@@ -71,3 +71,15 @@
   eta_schema
   (yojson (>= 2.0))
   (alcotest :with-test)))
+
+(package
+ (name eta_rpc)
+ (synopsis "Scoped request/reply correlation over message streams")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  (eta_test :with-test)
+  (eio_main :with-test)
+  (alcotest :with-test)))

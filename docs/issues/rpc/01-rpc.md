@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_rpc
 consumer: Leash milestone 1 (chrome-qnul, chrome-1yn9, chrome-2z2z) and milestone 2 (tab-9x5e)
 ---
@@ -37,6 +37,11 @@ CDP over a pipe is JSON messages with an `id`; replies arrive out of order, inte
 ## Testing Decisions
 
 - `test/rpc/` with `Eio_mock.Flow`-backed scripted reader/writer and a mock clock; every story cited by name.
+
+## Verification
+
+- `nix develop -c dune build @install` passed.
+- `nix develop -c dune test test/rpc` passed (6 tests).
 
 ## Out of Scope
 

@@ -1,0 +1,4 @@
+(library
+ (name eta_rpc)
+ (public_name eta_rpc)
+ (libraries eta eio))
