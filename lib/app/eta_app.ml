@@ -1,0 +1,106 @@
+open Eta
+module Env = Env
+module Status = Status
+module Config = Config
+
+let serve ~sw:_ ~publish statuses =
+  publish (fun () -> List.map (fun status -> status ()) statuses);
+  Eio.Fiber.await_cancel ()
+
+let stop_ids : Interrupt_id.t list ref Eio.Fiber.key = Eio.Fiber.create_key ()
+
+let request_stop ~sw id =
+  Option.iter (fun ids -> ids := id :: !ids) (Eio.Fiber.get stop_ids);
+  Eio.Switch.fail sw (Eio.Cancel.Cancelled (Interrupt_id.stop id))
+
+module type SERVICE = sig
+  type t
+  type config
+  type deps
+  type error
+  val create : sw:Eio.Switch.t -> config -> deps -> (t, error) result
+  val status : t -> Status.t
+end
+
+let render ~stop_ids stderr pp_err = function
+  | Exit.Success () -> 0
+  | Exit.Failure (Cause.Interrupt (Some id))
+    when List.exists (Interrupt_id.equal id) !stop_ids -> 0
+  | Exit.Failure (Cause.Fail err) ->
+      stderr (Format.asprintf "%a\n" pp_err err); 1
+  | Exit.Failure cause ->
+      stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause); 2
+
+let run_for_test ?on_switch ?(commands=[]) ~env ~journal ~name ~config ~pp_err
+    ~getenv ~read ~stderr ~stdout ~argv program =
+  let open Cmdliner in
+  let config_arg = Arg.(value & opt (some string) None & info ["config"] ~docv:"FILE" ~doc:"TOML configuration file.") in
+  let execute check file () =
+    let path = Config.path ~name ~config:file ~getenv in
+    match Config.load ~schema:config ~getenv ~read ~path with
+    | Error (`Config message) -> stderr (message ^ "\n"); 2
+    | Ok settings ->
+        if check then (match Eta_schema.encode_redacted config settings with
+          | Error issues -> stderr (String.concat "; " (List.map (fun issue ->
+              Eta_schema.render_issue issue ^ " (" ^ Eta_schema.issue_to_json_pointer issue ^ ")") issues) ^ "\n"); 2
+          | Ok value -> stdout (Eta_schema.Json.to_string value ^ "\n"); 0)
+        else (
+          let logger = Eta_observability.Logger.create ~service:name
+            ~clock:env#clock ~mono_clock:env#mono_clock ~reporter:journal () in
+          let requested = ref [] in
+          let outcome = Scope.run (fun sw ->
+            Eio.Fiber.with_binding stop_ids requested (fun () ->
+              Option.iter (fun f -> f sw) on_switch;
+              program { Env.base = env; logger } settings sw)) in
+          render ~stop_ids:requested stderr pp_err outcome) in
+  let run_term = Term.(const (execute false) $ config_arg) in
+  let check_term = Term.(const (execute true) $ config_arg) in
+  let run_cmd = Cmd.v (Cmd.info "run" ~doc:"Start the program.") run_term in
+  let check_cmd = Cmd.v (Cmd.info "check" ~doc:"Validate and print redacted effective configuration.") check_term in
+  let config_cmd = Cmd.group (Cmd.info "config" ~doc:"Inspect configuration.") [check_cmd] in
+  let cmd = Cmd.group ~default:run_term (Cmd.info name ~doc:"Run the service.") (run_cmd :: config_cmd :: commands) in
+  let out_buffer = Buffer.create 256 and err_buffer = Buffer.create 256 in
+  let out_fmt = Format.formatter_of_buffer out_buffer and err_fmt = Format.formatter_of_buffer err_buffer in
+  let parsed = Cmd.eval_value ~catch:false ~env:getenv ~argv ~help:out_fmt ~err:err_fmt cmd in
+  Format.pp_print_flush out_fmt (); Format.pp_print_flush err_fmt ();
+  if Buffer.length out_buffer > 0 then stdout (Buffer.contents out_buffer);
+  if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
+  match parsed with
+  | Ok `Help | Ok `Version -> 0
+  | Error _ -> 2
+  | Ok (`Ok f) -> f ()
+
+let run ?commands ~name ~config ~pp_err program =
+  Eio_main.run (fun env ->
+    let signal = Atomic.make 0 in
+    let signal_changed = Eio.Condition.create () in
+    let on_signal signo =
+      Atomic.set signal signo;
+      Eio.Condition.broadcast signal_changed in
+    (* Eio condition variables are domain-local, so this single-domain Door
+       installs its handler with Sys.signal rather than Sys.Safe.signal, which
+       requires a portable callback. *)
+    let set_signal = (Sys.signal [@alert "-unsafe_multidomain"]) in
+    let old_int = set_signal Sys.sigint (Sys.Signal_handle on_signal) in
+    let old_term = set_signal Sys.sigterm (Sys.Signal_handle on_signal) in
+    Fun.protect ~finally:(fun () ->
+      ignore (set_signal Sys.sigint old_int);
+      ignore (set_signal Sys.sigterm old_term)) (fun () ->
+      let on_switch sw =
+        let sigint_id = Interrupt_id.create () and sigterm_id = Interrupt_id.create () in
+        Eio.Fiber.fork_daemon ~sw (fun () ->
+          (* loop_no_mutex guards the atomic check / await_no_mutex boundary
+             against a signal arriving just before the fiber suspends. *)
+          let signo = Eio.Condition.loop_no_mutex signal_changed (fun () ->
+            match Atomic.get signal with 0 -> None | signo -> Some signo) in
+          request_stop ~sw (if signo = Sys.sigint then sigint_id else sigterm_id);
+          `Stop_daemon) in
+      let read path = try
+        Ok (Eio.Path.load Eio.Path.(env#fs / path))
+        with Eio.Io _ as e -> Error (Printexc.to_string e) in
+      run_for_test ?commands ~on_switch ~env
+        ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
+        ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
+        ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
+        ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
+        ~argv:Sys.argv program))

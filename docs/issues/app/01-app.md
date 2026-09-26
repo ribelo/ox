@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app
 consumer: Leash milestone 1 (chrome-fuao, chrome-b288, chrome-fwnu) and milestone 6 (svc-dit8, svc-ljl3, svc-kzt6, svc-p67t, svc-gxhu, svc-tkor)
 ---
@@ -49,6 +49,9 @@ Every service needs the same twenty things at its edge — build the Eio environ
 ## Out of Scope
 
 A control socket (separate spec `ipc`), hot reload, daemonization, metrics export.
+
+Verification: `nix develop -c dune build @install` and `nix develop -c dune test` passed for the full tree.
+Verification: `nix develop -c dune test test/app` passed ten story-linked Door, Service, config, status, CLI, and interruption tests.
 
 ## Further Notes
 

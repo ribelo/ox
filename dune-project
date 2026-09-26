@@ -125,3 +125,19 @@
   (eta_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_app)
+ (synopsis "One Door for Eio services, CLI and schema-validated TOML config")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_schema
+  eta_observability
+  eio
+  eio_main
+  cmdliner
+  toml
+  (eta_test :with-test)
+  (alcotest :with-test)))
