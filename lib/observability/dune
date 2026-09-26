@@ -1,6 +1,5 @@
 (library
  (name eta_observability)
  (public_name eta_observability)
- (synopsis
-  "Structured logging with fiber-local fields and journal output")
+ (synopsis "Structured logging with fiber-local fields and journal output")
  (libraries eta eio eta_json mtime))

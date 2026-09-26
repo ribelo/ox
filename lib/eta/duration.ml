@@ -2,15 +2,14 @@ type t = { ms : int } [@@unboxed]
 
 let zero = { ms = 0 }
 let clamp_nonnegative n = if n < 0 then 0 else n
+
 let checked_mul name n factor =
   if n <= 0 then 0
   else if factor <= 0 then invalid_arg name
   else if n > max_int / factor then invalid_arg name
   else n * factor
 
-let checked_add name a b =
-  if a > max_int - b then invalid_arg name else a + b
-
+let checked_add name a b = if a > max_int - b then invalid_arg name else a + b
 let ms n = { ms = clamp_nonnegative n }
 let seconds n = { ms = checked_mul "Duration.seconds" n 1_000 }
 let minutes n = { ms = checked_mul "Duration.minutes" n 60_000 }
@@ -23,6 +22,7 @@ let is_zero t = t.ms = 0
 let add a b = { ms = checked_add "Duration.add" a.ms b.ms }
 let ( + ) a b = add a b
 let subtract a b = ms (a.ms - b.ms)
+
 let times t n =
   if n <= 0 then zero
   else if t.ms > max_int / n then invalid_arg "Duration.times"
@@ -31,11 +31,13 @@ let times t n =
 let divide t by = if by = 0 then None else Some (ms (t.ms / by))
 let min a b = if a.ms <= b.ms then a else b
 let max a b = if a.ms >= b.ms then a else b
+
 let clamp ~min:min_ ~max:max_ t =
-  if min_.ms > max_.ms then invalid_arg "Duration.clamp"
-  else t |> max min_ |> min max_
+  if min_.ms > max_.ms then invalid_arg "Duration.clamp" else t |> max min_ |> min max_
+
 let between ~min:min_ ~max:max_ t = min_.ms <= t.ms && t.ms <= max_.ms
 let compare a b = Int.compare a.ms b.ms
+
 let scale t f =
   let f = if f < 0.0 then 0.0 else f in
   if Float.equal f 1.0 then t
@@ -49,23 +51,14 @@ let humanize t =
   if t.ms = 0 then "0"
   else
     let parts =
-      [
-        ("d", 86_400_000);
-        ("h", 3_600_000);
-        ("m", 60_000);
-        ("s", 1_000);
-        ("ms", 1);
-      ]
+      [ ("d", 86_400_000); ("h", 3_600_000); ("m", 60_000); ("s", 1_000); ("ms", 1) ]
     in
     let rec collect remaining acc = function
       | [] -> List.rev acc
       | (suffix, unit_ms) :: rest ->
           let value = remaining / unit_ms in
           let remaining = remaining mod unit_ms in
-          let acc =
-            if value = 0 then acc
-            else (string_of_int value ^ suffix) :: acc
-          in
+          let acc = if value = 0 then acc else (string_of_int value ^ suffix) :: acc in
           collect remaining acc rest
     in
     String.concat " " (collect t.ms [] parts)

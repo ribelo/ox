@@ -1,6 +1,4 @@
-type ('left, 'right) and_then_output =
-  | First_phase of 'left
-  | Second_phase of 'right
+type ('left, 'right) and_then_output = First_phase of 'left | Second_phase of 'right
 
 type (_, _) t =
   | Recurs : int -> ('input, int) t
@@ -14,24 +12,16 @@ type (_, _) t =
   | Elapsed : ('input, Duration.t) t
   | During : Duration.t -> ('input, Duration.t) t
   | Recur_until : ('input -> bool) -> ('input, 'input) t
-  | Both :
-      ('input, 'a) t * ('input, 'b) t
-      -> ('input, 'a * 'b) t
-  | Either :
-      ('input, 'a) t * ('input, 'b) t
-      -> ('input, 'a * 'b) t
+  | Both : ('input, 'a) t * ('input, 'b) t -> ('input, 'a * 'b) t
+  | Either : ('input, 'a) t * ('input, 'b) t -> ('input, 'a * 'b) t
   | And_then :
       ('input, 'left) t * ('input, 'right) t
       -> ('input, ('left, 'right) and_then_output) t
   | Modify_delay :
       ('output -> Duration.t -> Duration.t) * ('input, 'output) t
       -> ('input, 'output) t
-  | While_output :
-      ('output -> bool) * ('input, 'output) t
-      -> ('input, 'output) t
-  | Jittered :
-      ('input, 'output) t * float * float
-      -> ('input, 'output) t
+  | While_output : ('output -> bool) * ('input, 'output) t -> ('input, 'output) t
+  | Jittered : ('input, 'output) t * float * float -> ('input, 'output) t
   | Named : ('input, 'output) t * string -> ('input, 'output) t
 
 type ('input, 'output) metadata = {
@@ -53,18 +43,17 @@ let advance_ordinal n =
   if n = max_int then invalid_arg "Schedule: ordinal overflow" else n + 1
 
 let recurs n =
-  if n = max_int then
-    invalid_arg "Schedule.recurs: count must be < max_int"
+  if n = max_int then invalid_arg "Schedule.recurs: count must be < max_int"
   else Recurs (max 0 n)
+
 let forever = Forever
 let spaced d = Spaced d
 let fixed d = Fixed d
 let windowed d = Windowed d
+
 let require_finite_nonnegative ~where value =
-  if not (Float.is_finite value) then
-    invalid_arg (where ^ ": expected finite nonnegative")
-  else if value < 0.0 then
-    invalid_arg (where ^ ": expected finite nonnegative")
+  if not (Float.is_finite value) then invalid_arg (where ^ ": expected finite nonnegative")
+  else if value < 0.0 then invalid_arg (where ^ ": expected finite nonnegative")
 
 let exponential ?(factor = 2.0) initial =
   require_finite_nonnegative ~where:"Schedule.exponential factor" factor;
@@ -89,8 +78,7 @@ let jittered ?(min = 0.8) ?(max = 1.2) self =
 
 let named name s = Named (s, name)
 
-let rec pp :
-    type input output. Format.formatter -> (input, output) t -> unit =
+let rec pp : type input output. Format.formatter -> (input, output) t -> unit =
  fun ppf -> function
   | Recurs n -> Format.fprintf ppf "Recurs(%d)" n
   | Forever -> Format.fprintf ppf "Forever"
@@ -136,8 +124,7 @@ let exponential_scale initial factor index =
 let add_capped a b =
   let a_ms = Duration.to_ms a in
   let b_ms = Duration.to_ms b in
-  if a_ms > max_int - b_ms then Duration.ms max_int
-  else Duration.ms (a_ms + b_ms)
+  if a_ms > max_int - b_ms then Duration.ms max_int else Duration.ms (a_ms + b_ms)
 
 let add_ms_capped a b = if a > max_int - b then max_int else a + b
 
@@ -218,65 +205,60 @@ let map_continue_delay decision f =
 let default_random () = Random.State.make_self_init ()
 
 type (_, _) state =
-  | Driver_recurs : {
-      times : int;
-      count : int;
-      meta : meta_state;
-    } -> ('input, int) state
-  | Driver_forever : {
-      count : int;
-      meta : meta_state;
-    } -> ('input, int) state
+  | Driver_recurs : { times : int; count : int; meta : meta_state } -> ('input, int) state
+  | Driver_forever : { count : int; meta : meta_state } -> ('input, int) state
   | Driver_spaced : {
       duration : Duration.t;
       count : int;
       meta : meta_state;
-    } -> ('input, int) state
+    }
+      -> ('input, int) state
   | Driver_fixed : {
       interval : Duration.t;
       count : int;
       last_run_ms : int option;
       meta : meta_state;
-    } -> ('input, int) state
+    }
+      -> ('input, int) state
   | Driver_windowed : {
       interval : Duration.t;
       count : int;
       meta : meta_state;
-    } -> ('input, int) state
+    }
+      -> ('input, int) state
   | Driver_exponential : {
       initial : Duration.t;
       factor : float;
       index : int;
       meta : meta_state;
-    } -> ('input, Duration.t) state
+    }
+      -> ('input, Duration.t) state
   | Driver_fibonacci : {
       previous : Duration.t;
       current : Duration.t;
       meta : meta_state;
-    } -> ('input, Duration.t) state
+    }
+      -> ('input, Duration.t) state
   | Driver_linear : {
       initial : Duration.t;
       step : Duration.t;
       index : int;
       meta : meta_state;
-    } -> ('input, Duration.t) state
-  | Driver_elapsed : {
-      meta : meta_state;
-    } -> ('input, Duration.t) state
+    }
+      -> ('input, Duration.t) state
+  | Driver_elapsed : { meta : meta_state } -> ('input, Duration.t) state
   | Driver_during : {
       duration : Duration.t;
       meta : meta_state;
-    } -> ('input, Duration.t) state
+    }
+      -> ('input, Duration.t) state
   | Driver_recur_until : {
       predicate : 'input -> bool;
       meta : meta_state;
-    } -> ('input, 'input) state
-  | Driver_both :
-      ('input, 'a) phase * ('input, 'b) phase
-      -> ('input, 'a * 'b) state
-  | Driver_either :
-      ('input, 'a) phase * ('input, 'b) phase
-      -> ('input, 'a * 'b) state
+    }
+      -> ('input, 'input) state
+  | Driver_both : ('input, 'a) phase * ('input, 'b) phase -> ('input, 'a * 'b) state
+  | Driver_either : ('input, 'a) phase * ('input, 'b) phase -> ('input, 'a * 'b) state
   | Driver_and_then_first :
       ('input, 'left) state * ('input, 'right) t
       -> ('input, ('left, 'right) and_then_output) state
@@ -289,25 +271,20 @@ type (_, _) state =
   | Driver_while_output :
       ('output -> bool) * ('input, 'output) state
       -> ('input, 'output) state
-  | Driver_jittered :
-      ('input, 'output) state * float * float
-      -> ('input, 'output) state
+  | Driver_jittered : ('input, 'output) state * float * float -> ('input, 'output) state
   | Driver_named : ('input, 'output) state -> ('input, 'output) state
 
 and (_, _) phase =
   | Active : ('input, 'output) state -> ('input, 'output) phase
   | Finished : ('input, 'output) metadata -> ('input, 'output) phase
 
-let rec state_of_schedule :
-    type input output. (input, output) t -> (input, output) state =
- function
+let rec state_of_schedule : type input output. (input, output) t -> (input, output) state
+    = function
   | Recurs n -> Driver_recurs { times = n; count = 0; meta = initial_meta_state }
   | Forever -> Driver_forever { count = 0; meta = initial_meta_state }
-  | Spaced duration ->
-      Driver_spaced { duration; count = 0; meta = initial_meta_state }
+  | Spaced duration -> Driver_spaced { duration; count = 0; meta = initial_meta_state }
   | Fixed interval ->
-      Driver_fixed
-        { interval; count = 0; last_run_ms = None; meta = initial_meta_state }
+      Driver_fixed { interval; count = 0; last_run_ms = None; meta = initial_meta_state }
   | Windowed interval ->
       Driver_windowed { interval; count = 0; meta = initial_meta_state }
   | Exponential (initial, factor) ->
@@ -319,10 +296,8 @@ let rec state_of_schedule :
       Driver_linear { initial; step; index = 0; meta = initial_meta_state }
   | Elapsed -> Driver_elapsed { meta = initial_meta_state }
   | During duration -> Driver_during { duration; meta = initial_meta_state }
-  | Recur_until predicate ->
-      Driver_recur_until { predicate; meta = initial_meta_state }
-  | Both (a, b) ->
-      Driver_both (Active (state_of_schedule a), Active (state_of_schedule b))
+  | Recur_until predicate -> Driver_recur_until { predicate; meta = initial_meta_state }
+  | Both (a, b) -> Driver_both (Active (state_of_schedule a), Active (state_of_schedule b))
   | Either (a, b) ->
       Driver_either (Active (state_of_schedule a), Active (state_of_schedule b))
   | And_then (a, b) -> Driver_and_then_first (state_of_schedule a, b)
@@ -334,9 +309,11 @@ let rec state_of_schedule :
 let current_metadata = function Continue metadata | Done metadata -> metadata
 let output_of_decision decision = (current_metadata decision).output
 
-let combine_metadata :
-    type input previous output.
-    (input, previous) metadata -> output:output -> delay:Duration.t -> (input, output) metadata =
+let combine_metadata : type input previous output.
+    (input, previous) metadata ->
+    output:output ->
+    delay:Duration.t ->
+    (input, output) metadata =
  fun basis ~output ~delay ->
   {
     input = basis.input;
@@ -350,12 +327,9 @@ let combine_metadata :
   }
 
 let step_result_phase decision state =
-  match decision with
-  | Continue _ -> Active state
-  | Done metadata -> Finished metadata
+  match decision with Continue _ -> Active state | Done metadata -> Finished metadata
 
-let rec step_phase :
-    type input output.
+let rec step_phase : type input output.
     Random.State.t ->
     now_ms:int ->
     input:input ->
@@ -367,8 +341,7 @@ let rec step_phase :
       let decision, state = step_state random ~now_ms ~input state in
       (decision, step_result_phase decision state)
 
-and step_state :
-    type input output.
+and step_state : type input output.
     Random.State.t ->
     now_ms:int ->
     input:input ->
@@ -414,8 +387,7 @@ and step_state :
               (delay_ms, Some next_run_ms)
       in
       ( continue input_meta ~output:count ~delay:(Duration.ms delay_ms),
-        Driver_fixed
-          { interval; count = advance_ordinal count; last_run_ms; meta } )
+        Driver_fixed { interval; count = advance_ordinal count; last_run_ms; meta } )
   | Driver_windowed { interval; count; meta } ->
       let input_meta, meta = next_input_metadata ~now_ms ~input meta in
       let interval_ms = Duration.to_ms interval in
@@ -497,11 +469,9 @@ and step_state :
               (combine_metadata left_metadata ~output
                  ~delay:(Duration.min left_metadata.delay right_metadata.delay))
         | Continue left_metadata, Done _ ->
-            Continue
-              (combine_metadata left_metadata ~output ~delay:left_metadata.delay)
+            Continue (combine_metadata left_metadata ~output ~delay:left_metadata.delay)
         | Done _, Continue right_metadata ->
-            Continue
-              (combine_metadata right_metadata ~output ~delay:right_metadata.delay)
+            Continue (combine_metadata right_metadata ~output ~delay:right_metadata.delay)
         | Done left_metadata, Done _ ->
             Done (combine_metadata left_metadata ~output ~delay:Duration.zero)
       in
@@ -521,8 +491,7 @@ and step_state :
         match decision with
         | Continue metadata ->
             Continue { metadata with output = Second_phase metadata.output }
-        | Done metadata ->
-            Done { metadata with output = Second_phase metadata.output }
+        | Done metadata -> Done { metadata with output = Second_phase metadata.output }
       in
       (decision, Driver_and_then_second state)
   | Driver_modify_delay (f, inner) ->
@@ -544,9 +513,7 @@ and step_state :
       let decision, inner = step_state random ~now_ms ~input inner in
       let decision =
         map_continue_delay decision @@ fun delay ->
-        let factor =
-          lo +. ((hi -. lo) *. Random.State.float random 1.0)
-        in
+        let factor = lo +. ((hi -. lo) *. Random.State.float random 1.0) in
         scale_capped delay factor
       in
       (decision, Driver_jittered (inner, lo, hi))
@@ -564,9 +531,7 @@ let start ?random schedule =
   { random; phase = Active (state_of_schedule schedule) }
 
 let step ~now_ms ~input driver =
-  let decision, phase =
-    step_phase driver.random ~now_ms ~input driver.phase
-  in
+  let decision, phase = step_phase driver.random ~now_ms ~input driver.phase in
   (decision, { driver with phase })
 
 let next ~now_ms ~input driver =

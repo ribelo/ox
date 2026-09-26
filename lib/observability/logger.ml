@@ -1,6 +1,7 @@
 type level = Debug | Info | Warn | Error
 
 let rank = function Debug -> 0 | Info -> 1 | Warn -> 2 | Error -> 3
+
 let level_to_string = function
   | Debug -> "debug"
   | Info -> "info"
@@ -73,8 +74,8 @@ let iso8601_of_epoch_ms ms =
   let minutes = rest mod 3_600_000 / 60_000 in
   let seconds = rest mod 60_000 / 1_000 in
   let millis = rest mod 1_000 in
-  Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" year month day hours
-    minutes seconds millis
+  Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" year month day hours minutes
+    seconds millis
 
 let json_object_of_fields fields =
   Eta_json.object_
@@ -119,28 +120,30 @@ module Reporter = struct
           Eio.Mutex.use_ro mutex (fun () -> Eio.Flow.copy_string line sink));
     }
 
-  let writer write_line =
-    { emit = (fun record -> write_line (to_string record ^ "\n")) }
+  let writer write_line = { emit = (fun record -> write_line (to_string record ^ "\n")) }
 end
 
 module Memory = struct
   type t = { mutable kept : record list }
 
   let create () = { kept = [] }
-  let reporter memory = { Reporter.emit = (fun record -> memory.kept <- record :: memory.kept) }
+
+  let reporter memory =
+    { Reporter.emit = (fun record -> memory.kept <- record :: memory.kept) }
+
   let records memory = List.rev memory.kept
 
   let matches ?level ?field record =
     (match level with None -> true | Some level -> record.level = level)
-    && (match field with
-       | None -> true
-       | Some (name, expected) -> (
-           match List.assoc_opt name record.fields with
-           | Some value -> String.equal (value_to_string value) expected
-           | None -> false))
+    &&
+    match field with
+    | None -> true
+    | Some (name, expected) -> (
+        match List.assoc_opt name record.fields with
+        | Some value -> String.equal (value_to_string value) expected
+        | None -> false)
 
-  let find ?level ?field memory =
-    List.filter (matches ?level ?field) (records memory)
+  let find ?level ?field memory = List.filter (matches ?level ?field) (records memory)
 end
 
 type limit = { max : int; window : Eta.Duration.t }
@@ -188,7 +191,7 @@ let enabled t level = rank level >= rank t.min_level
 let emit t level ~msg ~fields =
   let record =
     {
-      ts = (t.now) ();
+      ts = t.now ();
       level;
       service = t.service;
       msg;
@@ -210,7 +213,7 @@ let admit t limit msg =
   match limit with
   | None -> true
   | Some { max; window } ->
-      let now = (t.mono_now) () in
+      let now = t.mono_now () in
       let state =
         match Hashtbl.find_opt t.windows msg with
         | Some state -> state
@@ -219,7 +222,9 @@ let admit t limit msg =
             Hashtbl.replace t.windows msg state;
             state
       in
-      if milliseconds_between state.window_start now >= float_of_int (Eta.Duration.to_ms window)
+      if
+        milliseconds_between state.window_start now
+        >= float_of_int (Eta.Duration.to_ms window)
       then begin
         state.window_start <- now;
         state.window_count <- 0
@@ -239,22 +244,21 @@ let warn t ?fields ?limit msg = log t Warn ~msg ?fields ?limit ()
 let error t ?fields ?limit msg = log t Error ~msg ?fields ?limit ()
 
 let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
-  let started = (t.mono_now) () in
+  let started = t.mono_now () in
   let pp_err =
     match pp_err with
     | Some pp_err -> pp_err
-    | None -> (fun fmt _ -> Format.pp_print_string fmt "<error>")
+    | None -> fun fmt _ -> Format.pp_print_string fmt "<error>"
   in
   let summarize cause = Format.asprintf "%a" (Eta.Cause.pp_compact pp_err) cause in
   emit_if_enabled t level ~msg ~fields:(("event", String "start") :: fields);
   let finish outcome exit_level extra =
-    let elapsed_ms = int_of_float (milliseconds_between started ((t.mono_now) ())) in
+    let elapsed_ms = int_of_float (milliseconds_between started (t.mono_now ())) in
     emit_if_enabled t exit_level ~msg
       ~fields:
         (("event", String "end")
         :: ("elapsed_ms", Int elapsed_ms)
-        :: ("outcome", String outcome)
-        :: (extra @ fields))
+        :: ("outcome", String outcome) :: (extra @ fields))
   in
   match f () with
   | Ok value ->

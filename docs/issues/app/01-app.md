@@ -12,7 +12,7 @@ Every service needs the same twenty things at its edge — build the Eio environ
 
 ## Solution
 
-`eta_app`: `Eta_app.run`, the Door; `Eta_app.SERVICE`, the module type every Service implements; `Status`; `Eta_app.serve`, which blocks until stop and answers status; and config decoding through `eta_schema` with declared environment overrides.
+`eta_app`: `Eta_app.run`, the Door; `Eta_app.SERVICE`, the module type every Service implements; `Status`; `Eta_app.status_query`, which composes status thunks into one query, and `Eta_app.serve`, which blocks until stop; and config decoding through `eta_schema` with declared environment overrides.
 
 ## User Stories
 
@@ -21,7 +21,7 @@ Every service needs the same twenty things at its edge — build the Eio environ
 3. As an operator, I want a typed failure to print its `pp_err` rendering and exit 1, and a defect or composite Cause to print the full `Cause.pp` rendering and exit 2, so that a crash never leaves an empty journal. ^napp-f7d6
 4. As a service author, I want `SERVICE` to be `type t`, `type config`, `type deps`, `type error`, `create : sw:Switch.t -> config -> deps -> (t, error) result`, `status : t -> Status.t`, so that every long-lived part of a service has one shape. ^napp-qg7n
 5. As a service author, I want `Status.t` to be a small structured value (name, state as `Ok | Degraded of string | Failed of string`, and key-value details), so that status is comparable across services. ^napp-pn0a
-6. As a service author, I want `Eta_app.serve ~sw statuses` to block until the program is interrupted and, while blocked, answer a status query function composed from the given thunks, so that the process stays up and reports truthfully. ^napp-kq3b
+6. As a service author, I want `Eta_app.status_query : (unit -> Status.t) list -> (unit -> Status.t list)` to compose status thunks as a plain value, and `Eta_app.serve ~sw ()` to only block until the program is interrupted, so that a Service created before serving can hold the query and the process stays up and reports truthfully. ^napp-kq3b
 7. As an operator, I want config read from a TOML file whose path comes from `--config` or `$XDG_CONFIG_HOME/<name>/config.toml`, decoded through an `eta_schema` schema, so that config is validated before anything starts. ^napp-2aa6
 8. As an operator, I want unknown keys, missing required keys and wrong types reported with a JSON-pointer location and the process to exit 2 without starting, so that misconfiguration is obvious. ^napp-yplu
 9. As an operator, I want the schema to declare which fields an environment variable may override (`OPENROUTER_API_KEY` over `[models].api_key`), applied after the file, so that secrets never need to be in a file. ^napp-tuvw
@@ -35,10 +35,10 @@ Every service needs the same twenty things at its edge — build the Eio environ
 
 - Exit codes: 0 clean or interrupted, 1 typed failure, 2 defect/composite/config error. (Differs from v1's 130 on purpose: SIGTERM is the normal way a service stops.)
 - Signal handling: `Eio_unix` signal → cancel the root Switch with an `Interrupt_id` named "signal"; `Scope.run` at the root classifies it; the Door treats `Interrupt (Some signal_id)` as clean.
-- The program's Switch is the root Switch; Services acquire against it; `serve` awaits a Promise resolved by the signal handler.
+- The program's Switch is the root Switch; Services acquire against it; `serve` blocks in `Eio.Fiber.await_cancel`, so the Door's signal monitor ends the program by cancelling that switch.
 - Config pipeline: file → TOML (`toml` opam) → JSON (`eta_json`) → `eta_schema` decode → env overrides declared in the schema → typed record. Secrets are fields marked in the schema; `config check` prints them as `<redacted>`.
 - Cmdliner provides `run`, `config check`, `--config`; a consumer may add subcommands through a hook.
-- Status is a value; `serve` composes thunks so status is read at query time.
+- Status is a value; `Eta_app.status_query` composes the thunks into one query, so status is read at call time and a Service can hold the query before `serve` blocks.
 
 ## Testing Decisions
 
@@ -56,3 +56,5 @@ Verification: `nix develop -c dune test test/app` passed ten story-linked Door, 
 ## Further Notes
 
 The systemd unit for a consumer sets nothing special: exit 0 on stop is the point of napp-78pf.
+
+Story ^napp-kq3b's `serve ~publish` shape is superseded by `docs/issues/review-fixes-1/01-review-fixes-1.md` (^nfix-j678): the query is composed by `Eta_app.status_query` as a plain value and `serve ~sw ()` only blocks until interrupted.

@@ -18,8 +18,7 @@ let json_testable =
 
 let expect_ok label = function
   | Ok value -> value
-  | Error issues ->
-      Alcotest.failf "%s: %s" label (Eta_schema.render_issues issues)
+  | Error issues -> Alcotest.failf "%s: %s" label (Eta_schema.render_issues issues)
 
 let decode_ok ?(name = "decode") schema external_json =
   expect_ok name (Eta_schema_yojson.decode_result schema external_json)
@@ -31,15 +30,13 @@ let json_string value =
   match Eta_schema.Json.string value with
   | Ok json -> json
   | Error issues ->
-      Alcotest.failf "invalid JSON string fixture: %s"
-        (Eta_schema.render_issues issues)
+      Alcotest.failf "invalid JSON string fixture: %s" (Eta_schema.render_issues issues)
 
 let json_object fields =
   match Eta_schema.Json.object_ fields with
   | Ok json -> json
   | Error issues ->
-      Alcotest.failf "invalid JSON object fixture: %s"
-        (Eta_schema.render_issues issues)
+      Alcotest.failf "invalid JSON object fixture: %s" (Eta_schema.render_issues issues)
 
 (* ^njson-35ih ^njson-3ph9: every Yojson shape crosses the bridge unchanged. *)
 let test_round_trip () =
@@ -66,8 +63,7 @@ let test_reject_malformed_external_data () =
   let rejected label external_json =
     match Eta_schema_yojson.of_yojson external_json with
     | Ok _ -> Alcotest.failf "%s: expected adapter rejection" label
-    | Error issues ->
-        Alcotest.(check bool) (label ^ " reports issues") true (issues <> [])
+    | Error issues -> Alcotest.(check bool) (label ^ " reports issues") true (issues <> [])
   in
   List.iter
     (fun literal -> rejected ("intlit " ^ literal) (`Intlit literal))
@@ -89,16 +85,13 @@ let test_root_adapter_without_open () =
   | Ok 8 -> ()
   | Ok value -> Alcotest.failf "unexpected adapter int %d" value
   | Error issues ->
-      Alcotest.failf "adapter root decode failed: %s"
-        (Eta_schema.render_issues issues)
+      Alcotest.failf "adapter root decode failed: %s" (Eta_schema.render_issues issues)
 
 (* ^njson-3ph9: valid large literals stay exact and constructed trees serialize
    and parse back. *)
 let test_large_literal_and_serialization_roundtrip () =
   let literal = "18446744073709551616" in
-  let json =
-    expect_ok "large literal" (Eta_schema_yojson.of_yojson (`Intlit literal))
-  in
+  let json = expect_ok "large literal" (Eta_schema_yojson.of_yojson (`Intlit literal)) in
   (match Eta_schema_yojson.to_yojson json with
   | `Intlit value -> Alcotest.(check string) "literal preserved" literal value
   | _ -> Alcotest.fail "large literal changed representation");
@@ -111,8 +104,7 @@ let test_large_literal_and_serialization_roundtrip () =
       ]
   in
   let parsed =
-    Eta_schema_yojson.of_yojson
-      (Yojson.Safe.from_string (Eta_schema.Json.to_string tree))
+    Eta_schema_yojson.of_yojson (Yojson.Safe.from_string (Eta_schema.Json.to_string tree))
   in
   match parsed with
   | Ok parsed ->
@@ -136,31 +128,35 @@ let test_adapter_issue_paths () =
   let pointer label external_json =
     Eta_schema.issue_to_json_pointer (adapter_issue label external_json)
   in
-  Alcotest.(check string) "root pointer" ""
-    (pointer "root" (`Float Float.infinity));
-  Alcotest.(check string) "nested array pointer" "/0/1"
+  Alcotest.(check string) "root pointer" "" (pointer "root" (`Float Float.infinity));
+  Alcotest.(check string)
+    "nested array pointer" "/0/1"
     (pointer "nested array" (`List [ `List [ `Int 0; `Float Float.infinity ] ]));
-  Alcotest.(check string) "field plus index pointer" "/a~1b/1"
+  Alcotest.(check string)
+    "field plus index pointer" "/a~1b/1"
     (pointer "field plus index" (`Assoc [ ("a/b", `List [ `Int 0; `Tuple [] ]) ]));
-  Alcotest.(check string) "tilde field pointer" "/a~0b"
+  Alcotest.(check string)
+    "tilde field pointer" "/a~0b"
     (pointer "tilde field" (`Assoc [ ("a~b", `Intlit "01") ]));
-  Alcotest.(check string) "nonzero index pointer" "/2"
+  Alcotest.(check string)
+    "nonzero index pointer" "/2"
     (pointer "nonzero index" (`List [ `Int 0; `Int 1; `String "\xff" ]));
-  Alcotest.(check string) "three level pointer" "/0/a/1/0"
+  Alcotest.(check string)
+    "three level pointer" "/0/a/1/0"
     (pointer "three levels"
        (`List [ `Assoc [ ("a", `List [ `Int 0; `List [ `String "\xff" ] ]) ] ]));
-  Alcotest.(check string) "slash and tilde name pointer" "/a~1b~0c"
+  Alcotest.(check string)
+    "slash and tilde name pointer" "/a~1b~0c"
     (pointer "slash and tilde" (`Assoc [ ("a/b~c", `Variant ("v", None)) ]));
-  Alcotest.(check string) "nan pointer" "/0/1"
+  Alcotest.(check string)
+    "nan pointer" "/0/1"
     (pointer "nan" (`List [ `List [ `Int 0; `Float Float.nan ] ]));
   match
-    Eta_schema_yojson.of_yojson
-      (`List [ `Assoc [ ("ok", `Int 1); ("bad\xff", `Int 2) ] ])
+    Eta_schema_yojson.of_yojson (`List [ `Assoc [ ("ok", `Int 1); ("bad\xff", `Int 2) ] ])
   with
   | Error [ { path = [ Index 0; Field "bad\xff" ]; _ } ] -> ()
   | Error issues ->
-      Alcotest.failf "unexpected object name issues: %s"
-        (Eta_schema.render_issues issues)
+      Alcotest.failf "unexpected object name issues: %s" (Eta_schema.render_issues issues)
   | Ok _ -> Alcotest.fail "expected object name rejection"
 
 (* ^njson-fib9 ^njson-3ph9: ordinary schema decoding already supplies nested
@@ -168,13 +164,13 @@ let test_adapter_issue_paths () =
 let test_schema_rejection_path_is_not_double_prefixed () =
   let schema = Eta_schema.array (Eta_schema.array Eta_schema.int) in
   match
-    Eta_schema_yojson.decode_result schema
-      (`List [ `List [ `Int 0; `String "bad" ] ])
+    Eta_schema_yojson.decode_result schema (`List [ `List [ `Int 0; `String "bad" ] ])
   with
   | Ok _ -> Alcotest.fail "expected schema rejection"
   | Error issues ->
       Alcotest.(check int) "schema issue count" 1 (List.length issues);
-      Alcotest.(check string) "schema pointer is not double prefixed" "/0/1"
+      Alcotest.(check string)
+        "schema pointer is not double prefixed" "/0/1"
         (Eta_schema.issue_to_json_pointer (List.hd issues))
 
 (* ^njson-3ph9: the text the schema module renders is one JSON document that
@@ -189,12 +185,12 @@ let test_rendered_json_parses_back () =
       ]
   in
   let parsed =
-    Eta_schema_yojson.of_yojson
-      (Yojson.Safe.from_string (Eta_schema.Json.to_string tree))
+    Eta_schema_yojson.of_yojson (Yojson.Safe.from_string (Eta_schema.Json.to_string tree))
   in
   match parsed with
   | Ok parsed ->
-      Alcotest.(check bool) "escaped document parses back" true
+      Alcotest.(check bool)
+        "escaped document parses back" true
         (Eta_schema.Json.equal tree parsed)
   | Error issues ->
       Alcotest.failf "rendered document did not parse back: %s"
@@ -203,13 +199,10 @@ let test_rendered_json_parses_back () =
 (* ^nschema-59sn: the encoder direction uses the same schema as the decoder and
    reports the field's pointer when it cannot encode a value. *)
 type tab_state = Opened | Closed | Unknown
-
 type tab = { id : string; state : tab_state }
 
 let tab_state_schema =
-  Eta_schema.enum ~name:"tab_state"
-    [ ("open", Opened); ("closed", Closed) ]
-    ~equal:( = )
+  Eta_schema.enum ~name:"tab_state" [ ("open", Opened); ("closed", Closed) ] ~equal:( = )
 
 let tab_schema =
   Eta_schema.record2 ~name:"tab"
@@ -220,19 +213,20 @@ let tab_schema =
 
 let test_encode_direction () =
   let encoded = encode_ok ~name:"tab" tab_schema { id = "t_1"; state = Opened } in
-  Alcotest.(check bool) "exact wire shape" true
+  Alcotest.(check bool)
+    "exact wire shape" true
     (Yojson.Safe.equal
        (`Assoc [ ("id", `String "t_1"); ("state", `String "open") ])
        encoded);
-  (match
-     Eta_schema_yojson.encode_result tab_schema { id = "t_1"; state = Unknown }
-   with
+  (match Eta_schema_yojson.encode_result tab_schema { id = "t_1"; state = Unknown } with
   | Ok _ -> Alcotest.fail "expected an encode failure"
   | Error issues ->
-      Alcotest.(check (list string)) "encode failure pointer" [ "/state" ]
+      Alcotest.(check (list string))
+        "encode failure pointer" [ "/state" ]
         (List.map Eta_schema.issue_to_json_pointer issues));
   (* Decoding what the encoder produced round-trips. *)
-  Alcotest.(check bool) "decode of the encoded value" true
+  Alcotest.(check bool)
+    "decode of the encoded value" true
     (match decode_ok ~name:"roundtrip" tab_schema encoded with
     | { id = "t_1"; state = Opened } -> true
     | _ -> false)
@@ -270,10 +264,9 @@ let test_leash_protocol_example () =
   Alcotest.(check string) "args.tab" "t_9xk…" decoded.args.tab;
   Alcotest.(check int) "args.index" 7 decoded.args.index;
   (* The same schema writes the request back, byte for byte. *)
-  let encoded =
-    encode_ok ~name:"leash example encode" leash_request_schema decoded
-  in
-  Alcotest.(check bool) "encode reproduces the example" true
+  let encoded = encode_ok ~name:"leash example encode" leash_request_schema decoded in
+  Alcotest.(check bool)
+    "encode reproduces the example" true
     (Yojson.Safe.equal external_json encoded);
   (* A wrong-typed field names its pointer. *)
   let bad =
@@ -283,8 +276,8 @@ let test_leash_protocol_example () =
   match Eta_schema_yojson.decode_result leash_request_schema bad with
   | Ok _ -> Alcotest.fail "expected a decode failure"
   | Error issues ->
-      Alcotest.(check (list string)) "pointer of the wrong-typed field"
-        [ "/args/index" ]
+      Alcotest.(check (list string))
+        "pointer of the wrong-typed field" [ "/args/index" ]
         (List.map Eta_schema.issue_to_json_pointer issues)
 
 let () =
@@ -292,23 +285,21 @@ let () =
     [
       ( "adapter",
         [
-          Alcotest.test_case "njson-35ih njson-3ph9 round trip" `Quick
-            test_round_trip;
+          Alcotest.test_case "njson-35ih njson-3ph9 round trip" `Quick test_round_trip;
           Alcotest.test_case "njson-35ih malformed external data" `Quick
             test_reject_malformed_external_data;
           Alcotest.test_case "njson-35ih root adapter without open" `Quick
             test_root_adapter_without_open;
-          Alcotest.test_case "njson-3ph9 large literal and serialization roundtrip"
-            `Quick test_large_literal_and_serialization_roundtrip;
+          Alcotest.test_case "njson-3ph9 large literal and serialization roundtrip" `Quick
+            test_large_literal_and_serialization_roundtrip;
           Alcotest.test_case "njson-fib9 njson-3ph9 adapter issue paths" `Quick
             test_adapter_issue_paths;
           Alcotest.test_case
-            "njson-fib9 njson-3ph9 schema rejection path is not double prefixed"
-            `Quick test_schema_rejection_path_is_not_double_prefixed;
+            "njson-fib9 njson-3ph9 schema rejection path is not double prefixed" `Quick
+            test_schema_rejection_path_is_not_double_prefixed;
           Alcotest.test_case "njson-3ph9 rendered JSON parses back" `Quick
             test_rendered_json_parses_back;
-          Alcotest.test_case "nschema-59sn encode direction" `Quick
-            test_encode_direction;
+          Alcotest.test_case "nschema-59sn encode direction" `Quick test_encode_direction;
           Alcotest.test_case "nschema-yyfu leash protocol example request" `Quick
             test_leash_protocol_example;
         ] );

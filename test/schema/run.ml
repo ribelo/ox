@@ -60,6 +60,7 @@ let json_string value = construction_ok ~name:"json_string" (Json.string value)
 let json_number value = construction_ok ~name:"json_number" (Json.number value)
 let json_intlit value = construction_ok ~name:"json_intlit" (Json.intlit value)
 let json_object fields = construction_ok ~name:"json_object" (Json.object_ fields)
+
 module User_id : sig
   type t = private string
 
@@ -75,8 +76,7 @@ end = struct
 
   let schema =
     Eta_schema.transform ~name:"user_id"
-      ~decode:(fun s ->
-        if valid s then Ok s else Error [ issue "Expected user_id" ])
+      ~decode:(fun s -> if valid s then Ok s else Error [ issue "Expected user_id" ])
       ~encode:value ~equal Eta_schema.string
 end
 
@@ -114,42 +114,22 @@ end = struct
 
   let schema =
     Eta_schema.transform ~name:"flag_key"
-      ~decode:(fun s ->
-        if valid s then Ok s else Error [ issue "Expected flag_key" ])
+      ~decode:(fun s -> if valid s then Ok s else Error [ issue "Expected flag_key" ])
       ~encode:value ~equal Eta_schema.string
 end
 
 type user_id = User_id.t
 type email = Email.t
 type flag_key = Flag_key.t
-
 type role = Admin | Analyst | Viewer
-
-type user = {
-  id : user_id;
-  name : string;
-  email : email option;
-  roles : role list;
-}
-
-type database = {
-  host : string;
-  port : int;
-  ssl : bool;
-}
+type user = { id : user_id; name : string; email : email option; roles : role list }
+type database = { host : string; port : int; ssl : bool }
 
 type auth =
   | Password of { min_length : int }
-  | OAuth of {
-      issuer : string;
-      client_id : string;
-    }
+  | OAuth of { issuer : string; client_id : string }
 
-type feature = {
-  key : flag_key;
-  enabled : bool;
-  rollout : int option;
-}
+type feature = { key : flag_key; enabled : bool; rollout : int option }
 
 type config = {
   service : string;
@@ -162,24 +142,12 @@ type config = {
 
 type event =
   | User_created of user
-  | Feature_toggled of {
-      key : flag_key;
-      enabled : bool;
-    }
-  | Metric of {
-      name : string;
-      value : float;
-    }
+  | Feature_toggled of { key : flag_key; enabled : bool }
+  | Metric of { name : string; value : float }
 
 type menu =
-  | Item of {
-      label : string;
-      route : string;
-    }
-  | Group of {
-      label : string;
-      children : menu list;
-    }
+  | Item of { label : string; route : string }
+  | Group of { label : string; children : menu list }
 
 let role_equal a b =
   match (a, b) with
@@ -187,8 +155,7 @@ let role_equal a b =
   | _ -> false
 
 let user_equal a b =
-  User_id.equal a.id b.id
-  && String.equal a.name b.name
+  User_id.equal a.id b.id && String.equal a.name b.name
   && Option.equal Email.equal a.email b.email
   && List.equal role_equal a.roles b.roles
 
@@ -209,8 +176,7 @@ let feature_equal a b =
 
 let config_equal a b =
   String.equal a.service b.service
-  && database_equal a.db b.db
-  && auth_equal a.auth b.auth
+  && database_equal a.db b.db && auth_equal a.auth b.auth
   && List.equal user_equal a.users b.users
   && List.equal feature_equal a.features b.features
   && Int.equal a.retry_after_ms b.retry_after_ms
@@ -236,7 +202,8 @@ let non_empty =
     Eta_schema.string
 
 let bounded_int ~min ~max =
-  Eta_schema.refine ~name:(Printf.sprintf "%d..%d" min max)
+  Eta_schema.refine
+    ~name:(Printf.sprintf "%d..%d" min max)
     (fun n ->
       if n >= min && n <= max then []
       else [ issue (Printf.sprintf "Expected %d <= value <= %d" min max) ])
@@ -256,8 +223,7 @@ let retry_after =
         | _ -> Error [ issue "Expected non-negative duration in ms" ]
       else Error [ issue "Expected duration like 500ms" ])
     ~encode:(fun n -> string_of_int n ^ "ms")
-    ~equal:Int.equal
-    Eta_schema.string
+    ~equal:Int.equal Eta_schema.string
 
 let database =
   Eta_schema.record3 ~name:"database"
@@ -313,9 +279,10 @@ let auth =
   in
   let oauth_encode = function
     | OAuth { issuer; client_id } ->
-        Ok (Some
-          (json_object
-             [ ("issuer", json_string issuer); ("clientId", json_string client_id) ]))
+        Ok
+          (Some
+             (json_object
+                [ ("issuer", json_string issuer); ("clientId", json_string client_id) ]))
     | _ -> Ok None
   in
   Eta_schema.tagged_union ~name:"auth" ~tag:"_tag"
@@ -340,7 +307,8 @@ let config =
 let event =
   let user_created_decode json =
     match Json.find "user" json with
-    | Some value -> Result.map (fun user -> User_created user) (Eta_schema.decode_result user value)
+    | Some value ->
+        Result.map (fun user -> User_created user) (Eta_schema.decode_result user value)
     | None -> Error [ issue ~path:[ Field "user" ] "Missing key" ]
   in
   let user_created_encode = function
@@ -382,13 +350,13 @@ let event =
   let metric_encode = function
     | Metric { name; value } ->
         Ok
-          (Some
-             (json_object [ ("name", json_string name); ("value", json_number value) ]))
+          (Some (json_object [ ("name", json_string name); ("value", json_number value) ]))
     | _ -> Ok None
   in
   Eta_schema.tagged_union ~name:"event" ~tag:"_tag"
     [
-      Eta_schema.case ~tag:"UserCreated" ~decode:user_created_decode ~encode:user_created_encode;
+      Eta_schema.case ~tag:"UserCreated" ~decode:user_created_decode
+        ~encode:user_created_encode;
       Eta_schema.case ~tag:"FeatureToggled" ~decode:feature_toggled_decode
         ~encode:feature_toggled_encode;
       Eta_schema.case ~tag:"Metric" ~decode:metric_decode ~encode:metric_encode;
@@ -403,13 +371,19 @@ let rec menu () =
   in
   let item_encode = function
     | Item { label; route } ->
-        Ok (Some (json_object [ ("label", json_string label); ("route", json_string route) ]))
+        Ok
+          (Some
+             (json_object [ ("label", json_string label); ("route", json_string route) ]))
     | _ -> Ok None
   in
   let group_decode json =
     match (Json.find "label" json, Json.find "children" json) with
     | Some (Json.String label), Some children_json -> (
-        match Eta_schema.decode_result (Eta_schema.array (Eta_schema.lazy_ menu)) children_json with
+        match
+          Eta_schema.decode_result
+            (Eta_schema.array (Eta_schema.lazy_ menu))
+            children_json
+        with
         | Ok children -> Ok (Group { label; children })
         | Error issues -> Error (at_field "children" issues))
     | _ -> Error [ issue "Invalid menu group" ]
@@ -419,8 +393,7 @@ let rec menu () =
         Result.map
           (fun children_json ->
             Some
-              (json_object
-                 [ ("label", json_string label); ("children", children_json) ]))
+              (json_object [ ("label", json_string label); ("children", children_json) ]))
           (Eta_schema.encode_result (Eta_schema.array (Eta_schema.lazy_ menu)) children)
     | _ -> Ok None
   in
@@ -479,9 +452,7 @@ let bad_config_json =
       ( "db",
         json_object
           [
-            ("host", json_string "");
-            ("port", Json.int 70000);
-            ("ssl", json_string "yes");
+            ("host", json_string ""); ("port", Json.int 70000); ("ssl", json_string "yes");
           ] );
       ("auth", json_object [ ("_tag", json_string "Unknown") ]);
       ("users", Json.array [ json_object [ ("id", json_string "bad") ] ]);
@@ -535,7 +506,9 @@ let sample_menu_json =
 
 let check_bool name value = if not value then failwith name
 let check_int name expected actual = if expected <> actual then failwith name
-let check_string name expected actual = if not (String.equal expected actual) then failwith name
+
+let check_string name expected actual =
+  if not (String.equal expected actual) then failwith name
 
 let check_option_string name expected actual =
   match (expected, actual) with
@@ -548,8 +521,7 @@ let test_config_roundtrip () =
   check_bool "retry transform" (decoded.retry_after_ms = 500);
   check_bool "feature key value"
     (String.equal "flag.new-checkout" (Flag_key.value (List.hd decoded.features).key));
-  check_bool "roundtrip json"
-    (Json.equal sample_config_json (encode_ok config decoded));
+  check_bool "roundtrip json" (Json.equal sample_config_json (encode_ok config decoded));
   check_bool "self equal" (Eta_schema.equal config decoded decoded)
 
 let test_many_issues () =
@@ -559,7 +531,9 @@ let test_many_issues () =
   in
   check_bool "all errors" (List.length issues >= 8);
   check_bool "nested user id path"
-    (List.exists (fun issue -> issue.path = [ Field "users"; Index 0; Field "id" ]) issues)
+    (List.exists
+       (fun issue -> issue.path = [ Field "users"; Index 0; Field "id" ])
+       issues)
 
 let test_tagged_and_recursive () =
   let event_value = decode_ok event sample_event_json in
@@ -646,8 +620,10 @@ let test_json_number_rendering () =
    stdlib-only package's tests. *)
 let unescape_json_string rendered =
   let length = String.length rendered in
-  if length < 2 || not (Char.equal rendered.[0] '"')
-     || not (Char.equal rendered.[length - 1] '"')
+  if
+    length < 2
+    || (not (Char.equal rendered.[0] '"'))
+    || not (Char.equal rendered.[length - 1] '"')
   then failwith "not a JSON string literal";
   let buffer = Buffer.create length in
   let hex c =
@@ -662,17 +638,29 @@ let unescape_json_string rendered =
       match rendered.[index] with
       | '\\' -> (
           match rendered.[index + 1] with
-          | '"' -> Buffer.add_char buffer '"'; loop (index + 2)
-          | '\\' -> Buffer.add_char buffer '\\'; loop (index + 2)
-          | 'b' -> Buffer.add_char buffer '\b'; loop (index + 2)
-          | 'f' -> Buffer.add_char buffer '\012'; loop (index + 2)
-          | 'n' -> Buffer.add_char buffer '\n'; loop (index + 2)
-          | 'r' -> Buffer.add_char buffer '\r'; loop (index + 2)
-          | 't' -> Buffer.add_char buffer '\t'; loop (index + 2)
+          | '"' ->
+              Buffer.add_char buffer '"';
+              loop (index + 2)
+          | '\\' ->
+              Buffer.add_char buffer '\\';
+              loop (index + 2)
+          | 'b' ->
+              Buffer.add_char buffer '\b';
+              loop (index + 2)
+          | 'f' ->
+              Buffer.add_char buffer '\012';
+              loop (index + 2)
+          | 'n' ->
+              Buffer.add_char buffer '\n';
+              loop (index + 2)
+          | 'r' ->
+              Buffer.add_char buffer '\r';
+              loop (index + 2)
+          | 't' ->
+              Buffer.add_char buffer '\t';
+              loop (index + 2)
           | 'u' ->
-              let code =
-                (hex rendered.[index + 2] * 16) + hex rendered.[index + 3]
-              in
+              let code = (hex rendered.[index + 2] * 16) + hex rendered.[index + 3] in
               Buffer.add_char buffer (Char.chr code);
               loop (index + 6)
           | _ -> failwith "unknown escape")
@@ -684,8 +672,7 @@ let unescape_json_string rendered =
   Buffer.contents buffer
 
 let check_json_string_roundtrip name value =
-  check_string name value
-    (unescape_json_string (Json.to_string (json_string value)))
+  check_string name value (unescape_json_string (Json.to_string (json_string value)))
 
 let test_json_string_rendering () =
   let quote_backslash = "backslash \\ quote \"" in
@@ -698,14 +685,16 @@ let test_json_string_rendering () =
     (Json.to_string (json_string controls));
   check_json_string_roundtrip "control roundtrip" controls;
   let non_ascii = "é 😀 中" in
-  check_string "non-ascii stays utf8" ("\"" ^ non_ascii ^ "\"")
+  check_string "non-ascii stays utf8"
+    ("\"" ^ non_ascii ^ "\"")
     (Json.to_string (json_string non_ascii));
   check_json_string_roundtrip "non-ascii roundtrip" non_ascii;
   let separators = "line\226\128\168para\226\128\169end" in
-  check_string "line separators stay utf8" ("\"" ^ separators ^ "\"")
+  check_string "line separators stay utf8"
+    ("\"" ^ separators ^ "\"")
     (Json.to_string (json_string separators));
-  check_json_string_roundtrip "line separators roundtrip" separators;
-  (* The rendered text of a document with nasty escaping is parsed back by the
+  check_json_string_roundtrip "line separators roundtrip" separators
+(* The rendered text of a document with nasty escaping is parsed back by the
      Yojson bridge in test/schema_yojson, where the JSON dependency lives. *)
 
 type request_user = { request_id : user_id }
@@ -792,15 +781,13 @@ let test_json_adapter_make_functor () =
   in
   let issue = List.hd issues in
   check_option_string "adapter source" (Some "test-adapter") issue.schema_name;
-  (match issue.kind with
+  match issue.kind with
   | Custom message -> check_string "adapter issue" "bad external json" message
-  | _ -> failwith "expected adapter custom issue")
+  | _ -> failwith "expected adapter custom issue"
 
 let test_encode_failures_are_typed () =
   let one = Eta_schema.enum ~name:"one" [ ("one", 1) ] ~equal:Int.equal in
-  let enum_issues =
-    Eta_schema.encode_result one 2 |> expect_encode_error ~name:"enum"
-  in
+  let enum_issues = Eta_schema.encode_result one 2 |> expect_encode_error ~name:"enum" in
   check_int "enum issue count" 1 (List.length enum_issues);
   let password_only =
     let decode _ = Error [ issue "unused" ] in
@@ -810,7 +797,8 @@ let test_encode_failures_are_typed () =
       | _ -> Ok None
     in
     Eta_schema.tagged_union ~name:"password_only" ~tag:"_tag"
-      [ Eta_schema.case ~tag:"Password" ~decode ~encode ] ~equal:auth_equal
+      [ Eta_schema.case ~tag:"Password" ~decode ~encode ]
+      ~equal:auth_equal
   in
   let union_issues =
     Eta_schema.encode_result password_only (OAuth { issuer = "i"; client_id = "c" })
@@ -859,8 +847,7 @@ let test_decode_int_rejects_upper_float_boundary () =
 
 type non_object_union = Non_object
 
-let non_object_union_equal a b =
-  match (a, b) with Non_object, Non_object -> true
+let non_object_union_equal a b = match (a, b) with Non_object, Non_object -> true
 
 let test_tagged_union_rejects_non_object_case_encode () =
   let schema =
@@ -881,8 +868,7 @@ let test_tagged_union_rejects_non_object_case_encode () =
 type schema_metadata = { command : string; limit : int option }
 
 let schema_metadata_equal left right =
-  String.equal left.command right.command
-  && Option.equal Int.equal left.limit right.limit
+  String.equal left.command right.command && Option.equal Int.equal left.limit right.limit
 
 let schema_metadata =
   let command =
@@ -890,9 +876,7 @@ let schema_metadata =
     |> Eta_schema.with_keyword "minLength" (Json.int 1)
     |> Eta_schema.describe "Command to run"
   in
-  let limit =
-    Eta_schema.int |> Eta_schema.with_keyword "minimum" (Json.int 0)
-  in
+  let limit = Eta_schema.int |> Eta_schema.with_keyword "minimum" (Json.int 0) in
   Eta_schema.record2 ~name:"schema_metadata"
     (fun command limit -> { command; limit })
     (Eta_schema.required "command" command (fun value -> value.command))
@@ -917,38 +901,32 @@ let test_json_schema_derivation_and_closed_decode () =
                     ("type", json_string "string");
                   ] );
               ( "limit",
-                json_object
-                  [
-                    ("minimum", Json.int 0);
-                    ("type", json_string "integer");
-                  ] );
+                json_object [ ("minimum", Json.int 0); ("type", json_string "integer") ]
+              );
             ] );
         ("required", Json.array [ json_string "command" ]);
       ]
   in
-  check_bool "derived schema" (Json.equal expected (Eta_schema.json_schema schema_metadata));
+  check_bool "derived schema"
+    (Json.equal expected (Eta_schema.json_schema schema_metadata));
   match
     Eta_schema.decode_result schema_metadata
-      (json_object
-         [ ("command", json_string "pwd"); ("unknown", Json.bool true) ])
+      (json_object [ ("command", json_string "pwd"); ("unknown", Json.bool true) ])
   with
   | Ok _ -> failwith "closed schema accepted unknown field"
   | Error [ issue ] ->
-      check_string "unknown field path" "/unknown"
-        (issue_to_json_pointer issue)
+      check_string "unknown field path" "/unknown" (issue_to_json_pointer issue)
   | Error _ -> failwith "expected one closed-schema issue"
 
 let test_empty_record_schema () =
   let schema =
-    Eta_schema.record0 ~name:"empty" () ~equal:Unit.equal ()
-    |> Eta_schema.closed
+    Eta_schema.record0 ~name:"empty" () ~equal:Unit.equal () |> Eta_schema.closed
   in
   (match Eta_schema.decode_result schema (json_object []) with
   | Ok () -> ()
   | Error issues -> failwith (render_issues issues));
   (match
-     Eta_schema.decode_result schema
-       (json_object [ ("unexpected", Json.bool true) ])
+     Eta_schema.decode_result schema (json_object [ ("unexpected", Json.bool true) ])
    with
   | Error [ issue ] ->
       check_string "unknown field" "/unexpected" (issue_to_json_pointer issue)
@@ -969,11 +947,9 @@ type dynamic_record = { name : string; count : int option }
 
 let test_dynamic_record_and_freeform_json () =
   let schema =
-    Eta_schema.record_fields ~name:"dynamic_record"
-      ~empty:{ name = ""; count = None }
+    Eta_schema.record_fields ~name:"dynamic_record" ~empty:{ name = ""; count = None }
       ~equal:(fun left right ->
-        String.equal left.name right.name
-        && Option.equal Int.equal left.count right.count)
+        String.equal left.name right.name && Option.equal Int.equal left.count right.count)
       [
         Eta_schema.required_member "name" Eta_schema.string
           ~get:(fun value -> value.name)
@@ -997,9 +973,7 @@ let test_dynamic_record_and_freeform_json () =
    with
   | Error _ -> ()
   | Ok _ -> failwith "closed dynamic record accepted unknown field");
-  let freeform =
-    [ ("nested", json_object [ ("answer", Json.int 42) ]) ]
-  in
+  let freeform = [ ("nested", json_object [ ("answer", Json.int 42) ]) ] in
   match Eta_schema.decode_result Eta_schema.json_object (json_object freeform) with
   | Ok decoded when Json.equal (json_object decoded) (json_object freeform) -> ()
   | Ok _ -> failwith "freeform object changed values"
@@ -1009,11 +983,13 @@ type scalar = Boolean of bool | Text of string
 
 let test_untagged_union_cases () =
   let boolean =
-    Eta_schema.union_case Eta_schema.bool ~inject:(fun value -> Boolean value)
+    Eta_schema.union_case Eta_schema.bool
+      ~inject:(fun value -> Boolean value)
       ~project:(function Boolean value -> Some value | Text _ -> None)
   in
   let text =
-    Eta_schema.union_case Eta_schema.string ~inject:(fun value -> Text value)
+    Eta_schema.union_case Eta_schema.string
+      ~inject:(fun value -> Text value)
       ~project:(function Text value -> Some value | Boolean _ -> None)
   in
   let schema =
@@ -1038,12 +1014,11 @@ let test_untagged_union_and_custom () =
     Eta_schema.custom
       ~equal:(fun left right -> left = right)
       ~decode:(function
-        | Json.Bool value -> Ok (Boolean value)
-        | _ -> Error [ issue "not boolean" ])
+        | Json.Bool value -> Ok (Boolean value) | _ -> Error [ issue "not boolean" ])
       ~encode:(function
-        | Boolean value -> Ok (Json.bool value)
-        | Text _ -> Error [ issue "not boolean" ])
-      ~json_schema:(json_object [ ("type", json_string "boolean") ]) ()
+        | Boolean value -> Ok (Json.bool value) | Text _ -> Error [ issue "not boolean" ])
+      ~json_schema:(json_object [ ("type", json_string "boolean") ])
+      ()
   in
   let text =
     Eta_schema.custom
@@ -1053,23 +1028,25 @@ let test_untagged_union_and_custom () =
         | value ->
             Error
               [
-                type_mismatch ~expected:"string" ~got:(
-                  match value with
-                  | Json.Null -> "null"
-                  | Json.Bool _ -> "boolean"
-                  | Json.Number _ -> "number"
-                  | Json.String _ -> "string"
-                  | Json.Array _ -> "array"
-                  | Json.Object _ -> "object") ();
+                type_mismatch ~expected:"string"
+                  ~got:
+                    (match value with
+                    | Json.Null -> "null"
+                    | Json.Bool _ -> "boolean"
+                    | Json.Number _ -> "number"
+                    | Json.String _ -> "string"
+                    | Json.Array _ -> "array"
+                    | Json.Object _ -> "object")
+                  ();
               ])
       ~encode:(function
-        | Text value -> Ok (json_string value)
-        | Boolean _ -> Error [ issue "not text" ])
-      ~json_schema:(json_object [ ("type", json_string "string") ]) ()
+        | Text value -> Ok (json_string value) | Boolean _ -> Error [ issue "not text" ])
+      ~json_schema:(json_object [ ("type", json_string "string") ])
+      ()
   in
   let schema =
-    Eta_schema.union ~name:"scalar" [ boolean; text ]
-      ~equal:(fun left right -> left = right)
+    Eta_schema.union ~name:"scalar" [ boolean; text ] ~equal:(fun left right ->
+        left = right)
   in
   (match Eta_schema.decode_result schema (Json.bool true) with
   | Ok (Boolean true) -> ()
@@ -1138,25 +1115,22 @@ let test_json_construction_rejects_invalid_values () =
       ("invalid start byte", "\xf8\x88\x80\x80\x80");
       ("embedded invalid byte", "ok\xffok");
     ];
-  (match
-     rejected "utf8 object name"
-       (Json.object_ [ ("ok", Json.int 1); ("bad\xff", Json.int 2) ])
-   with
+  match
+    rejected "utf8 object name"
+      (Json.object_ [ ("ok", Json.int 1); ("bad\xff", Json.int 2) ])
+  with
   | [ { path = [ Field "bad\xff" ]; kind = Custom _; _ } ] -> ()
   | issues ->
-      failwith
-        ("unexpected object name issues: " ^ Eta_schema.render_issues issues))
+      failwith ("unexpected object name issues: " ^ Eta_schema.render_issues issues)
 
 (* ^jsonvalid-4egk: values whose inputs already guarantee validity stay
    constructible, and valid large literals remain exact. *)
 let test_json_construction_accepts_valid_values () =
   List.iter
-    (fun value ->
-      ignore (Json.number value : (json, issue list) result))
+    (fun value -> ignore (Json.number value : (json, issue list) result))
     [ 0.0; -0.0; 1.5; -1.5; 1e100; -1e-100; float_of_int max_int ];
   List.iter
-    (fun literal ->
-      ignore (Json.intlit literal : (json, issue list) result))
+    (fun literal -> ignore (Json.intlit literal : (json, issue list) result))
     [
       "0";
       "-0";
@@ -1173,8 +1147,7 @@ let test_json_construction_accepts_valid_values () =
   check_string "exponent literal stays exact" "1e999"
     (Json.to_string (json_intlit "1e999"));
   List.iter
-    (fun value ->
-      ignore (Json.string value : (json, issue list) result))
+    (fun value -> ignore (Json.string value : (json, issue list) result))
     [
       "";
       "ascii";
@@ -1186,8 +1159,7 @@ let test_json_construction_accepts_valid_values () =
       "\xf4\x8f\xbf\xbf";
       "\000\n\t\r\b\012";
     ];
-  ignore
-    (Json.object_ [ ("ok", Json.int 1) ] : (json, issue list) result);
+  ignore (Json.object_ [ ("ok", Json.int 1) ] : (json, issue list) result);
   ignore (Json.array [ Json.int 1; json_string "x" ] : json);
   check_bool "duplicate names preserved"
     (Json.equal
@@ -1203,8 +1175,7 @@ let test_json_construction_serialization_roundtrip () =
         ( "nested",
           Json.array
             [
-              json_object
-                [ ("answer", Json.int 42); ("text", json_string "\xc3\xa9\n") ];
+              json_object [ ("answer", Json.int 42); ("text", json_string "\xc3\xa9\n") ];
               Json.null;
               Json.bool true;
             ] );
@@ -1214,7 +1185,8 @@ let test_json_construction_serialization_roundtrip () =
   in
   let rendered = Json.to_string tree in
   check_string "exact compact rendering"
-    "{\"nested\": [{\"answer\": 42, \"text\": \"\xc3\xa9\\n\"}, null, true], \"number\": 1.5, \"literal\": 18446744073709551616}"
+    "{\"nested\": [{\"answer\": 42, \"text\": \"\xc3\xa9\\n\"}, null, true], \"number\": \
+     1.5, \"literal\": 18446744073709551616}"
     rendered;
   check_string "escaped control characters round trip" "\000\n"
     (unescape_json_string (Json.to_string (json_string "\000\n")))
@@ -1235,8 +1207,7 @@ let test_json_adapter_reports_invalid_external_data () =
     (fun (label, external_json) ->
       match Test_codec.decode_result request_user_schema external_json with
       | Ok _ -> failwith (label ^ ": expected adapter rejection")
-      | Error issues ->
-          check_bool (label ^ " reports issues") (issues <> []))
+      | Error issues -> check_bool (label ^ " reports issues") (issues <> []))
     cases;
   let issues =
     Test_codec.decode_result request_user_schema (XString "\xff")
@@ -1298,8 +1269,7 @@ let test_adapter_issue_paths () =
     match Test_codec.decode_result request_user_schema external_json with
     | Ok _ -> failwith "expected adapter rejection"
     | Error [ issue ] -> issue_to_json_pointer issue
-    | Error issues ->
-        failwith ("expected one adapter issue: " ^ render_issues issues)
+    | Error issues -> failwith ("expected one adapter issue: " ^ render_issues issues)
   in
   check_string "root adapter pointer" "" (pointer (XBad "bad external json"));
   check_string "nested index pointer" "/0/1"
@@ -1308,8 +1278,7 @@ let test_adapter_issue_paths () =
     (pointer (XObject [ ("a/b", XArray [ XInt 0; XString "\xff" ]) ]));
   check_string "three level pointer" "/0/a/1"
     (pointer (XArray [ XObject [ ("a", XArray [ XInt 0; XString "\xff" ]) ] ]));
-  check_string "tilde name pointer" "/a~0b"
-    (pointer (XObject [ ("a~b", XIntlit "01") ]));
+  check_string "tilde name pointer" "/a~0b" (pointer (XObject [ ("a~b", XIntlit "01") ]));
   check_string "nonzero index pointer" "/2"
     (pointer (XArray [ XInt 0; XInt 1; XIntlit "1." ]))
 
@@ -1320,15 +1289,8 @@ let check_bool name value = if not value then Alcotest.fail name
 (* ^nschema-ubrs: a nested record with a secret field that comes from an
    environment variable, an array of such records, and an optional field whose
    environment variable may override it. *)
-type mark_credentials = {
-  api_key : string;
-  endpoint : string;
-}
-
-type mark_models = {
-  credentials : mark_credentials;
-  retries : int;
-}
+type mark_credentials = { api_key : string; endpoint : string }
+type mark_models = { credentials : mark_credentials; retries : int }
 
 type mark_service = {
   name : string;
@@ -1342,8 +1304,7 @@ type marked_member = { token : string }
 let mark_credentials_schema =
   record2 ~name:"credentials"
     (fun api_key endpoint -> { api_key; endpoint })
-    (required ~secret:true ~env:"OPENROUTER_API_KEY" "api_key" string (fun r ->
-         r.api_key))
+    (required ~secret:true ~env:"OPENROUTER_API_KEY" "api_key" string (fun r -> r.api_key))
     (required "endpoint" string (fun r -> r.endpoint))
     ~equal:( = ) ()
 
@@ -1383,8 +1344,7 @@ let test_field_marks_metadata () =
     ]
   in
   Alcotest.(check (list string))
-    "declaration order, pointer paths, secret and env marks"
-    expected
+    "declaration order, pointer paths, secret and env marks" expected
     (List.map mark_line (field_marks mark_service_schema));
   (* The dynamic-arity members carry the same marks. *)
   let member_schema =
@@ -1396,19 +1356,23 @@ let test_field_marks_metadata () =
       ]
   in
   Alcotest.(check (list string))
-    "member marks" [ "/token|token|true|MEMBER_TOKEN" ]
+    "member marks"
+    [ "/token|token|true|MEMBER_TOKEN" ]
     (List.map mark_line (field_marks member_schema));
   (* Primitives, enums, unions and custom schemas declare no fields. *)
-  Alcotest.(check (list string)) "primitive" []
-    (List.map mark_line (field_marks string));
-  Alcotest.(check (list string)) "enum" []
+  Alcotest.(check (list string)) "primitive" [] (List.map mark_line (field_marks string));
+  Alcotest.(check (list string))
+    "enum" []
     (List.map mark_line
        (field_marks (enum ~name:"flag" [ ("on", true) ] ~equal:Bool.equal)));
-  Alcotest.(check (list string)) "custom" []
+  Alcotest.(check (list string))
+    "custom" []
     (List.map mark_line
        (field_marks
-          (custom ~equal:Int.equal ~decode:(fun _ -> Ok 1)
-             ~encode:(fun _ -> Ok Json.null) ~json_schema:Json.null ())))
+          (custom ~equal:Int.equal
+             ~decode:(fun _ -> Ok 1)
+             ~encode:(fun _ -> Ok Json.null)
+             ~json_schema:Json.null ())))
 
 let mark_service_value =
   {
@@ -1429,8 +1393,7 @@ let mark_service_value =
 let test_encode_redacted () =
   let plain = encode_ok ~name:"plain" mark_service_schema mark_service_value in
   let redacted =
-    expect_ok ~name:"redacted"
-      (encode_redacted mark_service_schema mark_service_value)
+    expect_ok ~name:"redacted" (encode_redacted mark_service_schema mark_service_value)
   in
   let member name json =
     match Json.find name json with
@@ -1471,17 +1434,19 @@ let test_encode_redacted () =
     expect_ok ~name:"redacted optional"
       (encode_redacted mark_service_schema without_debug)
   in
-  Alcotest.(check (option json_testable)) "absent optional stays absent" None
-    (Json.find "debug" redacted)
+  Alcotest.(check (option json_testable))
+    "absent optional stays absent" None (Json.find "debug" redacted)
 
 (* ^njson-fib9: paths render as RFC 6901 pointers and escape ~ and /. *)
 let test_json_pointer_escaping () =
   Alcotest.(check string) "root" "" (json_pointer []);
   Alcotest.(check string) "field" "/name" (json_pointer [ Field "name" ]);
   Alcotest.(check string) "index" "/2" (json_pointer [ Index 2 ]);
-  Alcotest.(check string) "tilde and slash" "/a~0b~1c/0"
+  Alcotest.(check string)
+    "tilde and slash" "/a~0b~1c/0"
     (json_pointer [ Field "a~b/c"; Index 0 ]);
-  Alcotest.(check string) "issue pointer" "/a~1b/1"
+  Alcotest.(check string)
+    "issue pointer" "/a~1b/1"
     (issue_to_json_pointer
        { path = [ Field "a/b"; Index 1 ]; schema_name = None; kind = Custom "x" })
 
@@ -1501,15 +1466,13 @@ let test_every_issue_is_reported () =
         ( "keys",
           Json.array
             [
-              json_object
-                [ ("api_key", json_string "k"); ("endpoint", json_string "e") ];
+              json_object [ ("api_key", json_string "k"); ("endpoint", json_string "e") ];
               json_object [ ("api_key", json_string "k2") ];
             ] );
       ]
   in
   let issues =
-    expect_decode_error ~name:"every issue"
-      (decode_result mark_service_schema json)
+    expect_decode_error ~name:"every issue" (decode_result mark_service_schema json)
   in
   Alcotest.(check (list string))
     "all pointers, outermost to innermost"
@@ -1521,30 +1484,30 @@ let test_every_issue_is_reported () =
       "/keys/1/endpoint";
     ]
     (List.map issue_to_json_pointer issues);
-  (match issues with
+  match issues with
   | first :: second :: _ ->
-      Alcotest.(check bool) "field type mismatch" true
+      Alcotest.(check bool)
+        "field type mismatch" true
         (match first.kind with
         | Type_mismatch { expected = "string"; got = "7" } -> true
         | _ -> false);
-      Alcotest.(check bool) "missing nested field keeps its schema name" true
+      Alcotest.(check bool)
+        "missing nested field keeps its schema name" true
         (match second with
         | {
-            path = [ Field "models"; Field "credentials"; Field "api_key" ];
-            schema_name = Some "credentials";
-            kind = Missing_field "api_key";
-            _;
-          } ->
+         path = [ Field "models"; Field "credentials"; Field "api_key" ];
+         schema_name = Some "credentials";
+         kind = Missing_field "api_key";
+         _;
+        } ->
             true
         | _ -> false)
-  | _ -> Alcotest.fail "expected at least two issues")
+  | _ -> Alcotest.fail "expected at least two issues"
 
 (* ^nschema-fwsu: issues are a plain variant with a printer; a caller maps them
    by matching, never by string comparison. *)
 let test_issue_kind_and_printers () =
-  let issues =
-    expect_decode_error ~name:"string" (decode_result string (Json.int 1))
-  in
+  let issues = expect_decode_error ~name:"string" (decode_result string (Json.int 1)) in
   (match issues with
   | [
    {
@@ -1560,16 +1523,13 @@ let test_issue_kind_and_printers () =
       (decode_result
          (record1 ~name:"user"
             (fun name -> name)
-            (required "name" string (fun n -> n)) ~equal:String.equal ())
+            (required "name" string (fun n -> n))
+            ~equal:String.equal ())
          (json_object []))
   in
   (match issues with
   | [
-   {
-     kind = Missing_field "name";
-     path = [ Field "name" ];
-     schema_name = Some "user";
-   };
+   { kind = Missing_field "name"; path = [ Field "name" ]; schema_name = Some "user" };
   ] ->
       ()
   | _ -> Alcotest.failf "unexpected missing field: %s" (render_issues issues));
@@ -1582,9 +1542,7 @@ let test_issue_kind_and_printers () =
     expect_decode_error ~name:"refine" (decode_result bounded (json_string "abc"))
   in
   (match issues with
-  | [ { kind = Refinement_failed { name = "bounded"; reason = "too long" }; _ } ]
-    ->
-      ()
+  | [ { kind = Refinement_failed { name = "bounded"; reason = "too long" }; _ } ] -> ()
   | _ -> Alcotest.failf "unexpected refinement issue: %s" (render_issues issues));
   let custom_issue = issue ~path:[ Field "field" ] "custom reason" in
   (match custom_issue.kind with
@@ -1614,8 +1572,7 @@ let test_refine_bounds_and_ranges () =
   in
   let ranged_int =
     refine ~name:"ranged_int"
-      (fun value ->
-        if value >= 1 && value <= 10 then [] else [ issue "out of range" ])
+      (fun value -> if value >= 1 && value <= 10 then [] else [ issue "out of range" ])
       int
   in
   let pair =
@@ -1634,9 +1591,11 @@ let test_refine_bounds_and_ranges () =
       (decode_result pair
          (json_object [ ("label", json_string "et"); ("count", Json.int 11) ]))
   in
-  Alcotest.(check (list string)) "both bounds reported" [ "/label"; "/count" ]
+  Alcotest.(check (list string))
+    "both bounds reported" [ "/label"; "/count" ]
     (List.map issue_to_json_pointer issues);
-  Alcotest.(check bool) "bound names travel with the issue" true
+  Alcotest.(check bool)
+    "bound names travel with the issue" true
     (List.for_all
        (fun issue ->
          match issue.kind with
@@ -1648,16 +1607,15 @@ let test_refine_bounds_and_ranges () =
   let issues =
     expect_decode_error ~name:"missing" (decode_result pair (json_object []))
   in
-  Alcotest.(check bool) "missing fields" true
+  Alcotest.(check bool)
+    "missing fields" true
     (List.for_all
-       (fun issue ->
-         match issue.kind with Missing_field _ -> true | _ -> false)
+       (fun issue -> match issue.kind with Missing_field _ -> true | _ -> false)
        issues);
   let issues =
-    expect_decode_error ~name:"wrong type"
-      (decode_result bounded_string (Json.int 3))
+    expect_decode_error ~name:"wrong type" (decode_result bounded_string (Json.int 3))
   in
-  (match issues with
+  match issues with
   | [
    {
      kind = Type_mismatch { expected = "string"; got = "3" };
@@ -1665,7 +1623,7 @@ let test_refine_bounds_and_ranges () =
    };
   ] ->
       ()
-  | _ -> Alcotest.failf "unexpected issue: %s" (render_issues issues))
+  | _ -> Alcotest.failf "unexpected issue: %s" (render_issues issues)
 
 (* ^nschema-jcbp: eta_schema depends on the standard library alone; the two
    neighbours keep to their declared ceilings.
@@ -1711,24 +1669,23 @@ let libraries relative =
   let marker = "(libraries" in
   let rec find index =
     if index + String.length marker > String.length text then None
-    else if String.equal (String.sub text index (String.length marker)) marker
-    then Some index
+    else if String.equal (String.sub text index (String.length marker)) marker then
+      Some index
     else find (index + 1)
   in
   match find 0 with
   | None -> []
   | Some start ->
       let stop = String.index_from text start ')' in
-      String.sub text
-        (start + String.length marker)
-        (stop - start - String.length marker)
+      String.sub text (start + String.length marker) (stop - start - String.length marker)
       |> String.split_on_char ' '
       |> List.filter (fun word -> not (String.equal word ""))
 
 let schema_sources () =
-  Sys.readdir (path "lib/schema") |> Array.to_list
+  Sys.readdir (path "lib/schema")
+  |> Array.to_list
   |> List.filter (fun name ->
-         Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
+      Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
   |> List.map (fun name -> Filename.concat "lib/schema" name)
 
 let test_package_dependencies () =
@@ -1737,8 +1694,7 @@ let test_package_dependencies () =
   Alcotest.(check (list string))
     "eta_json depends on yojson only" [ "yojson" ] (libraries "lib/json/dune");
   Alcotest.(check (list string))
-    "eta_schema_yojson depends on eta_schema and yojson"
-    [ "eta_schema"; "yojson" ]
+    "eta_schema_yojson depends on eta_schema and yojson" [ "eta_schema"; "yojson" ]
     (libraries "lib/schema_yojson/dune");
   List.iter
     (fun relative ->
@@ -1756,7 +1712,8 @@ let test_package_dependencies () =
 let test_v1_extras_left_behind () =
   List.iter
     (fun relative ->
-      Alcotest.(check bool) (relative ^ " is absent") false
+      Alcotest.(check bool)
+        (relative ^ " is absent") false
         (Sys.file_exists (path relative)))
     [
       "lib/schema/docs";
@@ -1778,9 +1735,8 @@ let () =
           Alcotest.test_case "njson-fib9 many issues" `Quick test_many_issues;
           Alcotest.test_case "njson-3vf4 tagged and recursive" `Quick
             test_tagged_and_recursive;
-          Alcotest.test_case
-            "njson-fib9 issue paths distinguish fields and indexes" `Quick
-            test_issue_paths_distinguish_fields_and_indexes;
+          Alcotest.test_case "njson-fib9 issue paths distinguish fields and indexes"
+            `Quick test_issue_paths_distinguish_fields_and_indexes;
           Alcotest.test_case "njson-fib9 issue source discriminator" `Quick
             test_issue_source_discriminator;
           Alcotest.test_case "njson-3ph9 json number rendering" `Quick
@@ -1791,59 +1747,52 @@ let () =
             test_json_adapter_make_functor;
           Alcotest.test_case "nschema-59sn encode failures are typed" `Quick
             test_encode_failures_are_typed;
-          Alcotest.test_case "nschema-59sn encode float rejects non-finite"
-            `Quick test_encode_float_rejects_non_finite;
-          Alcotest.test_case
-            "nschema-59sn tagged union rejects non-object case encode" `Quick
-            test_tagged_union_rejects_non_object_case_encode;
+          Alcotest.test_case "nschema-59sn encode float rejects non-finite" `Quick
+            test_encode_float_rejects_non_finite;
+          Alcotest.test_case "nschema-59sn tagged union rejects non-object case encode"
+            `Quick test_tagged_union_rejects_non_object_case_encode;
           Alcotest.test_case "njson-3vf4 lazy schema memoizes thunk" `Quick
             test_lazy_schema_memoizes_thunk;
-          Alcotest.test_case "njson-3vf4 decode int rejects upper float boundary"
-            `Quick test_decode_int_rejects_upper_float_boundary;
-          Alcotest.test_case "njson-3vf4 json schema derivation and closed decode"
-            `Quick test_json_schema_derivation_and_closed_decode;
+          Alcotest.test_case "njson-3vf4 decode int rejects upper float boundary" `Quick
+            test_decode_int_rejects_upper_float_boundary;
+          Alcotest.test_case "njson-3vf4 json schema derivation and closed decode" `Quick
+            test_json_schema_derivation_and_closed_decode;
           Alcotest.test_case "njson-3vf4 empty record schema" `Quick
             test_empty_record_schema;
-          Alcotest.test_case "njson-3vf4 dynamic record and freeform JSON"
-            `Quick test_dynamic_record_and_freeform_json;
+          Alcotest.test_case "njson-3vf4 dynamic record and freeform JSON" `Quick
+            test_dynamic_record_and_freeform_json;
           Alcotest.test_case "njson-3vf4 untagged union cases" `Quick
             test_untagged_union_cases;
-          Alcotest.test_case "njson-3vf4 untagged union and custom schema"
-            `Quick test_untagged_union_and_custom;
-          Alcotest.test_case "njson-3ph9 json construction rejects invalid values"
-            `Quick test_json_construction_rejects_invalid_values;
-          Alcotest.test_case "njson-3ph9 json construction accepts valid values"
-            `Quick test_json_construction_accepts_valid_values;
-          Alcotest.test_case
-            "njson-3ph9 json construction serialization roundtrip" `Quick
+          Alcotest.test_case "njson-3vf4 untagged union and custom schema" `Quick
+            test_untagged_union_and_custom;
+          Alcotest.test_case "njson-3ph9 json construction rejects invalid values" `Quick
+            test_json_construction_rejects_invalid_values;
+          Alcotest.test_case "njson-3ph9 json construction accepts valid values" `Quick
+            test_json_construction_accepts_valid_values;
+          Alcotest.test_case "njson-3ph9 json construction serialization roundtrip" `Quick
             test_json_construction_serialization_roundtrip;
-          Alcotest.test_case
-            "njson-3ph9 json adapter reports invalid external data" `Quick
-            test_json_adapter_reports_invalid_external_data;
+          Alcotest.test_case "njson-3ph9 json adapter reports invalid external data"
+            `Quick test_json_adapter_reports_invalid_external_data;
           Alcotest.test_case "njson-3ph9 result APIs stay immediate" `Quick
             test_result_apis_stay_immediate;
           Alcotest.test_case "njson-fib9 adapter issue paths" `Quick
             test_adapter_issue_paths;
-          Alcotest.test_case
-            "njson-3vf4 refine expresses string bounds and int ranges" `Quick
-            test_refine_bounds_and_ranges;
-          Alcotest.test_case
-            "njson-fib9 every failing branch reported with its pointer" `Quick
-            test_every_issue_is_reported;
+          Alcotest.test_case "njson-3vf4 refine expresses string bounds and int ranges"
+            `Quick test_refine_bounds_and_ranges;
+          Alcotest.test_case "njson-fib9 every failing branch reported with its pointer"
+            `Quick test_every_issue_is_reported;
           Alcotest.test_case "njson-fib9 json pointer escaping" `Quick
             test_json_pointer_escaping;
-          Alcotest.test_case
-            "nschema-fwsu issue kinds are a plain variant with printers" `Quick
-            test_issue_kind_and_printers;
+          Alcotest.test_case "nschema-fwsu issue kinds are a plain variant with printers"
+            `Quick test_issue_kind_and_printers;
           Alcotest.test_case "nschema-ubrs field marks metadata" `Quick
             test_field_marks_metadata;
           Alcotest.test_case "nschema-ubrs encode with secrets redacted" `Quick
             test_encode_redacted;
           Alcotest.test_case
-            "nschema-jcbp eta_schema depends on the standard library only"
-            `Quick test_package_dependencies;
-          Alcotest.test_case
-            "nschema-liiu v1 docs, audit and bench stayed behind" `Quick
+            "nschema-jcbp eta_schema depends on the standard library only" `Quick
+            test_package_dependencies;
+          Alcotest.test_case "nschema-liiu v1 docs, audit and bench stayed behind" `Quick
             test_v1_extras_left_behind;
         ] );
     ]

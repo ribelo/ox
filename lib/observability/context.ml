@@ -1,7 +1,6 @@
 type t = (string * string) list
 
 let empty = []
-
 let key : t Eio.Fiber.key = Eio.Fiber.create_key ()
 
 (* [Fiber.get] performs Eio's [Get_context] effect, which has no handler outside
@@ -27,7 +26,5 @@ let merge attached fields =
       else merged @ [ (name, value) ])
     attached fields
 
-let with_fields fields f =
-  Eio.Fiber.with_binding key (merge (current ()) fields) f
-
+let with_fields fields f = Eio.Fiber.with_binding key (merge (current ()) fields) f
 let fields t = t

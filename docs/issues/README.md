@@ -15,7 +15,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 6 | `process/01-process.md` | `eta_process` | 1, 2 | Leash milestone 1 (Chrome) | [x] |
 | 7 | `ipc/01-ipc.md` | `eta_ipc` | 1, 2 | Leash milestone 1 (control socket) | [x] |
 | 8 | `rpc/01-rpc.md` | `eta_rpc` | 1, 2 | Leash milestone 1 (CDP) | [x] |
-| 9 | `review-fixes-1/01-review-fixes-1.md` | `eta_app`, `eta`, root | 1, 5 | Leash pinning the branch | [ ] |
+| 9 | `review-fixes-1/01-review-fixes-1.md` | `eta_app`, `eta`, root | 1, 5 | Leash pinning the branch | [x] |
 | 10 | `shared-switch/01-shared-switch.md` | flake / dev shell | 0 | Leash's `nix develop` loop | [ ] |
 | 11 | `limits-1/01-limits-1.md` | `eta_test`, `eta_app`, `eta_process`, `eta_rpc`, `eta_ipc` docs | 1–8 | Leash milestone 1 tests | [ ] |
 | 12 | `modes-and-portability/01-modes-and-portability.md` | all | 1–9 | stable signatures before Leash pins | [ ] |
@@ -27,7 +27,7 @@ Running alongside, not blocking: the local-handler spike in `../../.scratch/rese
 
 ## Definition of done, every row
 
-- Every user story has a test citing its ID by name; `nix develop -c dune build @install` and `nix develop -c dune test` are green.
+- Every user story has a test citing its ID by name; `nix develop -c dune build @install`, `nix develop -c dune test` and `nix develop -c dune build @fmt` are green.
 - A new package has a `dune-project` stanza (opam file generated), a `lib/<name>/` library with a `.mli` per module and doc comments stating cancellation and finalizer behaviour, tests under `test/<name>/`, and a line in `README.md`'s package list.
 - Dependencies follow ADR-0005; the spec's `package:` frontmatter is the dependency ceiling.
 - Copied v1 code is copied with `git show v1:<path>` and its tests, and every `Effect.t` reference is gone.

@@ -18,8 +18,7 @@ let (_ : Yojson.Safe.t -> Eta_json.t) = fun value -> value
 let json =
   Alcotest.testable
     (fun ppf value -> Format.pp_print_string ppf (Eta_json.to_string value))
-    (fun left right ->
-      String.equal (Eta_json.to_string left) (Eta_json.to_string right))
+    (fun left right -> String.equal (Eta_json.to_string left) (Eta_json.to_string right))
 
 let expect_ok label = function
   | Ok value -> value
@@ -50,9 +49,11 @@ let test_compact_rendering () =
   let text = Eta_json.to_string document in
   Alcotest.(check string) "compact equals to_string" text (Eta_json.compact document);
   Alcotest.(check bool) "single line" false (String.contains text '\n');
-  Alcotest.(check string) "exact compact bytes"
-    "{\"text\":\"a\\nb\",\"count\":3,\"flag\":true,\"ratio\":0.5}" text;
-  Alcotest.(check json) "parse of the compact text" document
+  Alcotest.(check string)
+    "exact compact bytes" "{\"text\":\"a\\nb\",\"count\":3,\"flag\":true,\"ratio\":0.5}"
+    text;
+  Alcotest.(check json)
+    "parse of the compact text" document
     (expect_ok "compact rendering" (Eta_json.parse text))
 
 (* ^njson-7pjx ^njson-3ph9: malformed text is an error result, not an
@@ -71,7 +72,8 @@ let test_parse_rejects_invalid () =
 let test_parse_max_bytes () =
   let raw = "{\"a\": 1}" in
   let bound = String.length raw in
-  Alcotest.(check json) "input at the bound"
+  Alcotest.(check json)
+    "input at the bound"
     (Eta_json.object_ [ ("a", Some (Eta_json.int 1)) ])
     (expect_ok "at the bound" (Eta_json.parse ~max_bytes:bound raw));
   let error =
@@ -83,8 +85,8 @@ let test_parse_max_bytes () =
       Alcotest.(check int) "length named" bound length
   | `Malformed message ->
       Alcotest.failf "over the bound must be a bound refusal, got %s" message);
-  Alcotest.(check string) "printer names the bound"
-    "JSON input of 8 bytes exceeds max_bytes (7)"
+  Alcotest.(check string)
+    "printer names the bound" "JSON input of 8 bytes exceeds max_bytes (7)"
     (Format.asprintf "%a" Eta_json.pp_parse_error error);
   (* Valid JSON over the bound is refused before any value is built. *)
   (match Eta_json.parse ~max_bytes:1 "{}" with
@@ -106,17 +108,15 @@ let test_parse_max_bytes () =
 let test_object_omits_absent () =
   let document =
     Eta_json.object_
-      [
-        ("a", Some (Eta_json.int 1));
-        ("b", None);
-        ("c", Some (Eta_json.bool false));
-      ]
+      [ ("a", Some (Eta_json.int 1)); ("b", None); ("c", Some (Eta_json.bool false)) ]
   in
-  Alcotest.(check string) "absent field omitted" "{\"a\":1,\"c\":false}"
-    (Eta_json.to_string document);
-  Alcotest.(check json) "kept field is readable" (Eta_json.bool false)
+  Alcotest.(check string)
+    "absent field omitted" "{\"a\":1,\"c\":false}" (Eta_json.to_string document);
+  Alcotest.(check json)
+    "kept field is readable" (Eta_json.bool false)
     (expect_some "kept field" (Eta_json.member "c" document));
-  Alcotest.(check (option json)) "omitted field stays absent" None
+  Alcotest.(check (option json))
+    "omitted field stays absent" None
     (Eta_json.member "b" document);
   Alcotest.(check string) "no fields" "{}" (Eta_json.to_string (Eta_json.object_ []))
 
@@ -126,16 +126,19 @@ let test_scalar_constructors () =
   Alcotest.(check json) "string" (`String "eta") (Eta_json.string "eta");
   Alcotest.(check json) "bool" (`Bool true) (Eta_json.bool true);
   Alcotest.(check json) "int" (`Int 9) (Eta_json.int 9);
-  Alcotest.(check (option json)) "finite float" (Some (`Float 1.5))
-    (Eta_json.float 1.5);
+  Alcotest.(check (option json)) "finite float" (Some (`Float 1.5)) (Eta_json.float 1.5);
   Alcotest.(check (option json)) "nan" None (Eta_json.float Float.nan);
   Alcotest.(check (option json)) "infinity" None (Eta_json.float Float.infinity);
-  Alcotest.(check (option json)) "negative infinity" None
+  Alcotest.(check (option json))
+    "negative infinity" None
     (Eta_json.float Float.neg_infinity);
-  Alcotest.(check json) "array" (`List [ `Int 1; `String "two" ])
+  Alcotest.(check json)
+    "array"
+    (`List [ `Int 1; `String "two" ])
     (Eta_json.array [ Eta_json.int 1; Eta_json.string "two" ]);
   Alcotest.(check string) "empty array" "[]" (Eta_json.to_string (Eta_json.array []));
-  Alcotest.(check json) "array_map keeps input order"
+  Alcotest.(check json)
+    "array_map keeps input order"
     (`List [ `Int 2; `Int 4 ])
     (Eta_json.array_map (fun value -> Eta_json.int (value * 2)) [ 1; 2 ])
 
@@ -157,57 +160,84 @@ let test_member_accessors () =
       ]
   in
   let absent = "absent" in
-  Alcotest.(check (option json)) "member present" (Some (Eta_json.string "eta"))
+  Alcotest.(check (option json))
+    "member present"
+    (Some (Eta_json.string "eta"))
     (Eta_json.member "name" document);
   Alcotest.(check (option json)) "member missing" None (Eta_json.member absent document);
-  Alcotest.(check (option json)) "member of a non-object" None
+  Alcotest.(check (option json))
+    "member of a non-object" None
     (Eta_json.member "name" (`String "eta"));
-  Alcotest.(check (option string)) "string_member present" (Some "eta")
+  Alcotest.(check (option string))
+    "string_member present" (Some "eta")
     (Eta_json.string_member "name" document);
-  Alcotest.(check (option string)) "string_member missing" None
+  Alcotest.(check (option string))
+    "string_member missing" None
     (Eta_json.string_member absent document);
-  Alcotest.(check (option string)) "string_member wrong type" None
+  Alcotest.(check (option string))
+    "string_member wrong type" None
     (Eta_json.string_member "count" document);
-  Alcotest.(check (option string)) "scalar_string_member string" (Some "eta")
+  Alcotest.(check (option string))
+    "scalar_string_member string" (Some "eta")
     (Eta_json.scalar_string_member "name" document);
-  Alcotest.(check (option string)) "scalar_string_member int" (Some "7")
+  Alcotest.(check (option string))
+    "scalar_string_member int" (Some "7")
     (Eta_json.scalar_string_member "count" document);
-  Alcotest.(check (option string)) "scalar_string_member intlit" (Some "42")
+  Alcotest.(check (option string))
+    "scalar_string_member intlit" (Some "42")
     (Eta_json.scalar_string_member "big" document);
-  Alcotest.(check (option string)) "scalar_string_member float" (Some "2")
+  Alcotest.(check (option string))
+    "scalar_string_member float" (Some "2")
     (Eta_json.scalar_string_member "ratio" document);
-  Alcotest.(check (option string)) "scalar_string_member bool" (Some "true")
+  Alcotest.(check (option string))
+    "scalar_string_member bool" (Some "true")
     (Eta_json.scalar_string_member "flag" document);
-  Alcotest.(check (option string)) "scalar_string_member missing" None
+  Alcotest.(check (option string))
+    "scalar_string_member missing" None
     (Eta_json.scalar_string_member absent document);
-  Alcotest.(check (option string)) "scalar_string_member array" None
+  Alcotest.(check (option string))
+    "scalar_string_member array" None
     (Eta_json.scalar_string_member "items" document);
-  Alcotest.(check (option string)) "scalar_string_member null" None
+  Alcotest.(check (option string))
+    "scalar_string_member null" None
     (Eta_json.scalar_string_member "nothing" document);
-  Alcotest.(check (option int)) "int_member int" (Some 7)
+  Alcotest.(check (option int))
+    "int_member int" (Some 7)
     (Eta_json.int_member "count" document);
-  Alcotest.(check (option int)) "int_member intlit" (Some 42)
+  Alcotest.(check (option int))
+    "int_member intlit" (Some 42)
     (Eta_json.int_member "big" document);
-  Alcotest.(check (option int)) "int_member integral float" (Some 2)
+  Alcotest.(check (option int))
+    "int_member integral float" (Some 2)
     (Eta_json.int_member "ratio" document);
-  Alcotest.(check (option int)) "int_member fractional float" None
+  Alcotest.(check (option int))
+    "int_member fractional float" None
     (Eta_json.int_member "half" document);
-  Alcotest.(check (option int)) "int_member string" None
+  Alcotest.(check (option int))
+    "int_member string" None
     (Eta_json.int_member "name" document);
-  Alcotest.(check (option int)) "int_member missing" None
+  Alcotest.(check (option int))
+    "int_member missing" None
     (Eta_json.int_member absent document);
-  Alcotest.(check (option (list json))) "array_member present"
-    (Some [ Eta_json.int 1 ]) (Eta_json.array_member "items" document);
-  Alcotest.(check (option (list json))) "array_member missing" None
+  Alcotest.(check (option (list json)))
+    "array_member present"
+    (Some [ Eta_json.int 1 ])
+    (Eta_json.array_member "items" document);
+  Alcotest.(check (option (list json)))
+    "array_member missing" None
     (Eta_json.array_member absent document);
-  Alcotest.(check (option (list json))) "array_member wrong type" None
+  Alcotest.(check (option (list json)))
+    "array_member wrong type" None
     (Eta_json.array_member "count" document);
-  Alcotest.(check (option json)) "object_member present"
+  Alcotest.(check (option json))
+    "object_member present"
     (Some (Eta_json.object_ [ ("inner", Some (Eta_json.bool true)) ]))
     (Eta_json.object_member "nested" document);
-  Alcotest.(check (option json)) "object_member missing" None
+  Alcotest.(check (option json))
+    "object_member missing" None
     (Eta_json.object_member absent document);
-  Alcotest.(check (option json)) "object_member wrong type" None
+  Alcotest.(check (option json))
+    "object_member wrong type" None
     (Eta_json.object_member "items" document)
 
 (* ^njson-7pjx ^njson-3ph9: every accessor reports an absent name as [None]. *)
@@ -231,17 +261,17 @@ let () =
         [
           Alcotest.test_case "njson-7pjx njson-3ph9 compact rendering" `Quick
             test_compact_rendering;
-          Alcotest.test_case "njson-7pjx njson-3ph9 invalid text is a result"
-            `Quick test_parse_rejects_invalid;
+          Alcotest.test_case "njson-7pjx njson-3ph9 invalid text is a result" `Quick
+            test_parse_rejects_invalid;
           Alcotest.test_case "njson-nc66 njson-3ph9 max_bytes bound" `Quick
             test_parse_max_bytes;
-          Alcotest.test_case "njson-7pjx njson-3ph9 object_ omits absent fields"
-            `Quick test_object_omits_absent;
+          Alcotest.test_case "njson-7pjx njson-3ph9 object_ omits absent fields" `Quick
+            test_object_omits_absent;
           Alcotest.test_case "njson-7pjx njson-3ph9 scalar constructors" `Quick
             test_scalar_constructors;
           Alcotest.test_case "njson-7pjx njson-3ph9 member accessors" `Quick
             test_member_accessors;
-          Alcotest.test_case "njson-7pjx njson-3ph9 absent members stay absent"
-            `Quick test_accessors_ignore_absent_members;
+          Alcotest.test_case "njson-7pjx njson-3ph9 absent members stay absent" `Quick
+            test_accessors_ignore_absent_members;
         ] );
     ]

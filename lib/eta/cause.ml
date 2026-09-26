@@ -8,14 +8,21 @@ type 'e t =
 
 let rec pp pp_error fmt = function
   | Fail e -> Format.fprintf fmt "Fail(%a)" pp_error e
-  | Die (ex, bt) -> Format.fprintf fmt "Die(%s; %s)" (Printexc.to_string ex) (Printexc.raw_backtrace_to_string bt)
+  | Die (ex, bt) ->
+      Format.fprintf fmt "Die(%s; %s)" (Printexc.to_string ex)
+        (Printexc.raw_backtrace_to_string bt)
   | Interrupt None -> Format.pp_print_string fmt "Interrupt(external)"
   | Interrupt (Some id) -> Format.fprintf fmt "Interrupt(%a)" Interrupt_id.pp id
   | Finalizer cause -> Format.fprintf fmt "Finalizer(%a)" (pp pp_error) cause
   | Suppressed { primary; finalizer } ->
-      Format.fprintf fmt "Suppressed(primary=%a; finalizer=%a)" (pp pp_error) primary (pp pp_error) finalizer
+      Format.fprintf fmt "Suppressed(primary=%a; finalizer=%a)" (pp pp_error) primary
+        (pp pp_error) finalizer
   | Concurrent causes ->
-      Format.fprintf fmt "Concurrent[%a]" (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.pp_print_string fmt "; ") (pp pp_error)) causes
+      Format.fprintf fmt "Concurrent[%a]"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.pp_print_string fmt "; ")
+           (pp pp_error))
+        causes
 
 let rec pp_compact pp_error fmt = function
   | Fail e -> Format.fprintf fmt "Fail(%a)" pp_error e
@@ -24,9 +31,14 @@ let rec pp_compact pp_error fmt = function
   | Interrupt (Some id) -> Format.fprintf fmt "Interrupt(%a)" Interrupt_id.pp id
   | Finalizer c -> Format.fprintf fmt "Finalizer(%a)" (pp_compact pp_error) c
   | Suppressed { primary; finalizer } ->
-      Format.fprintf fmt "Suppressed(%a; %a)" (pp_compact pp_error) primary (pp_compact pp_error) finalizer
+      Format.fprintf fmt "Suppressed(%a; %a)" (pp_compact pp_error) primary
+        (pp_compact pp_error) finalizer
   | Concurrent cs ->
-      Format.fprintf fmt "Concurrent[%a]" (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.pp_print_string fmt "; ") (pp_compact pp_error)) cs
+      Format.fprintf fmt "Concurrent[%a]"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.pp_print_string fmt "; ")
+           (pp_compact pp_error))
+        cs
 
 let rec is_interrupt_only = function
   | Interrupt _ -> true

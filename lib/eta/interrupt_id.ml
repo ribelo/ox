@@ -1,5 +1,7 @@
 type t = int
+
 exception Stop of t
+
 let next = Atomic.make 0
 let create () = Atomic.fetch_and_add next 1
 let equal = Int.equal

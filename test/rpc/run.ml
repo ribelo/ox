@@ -1,12 +1,14 @@
 open Eta_rpc
 
 type message = { id : int option; session : string option; value : int }
+
 let msg ?id ?session value = { id; session; value }
 let id m = m.id
 let set_id m id = { m with id = Some id }
 let session m = m.session
 
 type input = Message of message | Eof | Read_error of exn
+
 type fixture = {
   incoming : input Eio.Stream.t;
   outgoing : message Eio.Stream.t;
@@ -16,146 +18,207 @@ type fixture = {
 }
 
 let fixture () =
-  { incoming = Eio.Stream.create 100;
+  {
+    incoming = Eio.Stream.create 100;
     outgoing = Eio.Stream.create 100;
     reader_cancelled = false;
     writes = [];
-    on_write = (fun _ -> ()) }
+    on_write = (fun _ -> ());
+  }
+
 let push f m = Eio.Stream.add f.incoming (Message m)
-let make ~sw ~clock ?(max_notifications=1024) f =
+
+let make ~sw ~clock ?(max_notifications = 1024) f =
   Correlator.create ~sw ~clock ~max_notifications
-    ~read:(fun () -> try match Eio.Stream.take f.incoming with
-      | Message m -> Some m | Eof -> None | Read_error exn -> raise exn
-      with Eio.Cancel.Cancelled _ as exn -> f.reader_cancelled <- true; raise exn)
-    ~write:(fun m -> Eio.Stream.add f.outgoing m; f.writes <- f.writes @ [m]; f.on_write m)
+    ~read:(fun () ->
+      try
+        match Eio.Stream.take f.incoming with
+        | Message m -> Some m
+        | Eof -> None
+        | Read_error exn -> raise exn
+      with Eio.Cancel.Cancelled _ as exn ->
+        f.reader_cancelled <- true;
+        raise exn)
+    ~write:(fun m ->
+      Eio.Stream.add f.outgoing m;
+      f.writes <- f.writes @ [ m ];
+      f.on_write m)
     ~id ~set_id ~session ()
+
 let wait_until condition =
   let rec loop remaining =
     if condition () then ()
     else if remaining = 0 then Alcotest.fail "condition never became true"
-    else (Eio.Fiber.yield (); loop (remaining - 1))
-  in loop 1000
+    else (
+      Eio.Fiber.yield ();
+      loop (remaining - 1))
+  in
+  loop 1000
+
 let check_reply expected = function
   | Ok m -> Alcotest.(check int) "reply" expected m.value
   | Error _ -> Alcotest.fail "expected matching reply"
+
 (* nrpc-wkrp nrpc-pqed nrpc-3ikx nrpc-acml nrpc-d96a *)
-let routing () = Eta_test.run (fun env sw ->
-  let f = fixture () in
-  let c = make ~sw ~clock:env#clock f in
-  let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
-  let b = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg ~session:"B" 2)) in
-  wait_until (fun () -> List.length f.writes = 2);
-  let a_id = Option.get (List.find (fun m -> m.value = 1) f.writes).id in
-  let b_id = Option.get (List.find (fun m -> m.value = 2) f.writes).id in
-  Alcotest.(check bool) "distinct IDs" true (a_id <> b_id);
-  push f (msg 10);
-  push f (msg ~id:a_id ~session:"B" 11);
-  push f (msg ~id:b_id ~session:"B" 22);
-  push f (msg ~id:a_id 21);
-  push f (msg ~id:a_id 12);
-  check_reply 21 (Eio.Promise.await_exn a);
-  check_reply 22 (Eio.Promise.await_exn b);
-  wait_until (fun () -> (Correlator.stats c).buffered_notifications = 3);
-  let q = Correlator.notifications c in
-  Alcotest.(check (list int)) "unmatched FIFO" [10;11;12]
-    (List.init 3 (fun _ -> (Eio.Stream.take q).value));
-  Alcotest.(check int) "no pending requests" 0 (Correlator.stats c).pending;
-  Correlator.close c)
+let routing () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let c = make ~sw ~clock:env#clock f in
+      let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
+      let b =
+        Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg ~session:"B" 2))
+      in
+      wait_until (fun () -> List.length f.writes = 2);
+      let a_id = Option.get (List.find (fun m -> m.value = 1) f.writes).id in
+      let b_id = Option.get (List.find (fun m -> m.value = 2) f.writes).id in
+      Alcotest.(check bool) "distinct IDs" true (a_id <> b_id);
+      push f (msg 10);
+      push f (msg ~id:a_id ~session:"B" 11);
+      push f (msg ~id:b_id ~session:"B" 22);
+      push f (msg ~id:a_id 21);
+      push f (msg ~id:a_id 12);
+      check_reply 21 (Eio.Promise.await_exn a);
+      check_reply 22 (Eio.Promise.await_exn b);
+      wait_until (fun () -> (Correlator.stats c).buffered_notifications = 3);
+      let q = Correlator.notifications c in
+      Alcotest.(check (list int))
+        "unmatched FIFO" [ 10; 11; 12 ]
+        (List.init 3 (fun _ -> (Eio.Stream.take q).value));
+      Alcotest.(check int) "no pending requests" 0 (Correlator.stats c).pending;
+      Correlator.close c)
 
 (* nrpc-acml nrpc-d96a: slow consumers lose oldest, counted *)
-let overflow () = Eta_test.run (fun env sw ->
-  let f = fixture () in
-  let c = make ~sw ~clock:env#clock ~max_notifications:2 f in
-  List.iter (fun n -> push f (msg n)) [1;2;3;4];
-  wait_until (fun () -> (Correlator.stats c).dropped_notifications = 2);
-  Alcotest.(check int) "bounded" 2 (Correlator.stats c).buffered_notifications;
-  let q = Correlator.notifications c in
-  Alcotest.(check (list int)) "newest retained" [3;4]
-    (List.init 2 (fun _ -> (Eio.Stream.take q).value));
-  Correlator.close c)
+let overflow () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let c = make ~sw ~clock:env#clock ~max_notifications:2 f in
+      List.iter (fun n -> push f (msg n)) [ 1; 2; 3; 4 ];
+      wait_until (fun () -> (Correlator.stats c).dropped_notifications = 2);
+      Alcotest.(check int) "bounded" 2 (Correlator.stats c).buffered_notifications;
+      let q = Correlator.notifications c in
+      Alcotest.(check (list int))
+        "newest retained" [ 3; 4 ]
+        (List.init 2 (fun _ -> (Eio.Stream.take q).value));
+      Correlator.close c)
 
 (* nrpc-amni nrpc-d96a: mock time and late reply *)
-let deadline () = Eta_test.run (fun env sw ->
-  let f = fixture () in
-  let c = make ~sw ~clock:env#clock f in
-  let call = Eio.Fiber.fork_promise ~sw (fun () ->
-    Correlator.call c ~deadline:(Eta.Duration.ms 10) (msg 1)) in
-  wait_until (fun () -> List.length f.writes = 1);
-  Eta_test.advance env#clock (Eta.Duration.ms 10);
-  (match Eio.Promise.await_exn call with
-   | Error `Timeout -> () | _ -> Alcotest.fail "expected timeout");
-  Alcotest.(check int) "slot dropped" 0 (Correlator.stats c).pending;
-  push f (msg ~id:(Option.get (List.hd f.writes).id) 99);
-  wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
-  Alcotest.(check int) "late reply is notification" 99
-    (Eio.Stream.take (Correlator.notifications c)).value;
-  Correlator.close c)
+let deadline () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let c = make ~sw ~clock:env#clock f in
+      let call =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Correlator.call c ~deadline:(Eta.Duration.ms 10) (msg 1))
+      in
+      wait_until (fun () -> List.length f.writes = 1);
+      Eta_test.advance env#clock (Eta.Duration.ms 10);
+      (match Eio.Promise.await_exn call with
+      | Error `Timeout -> ()
+      | _ -> Alcotest.fail "expected timeout");
+      Alcotest.(check int) "slot dropped" 0 (Correlator.stats c).pending;
+      push f (msg ~id:(Option.get (List.hd f.writes).id) 99);
+      wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
+      Alcotest.(check int)
+        "late reply is notification" 99
+        (Eio.Stream.take (Correlator.notifications c)).value;
+      Correlator.close c)
 
 (* nrpc-1glx nrpc-d96a: interruption, no fabricated response *)
-let cancellation () = Eta_test.run (fun env sw ->
-  let f = fixture () in
-  let c = make ~sw ~clock:env#clock f in
-  let cancel = ref None in
-  let outcome = Eio.Fiber.fork_promise ~sw (fun () ->
-    Eio.Cancel.sub (fun ctx ->
-      cancel := Some ctx;
-      try ignore (Correlator.call c (msg 1)); false with
-      | Eio.Cancel.Cancelled _ -> true)) in
-  wait_until (fun () -> (Correlator.stats c).pending = 1 && !cancel <> None);
-  Eio.Cancel.cancel (Option.get !cancel) (Failure "test cancelled request");
-  Alcotest.(check bool) "interruption propagated" true (Eio.Promise.await_exn outcome);
-  Alcotest.(check int) "cancelled slot removed" 0 (Correlator.stats c).pending;
-  push f (msg ~id:(Option.get (List.hd f.writes).id) 12);
-  wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
-  Alcotest.(check int) "late reply" 12 (Eio.Stream.take (Correlator.notifications c)).value;
-  Correlator.close c)
+let cancellation () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let c = make ~sw ~clock:env#clock f in
+      let cancel = ref None in
+      let outcome =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore (Correlator.call c (msg 1));
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      wait_until (fun () -> (Correlator.stats c).pending = 1 && !cancel <> None);
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "test cancelled request");
+      Alcotest.(check bool) "interruption propagated" true (Eio.Promise.await_exn outcome);
+      Alcotest.(check int) "cancelled slot removed" 0 (Correlator.stats c).pending;
+      push f (msg ~id:(Option.get (List.hd f.writes).id) 12);
+      wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
+      Alcotest.(check int)
+        "late reply" 12 (Eio.Stream.take (Correlator.notifications c)).value;
+      Correlator.close c)
 
 (* nrpc-hjv6 nrpc-lf9n nrpc-wkrp nrpc-d96a *)
 let closures () =
-  List.iter (fun terminate -> Eta_test.run (fun env sw ->
-    let f = fixture () in
-    let c = make ~sw ~clock:env#clock f in
-    let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
-    let b = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 2)) in
-    wait_until (fun () -> (Correlator.stats c).pending = 2);
-    let reason = match terminate with
-      | `Eof -> Eio.Stream.add f.incoming Eof; `Eof
-      | `Read_failed -> Eio.Stream.add f.incoming (Read_error (Failure "broken")); `Read_failed
-      | `Closed -> Correlator.close c; `Closed in
-    let expect = function
-      | Error (`Transport_closed `Eof) when reason = `Eof -> ()
-      | Error (`Transport_closed (`Read_failed exn)) when reason = `Read_failed && (match exn with Failure _ -> true | _ -> false) -> ()
-      | Error (`Transport_closed `Closed) when reason = `Closed -> ()
-      | _ -> Alcotest.fail "wrong close reason" in
-    expect (Eio.Promise.await_exn a);
-    expect (Eio.Promise.await_exn b);
-    Alcotest.(check int) "all pending settled" 0 (Correlator.stats c).pending;
-    expect (Correlator.call c (msg 3));
-    Correlator.close c;
-    if reason = `Closed then Alcotest.(check bool) "reader joined" true f.reader_cancelled;
-    Correlator.close c)) [`Eof;`Read_failed;`Closed]
+  List.iter
+    (fun terminate ->
+      Eta_test.run (fun env sw ->
+          let f = fixture () in
+          let c = make ~sw ~clock:env#clock f in
+          let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
+          let b = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 2)) in
+          wait_until (fun () -> (Correlator.stats c).pending = 2);
+          let reason =
+            match terminate with
+            | `Eof ->
+                Eio.Stream.add f.incoming Eof;
+                `Eof
+            | `Read_failed ->
+                Eio.Stream.add f.incoming (Read_error (Failure "broken"));
+                `Read_failed
+            | `Closed ->
+                Correlator.close c;
+                `Closed
+          in
+          let expect = function
+            | Error (`Transport_closed `Eof) when reason = `Eof -> ()
+            | Error (`Transport_closed (`Read_failed exn))
+              when reason = `Read_failed
+                   && match exn with Failure _ -> true | _ -> false ->
+                ()
+            | Error (`Transport_closed `Closed) when reason = `Closed -> ()
+            | _ -> Alcotest.fail "wrong close reason"
+          in
+          expect (Eio.Promise.await_exn a);
+          expect (Eio.Promise.await_exn b);
+          Alcotest.(check int) "all pending settled" 0 (Correlator.stats c).pending;
+          expect (Correlator.call c (msg 3));
+          Correlator.close c;
+          if reason = `Closed then
+            Alcotest.(check bool) "reader joined" true f.reader_cancelled;
+          Correlator.close c))
+    [ `Eof; `Read_failed; `Closed ]
 
 (* nrpc-vnce nrpc-pqed: write failure is local and never retried *)
-let write_failure () = Eta_test.run (fun env sw ->
-  let f = fixture () in
-  let c = make ~sw ~clock:env#clock f in
-  f.on_write <- (fun _ -> failwith "rejected");
-  (match Correlator.call c (msg 1) with
-   | Error (`Write_failed exn) when (match exn with Failure _ -> true | _ -> false) -> ()
-   | _ -> Alcotest.fail "expected local write failure");
-  Alcotest.(check int) "no retry" 1 (List.length f.writes);
-  Alcotest.(check int) "slot removed" 0 (Correlator.stats c).pending;
-  f.on_write <- (fun sent -> push f (msg ~id:(Option.get sent.id) 42));
-  check_reply 42 (Correlator.call c (msg 2));
-  Alcotest.(check (list int)) "fresh id after failure" [1;2]
-    (List.map (fun m -> Option.get m.id) f.writes);
-  Correlator.close c)
+let write_failure () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let c = make ~sw ~clock:env#clock f in
+      f.on_write <- (fun _ -> failwith "rejected");
+      (match Correlator.call c (msg 1) with
+      | Error (`Write_failed exn) when match exn with Failure _ -> true | _ -> false ->
+          ()
+      | _ -> Alcotest.fail "expected local write failure");
+      Alcotest.(check int) "no retry" 1 (List.length f.writes);
+      Alcotest.(check int) "slot removed" 0 (Correlator.stats c).pending;
+      f.on_write <- (fun sent -> push f (msg ~id:(Option.get sent.id) 42));
+      check_reply 42 (Correlator.call c (msg 2));
+      Alcotest.(check (list int))
+        "fresh id after failure" [ 1; 2 ]
+        (List.map (fun m -> Option.get m.id) f.writes);
+      Correlator.close c)
 
-let () = Alcotest.run "eta_rpc" ["correlator", [
-  Alcotest.test_case "nrpc-wkrp nrpc-pqed nrpc-3ikx nrpc-acml nrpc-d96a routing" `Quick routing;
-  Alcotest.test_case "nrpc-acml nrpc-d96a overflow" `Quick overflow;
-  Alcotest.test_case "nrpc-amni nrpc-d96a deadline" `Quick deadline;
-  Alcotest.test_case "nrpc-1glx nrpc-d96a cancellation" `Quick cancellation;
-  Alcotest.test_case "nrpc-hjv6 nrpc-lf9n nrpc-d96a closures" `Quick closures;
-  Alcotest.test_case "nrpc-vnce nrpc-pqed write failure" `Quick write_failure;
-]]
+let () =
+  Alcotest.run "eta_rpc"
+    [
+      ( "correlator",
+        [
+          Alcotest.test_case "nrpc-wkrp nrpc-pqed nrpc-3ikx nrpc-acml nrpc-d96a routing"
+            `Quick routing;
+          Alcotest.test_case "nrpc-acml nrpc-d96a overflow" `Quick overflow;
+          Alcotest.test_case "nrpc-amni nrpc-d96a deadline" `Quick deadline;
+          Alcotest.test_case "nrpc-1glx nrpc-d96a cancellation" `Quick cancellation;
+          Alcotest.test_case "nrpc-hjv6 nrpc-lf9n nrpc-d96a closures" `Quick closures;
+          Alcotest.test_case "nrpc-vnce nrpc-pqed write failure" `Quick write_failure;
+        ] );
+    ]

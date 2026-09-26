@@ -78,8 +78,8 @@ Interruption identity is kept the same way v1 kept it — a private exception ca
 Each is a function over Eio, returning `result` and classifying through `Scope`. There is no combinator that Eio does not need help with.
 
 ```ocaml
-val race    : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, [> `Concurrent of 'e Cause.t]) result
-  (* first success wins; losers are cancelled and awaited; all-fail → Concurrent *)
+val race    : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, 'e Cause.t) result
+  (* first success wins; losers are cancelled and awaited; all-fail → Error (Concurrent causes), a lone failure unwrapped *)
 val timeout : clock:_ Eio.Time.clock -> Duration.t -> (unit -> ('a, [> `Timeout ] as 'e) result) -> ('a, 'e) result
 val par     : sw:Switch.t -> (unit -> ('a, 'e) result) -> (unit -> ('b, 'e) result) -> ('a * 'b, 'e) result
   (* fail-fast: a failing side cancels the other and both are awaited *)
@@ -124,8 +124,9 @@ let () =
   let open Result.Syntax in
   let* chrome  = Chrome.create  ~sw config.chrome  { process_mgr = env#process_mgr; clock = env#clock } in
   let* tabs    = Tabs.create    ~sw config.tabs    { chrome; clock = env#clock } in
-  let* control = Control.create ~sw config.control { tabs; fs = env#fs } in
-  Eta_app.serve ~sw [ Chrome.status chrome; Tabs.status tabs; Control.status control ]
+  let query    = Eta_app.status_query [ Chrome.status chrome; Tabs.status tabs ] in
+  let* control = Control.create ~sw config.control { tabs; fs = env#fs; status = query } in
+  Eta_app.serve ~sw ()
 ```
 
 The dependency graph is the order of the `let*` chain. Release order is the Switch's, reverse of acquisition. Tests create a Service with fake Deps. Status is read from the values themselves. The Door owns Env construction, config decoding through `eta_schema`, SIGINT/SIGTERM as interruption of the Program, rendering of the *full* Cause on failure, and the exit code. There is no registry, no reconciliation, no desired state: v1's component runtime became a shadow of the real data path within a month of adoption, and this model is what Pie converged on after deleting it.

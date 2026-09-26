@@ -24,7 +24,7 @@ One package, `eta`, with: a `Result` syntax module; `Duration` and `Schedule` (c
 6. As a service author, I want `Scope.run f` to own a Switch, pass it to `f`, and return an `Exit` where a returned `Error` is `Fail`, an escaped exception is `Die` with its backtrace, `Eio.Cancel.Cancelled` is `Interrupt` with the identity when it carries one, and a failing `Switch.on_release` is `Finalizer` (or `Suppressed` under a primary failure), so that classification is done once, at the boundary. ^ncore-3ry6
 7. As a service author, I want interruptions requested by Eta's own combinators to carry a private identity, so that `Scope` and `with_background` can tell "we stopped it" from "someone cancelled us". ^ncore-5caq
 8. As a service author, I want `timeout ~clock d f` to fail with ``Timeout`` after `d` and to cancel and await `f` before returning, so that a timed-out body never runs on after the deadline. ^ncore-7n2j
-9. As a service author, I want `race ~sw fs` to return the first *success*, cancel and await the losers, and, when all fail, return a `Concurrent` of their causes, so that deadlines are never expressed as a race against a sleep. ^ncore-7vo9
+9. As a service author, I want `race ~sw fs` to return `('a, 'e Cause.t) result`: the first *success* wins, losers are cancelled and awaited, and when all fail the error is `Concurrent` of their causes in input order — the bare cause when only one branch failed — so that a race failure composes with my own error union and deadlines are never expressed as a race against a sleep. ^ncore-7vo9
 10. As a service author, I want `par ~sw f g` and `all ~sw fs` to run concurrently, fail fast (a failing side cancels the rest and everything is awaited), and return the pair or list on success, so that fan-out has one semantics. ^ncore-a6g1
 11. As a service author, I want `with_background ~sw bg body` to run `bg` alongside `body`, cancel and await `bg` when `body` settles, let a `bg` failure that comes first cancel `body` and win, and never report Eta's own stop of `bg` as a failure of `body`, so that an essential reader has one owner. ^ncore-gpuq
 12. As a service author, I want `acquire_release ~sw ~acquire ~release` to register `release` on the Switch, run it on every exit, and report its failure as `Finalizer` or `Suppressed`, so that resources are owned by scopes. ^ncore-zpe1
@@ -70,6 +70,7 @@ Streams, queues, semaphores, pools, pubsub (Eio has `Stream`, `Semaphore`, `Mute
 
 - The handled-effect spike (`.scratch/research/handled-pattern/`) may later change the error channel; this spec assumes `result` per ADR-0002.
 - The flake's package list must be updated as this package appears (see `docs/issues/README.md` row 0).
+- Story ^ncore-7vo9's `race` failure shape is superseded by `docs/issues/review-fixes-1/01-review-fixes-1.md` (^nfix-yrjy): `race` returns `('a, 'e Cause.t) result` and no longer wraps failures in a `Concurrent` variant.
 
 Verification: `nix develop -c dune build @install` and `nix develop -c dune test test/core` pass (62 tests; all 24 story IDs).
 Whole-tree `nix develop -c dune test` awaits schema worker’s `Yojson` test fix; integration lead will rerun it.

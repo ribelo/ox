@@ -1,4 +1,13 @@
 (test
  (name run)
  (deps ../../eta_app.opam)
- (libraries eta_app eta eta_schema eta_observability eta_test eio eio.mock cmdliner alcotest))
+ (libraries
+  eta_app
+  eta
+  eta_schema
+  eta_observability
+  eta_test
+  eio
+  eio.mock
+  cmdliner
+  alcotest))

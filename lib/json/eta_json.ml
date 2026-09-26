@@ -4,11 +4,7 @@ type t = Yojson.Safe.t
    a caller that only handles the bound narrows the union by matching. The bound
    refusal carries its own record because polymorphic variants hold no inline
    records. *)
-type too_large = {
-  limit : int;
-  length : int;
-}
-
+type too_large = { limit : int; length : int }
 type parse_error = [ `Malformed of string | `Too_large of too_large ]
 
 let parse ?max_bytes raw =
@@ -20,11 +16,12 @@ let parse ?max_bytes raw =
   | Some limit when String.length raw > limit ->
       Error (`Too_large { limit; length = String.length raw })
   | Some _ | None -> (
-      try Ok (Yojson.Safe.from_string raw) with
-      | Yojson.Json_error message -> Error (`Malformed message))
+      try Ok (Yojson.Safe.from_string raw)
+      with Yojson.Json_error message -> Error (`Malformed message))
 
 let to_string json = Yojson.Safe.to_string json
 let compact = to_string
+
 let pp_parse_error fmt = function
   | `Malformed message -> Format.pp_print_string fmt message
   | `Too_large { limit; length } ->
@@ -35,8 +32,7 @@ let bool value = `Bool value
 let int value = `Int value
 
 let float value =
-  if classify_float value = FP_nan || classify_float value = FP_infinite
-  then None
+  if classify_float value = FP_nan || classify_float value = FP_infinite then None
   else Some (`Float value)
 
 let array values = `List values
@@ -50,9 +46,7 @@ let object_ fields =
   in
   loop [] fields
 
-let member name = function
-  | `Assoc fields -> List.assoc_opt name fields
-  | _ -> None
+let member name = function `Assoc fields -> List.assoc_opt name fields | _ -> None
 
 let string_member name json =
   match member name json with Some (`String value) -> Some value | _ -> None

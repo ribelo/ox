@@ -38,7 +38,6 @@ let read_file path =
 let check_bool = Alcotest.(check bool)
 let check_string = Alcotest.(check string)
 let check_int = Alcotest.(check int)
-
 let level_testable = Alcotest.testable Logger.pp_level ( = )
 
 let field_text record name =
@@ -50,7 +49,9 @@ let field_text record name =
    the test's mock wall and monotonic clocks. *)
 let make_logger ?(level = Logger.Info) ?(fields = []) env memory =
   Logger.create ~level ~fields ~service:"leash" ~clock:env#clock
-    ~mono_clock:env#mono_clock ~reporter:(Logger.Memory.reporter memory) ()
+    ~mono_clock:env#mono_clock
+    ~reporter:(Logger.Memory.reporter memory)
+    ()
 
 let set_wall env seconds = Eio_mock.Clock.set_time env#clock seconds
 
@@ -78,7 +79,8 @@ let test_redact_in_record () =
         ~fields:[ ("api_key", Logger.Redacted (Redact.make "sk-live-1234")) ]
         "loaded";
       let line = Logger.to_string (List.hd (Logger.Memory.records memory)) in
-      check_bool "the field renders redacted" true (contains line "\"api_key\":\"<redacted>\"");
+      check_bool "the field renders redacted" true
+        (contains line "\"api_key\":\"<redacted>\"");
       check_bool "the secret is absent" false (contains line "sk-live-1234"))
 
 (* ^nobs-2d4r: fields attached with with_fields reach records logged inside its
@@ -87,9 +89,12 @@ let test_context_extent () =
   Eta_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
-      Context.with_fields [ ("tab", "t-1"); ("owner", "rafal") ] (fun () ->
+      Context.with_fields
+        [ ("tab", "t-1"); ("owner", "rafal") ]
+        (fun () ->
           Alcotest.(check (list (pair string string)))
-            "current inside" [ ("tab", "t-1"); ("owner", "rafal") ]
+            "current inside"
+            [ ("tab", "t-1"); ("owner", "rafal") ]
             (Context.fields (Context.current ()));
           Logger.info logger "inside");
       Logger.info logger "outside";
@@ -109,13 +114,17 @@ let test_context_fork_inheritance () =
   Eta_test.run (fun env sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
-      Context.with_fields [ ("tab", "t-1") ] (fun () ->
+      Context.with_fields
+        [ ("tab", "t-1") ]
+        (fun () ->
           Eio.Fiber.fork ~sw (fun () -> Logger.info logger "forked");
           Eio.Fiber.yield ());
       let record = List.hd (Logger.Memory.records memory) in
       check_string "the forked fiber logged" "forked" record.msg;
       Alcotest.(check (list (pair string string)))
-        "with the inherited field" [ ("tab", "t-1") ] record.Logger.context)
+        "with the inherited field"
+        [ ("tab", "t-1") ]
+        record.Logger.context)
 
 (* ^nobs-2d4r: nesting replaces a name in place, keeps the rest, and restores
    the outer set when the inner extent ends. *)
@@ -123,9 +132,12 @@ let test_context_nesting () =
   Eta_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
-      Context.with_fields [ ("tab", "t-1"); ("owner", "outer") ] (fun () ->
-          Context.with_fields [ ("owner", "inner"); ("cmd", "run") ] (fun () ->
-              Logger.info logger "nested");
+      Context.with_fields
+        [ ("tab", "t-1"); ("owner", "outer") ]
+        (fun () ->
+          Context.with_fields
+            [ ("owner", "inner"); ("cmd", "run") ]
+            (fun () -> Logger.info logger "nested");
           Logger.info logger "restored");
       let records = Logger.Memory.records memory in
       Alcotest.(check (list (pair string string)))
@@ -141,9 +153,11 @@ let test_context_nesting () =
    abort the caller. *)
 let test_context_outside_fiber () =
   Alcotest.(check (list (pair string string)))
-    "empty" [] (Context.fields (Context.current ()));
+    "empty" []
+    (Context.fields (Context.current ()));
   Alcotest.(check (list (pair string string)))
-    "empty by construction" [] (Context.fields Context.empty)
+    "empty by construction" []
+    (Context.fields Context.empty)
 
 (* ^nobs-og4h: one record carries the timestamp, the level, the message, the
    event's fields and the fiber's inherited context. *)
@@ -152,16 +166,21 @@ let test_log_record () =
       let memory = Logger.Memory.create () in
       set_wall env 5.25;
       let logger = make_logger env memory in
-      Context.with_fields [ ("tab", "t-1") ] (fun () ->
+      Context.with_fields
+        [ ("tab", "t-1") ]
+        (fun () ->
           Logger.log logger Logger.Warn ~msg:"degraded"
-            ~fields:[ ("attempt", Logger.Int 2) ] ());
+            ~fields:[ ("attempt", Logger.Int 2) ]
+            ());
       let record = List.hd (Logger.Memory.records memory) in
       check_string "service" "leash" record.service;
       check_string "message" "degraded" record.msg;
       Alcotest.(check level_testable) "level" Logger.Warn record.level;
       Alcotest.(check (float 0.)) "timestamp from the wall clock" 5.25 record.ts;
       Alcotest.(check (list (pair string string)))
-        "inherited context" [ ("tab", "t-1") ] record.Logger.context;
+        "inherited context"
+        [ ("tab", "t-1") ]
+        record.Logger.context;
       check_string "the event's own field" "2" (field_text record "attempt");
       check_string "the line"
         "{\"ts\":\"1970-01-01T00:00:05.250Z\",\"level\":\"warn\",\"service\":\"leash\",\"msg\":\"degraded\",\"fields\":{\"attempt\":2},\"context\":{\"tab\":\"t-1\"}}"
@@ -264,8 +283,7 @@ let test_memory_find () =
       Logger.error logger
         ~fields:[ ("token", Logger.Redacted (Redact.make "s3cret")) ]
         "third";
-      check_int "by level" 2
-        (List.length (Logger.Memory.find ~level:Logger.Error memory));
+      check_int "by level" 2 (List.length (Logger.Memory.find ~level:Logger.Error memory));
       check_int "by field" 1
         (List.length (Logger.Memory.find ~field:("tab", "t-1") memory));
       check_int "by level and field" 1
@@ -310,7 +328,8 @@ let test_span_ok () =
             set_mono env 0.25;
             Ok 42)
       in
-      Alcotest.(check (result int string)) "the span returns what it wrapped" (Ok 42) result;
+      Alcotest.(check (result int string))
+        "the span returns what it wrapped" (Ok 42) result;
       let records = Logger.Memory.records memory in
       check_int "start and end" 2 (List.length records);
       let started = List.nth records 0 and finished = List.nth records 1 in
@@ -319,8 +338,8 @@ let test_span_ok () =
       check_string "outcome" "ok" (field_text finished "outcome");
       check_string "elapsed on the monotonic clock" "250"
         (field_text finished "elapsed_ms");
-      Alcotest.(check level_testable) "the end keeps the span's level" Logger.Info
-        finished.level)
+      Alcotest.(check level_testable)
+        "the end keeps the span's level" Logger.Info finished.level)
 
 (* ^nobs-xovg: a typed failure is logged with its cause summary and returned. *)
 let test_span_failure () =
@@ -328,21 +347,19 @@ let test_span_failure () =
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let result =
-        Logger.span ~pp_err:Format.pp_print_string logger "fetch" (fun () ->
-            Error "boom")
+        Logger.span ~pp_err:Format.pp_print_string logger "fetch" (fun () -> Error "boom")
       in
-      Alcotest.(check (result int string)) "the failure travels unchanged"
-        (Error "boom") result;
+      Alcotest.(check (result int string))
+        "the failure travels unchanged" (Error "boom") result;
       let finished = List.nth (Logger.Memory.records memory) 1 in
       check_string "outcome" "failed" (field_text finished "outcome");
       check_string "cause summary" "Fail(boom)" (field_text finished "error");
-      Alcotest.(check level_testable) "a failure is an error-level record"
-        Logger.Error finished.level;
-      ignore
-        (Logger.span logger "fetch2" (fun () -> Error "boom"));
+      Alcotest.(check level_testable)
+        "a failure is an error-level record" Logger.Error finished.level;
+      ignore (Logger.span logger "fetch2" (fun () -> Error "boom"));
       let default_summary = List.nth (Logger.Memory.records memory) 3 in
-      check_string "without a printer the summary names the cause"
-        "Fail(<error>)" (field_text default_summary "error"))
+      check_string "without a printer the summary names the cause" "Fail(<error>)"
+        (field_text default_summary "error"))
 
 (* ^nobs-xovg: a raise is logged as a defect and re-raised. *)
 let test_span_defect () =
@@ -359,8 +376,8 @@ let test_span_defect () =
       check_string "outcome" "defect" (field_text finished "outcome");
       check_string "the defect is summarized" "Die(Failure(\"bad\"))"
         (field_text finished "error");
-      Alcotest.(check level_testable) "a defect is an error-level record"
-        Logger.Error finished.level)
+      Alcotest.(check level_testable)
+        "a defect is an error-level record" Logger.Error finished.level)
 
 (* ^nobs-xovg: cancellation is an interruption, not a defect, and propagates. *)
 let test_span_interrupt () =
@@ -387,17 +404,22 @@ let test_span_fields_and_context () =
   Eta_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
-      Context.with_fields [ ("tab", "t-1") ] (fun () ->
+      Context.with_fields
+        [ ("tab", "t-1") ]
+        (fun () ->
           ignore
             (Logger.span logger
                ~fields:[ ("url", Logger.String "https://example.test") ]
-               "fetch" (fun () -> Ok ())));
+               "fetch"
+               (fun () -> Ok ())));
       let records = Logger.Memory.records memory in
       check_int "start and end" 2 (List.length records);
       List.iter
         (fun record ->
           Alcotest.(check (list (pair string string)))
-            "the inherited context" [ ("tab", "t-1") ] record.Logger.context;
+            "the inherited context"
+            [ ("tab", "t-1") ]
+            record.Logger.context;
           check_string "the span's own field" "https://example.test"
             (field_text record "url"))
         records)
@@ -408,12 +430,11 @@ let test_span_minimum_level () =
       let memory = Logger.Memory.create () in
       let logger = make_logger ~level:Logger.Warn env memory in
       let result = Logger.span logger "quiet" (fun () -> Ok 1) in
-      Alcotest.(check (result int string)) "the span still returns its value" (Ok 1)
-        result;
+      Alcotest.(check (result int string))
+        "the span still returns its value" (Ok 1) result;
       check_int "a success below the minimum writes nothing" 0 (record_count memory);
       ignore
-        (Logger.span ~pp_err:Format.pp_print_string logger "loud" (fun () ->
-             Error "boom"));
+        (Logger.span ~pp_err:Format.pp_print_string logger "loud" (fun () -> Error "boom"));
       let records = Logger.Memory.records memory in
       check_int "only the failure record survives" 1 (List.length records);
       let record = List.hd records in
@@ -435,8 +456,7 @@ let test_dependency_ceiling () =
     | _ -> []
   in
   let depends =
-    lines
-    |> drop_while (fun line -> not (String.starts_with ~prefix:"depends: [" line))
+    lines |> drop_while (fun line -> not (String.starts_with ~prefix:"depends: [" line))
     |> function
     | [] -> Alcotest.fail "eta_observability.opam has no depends list"
     | _ :: rest -> take_while (fun line -> not (String.equal (String.trim line) "]")) rest
@@ -449,15 +469,18 @@ let test_dependency_ceiling () =
         | None -> None
         | Some stop -> Some (String.sub line (start + 1) (stop - start - 1)))
   in
-  let test_only line =
-    contains line "with-test" || contains line "with-doc"
-  in
+  let test_only line = contains line "with-test" || contains line "with-doc" in
   let runtime =
     List.filter_map
-      (fun line -> match name_of line with Some name when not (test_only line) -> Some name | _ -> None)
+      (fun line ->
+        match name_of line with
+        | Some name when not (test_only line) -> Some name
+        | _ -> None)
       depends
   in
-  let allowed = [ "dune"; "ocaml"; "conf-eta-oxcaml"; "eta"; "eio"; "eta_json"; "mtime" ] in
+  let allowed =
+    [ "dune"; "ocaml"; "conf-eta-oxcaml"; "eta"; "eio"; "eta_json"; "mtime" ]
+  in
   List.iter
     (fun name ->
       if not (List.mem name allowed) then
@@ -472,62 +495,67 @@ let test_dependency_ceiling () =
 let () =
   Alcotest.run "eta_observability"
     [
-      ("Redact", [
-         Alcotest.test_case "prints <redacted> on every path (^nobs-iedi)" `Quick
-           test_redact_paths;
-         Alcotest.test_case "a record never carries the secret (^nobs-iedi)" `Quick
-           test_redact_in_record;
-       ]);
-      ("Context", [
-         Alcotest.test_case "fields reach records inside their extent (^nobs-2d4r)"
-           `Quick test_context_extent;
-         Alcotest.test_case "a forked fiber inherits the fields (^nobs-2d4r)" `Quick
-           test_context_fork_inheritance;
-         Alcotest.test_case "nesting replaces and restores (^nobs-2d4r)" `Quick
-           test_context_nesting;
-         Alcotest.test_case "outside an Eio fiber the context is empty (^nobs-2d4r)"
-           `Quick test_context_outside_fiber;
-       ]);
-      ("Logger", [
-         Alcotest.test_case
-           "one record with timestamp, level, message, fields and context (^nobs-og4h)"
-           `Quick test_log_record;
-         Alcotest.test_case "base fields are defaults (^nobs-og4h)" `Quick
-           test_base_fields;
-         Alcotest.test_case "a minimum level drops records below it (^nobs-262i)"
-           `Quick test_minimum_level;
-         Alcotest.test_case "a message is rate limited per window (^nobs-262i)" `Quick
-           test_rate_limit;
-       ]);
-      ("Journal", [
-         Alcotest.test_case
-           "one compact JSON object per line, fixed key order (^nobs-ek28)" `Quick
-           test_journal_lines;
-         Alcotest.test_case "timestamps are UTC milliseconds (^nobs-ek28)" `Quick
-           test_journal_timestamp;
-       ]);
-      ("Memory", [
-         Alcotest.test_case "queries by level and by field (^nobs-rayu)" `Quick
-           test_memory_find;
-       ]);
-      ("Span", [
-         Alcotest.test_case "start and end with elapsed time (^nobs-xovg)" `Quick
-           test_span_ok;
-         Alcotest.test_case "a typed failure is summarized (^nobs-xovg)" `Quick
-           test_span_failure;
-         Alcotest.test_case "a raise is a defect and propagates (^nobs-xovg)" `Quick
-           test_span_defect;
-         Alcotest.test_case "cancellation is an interruption (^nobs-xovg)" `Quick
-           test_span_interrupt;
-         Alcotest.test_case "spans carry fields and context (^nobs-xovg)" `Quick
-           test_span_fields_and_context;
-         Alcotest.test_case
-           "a span respects the minimum level (^nobs-262i ^nobs-xovg)" `Quick
-           test_span_minimum_level;
-       ]);
-      ("Package", [
-         Alcotest.test_case
-           "depends on eta, eio and eta_json only (^nobs-6x58)" `Quick
-           test_dependency_ceiling;
-       ]);
+      ( "Redact",
+        [
+          Alcotest.test_case "prints <redacted> on every path (^nobs-iedi)" `Quick
+            test_redact_paths;
+          Alcotest.test_case "a record never carries the secret (^nobs-iedi)" `Quick
+            test_redact_in_record;
+        ] );
+      ( "Context",
+        [
+          Alcotest.test_case "fields reach records inside their extent (^nobs-2d4r)"
+            `Quick test_context_extent;
+          Alcotest.test_case "a forked fiber inherits the fields (^nobs-2d4r)" `Quick
+            test_context_fork_inheritance;
+          Alcotest.test_case "nesting replaces and restores (^nobs-2d4r)" `Quick
+            test_context_nesting;
+          Alcotest.test_case "outside an Eio fiber the context is empty (^nobs-2d4r)"
+            `Quick test_context_outside_fiber;
+        ] );
+      ( "Logger",
+        [
+          Alcotest.test_case
+            "one record with timestamp, level, message, fields and context (^nobs-og4h)"
+            `Quick test_log_record;
+          Alcotest.test_case "base fields are defaults (^nobs-og4h)" `Quick
+            test_base_fields;
+          Alcotest.test_case "a minimum level drops records below it (^nobs-262i)" `Quick
+            test_minimum_level;
+          Alcotest.test_case "a message is rate limited per window (^nobs-262i)" `Quick
+            test_rate_limit;
+        ] );
+      ( "Journal",
+        [
+          Alcotest.test_case
+            "one compact JSON object per line, fixed key order (^nobs-ek28)" `Quick
+            test_journal_lines;
+          Alcotest.test_case "timestamps are UTC milliseconds (^nobs-ek28)" `Quick
+            test_journal_timestamp;
+        ] );
+      ( "Memory",
+        [
+          Alcotest.test_case "queries by level and by field (^nobs-rayu)" `Quick
+            test_memory_find;
+        ] );
+      ( "Span",
+        [
+          Alcotest.test_case "start and end with elapsed time (^nobs-xovg)" `Quick
+            test_span_ok;
+          Alcotest.test_case "a typed failure is summarized (^nobs-xovg)" `Quick
+            test_span_failure;
+          Alcotest.test_case "a raise is a defect and propagates (^nobs-xovg)" `Quick
+            test_span_defect;
+          Alcotest.test_case "cancellation is an interruption (^nobs-xovg)" `Quick
+            test_span_interrupt;
+          Alcotest.test_case "spans carry fields and context (^nobs-xovg)" `Quick
+            test_span_fields_and_context;
+          Alcotest.test_case "a span respects the minimum level (^nobs-262i ^nobs-xovg)"
+            `Quick test_span_minimum_level;
+        ] );
+      ( "Package",
+        [
+          Alcotest.test_case "depends on eta, eio and eta_json only (^nobs-6x58)" `Quick
+            test_dependency_ceiling;
+        ] );
     ]

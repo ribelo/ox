@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app, eta (Concurrent), repository root
 consumer: Leash milestone 1 (chrome-fuao: the control listener needs the status query before serve blocks)
 ---
@@ -36,3 +36,6 @@ A status query composed as a plain value before serving; `race` failing with the
 ## Out of Scope
 
 Anything else the review accepted: `Scope.run` owning its switch, child-fiber `Die`, the Door's exit policy, eio_posix for tests, ADR-0007, the absence of `@ local` annotations (a later OxCaml pass, with its own spec).
+
+Verification: `nix develop -c dune build @install`, `nix develop -c dune test` (all ten suites, 179 tests, including `test/core`'s `nfix-yrjy race cause shape` and `test/app`'s `^nfix-j678` query-in-deps case) and `nix develop -c dune build @fmt` passed for the full tree.
+Verification: ocamlformat 0.29.0 is in the switch; `.ocamlformat` pins `version = 0.29.0`, `profile = default`, `margin = 90`; the tree was formatted once, and doc comments that ocamlformat's comment check called ambiguous now end with a blank line so each attaches to its own value (they previously attached to both neighbours).

@@ -1,43 +1,53 @@
-(** Test helpers over Eio and Eio_mock. [run] owns its Eio_main loop and
-    switch; switch cleanup waits for children and finalizers. *)
-type env = <
-  clock : Eio_mock.Clock.t;
-  mono_clock : Eio_mock.Clock.Mono.t;
-  fs : Eio.Fs.dir_ty Eio.Path.t;
-  cwd : Eio.Fs.dir_ty Eio.Path.t;
-  net : [`Unix | `Generic] Eio.Net.ty Eio.Resource.t;
-  process_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t;
-  backend_id : string;
->
+type env =
+  < clock : Eio_mock.Clock.t
+  ; mono_clock : Eio_mock.Clock.Mono.t
+  ; fs : Eio.Fs.dir_ty Eio.Path.t
+  ; cwd : Eio.Fs.dir_ty Eio.Path.t
+  ; net : [ `Unix | `Generic ] Eio.Net.ty Eio.Resource.t
+  ; process_mgr : Eio_unix.Process.mgr_ty Eio.Resource.t
+  ; backend_id : string >
+(** Test helpers over Eio and Eio_mock. [run] owns its Eio_main loop and switch; switch
+    cleanup waits for children and finalizers. *)
 
 val run : (env -> Eio.Switch.t -> 'a) -> 'a
-(** Runs with manually controlled mock wall and monotonic clocks, with the
-    actual stdenv's fs, cwd, net and process manager. The operating system is
-    NOT virtualized. Switch finalizers and children finish before return;
-    cancellation propagates according to Eio's normal rules. *)
+(** Runs with manually controlled mock wall and monotonic clocks, with the actual stdenv's
+    fs, cwd, net and process manager. The operating system is NOT virtualized. Switch
+    finalizers and children finish before return; cancellation propagates according to
+    Eio's normal rules. *)
+
 val advance : Eio_mock.Clock.t -> Eta.Duration.t -> unit
-(** Sets virtual wall time and yields to let due sleepers run; does not
-    run switch finalizers. Caller controls the monotonic clock separately. *)
+(** Sets virtual wall time and yields to let due sleepers run; does not run switch
+    finalizers. Caller controls the monotonic clock separately. *)
+
 type ('a, 'e) handle
+
 val fork_run : sw:Eio.Switch.t -> (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) handle
-(** Starts [Eta.Scope.run] in [sw], recording the active fiber. External
-    cancellation is classified by Scope.run and cleanup is awaited. *)
+(** Starts [Eta.Scope.run] in [sw], recording the active fiber. External cancellation is
+    classified by Scope.run and cleanup is awaited. *)
+
 val await : ('a, 'e) handle -> ('a, 'e) Eta.Exit.t
 (** Waits for the classified Exit; cancellation of the waiter propagates. *)
+
 val assert_no_fibers_left : unit -> unit
-(** Fails when a fiber started by [fork_run] is still active. This is a
-    census of tracked test fibers, not arbitrary Eio fibers. Does not cancel
-    leaked fibers or run their finalizers. *)
+(** Fails when a fiber started by [fork_run] is still active. This is a census of tracked
+    test fibers, not arbitrary Eio fibers. Does not cancel leaked fibers or run their
+    finalizers. *)
+
 val cause : 'e Alcotest.testable -> 'e Eta.Cause.t Alcotest.testable
-val exit : 'a Alcotest.testable -> 'e Alcotest.testable -> ('a, 'e) Eta.Exit.t Alcotest.testable
-(** Structural comparison ignores backtraces in defects; pure, with no
-    cancellation or finalizer effects. *)
+
+val exit :
+  'a Alcotest.testable -> 'e Alcotest.testable -> ('a, 'e) Eta.Exit.t Alcotest.testable
+(** Structural comparison ignores backtraces in defects; pure, with no cancellation or
+    finalizer effects. *)
+
 val flow_pair : ?label:string -> string list -> Eio_mock.Flow.t * Eio_mock.Flow.t
-(** A scripted readable flow (one read per chunk, then EOF) and writable
-    sink. Neither registers a finalizer; callers can inspect writes with
-    Eio tracing or configure the sink using Eio_mock.Flow. *)
+(** A scripted readable flow (one read per chunk, then EOF) and writable sink. Neither
+    registers a finalizer; callers can inspect writes with Eio tracing or configure the
+    sink using Eio_mock.Flow. *)
+
 module Process : sig
   type script = Exit of Eio.Process.exit_status | Block_until_signal
+
   type spawn = {
     argv : string list;
     env : string array;
@@ -46,17 +56,21 @@ module Process : sig
     executable : string;
     fds : (int * Eio_unix.Fd.t * Eio_unix.Private.Fork_action.blocking) list;
   }
+
   type t
+
   val make : script list -> t
   (** Each spawn consumes one script. Exhaustion is a test defect. *)
+
   val mgr : t -> Eio_unix.Process.mgr_ty Eio.Resource.t
-  (** Real Eio process-manager resource supporting both [spawn] and
-      [spawn_unix]. Pipes use Eio's Unix backend, but no child OS process is
-      started. Generic spawns accept FD-backed standard streams only and do
-      not check whether the executable exists. [sw] cleanup sends SIGKILL
-      to a blocked child. *)
+  (** Real Eio process-manager resource supporting both [spawn] and [spawn_unix]. Pipes
+      use Eio's Unix backend, but no child OS process is started. Generic spawns accept
+      FD-backed standard streams only and do not check whether the executable exists. [sw]
+      cleanup sends SIGKILL to a blocked child. *)
+
   val spawns : t -> spawn list
   (** Spawns in call order; descriptors are retained as opaque references. *)
+
   val signals : t -> int list
   (** Signals received in call order, including cleanup SIGKILL when pending. *)
 end

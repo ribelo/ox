@@ -1,5 +1,8 @@
 (test
  (name run)
  (modules run pure)
- (deps ../../lib/eta/dune (glob_files ../../lib/eta/*.ml) (glob_files ../../lib/eta/*.mli))
+ (deps
+  ../../lib/eta/dune
+  (glob_files ../../lib/eta/*.ml)
+  (glob_files ../../lib/eta/*.mli))
  (libraries eta eio eio_main eio.mock alcotest))

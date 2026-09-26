@@ -24,4 +24,5 @@ Nothing enters this tree without a consumer. A change is justified by a user sto
 ```sh
 nix develop -c dune build @install
 nix develop -c dune test
+nix develop -c dune build @fmt
 ```
