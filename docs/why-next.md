@@ -68,7 +68,7 @@ and 'e cause =
   | Suppressed of { primary : 'e cause; finalizer : 'e cause }
   | Concurrent of 'e cause list
 
-val Scope.run : sw:Eio.Switch.t -> (unit -> ('a, 'e) result) -> ('a, 'e) exit
+val Scope.run : (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) exit
 ```
 
 Interruption identity is kept the same way v1 kept it — a private exception carrying an id is what a combinator cancels with — but now it is only ever *observed*, never *propagated by an interpreter*.
@@ -78,14 +78,15 @@ Interruption identity is kept the same way v1 kept it — a private exception ca
 Each is a function over Eio, returning `result` and classifying through `Scope`. There is no combinator that Eio does not need help with.
 
 ```ocaml
-val race    : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, 'e) result
+val race    : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, [> `Concurrent of 'e Cause.t]) result
   (* first success wins; losers are cancelled and awaited; all-fail → Concurrent *)
 val timeout : clock:_ Eio.Time.clock -> Duration.t -> (unit -> ('a, [> `Timeout ] as 'e) result) -> ('a, 'e) result
 val par     : sw:Switch.t -> (unit -> ('a, 'e) result) -> (unit -> ('b, 'e) result) -> ('a * 'b, 'e) result
   (* fail-fast: a failing side cancels the other and both are awaited *)
-val with_background : sw:Switch.t -> (unit -> unit) -> (unit -> ('a, 'e) result) -> ('a, 'e) result
+val with_background : sw:Switch.t -> (unit -> (unit, 'e) result) -> (unit -> ('a, 'e) result) -> ('a, 'e) result
   (* background is cancelled and awaited when the body settles; its own failure wins if it comes first *)
 val acquire_release : sw:Switch.t -> acquire:(unit -> ('r, 'e) result) -> release:('r -> unit) -> ('r, 'e) result
+  (* release runs when the switch closes; Scope.run classifies failures then *)
 ```
 
 The Switch is passed explicitly, as Eio does. Deadlines use `timeout`, never `race` against a sleep: race selects the first *success*.

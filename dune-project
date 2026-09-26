@@ -15,3 +15,13 @@
  (allow_empty)
  (synopsis "Verify Eta's supported OxCaml compiler")
  (description "Checks that the selected compiler is exactly OxCaml 5.4.0+ox before compiling Eta."))
+
+(package
+ (name eta)
+ (synopsis "Eta core typed failures and Eio concurrency")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eio
+  (eio_main :with-test)
+  (alcotest :with-test)))

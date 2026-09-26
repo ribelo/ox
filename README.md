@@ -9,3 +9,4 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `CONTEXT.md` — vocabulary
 - `docs/why-next.md` — why v1 was abandoned, how direct style works here, where effect handlers fit
 - `docs/adr/` — the decisions that are hard to reverse
+- `eta` — core typed failures, scoped resources, schedules, and Eio concurrency

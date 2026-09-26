@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta
 consumer: Leash milestone 1 (chrome-qo4q, chrome-2z2z, chrome-6lfk, chrome-b288, tab-hxld, tab-9x5e, own-uo77)
 ---
@@ -21,7 +21,7 @@ One package, `eta`, with: a `Result` syntax module; `Duration` and `Schedule` (c
 3. As a service author, I want `Schedule` as pure data — `spaced`, `fixed`, `exponential`, `fibonacci`, `linear`, `recurs`, `forever`, `during`, `recur_until`, `jittered`, `both`, `either`, `and_then`, `modify_delay` — stepped with an explicit `now_ms`, so that restart and expiry policies are values I can test without a clock. ^ncore-n04u
 4. As a service author, I want a `Cause` type distinguishing typed failure, defect with backtrace, interruption with optional identity, finalizer failure after success, a primary failure with a suppressed finalizer failure, and concurrent causes, so that every failure is fully described. ^ncore-k6az
 5. As a service author, I want `Exit` as success-or-Cause with `pp`, `is_interrupt_only`, `to_result` (typed failure only) and `process_code`, so that boundaries render and map outcomes uniformly. ^ncore-4hth
-6. As a service author, I want `Scope.run ~sw f` to run `f` and return an `Exit` where a returned `Error` is `Fail`, an escaped exception is `Die` with its backtrace, `Eio.Cancel.Cancelled` is `Interrupt` with the identity when it carries one, and a failing `Switch.on_release` is `Finalizer` (or `Suppressed` under a primary failure), so that classification is done once, at the boundary. ^ncore-3ry6
+6. As a service author, I want `Scope.run f` to own a Switch, pass it to `f`, and return an `Exit` where a returned `Error` is `Fail`, an escaped exception is `Die` with its backtrace, `Eio.Cancel.Cancelled` is `Interrupt` with the identity when it carries one, and a failing `Switch.on_release` is `Finalizer` (or `Suppressed` under a primary failure), so that classification is done once, at the boundary. ^ncore-3ry6
 7. As a service author, I want interruptions requested by Eta's own combinators to carry a private identity, so that `Scope` and `with_background` can tell "we stopped it" from "someone cancelled us". ^ncore-5caq
 8. As a service author, I want `timeout ~clock d f` to fail with ``Timeout`` after `d` and to cancel and await `f` before returning, so that a timed-out body never runs on after the deadline. ^ncore-7n2j
 9. As a service author, I want `race ~sw fs` to return the first *success*, cancel and await the losers, and, when all fail, return a `Concurrent` of their causes, so that deadlines are never expressed as a race against a sleep. ^ncore-7vo9
@@ -70,3 +70,6 @@ Streams, queues, semaphores, pools, pubsub (Eio has `Stream`, `Semaphore`, `Mute
 
 - The handled-effect spike (`.scratch/research/handled-pattern/`) may later change the error channel; this spec assumes `result` per ADR-0002.
 - The flake's package list must be updated as this package appears (see `docs/issues/README.md` row 0).
+
+Verification: `nix develop -c dune build @install` and `nix develop -c dune test test/core` pass (62 tests; all 24 story IDs).
+Whole-tree `nix develop -c dune test` awaits schema worker’s `Yojson` test fix; integration lead will rerun it.
