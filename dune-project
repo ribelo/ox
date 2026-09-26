@@ -109,3 +109,19 @@
   (eta_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_observability)
+ (synopsis "Structured logging with fiber-local fields and journal output")
+ (description
+  "eta_observability writes one compact JSON object per line carrying a timestamp, a level, the service name, the message, the event's fields and the fields its fiber inherited. Secrets travel as redacted values that print as <redacted> through every path, and spans log their elapsed time and outcome without an exporter.")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  eta_json
+  mtime
+  (eta_test :with-test)
+  (eio_main :with-test)
+  (alcotest :with-test)))

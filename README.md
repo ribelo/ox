@@ -17,3 +17,4 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `eta_rpc` — scoped request/reply correlation over message streams
 - `eta_ipc` — private Unix control listeners with scoped socket ownership and bounded peers
 - `eta_process` — scoped Unix children with graceful termination and scheduled supervision
+- `eta_observability` — structured logs with fiber-local fields, redacted secrets, spans, and one JSON object per line for the journal

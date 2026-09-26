@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_observability
 consumer: Leash milestone 1 (chrome-fuao), milestone 6 (svc-p67t, svc-qilu, svc-f4op)
 ---
@@ -38,3 +38,6 @@ A service needs structured logs in the journal with the fields that identify the
 ## Out of Scope
 
 OTLP, metrics, sampling, trace propagation headers — each a later spec when Leash milestone 6 or Pie pulls it.
+
+Verification: `nix develop -c env DUNE_BUILD_DIR=_build_obs dune build @install` passed for the whole tree and `dune test test/observability` passed 20 tests; every story ID (^nobs-og4h, ^nobs-2d4r, ^nobs-ek28, ^nobs-rayu, ^nobs-iedi, ^nobs-262i, ^nobs-xovg, ^nobs-6x58) is cited by name in `test/observability/run.ml`.
+Verification: eta_test's mock clocks drive the wall-clock timestamp (asserted byte-for-byte in the journal line), the rate-limit window, and span elapsed time; context inheritance across `Eio.Fiber.fork`, redaction through `pp`/`to_string`/JSON/record, and span outcomes on Ok, typed Error, raise and cancellation are all asserted.

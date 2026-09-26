@@ -1,0 +1,4 @@
+(test
+ (name run)
+ (deps ../../eta_observability.opam)
+ (libraries eta_observability eta eta_test eta_json eio eio.mock alcotest mtime))
