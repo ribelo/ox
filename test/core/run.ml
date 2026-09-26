@@ -57,6 +57,64 @@ let test_scope_classification () =
      | Exit.Failure (Cause.Suppressed { primary = Cause.Fail "typed"; finalizer = Cause.Die (Failure _, _) }) -> ()
      | _ -> Alcotest.fail "release after failure"))
 
+let test_scope_child_defect () =
+  Eio_main.run (fun _ ->
+    (match Scope.run (fun sw ->
+      Eio.Fiber.fork ~sw (fun () -> Eio.Fiber.yield (); failwith "child");
+      Ok ()) with
+    | Exit.Failure (Cause.Die (Failure _, bt)) ->
+        Alcotest.(check bool) "forked defect backtrace retained" true
+          (String.length (Printexc.raw_backtrace_to_string bt) > 0)
+    | actual -> Alcotest.failf "forked failure misclassified as finalizer: %a" (Exit.pp (fun _ () -> ()) Format.pp_print_string) actual);
+    let outside = Failure "outside" in
+    let canceled = Eio.Cancel.sub (fun context ->
+      Eio.Switch.run (fun outer ->
+        Eio.Fiber.fork ~sw:outer (fun () -> Eio.Fiber.yield (); Eio.Cancel.cancel context outside);
+        Scope.run (fun sw ->
+          Eio.Fiber.fork ~sw (fun () -> Eio.Fiber.await_cancel ());
+          Eio.Fiber.await_cancel ()))) in
+    (match canceled with
+    | Exit.Failure (Cause.Interrupt None) -> ()
+    | actual -> Alcotest.failf "parent cancellation misclassified as child defect: %a"
+        (Exit.pp (fun _ () -> ()) Format.pp_print_string) actual);
+    let same = Failure "same" in
+    (match Scope.run (fun sw -> Eio.Switch.fail sw same; raise same) with
+    | Exit.Failure (Cause.Die (ex, _)) when ex == same -> ()
+    | _ -> Alcotest.fail "same body and switch defect duplicated");
+    let same_multiple = Failure "multiple" in
+    (match Scope.run (fun sw ->
+      Eio.Switch.fail sw (Eio.Exn.Multiple [same_multiple, Printexc.get_callstack 3]);
+      raise same_multiple) with
+    | Exit.Failure (Cause.Die (ex, _)) when ex == same_multiple -> ()
+    | _ -> Alcotest.fail "same defect in Eio Multiple duplicated");
+    let group = Eio.Exn.Multiple [Failure "one", Printexc.get_callstack 3] in
+    (match Scope.run (fun sw -> Eio.Switch.fail sw group; raise group) with
+    | Exit.Failure (Cause.Die (ex, _)) when ex == group -> ()
+    | _ -> Alcotest.fail "physically identical Multiple duplicated");
+    let grouped_child = Eio.Exn.Multiple [Failure "grouped child", Printexc.get_callstack 3] in
+    (match Scope.run (fun sw ->
+      Eio.Fiber.fork ~sw (fun () -> Eio.Fiber.yield (); raise grouped_child);
+      Ok ()) with
+    | Exit.Failure (Cause.Die (ex, _)) when ex == grouped_child -> ()
+    | _ -> Alcotest.fail "aggregated child defect classified as cleanup");
+    let child = Failure "typed child" in
+    (match Scope.run (fun sw ->
+      Eio.Fiber.fork ~sw (fun () -> Eio.Fiber.yield (); raise child);
+      Error "typed") with
+    | Exit.Failure (Cause.Concurrent [Cause.Fail "typed"; Cause.Die (ex, _)])
+      when ex == child -> ()
+    | _ -> Alcotest.fail "typed error and child defect must not become release error");
+    let child = Failure "child before release" in
+    let release = Failure "release after child" in
+    (match Scope.run (fun sw ->
+      Eio.Switch.on_release sw (fun () -> raise release);
+      Eio.Fiber.fork ~sw (fun () -> Eio.Fiber.yield (); raise child);
+      Ok ()) with
+    | Exit.Failure (Cause.Suppressed {
+        primary = Cause.Die (ex, _);
+        finalizer = Cause.Die (fin, _) }) when ex == child && fin == release -> ()
+    | _ -> Alcotest.fail "child defect and later release must remain distinct"))
+
 let test_resource () =
   Eio_main.run (fun _ ->
     let order = ref [] in
@@ -251,6 +309,7 @@ let () = Alcotest.run "eta core" (Pure.tests @ [
     Alcotest.test_case "ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg ncore-p30f cause exit" `Quick test_cause_exit ];
   "Scopes ncore-3ry6 ncore-5caq ncore-zpe1", [
     Alcotest.test_case "ncore-3ry6 ncore-5caq classification" `Quick test_scope_classification;
+    Alcotest.test_case "ncore-3ry6 ncore-k6az child defects and deduplication" `Quick test_scope_child_defect;
     Alcotest.test_case "ncore-zpe1 resource" `Quick test_resource ];
   "Concurrency ncore-7n2j ncore-7vo9 ncore-a6g1 ncore-gpuq ncore-mvvi", [
     Alcotest.test_case "ncore-7n2j ncore-acna timeout mock" `Quick test_timeout_mock;
