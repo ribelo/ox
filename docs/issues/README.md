@@ -20,6 +20,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 11 | `limits-1/01-limits-1.md` | `eta_test`, `eta_app`, `eta_process`, `eta_rpc`, `eta_ipc` docs | 1–8 | Leash milestone 1 tests | [x] |
 | 12 | `modes-and-portability/01-modes-and-portability.md` | all | 1–9 | stable signatures before Leash pins | [x] |
 | 13 | `port-v1-tests/01-port-v1-tests.md` | `test/` | 1, 4, 9 | trust in the combinators | [x] |
+| 14 | `door-validate/01-door-validate.md` | `eta_app` | 5 | Leash L1 (svc-ljl3, svc-tkor) | [ ] |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. HTTP, AI (OpenRouter), SQL, par/blocking and stream have no spec yet: they are written when Leash milestone 5 or another consumer pulls them (ADR-0003).
 
