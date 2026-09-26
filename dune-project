@@ -92,7 +92,7 @@
   (conf-eta-oxcaml (= :version))
   eta
   eio
-  unix
+  base-unix
   (eta_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
