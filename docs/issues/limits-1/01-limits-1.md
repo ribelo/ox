@@ -1,5 +1,8 @@
 ---
-status: ready-for-agent
+status: completed
+verification: |
+  2026-09-26: commit 181fcc33 gated in a clean worktree — dune build @install, dune test (all suites) and dune build @fmt green.
+  Census leak test fails on a deliberate leak; real SIGTERM/SIGINT fixture exits 0; Stopped/Closed delivered once, last.
 package: eta_test, eta_app, eta_process, eta_rpc, eta_ipc (docs only)
 consumer: Leash milestone 1 (chrome-qo4q, chrome-2z2z, chrome-b288) and its tests
 ---
