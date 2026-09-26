@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app
 consumer: Leash milestone 6 (svc-ljl3, svc-tkor), pulled by milestone 1 row L1
 ---
@@ -33,3 +33,6 @@ An optional validator passed to the Door, run after decoding and before the prog
 ## Out of Scope
 
 Async or long-running validation; validation after start.
+
+Verification: `nix develop -c dune build @install`, `nix develop -c dune test`, and `nix develop -c dune build @fmt` passed for the full tree.
+Verification: `test/app` ran six new story-linked cases — a failing validator exits 2 without entering the program, env overrides and the Door's Env reach it, an fs-backed check fails on a missing file, a raising validator renders through `Cause.pp`, `config check` reports the same errors before printing the redacted config, and `Eta_app.run` in the spawned fixture stops before the program on a rejected port.

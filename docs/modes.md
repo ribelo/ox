@@ -19,7 +19,7 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Eta_schema.enum, tagged_union, union_cases, union, record0–record6, record_fields, custom, transform` | **Global**; equality, encoding, decoding and record construction callbacks are retained by the resulting schema. |
 | `Eta_schema.case, lazy_, union_case, required, optional, required_member, optional_member, refine` | **Global**; decoders, encoders, lazy builders, injectors, projectors, accessors, mutators and validators are retained for later operations. |
 | `Eta_app.status_query` | **Global**; returns a closure retaining the status callback list. |
-| `Eta_app.run_for_test, run` | **Global**; test hooks, commands, printers, `getenv`, read/write callbacks and program may be retained by Cmdliner/Eio switch and by nested callbacks; cannot guarantee in-place consumption. |
+| `Eta_app.run_for_test, run` | **Global**; test hooks, commands, printers, `getenv`, read/write callbacks, `?validate` and program may be retained by Cmdliner/Eio switch and by nested callbacks. The validator runs in place, but a trial `@ local` failed at `eta_app.ml`'s `Term.const (execute false)`: "This value is local but is expected to be global" — the Cmdliner term that evaluates `run` and `config check` captures it, so it cannot be `local`. |
 | `Eta_app.Config.path, decode, load` | **Global**; `getenv` and `read` are forwarded to helpers / used by the config load path without a fully local transitive contract. |
 | `Eta_test.run, fork_run, with_census` | **Global**; Eio runtime, switch/fork and fiber-local census APIs respectively receive callbacks with no local parameter. |
 | `Supervised.start ~spawn` | **Global**; stored for supervised respawns in Eio fibers. |

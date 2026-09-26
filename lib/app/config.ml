@@ -1,17 +1,23 @@
 open Eta_schema
 
 type error = [ `Config of string ]
+type validation_error = { pointer : string; message : string }
 
 let ( let* ) = Result.bind
+let pointer_text pointer text = if pointer = "" then text else text ^ " (" ^ pointer ^ ")"
 
 let issue_text issues =
   String.concat "; "
     (List.map
        (fun issue ->
-         let pointer = Eta_schema.issue_to_json_pointer issue in
-         let text = Eta_schema.render_issue issue in
-         if pointer = "" then text else text ^ " (" ^ pointer ^ ")")
+         pointer_text
+           (Eta_schema.issue_to_json_pointer issue)
+           (Eta_schema.render_issue issue))
        issues)
+
+let render_validation_errors errors =
+  String.concat "; "
+    (List.map (fun { pointer; message } -> pointer_text pointer message) errors)
 
 let fail path message = Error [ Eta_schema.issue ~path message ]
 

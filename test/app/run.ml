@@ -1,7 +1,7 @@
 (* Story IDs covered: ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
    ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-yplu ^napp-tuvw
    ^napp-svkp ^napp-o6d6 ^napp-mbpr ^napp-433c ^napp-fu4q
-   ^nfix-j678. *)
+   ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678. *)
 open Eta_app
 
 let check_int = Alcotest.(check int)
@@ -39,19 +39,20 @@ let good = "port = 42\n[models]\napi_key = \"file-secret\"\n"
 let getenv = function "HOME" -> Some "/home/demo" | _ -> None
 let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 
-let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch
+let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
     ?(read_path = fun _ -> ()) ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
           method mono_clock = base#mono_clock
+          method fs = base#fs
         end
       in
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ~env ~name:"demo" ~config:schema ~pp_err
+        run_for_test ?on_switch ?validate ~env ~name:"demo" ~config:schema ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -304,6 +305,116 @@ let test_check_and_env () =
   check_int "^napp-svkp invalid check" 2 code;
   expect_part err "/models"
 
+(* ^napp-57qi ^napp-dnru: a failing validator stops the Door before the program's switch,
+   and its errors render like decode issues. *)
+let test_validate_blocks () =
+  let started = ref false in
+  let validate _ _ =
+    Error
+      [
+        { Config.pointer = "/port"; message = "port 42 is not available" };
+        { Config.pointer = ""; message = "chrome is not executable" };
+      ]
+  in
+  let code, out, err, _ =
+    run ~validate
+      ~program:(fun _ _ _ ->
+        started := true;
+        Ok ())
+      ()
+  in
+  check_int "^napp-57qi failing validator exits 2" 2 code;
+  check_string "^napp-57qi nothing printed for the program" "" out;
+  expect_part err "/port";
+  expect_part err "port 42 is not available";
+  expect_part err "chrome is not executable";
+  Alcotest.(check bool) "^napp-57qi program never entered" false !started
+
+(* ^napp-57qi: the validator runs after decoding and env overrides, with the Door's Env. *)
+let test_validate_env_and_config () =
+  let envvars = function
+    | "OPENROUTER_API_KEY" -> Some "override-secret"
+    | "PORT" -> Some "73"
+    | "HOME" -> Some "/home/demo"
+    | _ -> None
+  in
+  let seen_port = ref 0 in
+  let validate env cfg =
+    seen_port := cfg.port;
+    Eta_observability.Logger.info env.Env.logger "validated";
+    Ok ()
+  in
+  let code, _, err, logs = run ~validate ~envvars ~text:"port = 3\n[models]\n" () in
+  check_int "^napp-57qi validator accepts the effective config" 0 code;
+  check_string "no diagnostics" "" err;
+  check_int "^napp-57qi env override applied before validation" 73 !seen_port;
+  Alcotest.(check int)
+    "^napp-57qi validator got the Door's Env" 1
+    (List.length (Eta_observability.Logger.Memory.find logs))
+
+(* ^napp-57qi: an environment-dependent check reads the capability the Door passed: the
+   validator accepts the file while it exists and fails once it is gone, like a check for
+   the Chrome binary the problem statement names. *)
+let test_validate_uses_door_fs () =
+  let path = Filename.temp_file "eta-app-validate-" ".bin" in
+  let validate env cfg =
+    if Eio.Path.is_file Eio.Path.(env.Env.base#fs / cfg.models.api_key) then Ok ()
+    else Error [ { Config.pointer = "/models/api_key"; message = "no such file" } ]
+  in
+  let text = Printf.sprintf "port = 42\n[models]\napi_key = %S\n" path in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      let code, _, err, _ = run ~validate ~text () in
+      check_int "^napp-57qi validator sees the Door's fs" 0 code;
+      check_string "no diagnostics" "" err;
+      Sys.remove path;
+      let code, _, err, _ = run ~validate ~text () in
+      check_int "^napp-57qi missing environment file exits 2" 2 code;
+      expect_part err "/models/api_key";
+      expect_part err "no such file")
+
+(* ^napp-57qi ^napp-noiv: a raising validator is a defect on both paths. *)
+let test_validate_defect () =
+  let validate _ _ = failwith "validator exploded" in
+  let code, _, err, _ = run ~validate () in
+  check_int "^napp-57qi raising validator exits 2" 2 code;
+  expect_part err "validator exploded";
+  let code, _, err, _ = run ~validate ~argv:[| "demo"; "config"; "check" |] () in
+  check_int "^napp-noiv check agrees on a raising validator" 2 code;
+  expect_part err "validator exploded"
+
+(* ^napp-noiv: config check runs the validator, reports its errors with their pointers and
+   prints the redacted config only when it accepts. *)
+let test_check_validates () =
+  let calls = ref 0 in
+  let validate _ cfg =
+    incr calls;
+    if cfg.port = 42 then Ok ()
+    else Error [ { Config.pointer = "/port"; message = "port out of range" } ]
+  in
+  let code, out, err, _ =
+    run ~validate
+      ~argv:[| "demo"; "config"; "check" |]
+      ~program:(fun _ _ _ -> failwith "must not start")
+      ()
+  in
+  check_int "^napp-noiv check passes a passing validator" 0 code;
+  check_int "^napp-noiv check ran the validator" 1 !calls;
+  check_string "no error" "" err;
+  expect_part out "<redacted>";
+  let code, out, err, _ =
+    run ~validate
+      ~argv:[| "demo"; "config"; "check" |]
+      ~text:"port = 3\n[models]\napi_key = \"a\"\n"
+      ~program:(fun _ _ _ -> failwith "must not start")
+      ()
+  in
+  check_int "^napp-noiv check fails with the validator" 2 code;
+  check_string "^napp-noiv no config printed" "" out;
+  expect_part err "/port";
+  expect_part err "port out of range"
+
 let test_cli_hook () =
   Eta_test.run (fun base _ ->
       let env =
@@ -386,6 +497,50 @@ let test_cli_and_io_errors () =
       check_int "^napp-2aa6 unreadable config" 2 code;
       expect_part (Buffer.contents err) "no such file")
 
+(* ^napp-57qi: Eta_app.run itself, not only run_for_test, runs the validator before the
+   program's switch. The fixture is the only executable that goes through Eta_app.run. *)
+let test_run_validates () =
+  let config_path = Filename.temp_file "eta-app-validate-run-" ".toml" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    (fun () ->
+      let output = open_out config_path in
+      output_string output "port = 7\n";
+      close_out output;
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let fixture =
+                Filename.concat
+                  (Filename.dirname Sys.executable_name)
+                  "signal_fixture.exe"
+              in
+              let child =
+                match
+                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                    ~argv:[ fixture; "--config"; config_path ]
+                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                with
+                | Ok child -> child
+                | Error _ -> Alcotest.fail "invalid validator fixture spawn"
+              in
+              let status =
+                Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                    Eta_process.Child.await child)
+              in
+              Alcotest.(check bool)
+                "^napp-57qi run exits 2 without starting" true
+                (match status with Eta_process.Child.Exited 2 -> true | _ -> false);
+              let errors =
+                Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+              in
+              expect_part errors "/port";
+              expect_part errors "port rejected by validator";
+              let printed =
+                Eio.Flow.read_all (Option.get (Eta_process.Child.stdout child))
+              in
+              check_string "^napp-57qi the program never printed" "" printed)))
+
 (* nlimit-s3f4: real SIGTERM and SIGINT travel through the Door. *)
 let test_real_signal signo () =
   let config_path = Filename.temp_file "eta-app-signal-" ".toml" in
@@ -451,10 +606,21 @@ let () =
           Alcotest.test_case "^napp-yplu validation pointers" `Quick test_validation;
           Alcotest.test_case "^napp-tuvw ^napp-svkp env and check" `Quick
             test_check_and_env;
+          Alcotest.test_case "^napp-57qi ^napp-dnru validator blocks" `Quick
+            test_validate_blocks;
+          Alcotest.test_case "^napp-57qi validator env and effective config" `Quick
+            test_validate_env_and_config;
+          Alcotest.test_case "^napp-57qi validator uses the Door's fs" `Quick
+            test_validate_uses_door_fs;
+          Alcotest.test_case "^napp-57qi ^napp-noiv raising validator" `Quick
+            test_validate_defect;
+          Alcotest.test_case "^napp-noiv check runs the validator" `Quick
+            test_check_validates;
           Alcotest.test_case "^napp-3j07 command hook ^napp-fu4q deps" `Quick
             test_cli_hook;
           Alcotest.test_case "^napp-2aa6 ^napp-yplu CLI and IO errors" `Quick
             test_cli_and_io_errors;
+          Alcotest.test_case "^napp-57qi run runs the validator" `Quick test_run_validates;
           Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick
             (test_real_signal Sys.sigterm);
           Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick

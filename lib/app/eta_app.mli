@@ -6,6 +6,10 @@ module Env = Env
 module Status = Status
 module Config = Config
 
+type validation_error = Config.validation_error
+(** The Door's name for {!Config.validation_error}: one failure {!run}'s validator
+    returns, rendered like a decode issue. *)
+
 module type SERVICE = sig
   type t
   type config
@@ -41,6 +45,7 @@ val request_stop : sw:Eio.Switch.t -> Eta.Interrupt_id.t -> unit
 val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?validate:('base Env.t -> 'cfg -> (unit, validation_error list) result) ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
   name:string ->
@@ -56,10 +61,18 @@ val run_for_test :
 (** Evaluate the complete Door in the current Eio fiber without installing OS signals or
     accessing files except via [read]. [on_switch] can initiate interruption via
     {!request_stop}. Cmdliner help is sent to [stdout], diagnostics to [stderr]. All
-    switch finalizers finish before return. *)
+    switch finalizers finish before return.
+
+    [validate] runs after the config file is decoded and the schema's environment
+    overrides are applied, with this Door's {!Env}, and before the root switch exists. An
+    [Error] list is rendered to [stderr] and returned as exit 2 without entering the
+    program; a validator that raises is a defect, rendered with `Cause.pp` and also
+    exiting 2. The `config check` path runs it too, and prints the redacted config only
+    when it accepts. *)
 
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
   name:string ->
   config:'cfg Eta_schema.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->
@@ -68,4 +81,5 @@ val run :
 (** Own Eio_main, filesystem config loading, a journal logger, and SIGINT / SIGTERM
     handlers. Signal handlers only set an atomic flag and broadcast an Eio condition; a
     monitor fiber requests the interruption. Handlers are restored after all finalizers.
-*)
+    [validate] is forwarded to {!run_for_test} unchanged, so it runs on both the run and
+    `config check` paths before the program's switch. *)

@@ -3,6 +3,8 @@ module Env = Env
 module Status = Status
 module Config = Config
 
+type validation_error = Config.validation_error
+
 let status_query statuses () = List.map (fun status -> status ()) statuses
 
 let serve ~sw () =
@@ -37,8 +39,24 @@ let render ~stop_ids stderr pp_err = function
       stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
       2
 
-let run_for_test ?on_switch ?(commands = []) ~env ~journal ~name ~config ~pp_err ~getenv
-    ~read ~stderr ~stdout ~argv program =
+(* Runs after decoding and before the program's switch exists. A raise is a defect: it is
+   rendered with Cause.pp, and [pp_err] renders any typed payload as it would for a program
+   failure. [None] means the validator accepted the configuration. *)
+let validation_failure ~validate ~pp_err ~stderr env settings =
+  match validate env settings with
+  | Ok () -> None
+  | Error errors ->
+      Some
+        (stderr (Config.render_validation_errors errors ^ "\n");
+         2)
+  | exception exn ->
+      let cause = Cause.Die (exn, Printexc.get_raw_backtrace ()) in
+      Some
+        (stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
+         2)
+
+let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env ~journal
+    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let config_arg =
     Arg.(
@@ -52,36 +70,40 @@ let run_for_test ?on_switch ?(commands = []) ~env ~journal ~name ~config ~pp_err
     | Error (`Config message) ->
         stderr (message ^ "\n");
         2
-    | Ok settings ->
-        if check then (
-          match Eta_schema.encode_redacted config settings with
-          | Error issues ->
-              stderr
-                (String.concat "; "
-                   (List.map
-                      (fun issue ->
-                        Eta_schema.render_issue issue ^ " ("
-                        ^ Eta_schema.issue_to_json_pointer issue
-                        ^ ")")
-                      issues)
-                ^ "\n");
-              2
-          | Ok value ->
-              stdout (Eta_schema.Json.to_string value ^ "\n");
-              0)
-        else
-          let logger =
-            Eta_observability.Logger.create ~service:name ~clock:env#clock
-              ~mono_clock:env#mono_clock ~reporter:journal ()
-          in
-          let requested = ref [] in
-          let outcome =
-            Scope.run (fun sw ->
-                Eio.Fiber.with_binding stop_ids requested (fun () ->
-                    Option.iter (fun f -> f sw) on_switch;
-                    program { Env.base = env; logger } settings sw))
-          in
-          render ~stop_ids:requested stderr pp_err outcome
+    | Ok settings -> (
+        let logger =
+          Eta_observability.Logger.create ~service:name ~clock:env#clock
+            ~mono_clock:env#mono_clock ~reporter:journal ()
+        in
+        let door_env = { Env.base = env; logger } in
+        match validation_failure ~validate ~pp_err ~stderr door_env settings with
+        | Some code -> code
+        | None ->
+            if check then (
+              match Eta_schema.encode_redacted config settings with
+              | Error issues ->
+                  stderr
+                    (String.concat "; "
+                       (List.map
+                          (fun issue ->
+                            Eta_schema.render_issue issue ^ " ("
+                            ^ Eta_schema.issue_to_json_pointer issue
+                            ^ ")")
+                          issues)
+                    ^ "\n");
+                  2
+              | Ok value ->
+                  stdout (Eta_schema.Json.to_string value ^ "\n");
+                  0)
+            else
+              let requested = ref [] in
+              let outcome =
+                Scope.run (fun sw ->
+                    Eio.Fiber.with_binding stop_ids requested (fun () ->
+                        Option.iter (fun f -> f sw) on_switch;
+                        program door_env settings sw))
+              in
+              render ~stop_ids:requested stderr pp_err outcome)
   in
   let run_term = Term.(const (execute false) $ config_arg) in
   let check_term = Term.(const (execute true) $ config_arg) in
@@ -111,7 +133,7 @@ let run_for_test ?on_switch ?(commands = []) ~env ~journal ~name ~config ~pp_err
   if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
   match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
 
-let run ?commands ~name ~config ~pp_err program =
+let run ?commands ?validate ~name ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -147,7 +169,7 @@ let run ?commands ~name ~config ~pp_err program =
             try Ok (Eio.Path.load Eio.Path.(env#fs / path))
             with Eio.Io _ as e -> Error (Printexc.to_string e)
           in
-          run_for_test ?commands ~on_switch ~env
+          run_for_test ?commands ?validate ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
