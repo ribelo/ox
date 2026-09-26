@@ -1,0 +1,6 @@
+(library
+ (name eta_json)
+ (public_name eta_json)
+ (synopsis
+  "Untyped JSON accessors for Eta: bounded parse, builders, member reads")
+ (libraries yojson))

@@ -1,0 +1,83 @@
+type t = Yojson.Safe.t
+
+(* The two ways a byte-bounded parse can fail. Kept as a polymorphic variant so
+   a caller that only handles the bound narrows the union by matching. The bound
+   refusal carries its own record because polymorphic variants hold no inline
+   records. *)
+type too_large = {
+  limit : int;
+  length : int;
+}
+
+type parse_error = [ `Malformed of string | `Too_large of too_large ]
+
+let parse ?max_bytes raw =
+  (match max_bytes with
+  | Some limit when limit < 0 ->
+      invalid_arg "Eta_json.parse: max_bytes must not be negative"
+  | Some _ | None -> ());
+  match max_bytes with
+  | Some limit when String.length raw > limit ->
+      Error (`Too_large { limit; length = String.length raw })
+  | Some _ | None -> (
+      try Ok (Yojson.Safe.from_string raw) with
+      | Yojson.Json_error message -> Error (`Malformed message))
+
+let to_string json = Yojson.Safe.to_string json
+let compact = to_string
+let pp_parse_error fmt = function
+  | `Malformed message -> Format.pp_print_string fmt message
+  | `Too_large { limit; length } ->
+      Format.fprintf fmt "JSON input of %d bytes exceeds max_bytes (%d)" length limit
+
+let string value = `String value
+let bool value = `Bool value
+let int value = `Int value
+
+let float value =
+  if classify_float value = FP_nan || classify_float value = FP_infinite
+  then None
+  else Some (`Float value)
+
+let array values = `List values
+let array_map f values = array (List.map f values)
+
+let object_ fields =
+  let rec loop acc = function
+    | [] -> `Assoc (List.rev acc)
+    | (_, None) :: rest -> loop acc rest
+    | (name, Some value) :: rest -> loop ((name, value) :: acc) rest
+  in
+  loop [] fields
+
+let member name = function
+  | `Assoc fields -> List.assoc_opt name fields
+  | _ -> None
+
+let string_member name json =
+  match member name json with Some (`String value) -> Some value | _ -> None
+
+let scalar_string_member name json =
+  match member name json with
+  | Some (`String value) -> Some value
+  | Some (`Int value) -> Some (string_of_int value)
+  | Some (`Intlit value) -> Some value
+  | Some (`Float value) -> Some (Printf.sprintf "%.17g" value)
+  | Some (`Bool value) -> Some (string_of_bool value)
+  | _ -> None
+
+let int_member name json =
+  match member name json with
+  | Some (`Int value) -> Some value
+  | Some (`Intlit value) -> int_of_string_opt value
+  | Some (`Float value) when Float.is_integer value ->
+      let int_value = int_of_float value in
+      if Float.equal (float_of_int int_value) value then Some int_value else None
+  | Some (`Float _) -> None
+  | _ -> None
+
+let array_member name json =
+  match member name json with Some (`List values) -> Some values | _ -> None
+
+let object_member name json =
+  match member name json with Some (`Assoc _ as value) -> Some value | _ -> None

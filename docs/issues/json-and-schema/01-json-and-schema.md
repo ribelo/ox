@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_json, eta_schema, eta_schema_yojson
 consumer: Leash milestone 1 (chrome-38a4, control protocol and config decoding in docs/protocol.md), milestone 6 (svc-ljl3)
 ---
@@ -42,3 +42,9 @@ Three packages copied from the v1 tag with their tests, stripped of any `Effect.
 ## Out of Scope
 
 A JSON library other than Yojson; schema-driven code generation.
+
+## Verification
+
+`nix develop -c dune build -p eta_json,eta_schema,eta_schema_yojson @install` is green, and `nix develop -c dune test test/json test/schema test/schema_yojson` runs 7 + 32 + 9 Alcotest cases green, every case named for the story ID it covers (`njson-7pjx`, `njson-nc66`, `njson-3vf4`, `njson-fib9`, `njson-35ih`, `njson-3ph9`, `nschema-ubrs`, `nschema-59sn`, `nschema-jcbp`, `nschema-liiu`, `nschema-fwsu`, `nschema-yyfu`); the same two gates pass in a pruned copy of the tree. The full-tree aliases ran green for this slice too; their red at hand-off is other slices' in-flight code (`lib/ipc` module `listener` has no implementation).
+
+`nix develop -c dune build @fmt` reports no diff in any file this slice owns (its one remaining diff is `test/core/dune`, another slice); there is no `.ocamlformat` in the tree, so OCaml sources are not ocamlformat-checked, and `@doc` cannot run because `odoc` is not installed in the switch.
