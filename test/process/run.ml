@@ -217,6 +217,36 @@ let test_fd_and_output () =
               check_exit (C.Exited 3) (C.await child);
               check_exit (C.Exited 3) (C.stop child))))
 
+let test_mapped_fds_blocking () =
+  (* nproc-1x05: the child sees blocking descriptors even though Eio's pipes are
+     non-blocking in the parent *)
+  with_script
+    "for n in 1 3 4; do awk '/^flags/ {print $2}' /proc/self/fdinfo/$n >&2; done"
+    (fun script ->
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let read3, _write3 = Eio_unix.pipe sw in
+              let _read4, write4 = Eio_unix.pipe sw in
+              let child =
+                ok
+                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr ~argv:[ script ]
+                     ~grace:(Eta.Duration.ms 40) ~stdout:C.Pipe ~stderr:C.Pipe
+                     ~fds:[ (3, fd read3); (4, fd write4) ]
+                     ())
+              in
+              let flags =
+                Eio.Flow.read_all (some (C.stderr child))
+                |> String.split_on_char '\n'
+                |> List.filter (( <> ) "")
+              in
+              Alcotest.(check int) "three descriptors reported" 3 (List.length flags);
+              List.iter
+                (fun f ->
+                  let v = int_of_string ("0o" ^ f) in
+                  Alcotest.(check bool) ("O_NONBLOCK clear: " ^ f) true (v land 0o4000 = 0))
+                flags;
+              ignore (C.stop child))))
+
 let test_retired_output_eof () =
   (* nlimit-nzur *)
   with_script "printf output; printf error >&2" (fun script ->
@@ -339,6 +369,8 @@ let () =
       ( "nproc-1x05 nproc-giyu nproc-bqik nlimit-nzur",
         [
           Alcotest.test_case "real fd pipes and output" `Quick test_fd_and_output;
+          Alcotest.test_case "nproc-1x05 mapped fds are blocking in the child" `Quick
+            test_mapped_fds_blocking;
           Alcotest.test_case "retired output reaches EOF" `Quick test_retired_output_eof;
         ] );
       ( "nproc-xmat nproc-e5zc nproc-ypzm",

@@ -77,10 +77,13 @@ let spawn ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard
                      let mapped =
                        [
                          (0, Eio_unix.Fd.stdin, `Preserve_blocking);
-                         (1, out_fd, `Preserve_blocking);
-                         (2, err_fd, `Preserve_blocking);
+                         (1, out_fd, `Blocking);
+                         (2, err_fd, `Blocking);
                        ]
-                       @ List.map (fun (n, fd) -> (n, fd, `Preserve_blocking)) fds
+                       (* Mapped descriptors are the child's own ends: a child
+                          expects blocking I/O on them, and Eio's pipes are
+                          non-blocking, which Chrome treats as a dead pipe. *)
+                       @ List.map (fun (n, fd) -> (n, fd, `Blocking)) fds
                      in
                      let process =
                        Eio_unix.Process.spawn_unix ~sw:private_sw mgr ?env ?cwd
