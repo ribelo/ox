@@ -1,7 +1,7 @@
 ---
 status: ready-for-agent
 package: eta_app, eta_observability (Redact codecs), removal of eta_schema and eta_schema_yojson
-consumer: Leash milestone 1 (Config and protocol types)
+consumer: Leash milestone 1 (Config and protocol types); depends on row 15 (deriving) and keeps row 14 (door-validate)
 ---
 
 # Remove eta_schema; types with derived codecs are the schema
@@ -26,6 +26,8 @@ Delete `eta_schema` and `eta_schema_yojson`. `Eta_app`'s config takes a derived 
 8. As a kernel maintainer, I want `eta_app`'s test for a two-Service program to use a derived config type, so that the shape consumers will write is the one tested. ^nnoschema-p7fv
 
 ## Implementation Decisions
+
+- Row 14 (`door-validate`) added a Door validator for environment-dependent checks (binary exists, directory readable). Keep that hook exactly as delivered; this row only replaces the *decoding* half: `of_yojson` (derived) replaces the schema decode, and pure constraints move into smart-constructor modules or the existing `validate`. Do not build a second validation path.
 
 - The config record for a consumer is a plain type with `[@@deriving yojson]`; optional fields use `[@default]` (or the deriver's equivalent); `validate` is where bounds and enumerations live; `env` is explicit code (`match getenv "OPENROUTER_API_KEY" with Some k -> { c with models = { c.models with api_key = Redact.make k } } | None -> c`).
 - `Eta_json` stays for unchecked JSON (CDP); derived codecs are for shapes we own.
