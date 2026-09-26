@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_test
 consumer: every Leash test seam (AGENTS.md "Test seams")
 ---
@@ -37,3 +37,6 @@ Tests need a deterministic clock, fakes for the operating system, and assertions
 ## Out of Scope
 
 Property testing, fuzzing, a fake HTTP server (the http spec brings its own).
+
+Verification: `nix develop -c dune build @install`, `nix develop -c dune test test/test`, and `nix develop -c dune test` pass.
+Coverage: eight `test/test` cases cite and exercise all eight `ntest-*` story IDs.

@@ -1,0 +1,4 @@
+(library
+ (name eta_test)
+ (public_name eta_test)
+ (libraries eta eio eio_main eio.mock eio.unix alcotest))

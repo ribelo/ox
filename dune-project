@@ -25,3 +25,14 @@
   eio
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_test)
+ (synopsis "Eio mock test helpers and Eta Exit assertions")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  eio_main
+  alcotest))
