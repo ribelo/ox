@@ -17,7 +17,7 @@ let level_and_fields () =
       Logger.warn logger ~fields:[ ("user", Logger.String "alice") ] "warning";
       Logger.error logger ~fields:[ ("count", Logger.Int 7) ] "failed";
       let records = Logger.Memory.records memory in
-      check_int "kept warn and error" 2 (List.length records);
+      check_int "with_min_level" 2 (List.length records);
       check_string "first retained" "warning" (List.hd records).msg;
       check_string "second retained" "failed" (List.nth records 1).msg;
       check_string "user field" "alice"
@@ -28,7 +28,7 @@ let level_and_fields () =
            (List.assoc "count" (List.nth records 1).fields));
       List.iter
         (fun (level, name) ->
-          check_string "level renders" name (Logger.level_to_string level);
+          check_string "formatters" name (Logger.level_to_string level);
           check_string "level pretty printer" name
             (Format.asprintf "%a" Logger.pp_level level))
         [
@@ -49,7 +49,7 @@ let json_escapes () =
       context = [];
     }
   in
-  check_string "JSON escapes body and fields"
+  check_string "json escapes values"
     "{\"ts\":\"1970-01-01T00:00:01.234Z\",\"level\":\"info\",\"service\":\"test\",\"msg\":\"quote \
      \\\" newline\\n\",\"fields\":{\"k\":\"tab\\t\"}}"
     (Logger.to_string record)

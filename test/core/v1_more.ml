@@ -37,8 +37,8 @@ let schedule_variants () =
             seen := n :: !seen;
             Error n)
       in
-      check_bool "retry stops when predicate rejects" true (result = Error 1);
-      check_int "retry predicate rejection no repeat" 1 (List.length !seen))
+      check_bool "retry passes typed failures to schedule" true (result = Error 1);
+      check_int "retry stops when predicate rejects" 1 (List.length !seen))
 
 let failure_schedules () =
   Eio_mock.Backend.run_full (fun env ->
@@ -95,7 +95,20 @@ let background_cases () =
        with
       | Exit.Success 7 -> ()
       | _ -> Alcotest.fail "body success");
-      check_int "with_background body success cancels child" 1 !cleaned;
+      check_int "with_background body success or failure cancels and awaits child" 1
+        !cleaned;
+      (match
+         Scope.run (fun sw ->
+             Concurrent.with_background ~sw pending (fun () ->
+                 Eio.Fiber.yield ();
+                 Error "plain-body"))
+       with
+      | Exit.Failure (Cause.Fail "plain-body") ->
+          check_int
+            "with_background body-first keeps the body exit for plain, named,  \
+             observability-named, and traced backgrounds"
+            2 !cleaned
+      | _ -> Alcotest.fail "plain background body-first failure lost");
       (match
          Scope.run (fun sw ->
              Concurrent.with_background ~sw pending (fun () ->
@@ -104,7 +117,7 @@ let background_cases () =
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
       | _ -> Alcotest.fail "body defect");
-      check_int "background cleanup after body defect" 2 !cleaned;
+      check_int "background cleanup after body defect" 3 !cleaned;
       (match
          Scope.run (fun sw ->
              Concurrent.with_background ~sw
@@ -115,7 +128,7 @@ let background_cases () =
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
       | _ -> Alcotest.fail "background defect");
-      check_int "with_background defect cancels use and awaits finalizers" 3 !cleaned;
+      check_int "with_background defect cancels use and awaits finalizers" 4 !cleaned;
       match
         Scope.run (fun sw ->
             Concurrent.with_background ~sw

@@ -15,7 +15,12 @@ let stopped id = function
 
 let child_run ~sw fn =
   Eio.Switch.check sw;
-  Eio.Promise.await_exn (Eio.Fiber.fork_promise ~sw (fun () -> Eio.Switch.run fn))
+  let child = Eio.Fiber.fork_promise ~sw (fun () -> Eio.Switch.run fn) in
+  try Eio.Promise.await_exn child
+  with Eio.Cancel.Cancelled _ as cancelled ->
+    Eio.Cancel.protect (fun () ->
+        ignore (Eio.Promise.await_exn child);
+        raise cancelled)
 
 let stop_other id contexts except =
   Array.iteri
@@ -83,49 +88,62 @@ let all ~sw fs =
   Eio.Switch.check sw;
   let tasks = Array.of_list fs in
   let n = Array.length tasks in
-  child_run ~sw (fun child ->
-      let completed, resolve = Eio.Promise.create () in
-      let contexts = Array.init n (fun _ -> ref None) in
-      let values = Array.make n None in
-      let remaining = ref n in
-      let first_failure = ref None in
-      let stop_id = Interrupt_id.create () in
-      let resolved = ref false in
-      let resolve_if_done () =
-        if !remaining = 0 && not !resolved then (
-          resolved := true;
-          Eio.Promise.resolve resolve
-            (match !first_failure with
-            | Some outcome -> outcome
-            | None -> Value (Ok (Array.to_list (Array.map Option.get values)))))
-      in
-      resolve_if_done ();
-      Array.iteri
-        (fun i f ->
-          if !first_failure <> None then (
-            decr remaining;
-            resolve_if_done ())
-          else
-            Eio.Fiber.fork ~sw:child (fun () ->
-                Eio.Cancel.sub (fun ctx ->
-                    contexts.(i) := Some ctx;
-                    let outcome = capture f in
-                    (match outcome with
-                    | Value (Ok value) -> values.(i) <- Some value
-                    | Value (Error error) when !first_failure = None ->
-                        first_failure := Some (Value (Error error));
-                        stop_other stop_id contexts i
-                    | Raised (ex, _) when !first_failure <> None && stopped stop_id ex ->
-                        ()
-                    | Raised (ex, bt) when !first_failure = None ->
-                        first_failure := Some (Raised (ex, bt));
-                        stop_other stop_id contexts i
-                    | Raised (ex, bt) -> Printexc.raise_with_backtrace ex bt
-                    | Value _ -> ());
-                    decr remaining;
-                    resolve_if_done ())))
-        tasks;
-      unwrap (Eio.Promise.await completed))
+  let defect = ref None in
+  try
+    child_run ~sw (fun child ->
+        let completed, resolve = Eio.Promise.create () in
+        let contexts = Array.init n (fun _ -> ref None) in
+        let values = Array.make n None in
+        let remaining = ref n in
+        let first_failure = ref None in
+        let stop_id = Interrupt_id.create () in
+        let resolved = ref false in
+        let resolve_if_done () =
+          if !remaining = 0 && not !resolved then (
+            resolved := true;
+            Eio.Promise.resolve resolve
+              (match !first_failure with
+              | Some outcome -> outcome
+              | None -> Value (Ok (Array.to_list (Array.map Option.get values)))))
+        in
+        resolve_if_done ();
+        Array.iteri
+          (fun i f ->
+            if !first_failure <> None then (
+              decr remaining;
+              resolve_if_done ())
+            else
+              Eio.Fiber.fork ~sw:child (fun () ->
+                  Eio.Cancel.sub (fun ctx ->
+                      contexts.(i) := Some ctx;
+                      let outcome = capture f in
+                      (match outcome with
+                      | Raised (ex, bt) -> (
+                          match ex with
+                          | Eio.Cancel.Cancelled _ -> ()
+                          | _ -> defect := Some (ex, bt))
+                      | Value _ -> ());
+                      (match outcome with
+                      | Value (Ok value) -> values.(i) <- Some value
+                      | Value (Error error) when !first_failure = None ->
+                          first_failure := Some (Value (Error error));
+                          stop_other stop_id contexts i
+                      | Raised (ex, _) when !first_failure <> None && stopped stop_id ex
+                        ->
+                          ()
+                      | Raised (ex, bt) when !first_failure = None ->
+                          first_failure := Some (Raised (ex, bt));
+                          stop_other stop_id contexts i
+                      | Raised (ex, bt) -> Printexc.raise_with_backtrace ex bt
+                      | Value _ -> ());
+                      decr remaining;
+                      resolve_if_done ())))
+          tasks;
+        unwrap (Eio.Promise.await completed))
+  with Eio.Cancel.Cancelled _ as cancelled -> (
+    match !defect with
+    | Some (ex, bt) -> Printexc.raise_with_backtrace ex bt
+    | None -> raise cancelled)
 
 type ('a, 'b) side = Left of 'a | Right of 'b
 

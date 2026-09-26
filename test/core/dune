@@ -1,6 +1,6 @@
 (test
  (name run)
- (modules run pure v1_port v1_more)
+ (modules run pure v1_port v1_more v1_completion)
  (deps
   ../../lib/eta/dune
   (glob_files ../../lib/eta/*.ml)

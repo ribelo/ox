@@ -24,11 +24,11 @@ let cause_exit () =
   check_bool "empty concurrent is not an interrupt" false
     (Cause.is_interrupt_only (Cause.Concurrent []));
   check_int "interrupt process code" 130 (Exit.process_code (Exit.Failure interrupt));
-  check_int "mixed process code" 1 (Exit.process_code (Exit.Failure combined));
+  check_int "combinators" 1 (Exit.process_code (Exit.Failure combined));
   check_int "success process code" 0 (Exit.process_code (Exit.Success 3));
   (match Exit.to_result (Exit.Failure fail) with
   | Ok (Error "typed") -> ()
-  | _ -> Alcotest.fail "typed cause did not project");
+  | _ -> Alcotest.fail "extractors and squash");
   (match Exit.to_result (Exit.Failure combined) with
   | Error _ -> ()
   | _ -> Alcotest.fail "composite cause projected as typed error");
@@ -58,7 +58,7 @@ let release_laws () =
       | Exit.Success 7 -> ()
       | _ -> Alcotest.fail "success release result");
       Alcotest.(check (list string))
-        "LIFO, sequential"
+        "acquire release finalizers lifo sequential"
         [ "release1"; "release2"; "body" ]
         !events;
       events := [];
@@ -83,7 +83,7 @@ let release_laws () =
        with
       | Exit.Failure (Cause.Fail "body") -> ()
       | _ -> Alcotest.fail "typed body failure");
-      Alcotest.(check (list string)) "release after failure" [ "released" ] !events;
+      Alcotest.(check (list string)) "acquire release on failure" [ "released" ] !events;
       events := [];
       (match
          Scope.run (fun sw ->
@@ -95,7 +95,8 @@ let release_laws () =
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
       | _ -> Alcotest.fail "body defect");
-      Alcotest.(check (list string)) "release after defect" [ "released" ] !events;
+      Alcotest.(check (list string))
+        "acquire release releases on defect" [ "released" ] !events;
       events := [];
       (match
          Scope.run (fun sw ->
@@ -115,9 +116,9 @@ let release_laws () =
           (Cause.Suppressed
              { primary = Cause.Fail "body"; finalizer = Cause.Die (Failure _, _) }) ->
           ()
-      | _ -> Alcotest.fail "release defect must not hide body");
+      | _ -> Alcotest.fail "acquire release suppresses release failure");
       Alcotest.(check (list string))
-        "later finalizer still ran" [ "first"; "second" ] !events)
+        "acquire release finalizer failure keeps running" [ "first"; "second" ] !events)
 
 let timeout_laws () =
   Eio_mock.Backend.run_full (fun env ->
@@ -131,13 +132,13 @@ let timeout_laws () =
                 Eio.Time.sleep clock 10.;
                 Ok 1))
       in
-      check_bool "timed out" true (result = Error `Timeout);
+      check_bool "timeout uses virtual clock" true (result = Error `Timeout);
       Alcotest.(check (list string)) "release settled before timeout" [ "release" ] !seen;
       Alcotest.(check (float 0.00001)) "virtual time" 0.025 (Eio.Time.now clock -. start);
       let result = Timeout.timeout ~clock (Duration.ms 25) (fun () -> Ok 2) in
-      check_bool "fast success" true (result = Ok 2);
+      check_bool "timeout allows fast success" true (result = Ok 2);
       let result = Timeout.timeout ~clock (Duration.ms 25) (fun () -> Error `Timeout) in
-      check_bool "user timeout unchanged" true (result = Error `Timeout);
+      check_bool "timeout preserves user timeout failure" true (result = Error `Timeout);
       let result = Timeout.timeout ~clock (Duration.ms 25) (fun () -> Error `Other) in
       check_bool "body failure unchanged" true (result = Error `Other))
 
@@ -149,12 +150,12 @@ let retry_repeat_laws () =
         if !calls < 3 then Error !calls else Ok 9
       in
       let start = Eio.Time.now clock in
-      check_bool "retry eventual success" true
+      check_bool "retry schedule until success" true
         (Retry.retry ~clock (Schedule.spaced (Duration.ms 10)) attempt = Ok 9);
       check_int "one initial plus two retries" 3 !calls;
       Alcotest.(check (float 0.00001)) "virtual retries" 0.02 (Eio.Time.now clock -. start);
       calls := 0;
-      check_bool "initial success no retry" true
+      check_bool "retry does nothing on initial success" true
         (Retry.retry ~clock (Schedule.recurs 5) (fun () ->
              incr calls;
              Ok 8)
@@ -166,7 +167,7 @@ let retry_repeat_laws () =
              incr calls;
              Error !calls)
         = Error 3);
-      check_int "exhausted attempts" 3 !calls;
+      check_int "retry attempts can be observed without schedule taps" 3 !calls;
       calls := 0;
       let fail_once () =
         incr calls;
@@ -176,7 +177,7 @@ let retry_repeat_laws () =
         (Retry.repeat ~clock (Schedule.recurs 5) fail_once = Error "stop");
       check_int "no further repeats" 2 !calls;
       calls := 0;
-      check_bool "repeat zero runs once" true
+      check_bool "repeat recurs zero runs body once" true
         (Retry.repeat ~clock (Schedule.recurs 0) (fun () ->
              incr calls;
              Ok !calls)
@@ -193,7 +194,7 @@ let retry_repeat_laws () =
         = Ok (2, 2));
       check_int "two continuations" 3 !calls;
       Alcotest.(check (float 0.00001))
-        "repeat virtual delays" 0.01
+        "repeat schedule uses virtual delays" 0.01
         (Eio.Time.now clock -. start);
       (match
          Scope.run (fun _ ->
@@ -202,7 +203,7 @@ let retry_repeat_laws () =
                  failwith "defect"))
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
-      | _ -> Alcotest.fail "retry swallowed defect");
+      | _ -> Alcotest.fail "retry does not catch defects");
       check_int "defect not retried" 4 !calls)
 
 let supervisor_laws () =
@@ -243,7 +244,8 @@ let supervisor_laws () =
       | Exit.Failure (Cause.Fail "background") -> ()
       | _ -> Alcotest.fail "background typed failure did not win");
       check_int "body physically exited" 0 !alive;
-      check_int "body cleanup awaited" 2 !cleaned;
+      check_int "with_background typed failure cancels use and awaits finalizers" 2
+        !cleaned;
       (match
          Scope.run (fun sw -> Concurrent.par ~sw (fun () -> Error "left") blocked)
        with
@@ -292,17 +294,19 @@ let cancellation_laws () =
       (match outcome with
       | Exit.Failure (Cause.Interrupt None) -> ()
       | _ -> Alcotest.fail "external cancellation classification");
-      check_bool "release under cancellation" true !released;
+      check_bool "acquire_use_release releases on cancel" true !released;
       check_bool "nested body physically exited" true !exited)
 
 let stress_laws () =
   Eio_main.run (fun _ ->
+      let random = Random.State.make [| 0x5eed |] in
       for n = 1 to 16 do
         let live = ref 0 and released = ref 0 in
         let result =
           Scope.run (fun sw ->
               Concurrent.all ~sw
                 (List.init n (fun i () ->
+                     if Random.State.bool random then Eio.Fiber.yield ();
                      match
                        Resource.acquire_release ~sw
                          ~acquire:(fun () ->
@@ -318,7 +322,7 @@ let stress_laws () =
         (match result with
         | Exit.Success values -> check_int "all results" n (List.length values)
         | _ -> Alcotest.fail "all stress result");
-        check_int "no live resources" 0 !live;
+        check_int "randomized all compositions release" 0 !live;
         check_int "every resource released" n !released
       done;
       for _ = 1 to 24 do
@@ -333,14 +337,14 @@ let stress_laws () =
                       (fun () -> Eio.Fiber.await_cancel ())
                       ~finally:(fun () -> decr live));
                   (fun () ->
-                    Eio.Fiber.yield ();
+                    if Random.State.bool random then Eio.Fiber.yield ();
                     Ok 1);
                 ])
         in
         (match result with
         | Exit.Success 1 -> ()
         | _ -> Alcotest.fail "race stress winner");
-        check_int "race loser gone" 0 !live
+        check_int "randomized race compositions release" 0 !live
       done)
 
 (* The v1 corpus cases are separate assertions, not copies of the old grammar:
@@ -383,8 +387,12 @@ let cause_render_corpus () =
   compact "corpus empty and singleton raw composites" "Concurrent[]" (Cause.Concurrent []);
   compact "corpus singleton raw composite" "Concurrent[Fail(a)]"
     (Cause.Concurrent [ fail "a" ]);
-  check_bool "compact newline-freedom property" false
+  check_bool "corpus newline sanitization" false
     (String.contains (render (fail "line\nbreak")) '\n');
+  check_bool "compact newline-freedom property" false
+    (String.contains
+       (render (Cause.Concurrent [ fail "typed\nvalue"; Cause.Interrupt None ]))
+       '\n');
   check_bool "pretty stays multi-line on Die backtrace" true
     (String.contains (Format.asprintf "%a" (Cause.pp Format.pp_print_string) die) '\n')
 
@@ -439,7 +447,7 @@ let nested_timeouts () =
                   ~finally:(fun () -> cleanup := true)))
       in
       check_bool "nested timeout maps outer timeout" true (result = Error `Timeout);
-      check_bool "nested timeout preserves cancelled cleanup" true !cleanup;
+      check_bool "nested timeout preserves externally cancelled cleanup" true !cleanup;
       let calls = ref 0 in
       (match
          Scope.run (fun sw ->
