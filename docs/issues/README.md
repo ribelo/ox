@@ -6,15 +6,15 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 
 | # | Row | Package | Depends on | Unblocks | Done |
 | --- | --- | --- | --- | --- | --- |
-| 0 | Build skeleton: make this empty tree build and test under `nix develop`. The flake was copied from v1 and its `ETA_OPAM_PACKAGES` list and `packages` outputs name v1 packages that no longer exist; make both derive from the packages actually declared in `dune-project` (start: `conf-eta-oxcaml` only), keep the OxCaml 5.4.0+ox switch check, keep `.ocamlformat`. Add `lib/` and `test/` directories with a placeholder test so `dune test` is green. | — | — | everything | [ ] |
-| 1 | `core/01-core.md` | `eta` | 0 | 2–8 | [ ] |
-| 2 | `test/01-test.md` | `eta_test` | 1 | all tests | [ ] |
-| 3 | `json-and-schema/01-json-and-schema.md` | `eta_json`, `eta_schema`, `eta_schema_yojson` | 0 | 4, 5, Leash protocol | [ ] |
-| 4 | `observability/01-observability.md` | `eta_observability` | 1, 3 | 5 | [ ] |
-| 5 | `app/01-app.md` | `eta_app` | 1, 3, 4 | Leash milestone 1 | [ ] |
-| 6 | `process/01-process.md` | `eta_process` | 1, 2 | Leash milestone 1 (Chrome) | [ ] |
-| 7 | `ipc/01-ipc.md` | `eta_ipc` | 1, 2 | Leash milestone 1 (control socket) | [ ] |
-| 8 | `rpc/01-rpc.md` | `eta_rpc` | 1, 2 | Leash milestone 1 (CDP) | [ ] |
+| 0 | Build skeleton: make this empty tree build and test under `nix develop`. The flake was copied from v1 and its `ETA_OPAM_PACKAGES` list and `packages` outputs name v1 packages that no longer exist; make both derive from the packages actually declared in `dune-project` (start: `conf-eta-oxcaml` only), keep the OxCaml 5.4.0+ox switch check, keep `.ocamlformat`. Add `lib/` and `test/` directories with a placeholder test so `dune test` is green. | — | — | everything | [x] |
+| 1 | `core/01-core.md` | `eta` | 0 | 2–8 | [x] |
+| 2 | `test/01-test.md` | `eta_test` | 1 | all tests | [x] |
+| 3 | `json-and-schema/01-json-and-schema.md` | `eta_json`, `eta_schema`, `eta_schema_yojson` | 0 | 4, 5, Leash protocol | [x] |
+| 4 | `observability/01-observability.md` | `eta_observability` | 1, 3 | 5 | [x] |
+| 5 | `app/01-app.md` | `eta_app` | 1, 3, 4 | Leash milestone 1 | [x] |
+| 6 | `process/01-process.md` | `eta_process` | 1, 2 | Leash milestone 1 (Chrome) | [x] |
+| 7 | `ipc/01-ipc.md` | `eta_ipc` | 1, 2 | Leash milestone 1 (control socket) | [x] |
+| 8 | `rpc/01-rpc.md` | `eta_rpc` | 1, 2 | Leash milestone 1 (CDP) | [x] |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. HTTP, AI (OpenRouter), SQL, par/blocking and stream have no spec yet: they are written when Leash milestone 5 or another consumer pulls them (ADR-0003).
 
