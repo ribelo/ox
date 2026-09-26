@@ -1,0 +1,6 @@
+(test
+ (name run)
+ (libraries ppx_yojson_minimal yojson alcotest)
+ (preprocess
+  (action
+   (run %{bin:ppx-yojson-minimal} %{input-file}))))

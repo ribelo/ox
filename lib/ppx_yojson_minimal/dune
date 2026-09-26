@@ -1,0 +1,13 @@
+(library
+ (name ppx_yojson_minimal)
+ (modules derive)
+ (package ppx_yojson_minimal)
+ (synopsis "Minimal [@@deriving yojson] preprocessor for OxCaml")
+ (libraries ocaml-compiler-libs.common))
+
+(executable
+ (name main)
+ (modules main)
+ (package ppx_yojson_minimal)
+ (public_name ppx-yojson-minimal)
+ (libraries ppx_yojson_minimal))

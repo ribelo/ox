@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: toolchain (shared switch and the Nix flake), dune-project
 consumer: eta_app config and Leash's protocol and config types (`[@@deriving yojson]`)
 ---
@@ -33,6 +33,10 @@ Bring a ppxlib and a yojson deriver that match the switch's compiler revision (O
 ## Testing Decisions
 
 - Story 5 is the test; run under both `nix develop` and `nix build`. Then run every existing suite unchanged.
+
+## Verification (nppx-oqey)
+
+Route (c) worked and is delivered: `lib/ppx_yojson_minimal` (text preprocessor on the compiler's own `compiler-libs`, no ppxlib) with the `ppx-yojson-minimal` binary, and `test/ppx/` with 20 tests green (`nix develop -c dune build @install`, `dune test`, `dune build @fmt` all pass; the round-trip, subtree-carrying errors and loud-failure pins hold). Route (a) failed with evidence: pinning `ppxlib` to `/home/ribelo/projects/github/oxmono/opam/ppxlib` (read as 0.39.0~5.6preview) is rejected by the solver — it requires `ocaml < 5.2.0` against the switch invariant `ocaml-variants = 5.4.0+ox`, and its `astlib` snapshots stop at 5.0.1; the pin was removed afterwards. Route (b) is unavailable as written: `github.com/oxcaml/ppxlib` does not exist, upstream `oxcaml/opam-repository` at HEAD carries the same 5.2-era stack (`ppxlib.0.33.0+ox2` capped at `ocaml < 5.3.0`, `ppx_deriving.6.1.1+ox` conflicting with `oxcaml-compiler > 5.2.0minus25`, the Jane previews conflicting with `>= 5.4.0-ox1`), upstream `ppxlib.0.38.0` is unsatisfiable against the installed guard chain, and `ppx_deriving_yojson` pulls `ppx_tools` (`ocaml < 5.1`). Story map: ^nppx-11wi is superseded by the route outcome (no ppxlib exists for this compiler and the deriver needs none); ^nppx-h4gz, ^nppx-mao8 and ^nppx-d10y are met; ^nppx-hpv3 rides the `dune-project` derivation untouched (a working-tree pin installed the package cleanly with no other switch change and was removed afterwards; the durable install happens on the next `eta-opam-install-ox` after commit); ^nppx-tdp7 needs no new repository input (`ocaml-compiler-libs` v0.17.0+ox is in the flake-pinned ox repository). The `nix build` check cannot pass until the lead commits: untracked files are invisible to the hermetic source, so `nix build .#ppx_yojson_minimal` reports the attribute missing pre-commit.
 
 ## Out of Scope
 

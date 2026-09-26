@@ -127,6 +127,16 @@
   (alcotest :with-test)))
 
 (package
+ (name ppx_yojson_minimal)
+ (synopsis "Minimal [@@deriving yojson] preprocessor for OxCaml")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  ocaml-compiler-libs
+  (yojson :with-test)
+  (alcotest :with-test)))
+
+(package
  (name eta_app)
  (synopsis "One Door for Eio services, CLI and schema-validated TOML config")
  (depends

@@ -19,3 +19,4 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `eta_process` — scoped Unix children with graceful termination and scheduled supervision
 - `eta_observability` — structured logs with fiber-local fields, redacted secrets, spans, and one JSON object per line for the journal
 - `eta_app` — one Door for Eio services, TOML configuration, status and a journal logger
+- `ppx_yojson_minimal` — minimal `[@@deriving yojson]` preprocessor for OxCaml: a build-time text preprocessor on `compiler-libs`, no ppxlib
