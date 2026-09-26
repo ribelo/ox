@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_ipc
 consumer: Leash milestone 1 (chrome-fwnu, chrome-38a4), milestone 6 (svc-5wm8)
 ---
@@ -44,3 +44,6 @@ Leash serves a private control socket; Pie already had to learn the hard way wha
 ## Out of Scope
 
 TCP, authentication, multiple requests per connection, streaming replies.
+
+Verification: scoped `nix develop -c env DUNE_BUILD_DIR=_build_ipc dune build --only-packages eta_ipc,eta,eta_test @install` passed (full install also passed before a concurrent empty eta_observability package was added).
+Verification: `nix develop -c env DUNE_BUILD_DIR=_build_ipc dune test` passed (including twelve IPC socket tests).

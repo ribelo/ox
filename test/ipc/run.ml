@@ -1,0 +1,234 @@
+module L = Eta_ipc.Listener
+let fail fmt = Alcotest.failf fmt
+let check_ok = function Ok () -> () | Error _ -> fail "listener acquisition failed"
+let exists p = match Unix.lstat p with _ -> true | exception Unix.Unix_error (Unix.ENOENT,_,_) -> false
+let with_dir f =
+  let dir=Filename.temp_file ~temp_dir:"/tmp" "ip" "" in
+  Unix.unlink dir; Unix.mkdir dir 0o700;
+  Fun.protect ~finally:(fun () ->
+    let rec clean path =
+      if (Unix.lstat path).st_kind = Unix.S_DIR then (
+        Array.iter (fun name -> clean (Filename.concat path name)) (Sys.readdir path);
+        Unix.rmdir path) else Unix.unlink path in
+    clean dir) (fun () -> f dir (dir^"/s"))
+let start ?policy ?on_peer_error ?(budget=fun _ -> None) ?(handler=fun x -> Ok x)
+    env sw path =
+  L.run ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy
+    ~decode:(fun s -> Ok s) ~encode:Fun.id ~budget ~handler
+    ?on_peer_error ()
+let client env sw path = Eio.Net.connect ~sw env#net (`Unix path)
+let request env sw path data =
+  let flow=client env sw path in
+  Eio.Flow.copy_string data flow;
+  Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:65536 flow)
+let check_error name expected actual =
+  Alcotest.(check bool) name true (actual=Error expected)
+let ownership () = (* nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz *)
+  with_dir (fun dir path ->
+    Eta_test.run (fun env _ ->
+      let nested=dir^"/private/s" in
+      Eio.Switch.run (fun sw ->
+        check_ok (start env sw nested);
+        Alcotest.(check int) "private parent" 0o700 ((Unix.stat (dir^"/private")).st_perm land 0o777);
+        Alcotest.(check int) "private socket" 0o600 ((Unix.stat nested).st_perm land 0o777));
+      Alcotest.(check bool) "retired socket" false (exists nested);
+      Unix.chmod dir 0o750;
+      Eio.Switch.run (fun sw -> check_error "unsafe directory" `Unsafe_runtime_dir (start env sw path));
+      Unix.chmod dir 0o700;
+      let oc=open_out path in output_string oc "sentinel"; close_out oc;
+      Eio.Switch.run (fun sw ->
+        match start env sw path with Error (`Ownership_conflict path) -> () | _ -> fail "regular file overwritten");
+      let ic=open_in path in let text=input_line ic in close_in ic;
+      Alcotest.(check string) "sentinel preserved" "sentinel" text;
+      Unix.unlink path;
+      Unix.symlink "missing" path;
+      Eio.Switch.run (fun sw ->
+        match start env sw path with Error (`Ownership_conflict path) -> () | _ -> fail "symlink followed");
+      Unix.unlink path;
+      let fd=Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+      Unix.bind fd (Unix.ADDR_UNIX path); Unix.close fd;
+      Eio.Switch.run (fun sw ->
+        check_ok (start env sw path);
+        Alcotest.(check string) "stale socket replaced by live listener" "probe"
+          (request env sw path "probe\n"));
+      Alcotest.(check bool) "stale retired" false (exists path)))
+let live_and_replacement () = (* nipc-4kuy nipc-vayc nipc-uatz *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    Eio.Switch.run (fun sw ->
+      check_ok (start env sw path);
+      Eio.Switch.run (fun competing ->
+        check_error "same-process registry" `Lock_conflict (start env competing path));
+      Alcotest.(check string) "survivor serves" "ping" (request env sw path "ping\n");
+      let old=Unix.stat path in
+      Unix.unlink path;
+      let oc=open_out path in output_string oc "replacement"; close_out oc;
+      Alcotest.(check bool) "replacement identity differs" true ((Unix.stat path).st_ino<>old.st_ino));
+    Alcotest.(check bool) "replacement retained" true (exists path)))
+let line_and_policy () = (* nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let policy={L.default_policy with max_line_bytes=4; max_reply_bytes=4; peers=1} in
+    let errors=ref [] in
+    let oversized, signal_oversized=Eio.Promise.create () in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~policy ~on_peer_error:(fun x ->
+        errors:=x::!errors; if x=`Ingress_too_large then Eio.Promise.resolve signal_oversized ()) env sw path);
+      Alcotest.(check string) "newline reply" "abcd" (request env sw path "abcd\n");
+      let flow=client env sw path in
+      Eio.Flow.copy_string "abcde\n" flow;
+      Eio.Promise.await oversized;
+      Alcotest.(check bool) "oversized ingress refused" true (List.mem `Ingress_too_large !errors));
+    Alcotest.(check bool) "endpoint unlinked" false (exists path)))
+let deadlines () = (* nipc-x8ph nipc-6i86 nipc-eiy8 nipc-1v8z *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let errors=ref [] and cleaned=ref false in
+    let started,signal_started=Eio.Promise.create () in
+    let budget_done,signal_budget_done=Eio.Promise.create () in
+    let ingress_done,signal_ingress_done=Eio.Promise.create () in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+        ~handler:(fun _ -> Eio.Promise.resolve signal_started (); Fun.protect ~finally:(fun () -> cleaned:=true)
+            (fun () -> Eio.Time.sleep env#clock 100.; Ok "late"))
+        ~on_peer_error:(fun e -> errors:=e::!errors;
+          if e=`Handler_budget_exceeded then Eio.Promise.resolve signal_budget_done ();
+          if e=`Ingress_timeout then Eio.Promise.resolve signal_ingress_done ()) env sw path);
+      let flow=client env sw path in Eio.Flow.copy_string "go\n" flow;
+      Eio.Promise.await started;
+      Eta_test.advance env#clock (Eta.Duration.seconds 2);
+      Eio.Promise.await budget_done;
+      Alcotest.(check bool) "budget cancels handler" true !cleaned;
+      Alcotest.(check bool) "typed budget" true (List.mem `Handler_budget_exceeded !errors);
+      let stalled=client env sw path in Eio.Flow.copy_string "partial" stalled;
+      Eio.Fiber.yield (); Eio.Fiber.yield ();
+      Eta_test.advance env#clock (Eta.Duration.seconds 2);
+      Eio.Promise.await ingress_done;
+      Alcotest.(check bool) "typed ingress" true (List.mem `Ingress_timeout !errors))))
+let disconnect () = (* nipc-1v8z nipc-uatz nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let entered,signal_entered=Eio.Promise.create () in
+    let left,signal_left=Eio.Promise.create () in
+    let disconnected,signal_disconnect=Eio.Promise.create () in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~handler:(fun _ ->
+        Eio.Promise.resolve signal_entered ();
+        Fun.protect ~finally:(fun () -> Eio.Promise.resolve signal_left ())
+          (fun () -> Eio.Time.sleep env#clock 100.; Ok "too late"))
+        ~on_peer_error:(function `Disconnected -> Eio.Promise.resolve signal_disconnect () | _ -> ())
+        env sw path);
+      let flow=client env sw path in
+      Eio.Flow.copy_string "wait\n" flow;
+      Eio.Promise.await entered;
+      Eio.Flow.close flow;
+      Eio.Promise.await disconnected;
+      Eio.Promise.await left;
+      Alcotest.(check bool) "listener still active" true (exists path));
+    Alcotest.(check bool) "retired after disconnect" false (exists path)))
+let saturated () = (* nipc-skdt nipc-6i86 nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let first,signal_first=Eio.Promise.create () in
+    let release,signal_release=Eio.Promise.create () in
+    let count=ref 0 in
+    Eio.Switch.run (fun sw ->
+      let policy={L.default_policy with peers=1; backlog=1} in
+      check_ok (start ~policy ~handler:(fun x ->
+        incr count;
+        if !count=1 then (Eio.Promise.resolve signal_first (); Eio.Promise.await release);
+        Ok x) env sw path);
+      let flow=client env sw path in Eio.Flow.copy_string "one\n" flow;
+      Eio.Promise.await first;
+      let second=client env sw path in Eio.Flow.copy_string "two\n" second;
+      Eio.Fiber.yield ();
+      Alcotest.(check int) "only one handler admitted" 1 !count;
+      Eio.Promise.resolve signal_release ();
+      Alcotest.(check string) "second served after release" "two"
+        (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 second));
+      Alcotest.(check int) "second handler admitted" 2 !count)))
+let reply_bound () = (* nipc-eiy8 nipc-ajmi nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let rejected,signal_rejected=Eio.Promise.create () in
+    let policy={L.default_policy with max_reply_bytes=4} in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~policy ~handler:(fun x -> Ok (if x="large" then "oversize" else x))
+        ~on_peer_error:(function `Egress_too_large -> Eio.Promise.resolve signal_rejected () | _ -> ())
+        env sw path);
+      let flow=client env sw path in
+      Eio.Flow.copy_string "ok\nextra\n" flow;
+      let reader=Eio.Buf_read.of_flow ~max_size:64 flow in
+      Alcotest.(check string) "single reply" "ok" (Eio.Buf_read.line reader);
+      Alcotest.(check bool) "one reply then EOF" true
+        (match Eio.Buf_read.line reader with _ -> false | exception End_of_file -> true);
+      let large=client env sw path in Eio.Flow.copy_string "large\n" large;
+      Eio.Promise.await rejected)))
+let cross_process () = (* nipc-4kuy nipc-vayc nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    Eio.Switch.run (fun sw ->
+      check_ok (start env sw path);
+      Eio.Process.run env#process_mgr [Sys.executable_name; "--check-lock"; path];
+      Alcotest.(check string) "survives child lock contention" "ok"
+        (request env sw path "ok\n"))))
+let live_external () = (* nipc-4kuy nipc-vayc nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let fd=Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+    Fun.protect ~finally:(fun () -> Unix.close fd) (fun () ->
+      Unix.bind fd (Unix.ADDR_UNIX path); Unix.listen fd 1;
+      Eio.Switch.run (fun sw -> check_error "active external listener" `Active_listener (start env sw path));
+      Alcotest.(check bool) "external endpoint preserved" true (exists path))))
+let shutdown_active () = (* nipc-uatz nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let started,signal_started=Eio.Promise.create () in
+    let cancelled=ref false in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~handler:(fun _ ->
+        Fun.protect ~finally:(fun () -> cancelled:=true) (fun () ->
+          Eio.Promise.resolve signal_started (); Eio.Time.sleep env#clock 100.; Ok "late"))
+        env sw path);
+      let flow=client env sw path in Eio.Flow.copy_string "wait\n" flow;
+      Eio.Promise.await started);
+    Alcotest.(check bool) "active peer cancelled and joined" true !cancelled;
+    Alcotest.(check bool) "endpoint retired" false (exists path)))
+let egress_timeout () = (* nipc-eiy8 nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let entered,signal_entered=Eio.Promise.create () in
+    let timed_out,signal_timed_out=Eio.Promise.create () in
+    let payload=String.make 8_000_000 'x' in
+    let policy={L.default_policy with max_reply_bytes=String.length payload} in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~policy ~handler:(fun _ ->
+        Eio.Promise.resolve signal_entered (); Ok payload)
+        ~on_peer_error:(function `Egress_timeout -> Eio.Promise.resolve signal_timed_out () | _ -> ())
+        env sw path);
+      let flow=client env sw path in Eio.Flow.copy_string "flood\n" flow;
+      Eio.Promise.await entered;
+      Eio.Fiber.yield (); Eio.Fiber.yield ();
+      Eta_test.advance env#clock (Eta.Duration.seconds 2);
+      Eio.Promise.await timed_out)))
+let unbounded_budget () = (* nipc-6i86 nipc-01bn *)
+  with_dir (fun _ path -> Eta_test.run (fun env _ ->
+    let entered,signal_entered=Eio.Promise.create () in
+    Eio.Switch.run (fun sw ->
+      check_ok (start ~handler:(fun _ ->
+        Eio.Promise.resolve signal_entered ();
+        Eio.Time.sleep env#clock 20.; Ok "eventual") env sw path);
+      let flow=client env sw path in Eio.Flow.copy_string "handoff\n" flow;
+      Eio.Promise.await entered;
+      Eta_test.advance env#clock (Eta.Duration.seconds 25);
+      Alcotest.(check string) "None budget permits long work" "eventual"
+        (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 flow)))))
+let () = if Array.length Sys.argv=3 && Sys.argv.(1)="--check-lock" then (
+  let fd=Unix.openfile (Sys.argv.(2)^".lock") [Unix.O_RDWR] 0 in
+  let exit_code=match Unix.lockf fd Unix.F_TLOCK 0 with
+    | () -> 2
+    | exception Unix.Unix_error ((Unix.EACCES|Unix.EAGAIN),_,_) -> 0 in
+  Unix.close fd; exit exit_code)
+let () = Alcotest.run "eta_ipc" [
+ "nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz",[Alcotest.test_case "directory and ownership" `Quick ownership];
+ "nipc-4kuy nipc-vayc nipc-uatz",[Alcotest.test_case "live and replacement" `Quick live_and_replacement];
+ "nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn",[Alcotest.test_case "bounded line and reply" `Quick line_and_policy];
+ "nipc-x8ph nipc-6i86 nipc-eiy8 nipc-1v8z",[Alcotest.test_case "deadlines and interruption" `Quick deadlines];
+ "nipc-1v8z nipc-uatz nipc-01bn",[Alcotest.test_case "disconnect cancels handler" `Quick disconnect];
+ "nipc-skdt nipc-6i86 nipc-01bn",[Alcotest.test_case "admission saturation" `Quick saturated];
+ "nipc-eiy8 nipc-ajmi nipc-01bn",[Alcotest.test_case "bounded single reply" `Quick reply_bound];
+ "nipc-4kuy nipc-vayc nipc-01bn",[Alcotest.test_case "cross-process lock" `Quick cross_process; Alcotest.test_case "external listener" `Quick live_external];
+ "nipc-uatz nipc-01bn",[Alcotest.test_case "shutdown joins active peer" `Quick shutdown_active];
+ "nipc-eiy8 nipc-01bn",[Alcotest.test_case "blocked egress deadline" `Quick egress_timeout];
+ "nipc-6i86 nipc-01bn",[Alcotest.test_case "None does not impose handler budget" `Quick unbounded_budget]
+]

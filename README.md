@@ -15,3 +15,4 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `eta_schema` — pure schemas: records, variants, lists, options, refinements, field marks, JSON-pointer issues (standard library only)
 - `eta_schema_yojson` — the Yojson bridge for `eta_schema` codecs
 - `eta_rpc` — scoped request/reply correlation over message streams
+- `eta_ipc` — private Unix control listeners with scoped socket ownership and bounded peers

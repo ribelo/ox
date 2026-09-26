@@ -83,3 +83,16 @@
   (eta_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_ipc)
+ (synopsis "Private Unix socket listener with scoped ownership and bounded peers")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  unix
+  (eta_test :with-test)
+  (eio_main :with-test)
+  (alcotest :with-test)))

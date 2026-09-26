@@ -1,0 +1,4 @@
+(library
+ (name eta_ipc)
+ (public_name eta_ipc)
+ (libraries eta eio eio.unix unix))

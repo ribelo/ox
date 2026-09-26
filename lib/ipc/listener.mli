@@ -1,0 +1,57 @@
+(** A private, one-line Unix socket listener. Pathname ownership assumes a private
+    namespace without hostile mutation by another process of the same UID;
+    OCaml's Unix.open_flag has no O_NOFOLLOW. *)
+
+type policy = {
+  peers : int;
+  backlog : int;
+  max_line_bytes : int;
+  max_reply_bytes : int;
+  ingress : Eta.Duration.t;
+  egress : Eta.Duration.t;
+}
+
+val default_policy : policy
+(** Sixteen active peers, backlog sixteen, 64 KiB lines/replies, and one
+    second each for ingress and egress. Pure; no cancellation/finalizers. *)
+
+type error = [
+  | `Invalid_policy of string
+  | `Unsafe_runtime_dir
+  | `Inaccessible_runtime_dir
+  | `Ownership_conflict of string
+  | `Active_listener
+  | `Lock_conflict
+  | `Lock_identity
+  | `Probe_failed
+  | `Bind_failed of string
+]
+
+type ('decode, 'handler) peer_error = [
+  | `Ingress_timeout | `Ingress_too_large | `Ingress_closed
+  | `Decode of 'decode
+  | `Handler of 'handler | `Handler_budget_exceeded
+  | `Egress_timeout | `Egress_too_large | `Egress_closed
+  | `Disconnected
+]
+
+val run :
+  sw:Eio.Switch.t ->
+  fs:_ Eio.Path.t -> net:_ Eio.Net.ty Eio.Resource.t ->
+  clock:_ Eio.Time.clock ->
+  path:string ->
+  ?policy:policy ->
+  decode:(string -> ('request, 'decode) result) ->
+  encode:('response -> string) ->
+  budget:('request -> Eta.Duration.t option) ->
+  handler:('request -> ('response, 'handler) result) ->
+  ?on_peer_error:(('decode, 'handler) peer_error -> unit) ->
+  unit -> (unit, error) result
+(** Acquire against [sw], start bounded admission, and return immediately.
+    Native Unix calls implement pathname identity and binding. Each peer
+    receives one request and at most one newline-terminated response. A peer
+    disconnect interrupts its handler. On switch exit daemon fibers are
+    cancelled and joined before the socket is identity-checked and removed;
+    the persistent lockfile is never removed. Callback/finalizer defects
+    propagate through Eio's switch. Typed peer errors are reported through
+    [on_peer_error] if supplied, not raised as listener failures. *)
