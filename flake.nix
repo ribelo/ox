@@ -266,6 +266,7 @@
               pkgs.coreutils
               pkgs.git
               pkgs.gnumake
+              pkgs.gnugrep
               pkgs.m4
               pkgs.opam
               pkgs.patch
@@ -298,25 +299,154 @@
 
               export OPAMSWITCH="$switch_name"
               eval "$(opam env --switch "$switch_name" --set-switch)"
+              # Where opam installed this switch, and where the removal step
+              # parks the files a dependent's executable needs to keep running.
+              switch_prefix="$(opam var prefix --switch "$switch_name")"
+              preserved_dir="$switch_prefix/.opam-switch/preserved-by-eta-opam-install"
 
-              # Pin the branch this checkout is on; v1's "master" does not
-              # name this tree.
-              eta_ref="''${ETA_OPAM_REF:-$(git -C "$repo_root" rev-parse --abbrev-ref HEAD)}"
-              eta_url="git+file://$repo_root#$eta_ref"
+              # The packages dune-project declares, expanded by the flake when
+              # it evaluates: a stale generated *.opam file cannot be pinned.
+              declared="${builtins.concatStringsSep " " etaPackageNames}"
+              if [ -z "$declared" ]; then
+                echo "dune-project declares no package; refusing to touch the shared switch." >&2
+                exit 1
+              fi
+              # Pin kind git at this checkout's HEAD: opam fetches that commit,
+              # so only committed sources are installed and the pin cannot move
+              # under a consumer's feet. Every pin carries the commit as its
+              # version, so one opam list call answers "which commit is in this
+              # switch", and the {= version} constraint eta's opam files put on
+              # conf-eta-oxcaml resolves for all pins alike.
+              eta_commit="$(git -C "$repo_root" rev-parse HEAD)"
+              eta_url="git+file://$repo_root#$eta_commit"
               # Derived from dune-project: every declared package, nothing else.
-              packages="''${ETA_OPAM_PACKAGES:-${builtins.concatStringsSep " " etaPackageNames}}"
+              packages="''${ETA_OPAM_PACKAGES:-$declared}"
               if [ "$#" -gt 0 ]; then
                 packages="$*"
               fi
 
-              for opam_file in "$repo_root"/*.opam; do
-                package="$(basename "$opam_file" .opam)"
-                opam pin add --kind=git "$package" "$eta_url" --no-action --yes
+              # 1. Remove every installed eta* / ppx_eta* package this tree does
+              #    not declare: v1's Eta, including the preprocessors that came
+              #    from the same repository. opam takes their reverse
+              #    dependencies with them, so a compiled v1 consumer loses its
+              #    files; the executables of those dependents are preserved
+              #    across the removal below, and are not rebuilt
+              #    (docs/issues/shared-switch/01-shared-switch.md, 2026-09-26).
+              removed=()
+              for package in $(opam list --installed --short); do
+                case "$package" in
+                  eta* | ppx_eta*) ;;
+                  *) continue ;;
+                esac
+                case " $declared " in
+                  *" $package "*) continue ;;
+                esac
+                removed+=("$package")
+              done
+              if [ "''${#removed[@]}" -gt 0 ]; then
+                echo "Removing v1 Eta packages from OPAM switch $switch_name (opam removes their reverse dependencies too): ''${removed[*]}"
+
+                # Removing a package deletes every file its dependents
+                # installed, executables included, and a consumer that is
+                # already running must keep working. Copy what a dependent needs
+                # at run time -- its bin/sbin executables, the share/etc data
+                # beside them and any runtime stubs -- out of the switch first,
+                # then put those files back as plain untracked files after the
+                # removal. Nothing already at the destination is overwritten,
+                # and a dependent with no installed-file manifest is reported
+                # rather than guessed at.
+                removed_csv=""
+                for package in "''${removed[@]}"; do
+                  removed_csv="''${removed_csv:+$removed_csv,}$package"
+                done
+                dependents=()
+                for package in $(opam list --installed --short --recursive --depends-on "$removed_csv"); do
+                  case "$package" in
+                    eta* | ppx_eta*) continue ;;
+                  esac
+                  dependents+=("$package")
+                done
+                preserved=()
+                for package in "''${dependents[@]}"; do
+                  changes="$switch_prefix/.opam-switch/install/$package.changes"
+                  if [ ! -f "$changes" ]; then
+                    echo "No installed-file manifest for $package; its binaries cannot be preserved." >&2
+                    continue
+                  fi
+                  in_removed=0
+                  while IFS= read -r line; do
+                    case "$line" in
+                      "removed: ["*) in_removed=1; continue ;;
+                      "removed: "*) continue ;;
+                      "]"*) in_removed=0; continue ;;
+                    esac
+                    if [ "$in_removed" = "1" ]; then
+                      continue
+                    fi
+                    # Every entry is a quoted path, in a list (added: [ ... ])
+                    # or on one line (added: "bin/pie", contents-changed:
+                    # "bin/pie"); the descriptor beside it -- {F:S<size>T<mtime>}
+                    # or {D} -- is not needed. Only removed: entries are files
+                    # opam has already taken away.
+                    IFS='"' read -r _ relative _ <<< "$line"
+                    case "$relative" in
+                      bin/* | sbin/* | share/* | etc/* | lib/stublibs/*) ;;
+                      *) continue ;;
+                    esac
+                    if [ ! -f "$switch_prefix/$relative" ]; then
+                      continue
+                    fi
+                    mkdir -p "$preserved_dir/$package/$(dirname "$relative")"
+                    cp -p "$switch_prefix/$relative" "$preserved_dir/$package/$relative"
+                    preserved+=("$package/$relative")
+                  done < "$changes"
+                done
+
+                opam remove "''${removed[@]}" --yes
+
+                for entry in "''${preserved[@]}"; do
+                  destination="$switch_prefix/''${entry#*/}"
+                  if [ -e "$destination" ]; then
+                    echo "Kept existing $destination (not overwritten)"
+                    continue
+                  fi
+                  mkdir -p "$(dirname "$destination")"
+                  cp -p "$preserved_dir/$entry" "$destination"
+                  echo "Preserved $destination"
+                done
+              fi
+
+              # 1b. v1's pins name the v1 checkout; drop them so a removed
+              #     package cannot come back through a later opam install.
+              #     Declared packages are re-pinned below.
+              for pin in $(opam pin list --short); do
+                case "$pin" in
+                  eta* | ppx_eta*) ;;
+                  *) continue ;;
+                esac
+                case " $declared " in
+                  *" $pin "*) continue ;;
+                esac
+                opam pin remove "$pin" --no-action --yes
               done
 
-              package_args=()
+              # 2. Nothing to do when every requested package already carries
+              #    this commit: re-running the command is not a rebuild.
+              requested=()
               for package in $packages; do
-                package_args+=("$package")
+                requested+=("$package")
+              done
+              have="$(opam list --installed --short --columns=name,version "''${requested[@]}" 2>/dev/null | grep -c " $eta_commit$" || true)"
+              if [ "$have" = "''${#requested[@]}" ]; then
+                echo "Eta packages already installed from $repo_root at $eta_commit in OPAM switch $switch_name; nothing to do."
+                exit 0
+              fi
+
+              # 3. Pin every declared package to this commit and install the
+              #    requested set.
+              for package in $declared; do
+                opam pin add --kind=git --no-action --with-version "$eta_commit" \
+                  --yes "$package" "$eta_url"
               done
 
               # The OxCaml metadata variants currently over-constrain portability
@@ -331,9 +461,10 @@
               # Test tooling no Eta package depends on: alcotest and qcheck
               # drive suites, memtrace is an allocation-trace hook.
               opam install alcotest qcheck memtrace --yes
-              opam install "''${package_args[@]}" --assume-depexts --yes
+              opam install "''${requested[@]}" --assume-depexts --yes
 
               echo "Eta packages installed into OPAM switch: $switch_name"
+              echo "Source: $repo_root at $eta_commit"
               echo "$packages"
             '';
           };
@@ -625,7 +756,7 @@
               if [ -t 1 ]; then
                 echo "Eta OxCaml shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
-                echo "Run 'eta-opam-install' to install Eta packages into ${oxCamlSwitch}."
+                echo "Run 'eta-opam-install-ox' to pin this checkout's packages into ${oxCamlSwitch} (it removes v1 Eta packages)."
                 echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
@@ -653,7 +784,7 @@
               if [ -t 1 ]; then
                 echo "Eta OxCaml research shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
-                echo "Run 'eta-opam-install' to install Eta packages into ${oxCamlSwitch}."
+                echo "Run 'eta-opam-install-ox' to pin this checkout's packages into ${oxCamlSwitch} (it removes v1 Eta packages)."
                 echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
