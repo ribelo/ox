@@ -47,6 +47,39 @@
       ];
 
       forAllSystems = nixpkgs.lib.genAttrs systems;
+
+      # Eta's packages are whatever dune-project declares; nothing here names one
+      # by hand. `packages` and ETA_OPAM_PACKAGES are both derived from this
+      # list, so a package a worker declares appears in both without an edit and
+      # a v1 package name cannot linger. Dune keeps package metadata in
+      # dune-project (generate_opam_files true), so the stanzas are the source of
+      # truth; the generated *.opam files exist only after a build.
+      duneProjectLines = nixpkgs.lib.splitString "\n" (builtins.readFile ./dune-project);
+      # A comment cannot open a stanza, so dropping comment-only and blank lines
+      # keeps a commented-out (package ...) out of the list.
+      duneProjectCode = nixpkgs.lib.concatStringsSep "\n" (
+        builtins.filter
+          (line: builtins.match "[ \t]*;.*" line == null && builtins.match "[ \t]*" line == null)
+          duneProjectLines
+      );
+      # The (name X) dune requires inside each (package ...) form. Splitting on
+      # the marker drops everything before the first form, which is where the
+      # project's own (name eta) lives.
+      packageStanzaName =
+        stanza:
+        let
+          found = builtins.filter (name: name != null) (
+            builtins.map
+              (line: builtins.match ".*\\(name[ \t]+([^ \t()\"]+)\\).*" line)
+              (nixpkgs.lib.splitString "\n" stanza)
+          );
+        in
+        if found == [ ] then null else builtins.head (builtins.head found);
+      etaPackageNames = builtins.filter (name: name != null) (
+        builtins.map packageStanzaName (
+          builtins.tail (nixpkgs.lib.splitString "(package" duneProjectCode)
+        )
+      );
     in
     {
       packages = forAllSystems (
@@ -183,49 +216,23 @@
               # Yojson 3.0.0 does not compile with this OxCaml release.
               yojson = "2.2.2+ox";
             };
-          etaPackageNames = [
-            "eta"
-            "eta_json"
-            "eta_ai"
-            "eta_ai_openai_codec"
-            "eta_ai_openrouter"
-            "eta_ai_openai_codex"
-            "eta_ai_moonshot"
-            "eta_ai_kimi_coding"
-            "eta_exa"
-            "eta_blocking"
-            "eta_eio"
-            "eta_http"
-            "eta_http_eio"
-            "eta_http_h1"
-            "eta_http_h2"
-            "eta_http_service"
-            "eta_http_service_eio"
-            "eta_http_tls_openssl"
-            "eta_http_ws"
-            "eta_ladybug"
-            "eta_otel"
-            "eta_otel_eio"
-            "eta_redacted"
-            "eta_router"
-            "eta_signal"
-            "eta_signal_map"
-            "eta_sql"
-            "eta_sql_driver"
-            "eta_sql_dsl"
-            "eta_stream"
-            "eta_rpc"
-          ];
           etaPackages = builtins.listToAttrs (
             map (name: {
               inherit name;
               value = etaScope.${name};
             }) etaPackageNames
           );
+          # `nix build` with no attribute: the kernel package once dune-project
+          # declares it, otherwise the first package declared there.
+          defaultPackage =
+            if etaPackages ? eta then
+              etaPackages.eta
+            else if etaPackageNames == [ ] then
+              throw "dune-project declares no (package ...) stanza, so there is no default package"
+            else
+              etaPackages.${builtins.head etaPackageNames};
         in
-        etaPackages // {
-          default = etaPackages.eta;
-        }
+        etaPackages // { default = defaultPackage; }
       );
 
       devShells = forAllSystems (
@@ -274,7 +281,9 @@
             ];
             text = ''
               switch_name="''${ETA_OPAM_SWITCH:-${oxCamlSwitch}}"
-              repo_root="''${ETA_REPO_ROOT:-/home/ribelo/projects/ribelo/ocaml/Eta}"
+              # The tree this shell is in, not the v1 checkout the flake was
+              # copied from.
+              repo_root="''${ETA_REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
               cd "$repo_root"
 
               export OPAMROOT="''${OPAMROOT:-${oxCamlOpamRoot}}"
@@ -290,8 +299,12 @@
               export OPAMSWITCH="$switch_name"
               eval "$(opam env --switch "$switch_name" --set-switch)"
 
-              eta_url="git+file://$repo_root#master"
-              packages="''${ETA_OPAM_PACKAGES:-eta eta_json eta_ai eta_ai_openai_codec eta_ai_openrouter eta_ai_openai_codex eta_ai_moonshot eta_ai_kimi_coding eta_blocking eta_eio eta_exa eta_http eta_http_eio eta_http_h1 eta_http_h2 eta_http_service eta_http_service_eio eta_http_tls_openssl eta_http_ws eta_ladybug eta_otel eta_otel_eio eta_redacted eta_router eta_signal eta_signal_map eta_sql eta_sql_driver eta_sql_dsl eta_stream eta_rpc}"
+              # Pin the branch this checkout is on; v1's "master" does not
+              # name this tree.
+              eta_ref="''${ETA_OPAM_REF:-$(git -C "$repo_root" rev-parse --abbrev-ref HEAD)}"
+              eta_url="git+file://$repo_root#$eta_ref"
+              # Derived from dune-project: every declared package, nothing else.
+              packages="''${ETA_OPAM_PACKAGES:-${builtins.concatStringsSep " " etaPackageNames}}"
               if [ "$#" -gt 0 ]; then
                 packages="$*"
               fi
@@ -315,9 +328,8 @@
                 https://github.com/inhabitedtype/faraday/archive/0.8.2.tar.gz \
                 --no-action --yes
 
-              # Test and benchmark tooling that no Eta package depends on:
-              # qcheck drives the law suites, memtrace is the allocation-trace
-              # hook in bench/router.
+              # Test tooling no Eta package depends on: alcotest and qcheck
+              # drive suites, memtrace is an allocation-trace hook.
               opam install alcotest qcheck memtrace --yes
               opam install "''${package_args[@]}" --assume-depexts --yes
 
@@ -499,7 +511,6 @@
               pkgs.git
               pkgs.opam
               pkgs.pkg-config
-              pkgs.python3
               pkgs.sqlite
               oxCamlEditorTools
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
@@ -522,29 +533,14 @@
               opam list --installed --short utop | grep -Fxq utop
               test "$(command -v ocamlmerlin)" = "${oxCamlEditorTools}/bin/ocamlmerlin"
               test "$(command -v ocamllsp)" = "${oxCamlEditorTools}/bin/ocamllsp"
-              mode_probe="tools/oxcaml_toolchain_probe/mode_syntax.ml"
-              dune build ./tools/oxcaml_toolchain_probe/mode_syntax.exe
-              ocamlformat --enable-outside-detected-project --check "$mode_probe"
-              probe_source="$(cat "$mode_probe")"
-              printf '%s\n' "$probe_source" \
-                | ocamlmerlin single errors -filename "$mode_probe" \
-                | python3 tools/oxcaml_toolchain_probe/check_merlin_no_errors.py
-              python3 tools/oxcaml_toolchain_probe/check_lsp_no_errors.py "$mode_probe"
-              set +e
-              printf '%s\n' 'let (identity @ portable) x = x + "nope"' \
-                | ocamlmerlin single errors -filename "$mode_probe" \
-                | python3 tools/oxcaml_toolchain_probe/check_merlin_no_errors.py
-              merlin_neg=$?
-              set -e
-              test "$merlin_neg" -eq 1
+              # v1 checked tools/oxcaml_toolchain_probe/ (mode syntax through
+              # merlin, ocamllsp and ocamlformat). This tree carries no such
+              # probe; the checks above are the toolchain contract.
             '';
           };
           oxCamlShippedTests = pkgs.writeShellApplication {
             name = "eta-oxcaml-test-shipped";
-            runtimeInputs = [
-              pkgs.opam
-              pkgs.python3
-            ];
+            runtimeInputs = [ pkgs.opam ];
             text = ''
               switch_name="''${1:-${oxCamlSwitch}}"
               repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -556,18 +552,11 @@
               export ETA_LADYBUG_LIBRARY="${ladybugLibraryPath}"
               eval "$(opam env --switch "$switch_name" --set-switch)"
 
-              # Artifact check is distinct from test execution. The previous
-              # helper had divergent build/runtest directory lists and omitted
-              # supported native suites. @supported-native-tests is the single
-              # execution manifest; see test/supported-native/.
-              # The shell uses a separate opam switch: also resolve the Nix
-              # package route so compiler-provider conflicts cannot hide here.
-              bash scripts/check_compiler_nix.sh
-              bash scripts/check_compiler_contract.sh
-              bash scripts/check_compiler_solver.sh
-              dune build @supported-native-install
-              dune build --force @supported-native-tests
-              dune build @signal-map-complexity
+              # v1's supported-native manifest, compiler-contract scripts and
+              # signal-map complexity alias do not exist here; this switch runs
+              # the gate AGENTS.md requires.
+              dune build @install
+              dune build --force @runtest
             '';
           };
           oxCamlHostPackages =
@@ -637,7 +626,7 @@
                 echo "Eta OxCaml shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
                 echo "Run 'eta-opam-install' to install Eta packages into ${oxCamlSwitch}."
-                echo "Run 'eta-oxcaml-test-shipped' after setup to run the supported-native gate."
+                echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
           };
@@ -665,7 +654,7 @@
                 echo "Eta OxCaml research shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
                 echo "Run 'eta-opam-install' to install Eta packages into ${oxCamlSwitch}."
-                echo "Run 'eta-oxcaml-test-shipped' after setup to run the supported-native gate."
+                echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
           };

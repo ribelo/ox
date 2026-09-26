@@ -1,0 +1,7 @@
+; Row 0 of docs/issues/README.md, "Build skeleton": the tree carries one test
+; so `dune test` has something to run. Real suites live under test/<package>/
+; and are named after the story IDs they cover; row 0 defines no story ID, so
+; this one cites the delivery map instead.
+
+(test
+ (name test_build_skeleton))

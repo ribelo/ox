@@ -1,4 +1,7 @@
 _build/
+# `nix build .#packages.<system>.<name>` links ./result
+/result
+/result-*/
 .opam/
 .opam-oxcaml/
 _opam/
@@ -47,3 +50,6 @@ _build.jsoo/
 __pycache__/
 # Per-agent Dune build directories
 _build-*/
+*.cmi
+*.cmx
+*.o
