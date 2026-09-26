@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_process
 consumer: Leash milestone 1 (chrome-p2n4, chrome-9ex7, chrome-qo4q, chrome-2z2z, chrome-6lfk, chrome-b288)
 ---
@@ -50,3 +50,6 @@ Process groups, ptys, environment sanitization, Windows.
 ## Further Notes
 
 The v1 ticket `process-scoped-child` (`v1:docs/issues/process-scoped-child/`) contains the Eio findings that led here; its requirement texts are superseded by these stories.
+
+Verification: `nix develop -c env DUNE_BUILD_DIR=_build_process dune build @install` passed.
+Verification: `nix develop -c env DUNE_BUILD_DIR=_build_process dune test test/process` passed (11 tests).

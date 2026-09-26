@@ -96,3 +96,16 @@
   (eta_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_process)
+ (synopsis "Scoped Unix processes with graceful termination and supervision")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  base-unix
+  (eta_test :with-test)
+  (eio_main :with-test)
+  (alcotest :with-test)))

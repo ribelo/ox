@@ -1,0 +1,193 @@
+module C = Eta_process.Child
+module S = Eta_process.Supervised
+
+let check_exit expected actual =
+  let pp = function C.Exited n -> Printf.sprintf "exit %d" n
+    | C.Signaled n -> Printf.sprintf "signal %d" n in
+  Alcotest.(check string) "child exit" (pp expected) (pp actual)
+let ok = function Ok v -> v | Error _ -> Alcotest.fail "unexpected typed spawn failure"
+let some = function Some x -> x | None -> Alcotest.fail "expected pipe"
+let fd flow = match Eio_unix.Resource.fd_opt flow with
+  | Some x -> x | None -> Alcotest.fail "expected unix fd"
+
+let with_script body fn =
+  let dir = Filename.temp_dir "eta-process-" "" in
+  let path = Filename.concat dir "child.sh" in
+  Fun.protect ~finally:(fun () ->
+    if Sys.file_exists (path ^ ".ready") then Sys.remove (path ^ ".ready");
+    Sys.remove path; Unix.rmdir dir) (fun () ->
+    let oc = open_out path in
+    output_string oc ("#!/bin/sh\n" ^ body ^ "\n"); close_out oc;
+    Unix.chmod path 0o700;
+    fn path)
+
+let test_invalid () = (* nproc-7bkl *)
+  Eta_test.run (fun env sw ->
+    let fake = Eta_test.Process.make [] in
+    let spawn fds = C.spawn ~sw ~clock:env#clock ~mgr:(Eta_test.Process.mgr fake)
+      ~argv:["/bin/never"] ~grace:Eta.Duration.zero ~fds () in
+    Alcotest.(check bool) "negative rejected" true
+      (match spawn [-1,Eio_unix.Fd.stdin] with Error (`Invalid_fd (-1)) -> true | _ -> false);
+    Alcotest.(check bool) "standard fd rejected" true
+      (match spawn [2,Eio_unix.Fd.stdin] with Error (`Invalid_fd 2) -> true | _ -> false);
+    Alcotest.(check bool) "duplicate rejected" true
+      (match spawn [3,Eio_unix.Fd.stdin;3,Eio_unix.Fd.stdout] with
+       | Error (`Duplicate_fd 3) -> true | _ -> false);
+    Alcotest.(check int) "no spawn" 0 (List.length (Eta_test.Process.spawns fake)))
+
+let test_fake_retirement () = (* nproc-e5zc nproc-71a7 nproc-bqik *)
+  Eta_test.run (fun env sw ->
+    let fake = Eta_test.Process.make [Eta_test.Process.Block_until_signal] in
+    let child = ok (C.spawn ~sw ~clock:env#clock ~mgr:(Eta_test.Process.mgr fake)
+      ~argv:["/bin/sh"] ~grace:Eta.Duration.zero ~fds:[] ()) in
+    check_exit (C.Signaled Sys.sigterm) (C.stop child);
+    check_exit (C.Signaled Sys.sigterm) (C.stop child);
+    check_exit (C.Signaled Sys.sigterm) (C.await child);
+    Alcotest.(check (list int)) "TERM only; Eio backstop inert"
+      [Sys.sigterm] (Eta_test.Process.signals fake))
+
+let test_supervision () = (* nproc-cyeq nproc-msz4 nproc-pnnm nproc-ypzm *)
+  Eta_test.run (fun env sw ->
+    let fake = Eta_test.Process.make [Eta_test.Process.Exit (`Exited 3);
+      Eta_test.Process.Exit (`Exited 0)] in
+    let schedule = Eta.Schedule.modify_delay
+      (fun _ _ -> Eta.Duration.seconds 10) (Eta.Schedule.recurs 1) in
+    let supervisor = S.start ~sw ~clock:env#clock ~schedule ~spawn:(fun ~sw ->
+      C.spawn ~sw ~clock:env#clock ~mgr:(Eta_test.Process.mgr fake)
+        ~argv:["/bin/sh"] ~grace:Eta.Duration.zero ~fds:[] ()) in
+    let events = S.events supervisor in
+    (match Eio.Stream.take events with S.Started 1 -> () | _ -> Alcotest.fail "start 1");
+    (match Eio.Stream.take events with S.Exited (1,C.Exited 3) -> () | _ -> Alcotest.fail "exit 1");
+    Alcotest.(check int) "not restarted before delay" 1 (List.length (Eta_test.Process.spawns fake));
+    Eta_test.advance env#clock (Eta.Duration.seconds 10);
+    (match Eio.Stream.take events with S.Started 2 -> () | _ -> Alcotest.fail "start 2");
+    (match Eio.Stream.take events with S.Exited (2,C.Exited 0) -> () | _ -> Alcotest.fail "exit 2");
+    (match Eio.Stream.take events with
+     | S.Gave_up (Eta.Cause.Fail (`Schedule_exhausted (C.Exited 0))) -> ()
+     | _ -> Alcotest.fail "exhausted");
+    Alcotest.(check int) "generation" 2 (S.generation supervisor);
+    S.stop supervisor; Eta_test.assert_no_fibers_left ())
+
+let test_stop () = (* nproc-svva nproc-pnnm *)
+  Eta_test.run (fun env sw ->
+    let fake = Eta_test.Process.make [Eta_test.Process.Block_until_signal] in
+    let s = S.start ~sw ~clock:env#clock ~schedule:Eta.Schedule.forever ~spawn:(fun ~sw ->
+      C.spawn ~sw ~clock:env#clock ~mgr:(Eta_test.Process.mgr fake)
+        ~argv:["/bin/sh"] ~grace:Eta.Duration.zero ~fds:[] ()) in
+    (match Eio.Stream.take (S.events s) with S.Started 1 -> () | _ -> Alcotest.fail "started");
+    S.stop s; S.stop s;
+    Alcotest.(check int) "single generation" 1 (S.generation s);
+    Alcotest.(check (list int)) "TERM on shutdown" [Sys.sigterm]
+      (Eta_test.Process.signals fake);
+    Alcotest.(check int) "no respawn" 1 (List.length (Eta_test.Process.spawns fake)))
+
+let test_spawn_failure () = (* nproc-pnnm nproc-msz4 *)
+  Eta_test.run (fun env sw ->
+    let s = S.start ~sw ~clock:env#clock ~schedule:Eta.Schedule.forever
+      ~spawn:(fun ~sw:_ -> Error `Unavailable) in
+    (match Eio.Stream.take (S.events s) with
+     | S.Gave_up (Eta.Cause.Fail (`Spawn `Unavailable)) -> ()
+     | _ -> Alcotest.fail "typed spawn failure");
+    Alcotest.(check int) "no successful spawn" 0 (S.generation s);
+    S.stop s)
+
+let test_overflow () = (* nproc-pnnm nproc-msz4 *)
+  Eta_test.run (fun env sw ->
+    let fake = Eta_test.Process.make
+      (List.init 33 (fun _ -> Eta_test.Process.Exit (`Exited 0))) in
+    let s = S.start ~sw ~clock:env#clock ~schedule:(Eta.Schedule.recurs 32)
+      ~spawn:(fun ~sw -> C.spawn ~sw ~clock:env#clock
+        ~mgr:(Eta_test.Process.mgr fake) ~argv:["/bin/sh"]
+        ~grace:Eta.Duration.zero ~fds:[] ()) in
+    let rec settle attempts =
+      if S.generation s < 33 && attempts > 0 then (
+        Eio.Fiber.yield (); settle (attempts-1)) in
+    settle 200;
+    Alcotest.(check int) "all spawns" 33 (S.generation s);
+    S.stop s;
+    Alcotest.(check int) "bounded stream" 32 (Eio.Stream.length (S.events s));
+    Alcotest.(check bool) "old events dropped" true (S.dropped s > 0))
+
+let test_fd_and_output () = (* nproc-1x05 nproc-giyu nproc-bqik *)
+  with_script "read line <&3; printf 'reply:%s\n' $line >&4; echo stdout; echo stderr >&2; exit 3" (fun script ->
+  Eio_main.run (fun env -> Eio.Switch.run (fun sw ->
+    let read3, write3 = Eio_unix.pipe sw in
+    let read4, write4 = Eio_unix.pipe sw in
+    let child = ok (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+      ~argv:[script] ~grace:(Eta.Duration.ms 40)
+      ~stdout:C.Pipe ~stderr:C.Pipe
+      ~fds:[3,fd read3;4,fd write4] ()) in
+    Eio.Resource.close read3; Eio.Resource.close write4;
+    Eio.Flow.copy_string "hello\n" write3;
+    Eio.Resource.close write3;
+    Alcotest.(check string) "fd 4" "reply:hello\n" (Eio.Flow.read_all read4);
+    Alcotest.(check string) "stdout" "stdout\n" (Eio.Flow.read_all (some (C.stdout child)));
+    Alcotest.(check string) "stderr" "stderr\n" (Eio.Flow.read_all (some (C.stderr child)));
+    check_exit (C.Exited 3) (C.await child);
+    check_exit (C.Exited 3) (C.stop child))))
+
+let wait_ready clock marker =
+  match Eio.Time.with_timeout clock 1. (fun () ->
+    while not (Sys.file_exists marker) do Eio.Time.sleep clock 0.001 done; Ok ()) with
+  | Ok () -> ()
+  | Error `Timeout -> Alcotest.fail "child readiness timed out"
+
+let test_escalation grace () = (* nproc-xmat nproc-e5zc nproc-ypzm *)
+  with_script {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
+  Eio_main.run (fun env -> Eio.Switch.run (fun sw ->
+    let child = ok (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+      ~argv:[script;script ^ ".ready"] ~grace ~fds:[] ()) in
+    wait_ready env#clock (script ^ ".ready");
+    check_exit (C.Signaled Sys.sigkill) (C.stop child);
+    check_exit (C.Signaled Sys.sigkill) (C.await child))))
+
+let test_supervisor_real_stop () = (* nproc-svva nproc-e5zc nproc-xmat *)
+  with_script {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
+  Eio_main.run (fun env -> Eio.Switch.run (fun sw ->
+    let spawned = ref None in
+    let supervisor = S.start ~sw ~clock:env#clock ~schedule:Eta.Schedule.forever
+      ~spawn:(fun ~sw ->
+        let result = C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+          ~argv:[script;script ^ ".ready"] ~grace:(Eta.Duration.ms 20)
+          ~fds:[] () in
+        (match result with Ok child -> spawned := Some child | Error _ -> ());
+        result) in
+    (match Eio.Stream.take (S.events supervisor) with
+      | S.Started 1 -> () | _ -> Alcotest.fail "supervisor did not start");
+    wait_ready env#clock (script ^ ".ready");
+    S.stop supervisor;
+    check_exit (C.Signaled Sys.sigkill) (C.await (some !spawned));
+    Alcotest.(check int) "no replacement after shutdown" 1
+      (S.generation supervisor))))
+
+let test_cancel () = (* nproc-71a7 nproc-e5zc *)
+  with_script {|trap 'kill $worker; wait $worker; exit 0' TERM; sleep 30 & worker=$!; printf ready > "$1"; wait "$worker"|} (fun script ->
+  Eio_main.run (fun env -> Eio.Switch.run (fun outer ->
+    let ready, ready_u = Eio.Promise.create () in
+    let scope = Eio.Fiber.fork_promise ~sw:outer (fun () ->
+      Eta.Scope.run (fun sw ->
+        let child = ok (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+          ~argv:[script;script ^ ".ready"] ~grace:(Eta.Duration.ms 40) ~fds:[] ()) in
+        wait_ready env#clock (script ^ ".ready");
+        Eio.Promise.resolve ready_u (sw,child);
+        let never, _ = Eio.Promise.create () in
+        Eio.Promise.await never; Ok ())) in
+    let sw, child = Eio.Promise.await ready in
+    Eio.Switch.fail sw (Failure "owner cancelled");
+    (match Eio.Promise.await_exn scope with Eta.Exit.Failure _ -> () | _ -> Alcotest.fail "cancel expected");
+    check_exit (C.Exited 0) (C.await child);
+    check_exit (C.Exited 0) (C.stop child))))
+
+let () = Alcotest.run "eta_process" [
+  "nproc-7bkl", [Alcotest.test_case "invalid fd mappings" `Quick test_invalid];
+  "nproc-e5zc nproc-71a7 nproc-bqik", [Alcotest.test_case "fake retirement" `Quick test_fake_retirement];
+  "nproc-cyeq nproc-msz4 nproc-pnnm nproc-ypzm", [Alcotest.test_case "scheduled restart" `Quick test_supervision];
+  "nproc-svva nproc-pnnm", [Alcotest.test_case "stop never respawns" `Quick test_stop];
+  "nproc-pnnm nproc-msz4", [Alcotest.test_case "typed spawn failure" `Quick test_spawn_failure;
+    Alcotest.test_case "bounded event overflow" `Quick test_overflow];
+  "nproc-1x05 nproc-giyu nproc-bqik", [Alcotest.test_case "real fd pipes and output" `Quick test_fd_and_output];
+  "nproc-xmat nproc-e5zc nproc-ypzm", [Alcotest.test_case "real escalation" `Quick (test_escalation (Eta.Duration.ms 30));
+    Alcotest.test_case "zero grace immediate kill" `Quick (test_escalation Eta.Duration.zero)];
+  "nproc-svva nproc-e5zc nproc-xmat", [Alcotest.test_case "real supervisor shutdown" `Quick test_supervisor_real_stop];
+  "nproc-71a7 nproc-e5zc", [Alcotest.test_case "cancel reaps" `Quick test_cancel];
+]

@@ -1,0 +1,75 @@
+type 'e reason = [ `Spawn of 'e | `Schedule_exhausted of Child.exit ]
+type 'e event =
+  | Started of int
+  | Exited of int * Child.exit
+  | Gave_up of 'e reason Eta.Cause.t
+
+type 'e t = {
+  mutable generation : int;
+  mutable dropped : int;
+  events : 'e event Eio.Stream.t;
+  mutable stopped : bool;
+  context : Eio.Cancel.t Eio.Promise.t;
+  finished : unit Eio.Promise.or_exn;
+}
+let generation t = t.generation
+let events t = t.events
+let dropped t = t.dropped
+let emit t value =
+  if Eio.Stream.length t.events >= 32 then (
+    ignore (Eio.Stream.take_nonblocking t.events);
+    t.dropped <- t.dropped + 1);
+  Eio.Stream.add t.events value
+let stop t =
+  Eio.Cancel.protect (fun () ->
+    if not t.stopped then (
+      t.stopped <- true;
+      if not (Eio.Promise.is_resolved t.finished) then
+        Eio.Cancel.cancel (Eio.Promise.await t.context) Exit);
+    Eio.Promise.await_exn t.finished)
+let now_ms clock =
+  let ms = Eio.Time.now clock *. 1000. in
+  if ms >= float_of_int max_int then max_int
+  else if ms <= float_of_int min_int then min_int
+  else int_of_float ms
+let start ~sw ~clock ~schedule ~spawn =
+  let context, context_u = Eio.Promise.create () in
+  let finished, finished_u = Eio.Promise.create () in
+  let t = { generation=0; dropped=0; events=Eio.Stream.create 32;
+    stopped=false; context; finished } in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+    let run () = Eio.Cancel.sub (fun ctx ->
+      Eio.Promise.resolve context_u ctx;
+      let rec loop driver =
+        if not t.stopped then (
+          let outcome = Eio.Switch.run (fun child_sw ->
+            match spawn ~sw:child_sw with
+            | Error error -> Error error
+            | Ok child ->
+              t.generation <- t.generation + 1;
+              let n = t.generation in
+              emit t (Started n);
+              Ok (n, Child.await child)) in
+          match outcome with
+          | Error e -> emit t (Gave_up (Eta.Cause.Fail (`Spawn e)))
+          | Ok (n, exit) ->
+            emit t (Exited (n, exit));
+            let decision, next = Eta.Schedule.step ~now_ms:(now_ms clock)
+              ~input:exit driver in
+            match decision with
+            | Eta.Schedule.Done _ ->
+              emit t (Gave_up (Eta.Cause.Fail (`Schedule_exhausted exit)))
+            | Eta.Schedule.Continue metadata ->
+              Eio.Time.sleep clock (Eta.Duration.to_seconds_float metadata.delay);
+              loop next)
+      in loop (Eta.Schedule.start schedule)) in
+    (match run () with
+     | () -> Eio.Promise.resolve_ok finished_u ()
+     | exception Eio.Cancel.Cancelled _ -> Eio.Promise.resolve_ok finished_u ()
+     | exception ex ->
+         let bt = Printexc.get_raw_backtrace () in
+         emit t (Gave_up (Eta.Cause.Die (ex, bt)));
+         Eio.Promise.resolve_error finished_u ex);
+    `Stop_daemon);
+  Eio.Switch.on_release sw (fun () -> stop t);
+  t
