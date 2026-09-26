@@ -1,5 +1,8 @@
-let classify ex bt =
+let rec classify ex bt =
   match ex with
+  (* [Switch.fail] accepts a cancellation exception; Eio wraps that reason again
+     when waking sibling fibers. Preserve the original stop identity at any depth. *)
+  | Eio.Cancel.Cancelled (Eio.Cancel.Cancelled _ as reason) -> classify reason bt
   | Eio.Cancel.Cancelled reason -> Cause.Interrupt (Interrupt_id.of_exn reason)
   | _ -> Cause.Die (ex, bt)
 

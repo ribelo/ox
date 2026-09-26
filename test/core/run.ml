@@ -82,6 +82,20 @@ let test_scope_classification () =
       | Exit.Failure (Cause.Interrupt (Some seen)) ->
           Alcotest.(check bool) "own stop id" true (Interrupt_id.equal id seen)
       | _ -> Alcotest.fail "own stop not classified");
+      (* ^napp-78pf: Eio may wrap a switch cancellation again in live fibers. *)
+      let rec wrap depth reason =
+        if depth = 0 then reason else Eio.Cancel.Cancelled (wrap (depth - 1) reason)
+      in
+      List.iter
+        (fun depth ->
+          (match Scope.run (fun _ -> raise (wrap depth (Interrupt_id.stop id))) with
+          | Exit.Failure (Cause.Interrupt (Some seen)) ->
+              Alcotest.(check bool) "nested stop id" true (Interrupt_id.equal id seen)
+          | _ -> Alcotest.fail "nested stop not classified");
+          match Scope.run (fun _ -> raise (wrap depth (Failure "outside"))) with
+          | Exit.Failure (Cause.Interrupt None) -> ()
+          | _ -> Alcotest.fail "nested external cancellation gained an identity")
+        [ 2; 3 ];
       (match
          Scope.run (fun sw ->
              Eio.Switch.on_release sw (fun () -> failwith "release");

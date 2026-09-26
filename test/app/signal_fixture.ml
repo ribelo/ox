@@ -26,6 +26,9 @@ let () =
     Eta_app.run ~name:"signal-fixture" ~config ~validate ~pp_err (fun env _ sw ->
         Eio.Switch.on_release sw (fun () ->
             Eta_observability.Logger.info env.Eta_app.Env.logger "signal stopped");
+        (* ^napp-78pf: a live service fiber must propagate cancellation, not only
+           the Door main fiber. Eio wraps the switch failure in [Cancelled]. *)
+        Eio.Fiber.fork_daemon ~sw (fun () -> Eio.Fiber.await_cancel ());
         Eio.Flow.copy_string "ready\n" env.Eta_app.Env.base#stdout;
         Eta_app.serve ~sw ())
   in

@@ -259,15 +259,21 @@ let test_status_query_before_serve () =
     "reporter:ok" !reporter;
   check_string "^nfix-j678 its query is the composed one" "first,second" !seen
 
+(* ^napp-78pf: the live consumer has daemon fibers that re-raise cancellation.
+   Eio then propagates [Cancelled (Cancelled (Stop id))], not only the original
+   switch failure. Start the service fiber before requesting shutdown. *)
 let test_daemon_stop () =
   let stop_id = Eta.Interrupt_id.create () in
   let code, _, err, _ =
     run
       ~on_switch:(fun sw ->
         Eio.Fiber.fork_daemon ~sw (fun () ->
+            Eio.Fiber.yield ();
             request_stop ~sw stop_id;
             `Stop_daemon))
-      ~program:(fun _ _ sw -> serve ~sw ())
+      ~program:(fun _ _ sw ->
+        Eio.Fiber.fork_daemon ~sw (fun () -> Eio.Fiber.await_cancel ());
+        serve ~sw ())
       ()
   in
   check_int "^napp-78pf child fiber stop ID is recognized" 0 code;
