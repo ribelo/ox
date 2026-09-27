@@ -14,3 +14,21 @@ lib/json/eta_json.mli
 lib/observability/logger.ml
 lib/observability/logger.mli
 test/modes/portability.ml
+
+# SQL prepared statements borrow local SQLite handles; the copied DSL also
+# carries OxCaml callback modes that ocamlformat 0.29 cannot parse.
+lib/sql/connection.ml
+lib/sql/dsl.ml
+lib/sql/pool.mli
+lib/sql/sqlite.ml
+lib/sql/sqlite.mli
+lib/sql/types.ml
+lib/sql/types.mli
+lib/sql/value.ml
+lib/sql/value.mli
+lib/sql_dsl/eta_sql_dsl.ml
+lib/sql_dsl/eta_sql_dsl.mli
+lib/sql_dsl/eta_sql_dsl_compiled.ml
+lib/sql_dsl/eta_sql_dsl_compiled.mli
+lib/sql_dsl/eta_sql_dsl_query.ml
+lib/sql_dsl/eta_sql_dsl_query.mli

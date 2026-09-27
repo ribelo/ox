@@ -105,6 +105,33 @@
   (alcotest :with-test)))
 
 (package
+ (name eta_blocking)
+ (synopsis "Bounded native calls over Eio system threads")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  base-unix
+  (eio_main :with-test)
+  (alcotest :with-test)))
+
+(package
+ (name eta_otel)
+ (synopsis "Scoped OTLP JSON logs and traces over eta_http")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_json
+  eta_http
+  eta_observability
+  eio
+  (eio_main :with-test)
+  (alcotest :with-test)
+  (yojson :with-test)))
+
+(package
  (name eta_observability)
  (synopsis "Structured logging with fiber-local fields and journal output")
  (description
@@ -175,6 +202,46 @@
   (yojson (>= 2.0))
   (eio_main :with-test)
   (alcotest :with-test)))
+
+(package
+ (name eta_sql_dsl)
+ (synopsis "Backend-independent typed SQL DSL")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  (alcotest :with-test)))
+
+(package
+ (name eta_sql)
+ (synopsis "SQLite connector, typed SQL and Eio connection pool")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_sql_dsl
+  eio
+  conf-pkg-config
+  conf-sqlite3
+  (eio_main :with-test)
+  (alcotest :with-test)))
+
+(package
+ (name eta_ai_openrouter)
+ (synopsis "OpenRouter Responses, embeddings and WAV transcription")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta eta_ai eta_json eta_http eta_observability eio
+  (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
+
+(package
+ (name eta_ai_realtime)
+ (synopsis "Scoped Codex Realtime WebSocket JSON session")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta eta_ai eta_json eta_http eta_observability eio
+  (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
 
 (package
  (name eta_ai_chat)

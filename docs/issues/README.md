@@ -28,13 +28,13 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 19 | `http-client/01-http-client.md` | `eta_http` (client, h1, TLS) | 1, 2 | Leash milestone 5; every future HTTPS consumer | [x] |
 | 20 | `ai-systemone/01-ai-systemone.md` | `eta_ai`, `eta_ai_systemone` | 19 | Leash drive (JEV) | [x] |
 | 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [x] |
-| 22 | (spec pending) `eta_http` WebSocket client | `eta_http` | 19 | Pie (Codex Realtime) | [ ] |
-| 23 | (spec pending) `eta_http` server, routing, service helpers | `eta_http` | 19 | inn, nema | [ ] |
-| 24 | (spec pending) `eta_sql` sqlite, DSL, pool, migrate | `eta_sql` | 1 | inn | [ ] |
-| 25 | (spec pending) `eta_ai` Responses, embeddings, audio; Codex Realtime | `eta_ai` | 21, 22 | Pie, nema | [ ] |
-| 26 | (spec pending) `eta_otel` exporter | `eta_otel` | 19 | nema | [ ] |
+| 22 | `ws-client/01-ws-client.md` | `eta_http` | 19 | Pie (Codex Realtime) | [x] |
+| 23 | `http-server/01-http-server.md` server, routing, service helpers | `eta_http` | 19 | inn, nema | [x] |
+| 24 | `sql/01-sql.md` | `eta_sql`, `eta_sql_dsl` | 1 | inn | [x] |
+| 25 | `ai-responses/01-ai-responses.md` Responses, embeddings, audio; Codex Realtime | `eta_ai_openrouter`, `eta_ai_realtime` | 21, 22 | Pie, nema | [x] |
+| 26 | `otel/01-otel.md` exporter | `eta_otel` | 19 | nema | [x] |
 | 27 | (spec pending) `eta_stream` | `eta_stream` | 1 | Pie | [ ] |
-| 28 | (spec pending) `eta_blocking` | `eta_blocking` | 1 | nema, grip | [ ] |
+| 28 | `blocking/01-blocking.md` | `eta_blocking` | 1 | nema, grip | [x] |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. HTTP, AI (OpenRouter), SQL, par/blocking and stream have no spec yet: they are written when Leash milestone 5 or another consumer pulls them (ADR-0003).
 
