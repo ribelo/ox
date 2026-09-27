@@ -158,6 +158,36 @@ let cancellation () =
         "late reply" 12 (take_message (Correlator.notifications c)).value;
       Correlator.close c)
 
+(* nrpc-1glx nrpc-vnce: cancelling a call while its frame is being written waits for the
+   whole frame; a half-written frame would corrupt every later message *)
+let cancellation_mid_write () =
+  Eta_test.run (fun env sw ->
+      let f = fixture () in
+      let started = ref false and finished = ref false in
+      f.on_write <-
+        (fun _ ->
+          started := true;
+          (* a write that suspends part-way, as a large frame on a pipe does *)
+          Eio.Fiber.yield ();
+          Eio.Fiber.yield ();
+          finished := true);
+      let c = make ~sw ~clock:env#clock f in
+      let cancel = ref None in
+      let outcome =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore (Correlator.call c (msg 1));
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      wait_until (fun () -> !started);
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "cancelled mid-write");
+      Alcotest.(check bool) "interruption propagated" true (Eio.Promise.await_exn outcome);
+      Alcotest.(check bool) "frame written whole" true !finished;
+      Correlator.close c)
+
 (* nrpc-hjv6 nrpc-lf9n nrpc-wkrp nrpc-d96a *)
 let closures () =
   List.iter
@@ -236,6 +266,8 @@ let () =
           Alcotest.test_case "nrpc-acml nrpc-d96a overflow" `Quick overflow;
           Alcotest.test_case "nrpc-amni nrpc-d96a deadline" `Quick deadline;
           Alcotest.test_case "nrpc-1glx nrpc-d96a cancellation" `Quick cancellation;
+          Alcotest.test_case "nrpc-1glx nrpc-vnce cancellation mid-write" `Quick
+            cancellation_mid_write;
           Alcotest.test_case "nrpc-hjv6 nrpc-lf9n nrpc-d96a closures" `Quick closures;
           Alcotest.test_case "nrpc-vnce nrpc-pqed write failure" `Quick write_failure;
         ] );

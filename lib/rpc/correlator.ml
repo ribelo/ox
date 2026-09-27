@@ -156,7 +156,11 @@ let call t ?session ?deadline message =
             let written =
               try
                 Eio.Mutex.use_ro t.write_lock (fun () ->
-                    match t.closed with None -> t.write outbound | Some _ -> ());
+                    (* A frame is written whole or not at all: cancelling the call
+                       mid-write would leave a partial frame that corrupts every
+                       later message on the stream. *)
+                    Eio.Cancel.protect (fun () ->
+                        match t.closed with None -> t.write outbound | Some _ -> ()));
                 Ok ()
               with
               | Eio.Cancel.Cancelled _ as exn -> raise exn

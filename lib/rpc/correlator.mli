@@ -33,7 +33,8 @@ val create :
 val call :
   'msg t -> ?session:string -> ?deadline:Eta.Duration.t -> 'msg -> ('msg, error) result
 (** Registers before writing; [session] overrides the session extracted from the outgoing
-    message for reply matching. Concurrent writes are serialized, never retried.
+    message for reply matching. Concurrent writes are serialized, never retried, and a
+    write is never interrupted: cancelling a call waits for its frame to be written whole.
     [deadline] covers writing and awaiting a reply and uses the clock supplied at
     [create]. Timeout and external cancellation remove the slot; the latter propagates as
     interruption. No finalizers are installed. *)
