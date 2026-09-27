@@ -79,3 +79,20 @@
   eio_main
   alcotest
   yojson))
+
+(test
+ (name test_openrouter)
+ (modules test_openrouter test_helpers fake_server)
+ (libraries
+  eta
+  eta_ai
+  eta_ai_systemone
+  eta_ai_openrouter
+  eta_ai_realtime
+  eta_http
+  eta_json
+  eta_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
