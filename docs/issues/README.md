@@ -28,10 +28,19 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 19 | `http-client/01-http-client.md` | `eta_http` (client, h1, TLS) | 1, 2 | Leash milestone 5; every future HTTPS consumer | [x] |
 | 20 | `ai-systemone/01-ai-systemone.md` | `eta_ai`, `eta_ai_systemone` | 19 | Leash drive (JEV) | [x] |
 | 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [ ] |
+| 22 | (spec pending) `eta_http` WebSocket client | `eta_http` | 19 | Pie (Codex Realtime) | [ ] |
+| 23 | (spec pending) `eta_http` server, routing, service helpers | `eta_http` | 19 | inn, nema | [ ] |
+| 24 | (spec pending) `eta_sql` sqlite, DSL, pool, migrate | `eta_sql` | 1 | inn | [ ] |
+| 25 | (spec pending) `eta_ai` Responses, embeddings, audio; Codex Realtime | `eta_ai` | 21, 22 | Pie, nema | [ ] |
+| 26 | (spec pending) `eta_otel` exporter | `eta_otel` | 19 | nema | [ ] |
+| 27 | (spec pending) `eta_stream` | `eta_stream` | 1 | Pie | [ ] |
+| 28 | (spec pending) `eta_blocking` | `eta_blocking` | 1 | nema, grip | [ ] |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. HTTP, AI (OpenRouter), SQL, par/blocking and stream have no spec yet: they are written when Leash milestone 5 or another consumer pulls them (ADR-0003).
 
 Running alongside, not blocking: the local-handler spike in `../../.scratch/research/handled-pattern/` decides whether ADR-0002's error channel is revisited. Rows do not wait for it; if it wins, the change is a new spec.
+
+Rows 22–28 are the migration plan's order (`../migration-plan.md`); each gets a spec when its consumer's migration is scheduled, written from that consumer's actual usage. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
 
 ## Definition of done, every row
 

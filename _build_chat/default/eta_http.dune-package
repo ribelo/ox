@@ -1,0 +1,178 @@
+(lang dune 3.22)
+(name eta_http)
+(sections (lib .) (libexec .) (doc ../../doc/eta_http) (stublibs ../stublibs))
+(files
+ (lib
+  (META
+   client.ml
+   client.mli
+   dune-package
+   error.ml
+   error.mli
+   eta_http.a
+   eta_http.cma
+   eta_http.cmi
+   eta_http.cms
+   eta_http.cmt
+   eta_http.cmx
+   eta_http.cmxa
+   eta_http.ml
+   eta_http__Client.cmi
+   eta_http__Client.cms
+   eta_http__Client.cmsi
+   eta_http__Client.cmt
+   eta_http__Client.cmti
+   eta_http__Client.cmx
+   eta_http__Error.cmi
+   eta_http__Error.cms
+   eta_http__Error.cmsi
+   eta_http__Error.cmt
+   eta_http__Error.cmti
+   eta_http__Error.cmx
+   eta_http__Eta_http_tls_openssl.cmi
+   eta_http__Eta_http_tls_openssl.cms
+   eta_http__Eta_http_tls_openssl.cmsi
+   eta_http__Eta_http_tls_openssl.cmt
+   eta_http__Eta_http_tls_openssl.cmti
+   eta_http__Eta_http_tls_openssl.cmx
+   eta_http__H1_parse.cmi
+   eta_http__H1_parse.cms
+   eta_http__H1_parse.cmsi
+   eta_http__H1_parse.cmt
+   eta_http__H1_parse.cmti
+   eta_http__H1_parse.cmx
+   eta_http__H1_write.cmi
+   eta_http__H1_write.cms
+   eta_http__H1_write.cmsi
+   eta_http__H1_write.cmt
+   eta_http__H1_write.cmti
+   eta_http__H1_write.cmx
+   eta_http__Header.cmi
+   eta_http__Header.cms
+   eta_http__Header.cmsi
+   eta_http__Header.cmt
+   eta_http__Header.cmti
+   eta_http__Header.cmx
+   eta_http__Span.cmi
+   eta_http__Span.cms
+   eta_http__Span.cmsi
+   eta_http__Span.cmt
+   eta_http__Span.cmti
+   eta_http__Span.cmx
+   eta_http__Tls_flow.cmi
+   eta_http__Tls_flow.cms
+   eta_http__Tls_flow.cmsi
+   eta_http__Tls_flow.cmt
+   eta_http__Tls_flow.cmti
+   eta_http__Tls_flow.cmx
+   eta_http__Url.cmi
+   eta_http__Url.cms
+   eta_http__Url.cmsi
+   eta_http__Url.cmt
+   eta_http__Url.cmti
+   eta_http__Url.cmx
+   eta_http__Version.cmi
+   eta_http__Version.cms
+   eta_http__Version.cmsi
+   eta_http__Version.cmt
+   eta_http__Version.cmti
+   eta_http__Version.cmx
+   eta_http_tls_openssl.ml
+   eta_http_tls_openssl.mli
+   h1_parse.ml
+   h1_parse.mli
+   h1_write.ml
+   h1_write.mli
+   header.ml
+   header.mli
+   libeta_http_stubs.a
+   opam
+   span.ml
+   span.mli
+   tls_flow.ml
+   tls_flow.mli
+   url.ml
+   url.mli
+   version.ml
+   version.mli))
+ (libexec (eta_http.cmxs))
+ (doc (README.md))
+ (stublibs (dlleta_http_stubs.so)))
+(library
+ (name eta_http)
+ (kind normal)
+ (archives (byte eta_http.cma) (native eta_http.cmxa))
+ (plugins (byte eta_http.cma) (native eta_http.cmxs))
+ (foreign_objects tls_openssl_alloc.o tls_openssl_stubs.o)
+ (foreign_archives (archives (for all) (files libeta_http_stubs.a)))
+ (foreign_dll_files ../stublibs/dlleta_http_stubs.so)
+ (native_archives eta_http.a)
+ (requires eta eio eio.unix cstruct unix)
+ (main_module_name Eta_http)
+ (modes byte native)
+ (modules
+  (wrapped
+   (group
+    (alias
+     (obj_name eta_http)
+     (visibility public)
+     (kind alias)
+     (source (path Eta_http) (impl (path eta_http.ml-gen))))
+    (name Eta_http)
+    (modules
+     (module
+      (obj_name eta_http__Client)
+      (visibility public)
+      (source (path Client) (intf (path client.mli)) (impl (path client.ml))))
+     (module
+      (obj_name eta_http__Error)
+      (visibility public)
+      (source (path Error) (intf (path error.mli)) (impl (path error.ml))))
+     (module
+      (obj_name eta_http__Eta_http_tls_openssl)
+      (visibility public)
+      (source
+       (path Eta_http_tls_openssl)
+       (intf (path eta_http_tls_openssl.mli))
+       (impl (path eta_http_tls_openssl.ml))))
+     (module
+      (obj_name eta_http__H1_parse)
+      (visibility public)
+      (source
+       (path H1_parse)
+       (intf (path h1_parse.mli))
+       (impl (path h1_parse.ml))))
+     (module
+      (obj_name eta_http__H1_write)
+      (visibility public)
+      (source
+       (path H1_write)
+       (intf (path h1_write.mli))
+       (impl (path h1_write.ml))))
+     (module
+      (obj_name eta_http__Header)
+      (visibility public)
+      (source (path Header) (intf (path header.mli)) (impl (path header.ml))))
+     (module
+      (obj_name eta_http__Span)
+      (visibility public)
+      (source (path Span) (intf (path span.mli)) (impl (path span.ml))))
+     (module
+      (obj_name eta_http__Tls_flow)
+      (visibility public)
+      (source
+       (path Tls_flow)
+       (intf (path tls_flow.mli))
+       (impl (path tls_flow.ml))))
+     (module
+      (obj_name eta_http__Url)
+      (visibility public)
+      (source (path Url) (intf (path url.mli)) (impl (path url.ml))))
+     (module
+      (obj_name eta_http__Version)
+      (visibility public)
+      (source
+       (path Version)
+       (intf (path version.mli))
+       (impl (path version.ml))))))
+   (wrapped true))))

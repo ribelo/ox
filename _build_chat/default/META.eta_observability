@@ -1,0 +1,6 @@
+description = "Structured logging with fiber-local fields and journal output"
+requires = "eio eta eta_json mtime yojson"
+archive(byte) = "eta_observability.cma"
+archive(native) = "eta_observability.cmxa"
+plugin(byte) = "eta_observability.cma"
+plugin(native) = "eta_observability.cmxs"

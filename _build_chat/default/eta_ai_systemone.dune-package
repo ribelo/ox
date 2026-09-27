@@ -1,0 +1,92 @@
+(lang dune 3.22)
+(name eta_ai_systemone)
+(sections (lib .) (libexec .) (doc ../../doc/eta_ai_systemone))
+(files
+ (lib
+  (META
+   client.ml
+   client.mli
+   codecs.ml
+   codecs.mli
+   dune-package
+   eta_ai_systemone.a
+   eta_ai_systemone.cma
+   eta_ai_systemone.cmi
+   eta_ai_systemone.cms
+   eta_ai_systemone.cmsi
+   eta_ai_systemone.cmt
+   eta_ai_systemone.cmti
+   eta_ai_systemone.cmx
+   eta_ai_systemone.cmxa
+   eta_ai_systemone.ml
+   eta_ai_systemone.mli
+   eta_ai_systemone__.cmi
+   eta_ai_systemone__.cms
+   eta_ai_systemone__.cmt
+   eta_ai_systemone__.cmx
+   eta_ai_systemone__.ml
+   eta_ai_systemone__Client.cmi
+   eta_ai_systemone__Client.cms
+   eta_ai_systemone__Client.cmsi
+   eta_ai_systemone__Client.cmt
+   eta_ai_systemone__Client.cmti
+   eta_ai_systemone__Client.cmx
+   eta_ai_systemone__Codecs.cmi
+   eta_ai_systemone__Codecs.cms
+   eta_ai_systemone__Codecs.cmsi
+   eta_ai_systemone__Codecs.cmt
+   eta_ai_systemone__Codecs.cmti
+   eta_ai_systemone__Codecs.cmx
+   eta_ai_systemone__Types.cmi
+   eta_ai_systemone__Types.cms
+   eta_ai_systemone__Types.cmsi
+   eta_ai_systemone__Types.cmt
+   eta_ai_systemone__Types.cmti
+   eta_ai_systemone__Types.cmx
+   opam
+   types.ml
+   types.mli))
+ (libexec (eta_ai_systemone.cmxs))
+ (doc (README.md)))
+(library
+ (name eta_ai_systemone)
+ (kind normal)
+ (synopsis "Fail-closed System One (JEV) client over eta_http")
+ (archives (byte eta_ai_systemone.cma) (native eta_ai_systemone.cmxa))
+ (plugins (byte eta_ai_systemone.cma) (native eta_ai_systemone.cmxs))
+ (native_archives eta_ai_systemone.a)
+ (requires eta eta_ai eta_json eta_observability eta_http eio yojson)
+ (main_module_name Eta_ai_systemone)
+ (modes byte native)
+ (modules
+  (wrapped
+   (group
+    (alias
+     (obj_name eta_ai_systemone__)
+     (visibility public)
+     (kind alias)
+     (source
+      (path Eta_ai_systemone__)
+      (impl (path eta_ai_systemone__.ml-gen))))
+    (name Eta_ai_systemone)
+    (modules
+     (module
+      (obj_name eta_ai_systemone__Client)
+      (visibility public)
+      (source (path Client) (intf (path client.mli)) (impl (path client.ml))))
+     (module
+      (obj_name eta_ai_systemone__Codecs)
+      (visibility public)
+      (source (path Codecs) (intf (path codecs.mli)) (impl (path codecs.ml))))
+     (module
+      (obj_name eta_ai_systemone)
+      (visibility public)
+      (source
+       (path Eta_ai_systemone)
+       (intf (path eta_ai_systemone.mli))
+       (impl (path eta_ai_systemone.ml))))
+     (module
+      (obj_name eta_ai_systemone__Types)
+      (visibility public)
+      (source (path Types) (intf (path types.mli)) (impl (path types.ml))))))
+   (wrapped true))))

@@ -1,0 +1,6 @@
+description = "Fail-closed System One (JEV) client over eta_http"
+requires = "eio eta eta_ai eta_http eta_json eta_observability yojson"
+archive(byte) = "eta_ai_systemone.cma"
+archive(native) = "eta_ai_systemone.cmxa"
+plugin(byte) = "eta_ai_systemone.cma"
+plugin(native) = "eta_ai_systemone.cmxs"

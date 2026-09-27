@@ -176,3 +176,19 @@
   (eio_main :with-test)
   (alcotest :with-test)))
 
+(package
+ (name eta_ai_chat)
+ (synopsis "One OpenAI-compatible chat completion with a JSON-object reply")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_ai
+  eta_json
+  eta_observability
+  eta_http
+  eio
+  (yojson (>= 2.0))
+  (eio_main :with-test)
+  (alcotest :with-test)))
+

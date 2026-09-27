@@ -1,0 +1,1 @@
+../../../../default/lib/eta/resource.mli

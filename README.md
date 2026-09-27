@@ -15,6 +15,7 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `eta_http` — bounded HTTP/1.1 client with verified OpenSSL TLS over Eio
 - `eta_ai` — the AI clients' shared transport: bearer auth from a redacted key, a bounded JSON POST with two attempts on transport failure/429/529, and the six typed failures
 - `eta_ai_systemone` — the fail-closed System One (JEV) client: typed choice and score questions, answers decoded field by field, the reply's model checked, both endpoints
+- `eta_ai_chat` — the text helper's one call: a non-streaming OpenAI-compatible chat completion with `response_format: json_object` and reasoning off, over the same transport and errors
 - `eta_rpc` — scoped request/reply correlation over message streams
 - `eta_ipc` — private Unix control listeners with scoped socket ownership and bounded peers
 - `eta_process` — scoped Unix children with graceful termination and scheduled supervision

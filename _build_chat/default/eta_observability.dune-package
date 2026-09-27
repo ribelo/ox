@@ -1,0 +1,78 @@
+(lang dune 3.22)
+(name eta_observability)
+(sections (lib .) (libexec .) (doc ../../doc/eta_observability))
+(files
+ (lib
+  (META
+   context.ml
+   context.mli
+   dune-package
+   eta_observability.a
+   eta_observability.cma
+   eta_observability.cmi
+   eta_observability.cms
+   eta_observability.cmt
+   eta_observability.cmx
+   eta_observability.cmxa
+   eta_observability.ml
+   eta_observability__Context.cmi
+   eta_observability__Context.cms
+   eta_observability__Context.cmsi
+   eta_observability__Context.cmt
+   eta_observability__Context.cmti
+   eta_observability__Context.cmx
+   eta_observability__Logger.cmi
+   eta_observability__Logger.cms
+   eta_observability__Logger.cmsi
+   eta_observability__Logger.cmt
+   eta_observability__Logger.cmti
+   eta_observability__Logger.cmx
+   eta_observability__Redact.cmi
+   eta_observability__Redact.cms
+   eta_observability__Redact.cmsi
+   eta_observability__Redact.cmt
+   eta_observability__Redact.cmti
+   eta_observability__Redact.cmx
+   logger.ml
+   logger.mli
+   opam
+   redact.ml
+   redact.mli))
+ (libexec (eta_observability.cmxs))
+ (doc (README.md)))
+(library
+ (name eta_observability)
+ (kind normal)
+ (synopsis "Structured logging with fiber-local fields and journal output")
+ (archives (byte eta_observability.cma) (native eta_observability.cmxa))
+ (plugins (byte eta_observability.cma) (native eta_observability.cmxs))
+ (native_archives eta_observability.a)
+ (requires eta eio eta_json yojson mtime)
+ (main_module_name Eta_observability)
+ (modes byte native)
+ (modules
+  (wrapped
+   (group
+    (alias
+     (obj_name eta_observability)
+     (visibility public)
+     (kind alias)
+     (source (path Eta_observability) (impl (path eta_observability.ml-gen))))
+    (name Eta_observability)
+    (modules
+     (module
+      (obj_name eta_observability__Context)
+      (visibility public)
+      (source
+       (path Context)
+       (intf (path context.mli))
+       (impl (path context.ml))))
+     (module
+      (obj_name eta_observability__Logger)
+      (visibility public)
+      (source (path Logger) (intf (path logger.mli)) (impl (path logger.ml))))
+     (module
+      (obj_name eta_observability__Redact)
+      (visibility public)
+      (source (path Redact) (intf (path redact.mli)) (impl (path redact.ml))))))
+   (wrapped true))))

@@ -1,0 +1,1 @@
+../../../../../../default/lib/ppx_yojson_minimal/ppx_yojson_minimal.ml-gen

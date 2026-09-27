@@ -1,0 +1,9 @@
+@@ portable
+
+(** A Service's status, read from its live state. Pure: no cancellation or finalizers. *)
+type state : value mod portable = Ok | Degraded of string | Failed of string
+
+type t : value mod portable = { name : string; state : state; details : (string * string) list }
+
+val make : ?details:(string * string) list -> string -> state -> t
+(** Construct a status without taking ownership of any resources. *)

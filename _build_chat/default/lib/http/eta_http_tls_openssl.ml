@@ -1,0 +1,102 @@
+(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+
+type ctx
+type ssl
+type session
+
+type server_certificate = {
+  server_name : string;
+  certificate_chain_file : string;
+  private_key_file : string;
+}
+
+type ssl_error = { code : int; detail : string option }
+type handshake_result = Handshake_ok | Handshake_error of ssl_error
+type io_result = Io_bytes of int | Io_error of ssl_error
+
+external create_ctx : unit -> ctx = "eta_openssl_ctx_create"
+external ctx_load_ca : ctx -> string -> unit = "eta_openssl_ctx_load_ca"
+
+external create_server_ctx_raw :
+  string -> string -> server_certificate list -> bool -> string list -> ctx
+  = "eta_openssl_server_ctx_create"
+
+external create_server_ssl : ctx -> ssl = "eta_openssl_server_ssl_create"
+
+external create_ssl_raw : ctx -> string option -> string option -> string list -> ssl
+  = "eta_openssl_ssl_create"
+
+external handshake_raw : ssl -> int * string option = "eta_openssl_ssl_handshake"
+
+external read_raw : ssl -> Cstruct.buffer -> int -> int -> int * string option
+  = "eta_openssl_ssl_read"
+
+external write_raw : ssl -> Cstruct.buffer -> int -> int -> int * string option
+  = "eta_openssl_ssl_write"
+
+external shutdown_raw : ssl -> int = "eta_openssl_ssl_shutdown"
+
+external bio_read_raw : ssl -> Cstruct.buffer -> int -> int -> int
+  = "eta_openssl_bio_read"
+
+external bio_write_raw : ssl -> Cstruct.buffer -> int -> int -> int
+  = "eta_openssl_bio_write"
+
+external bio_write_pending_raw : ssl -> int = "eta_openssl_bio_write_pending"
+external ssl_pending_raw : ssl -> int = "eta_openssl_ssl_pending"
+
+external get_alpn_selected_raw : ssl -> string option
+  = "eta_openssl_ssl_get_alpn_selected"
+
+external get_version_raw : ssl -> string = "eta_openssl_ssl_get_version"
+external get_servername_raw : ssl -> string option = "eta_openssl_ssl_get_servername"
+external get_verify_result_raw : ssl -> int = "eta_openssl_ssl_get_verify_result"
+external get1_session_raw : ssl -> session option = "eta_openssl_ssl_get1_session"
+external set_session_raw : ssl -> session -> unit = "eta_openssl_ssl_set_session"
+external session_reused_raw : ssl -> bool = "eta_openssl_ssl_session_reused"
+external err_peek_error_raw : unit -> string option = "eta_openssl_err_peek_error"
+external err_clear_error_raw : unit -> unit = "eta_openssl_err_clear_error"
+external random_bytes_into : bytes -> int -> int -> unit = "eta_openssl_random_bytes"
+external sha1 : string -> string = "eta_openssl_sha1"
+
+let random_bytes len =
+  if len < 0 then invalid_arg "OpenSSL.random_bytes: negative length";
+  if len > 0x7fff_ffff then
+    invalid_arg "OpenSSL.random_bytes: length exceeds native RAND_bytes range";
+  let bytes = Bytes.create len in
+  random_bytes_into bytes 0 len;
+  bytes
+
+let create_ssl ctx ~hostname ~ip ~alpn_protocols =
+  create_ssl_raw ctx hostname ip alpn_protocols
+
+let server_certificate ~server_name ~certificate_chain_file ~private_key_file =
+  { server_name; certificate_chain_file; private_key_file }
+
+let create_server_ctx ?(certificates = []) ?(require_sni_match = false)
+    ~certificate_chain_file ~private_key_file ~alpn_protocols () =
+  create_server_ctx_raw certificate_chain_file private_key_file certificates
+    require_sni_match alpn_protocols
+
+let handshake ssl =
+  match handshake_raw ssl with
+  | 0, _ -> Handshake_ok
+  | code, detail -> Handshake_error { code; detail }
+
+let io_of_raw (n, detail) = if n >= 0 then Io_bytes n else Io_error { code = -n; detail }
+let read ssl buf off len = io_of_raw (read_raw ssl buf off len)
+let write ssl buf off len = io_of_raw (write_raw ssl buf off len)
+let shutdown ssl = shutdown_raw ssl
+let bio_read ssl buf off len = bio_read_raw ssl buf off len
+let bio_write ssl buf off len = bio_write_raw ssl buf off len
+let bio_write_pending ssl = bio_write_pending_raw ssl
+let ssl_pending ssl = ssl_pending_raw ssl
+let get_alpn_selected ssl = get_alpn_selected_raw ssl
+let get_version ssl = get_version_raw ssl
+let get_servername ssl = get_servername_raw ssl
+let get_verify_result ssl = get_verify_result_raw ssl
+let get_session ssl = get1_session_raw ssl
+let set_session ssl session = set_session_raw ssl session
+let session_reused ssl = session_reused_raw ssl
+let err_peek_error () = err_peek_error_raw ()
+let err_clear_error () = err_clear_error_raw ()

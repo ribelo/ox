@@ -1,0 +1,1 @@
+lib/ppx_yojson_minimal/derive.mli:

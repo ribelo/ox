@@ -1,0 +1,6 @@
+description = ""
+requires = "eio eio.unix eta unix"
+archive(byte) = "eta_ipc.cma"
+archive(native) = "eta_ipc.cmxa"
+plugin(byte) = "eta_ipc.cma"
+plugin(native) = "eta_ipc.cmxs"

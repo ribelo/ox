@@ -1,0 +1,91 @@
+(lang dune 3.22)
+(name eta_ai)
+(sections (lib .) (libexec .) (doc ../../doc/eta_ai))
+(files
+ (lib
+  (META
+   bearer.ml
+   bearer.mli
+   dune-package
+   error.ml
+   error.mli
+   eta_ai.a
+   eta_ai.cma
+   eta_ai.cmi
+   eta_ai.cms
+   eta_ai.cmsi
+   eta_ai.cmt
+   eta_ai.cmti
+   eta_ai.cmx
+   eta_ai.cmxa
+   eta_ai.ml
+   eta_ai.mli
+   eta_ai__.cmi
+   eta_ai__.cms
+   eta_ai__.cmt
+   eta_ai__.cmx
+   eta_ai__.ml
+   eta_ai__Bearer.cmi
+   eta_ai__Bearer.cms
+   eta_ai__Bearer.cmsi
+   eta_ai__Bearer.cmt
+   eta_ai__Bearer.cmti
+   eta_ai__Bearer.cmx
+   eta_ai__Error.cmi
+   eta_ai__Error.cms
+   eta_ai__Error.cmsi
+   eta_ai__Error.cmt
+   eta_ai__Error.cmti
+   eta_ai__Error.cmx
+   eta_ai__Transport.cmi
+   eta_ai__Transport.cms
+   eta_ai__Transport.cmsi
+   eta_ai__Transport.cmt
+   eta_ai__Transport.cmti
+   eta_ai__Transport.cmx
+   opam
+   transport.ml
+   transport.mli))
+ (libexec (eta_ai.cmxs))
+ (doc (README.md)))
+(library
+ (name eta_ai)
+ (kind normal)
+ (synopsis
+  "Shared AI transport: bearer auth, bounded JSON POST, typed errors")
+ (archives (byte eta_ai.cma) (native eta_ai.cmxa))
+ (plugins (byte eta_ai.cma) (native eta_ai.cmxs))
+ (native_archives eta_ai.a)
+ (requires eta eta_json eta_http eta_observability eio yojson)
+ (main_module_name Eta_ai)
+ (modes byte native)
+ (modules
+  (wrapped
+   (group
+    (alias
+     (obj_name eta_ai__)
+     (visibility public)
+     (kind alias)
+     (source (path Eta_ai__) (impl (path eta_ai__.ml-gen))))
+    (name Eta_ai)
+    (modules
+     (module
+      (obj_name eta_ai__Bearer)
+      (visibility public)
+      (source (path Bearer) (intf (path bearer.mli)) (impl (path bearer.ml))))
+     (module
+      (obj_name eta_ai__Error)
+      (visibility public)
+      (source (path Error) (intf (path error.mli)) (impl (path error.ml))))
+     (module
+      (obj_name eta_ai)
+      (visibility public)
+      (source (path Eta_ai) (intf (path eta_ai.mli)) (impl (path eta_ai.ml))))
+     (module
+      (obj_name eta_ai__Transport)
+      (visibility public)
+      (source
+       (path Transport)
+       (intf (path transport.mli))
+       (impl (path transport.ml))))))
+   (wrapped true))))

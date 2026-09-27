@@ -1,0 +1,7 @@
+description =
+"Shared AI transport: bearer auth, bounded JSON POST, typed errors"
+requires = "eio eta eta_http eta_json eta_observability yojson"
+archive(byte) = "eta_ai.cma"
+archive(native) = "eta_ai.cmxa"
+plugin(byte) = "eta_ai.cma"
+plugin(native) = "eta_ai.cmxs"
