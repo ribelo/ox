@@ -1,0 +1,6 @@
+; Migration probes for nstream-a7k2, nstream-b4m8 and nstream-c9r3.
+; No eta_stream library is installed.
+
+(test
+ (name run)
+ (libraries eio eio.mock alcotest))

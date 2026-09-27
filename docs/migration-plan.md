@@ -48,7 +48,7 @@ Order is by who is waiting, then by dependency. Rows 19–21 already exist on th
 | 24 | `eta_sql` sqlite + DSL + pool + migrate | inn | `sql_dsl` and `ppx_sql` **copied** (3.6k, pure); sqlite binding (C stubs) **copied**; connection/pool/migrate rewritten (~1.2k, 90 effect refs) | `Eta_sql.Pool` becomes an `Eio.Pool` or a small pool over Eio; `Eta_sql.Eta_schema` (DSL schema) is unrelated to the removed schema DSL and stays |
 | 25 | `eta_ai` **Responses** + embeddings + audio (OpenRouter), Codex Realtime session | Pie, nema | rewritten against the chat client's core; Codex Realtime rides on row 22 | Pie's STT and nema's embeddings; the other nine providers are not pulled |
 | 26 | `eta_otel` exporter | nema | OTLP JSON encoding **copied** (pure, `otlp_json.ml`); exporter loop rewritten over `eta_http` client | logs+traces only; metrics when someone needs them |
-| 27 | `eta_stream` | Pie (PulseAudio pipeline, 31+25 refs) | rewritten direct-style: pull streams as `Seq` over Eio with backpressure, `Mailbox` lossy inbox; generator internals may use a raw effect (ADR-0006) | decide at Pie's migration whether `Eio.Stream`/`Seq` already suffice; measure first |
+| 27 [x] | No `eta_stream` package | Pie: 17 production operation references, 60 owned-test references (25 Eio adapters); no Mailbox use | `Seq`, direct result loops, `Eio.Stream` and consumer-owned admission state with Eio synchronization cover every measured operation | [Completed measurement and migration recipes](issues/stream/01-stream.md); six executable probes, no effect or compatibility library |
 | 28 | `eta_blocking` / `eta_par` | nema, grip (blocking); nobody (par) | `blocking` as a thin wrapper over `Eio_unix.run_in_systhread` with a bounded pool; `par` deferred until a consumer needs domains | the heartbeat scheduler stays on v1 until pulled |
 | — | HTTP/2 | nobody | deferred; codec is pure (4.6k) and copies when a consumer needs h2 | Pie's 704 refs are the vendored testsuite |
 
@@ -60,12 +60,12 @@ Migrate a consumer only when eta-next has everything it uses; migrate whole, no 
 2. **grip** (5k, uses almost nothing) — after row 19 and its own `linux_input` move; a day. Proves the process for a tiny app.
 3. **inn** (14k, active) — after rows 23–24. The first server + SQL consumer; the migration will find the gaps in both.
 4. **nema** (66k, active) — after rows 23, 25, 26 and its own Ladybug move. Largest active consumer; last of the active ones.
-5. **Pie** (35k, active) — after rows 22, 25, 27. Pie's needs (WebSocket, audio streams, Codex Realtime) are the most specialised; it migrates when those rows exist and not before.
+5. **Pie** (35k, active) — after rows 22, 25, 27. Pie's needs (WebSocket, audio streams, Codex Realtime) are the most specialised; it migrates when those rows are resolved and not before (row 27 needs no package).
 6. **taumel, p-doom** — dormant since August; they stay on `v1` indefinitely and migrate only if they wake up. taumel receives crux/signal/jsoo when it does.
 
 ## What this means for the kernel's final size
 
-eta-next at the end of this plan: core, test, json, observability (+otel), app, process, ipc, rpc, http (client, server, ws, tls, routing), ai (core, System One, chat, Responses/embeddings/audio, Codex Realtime), sql (sqlite + DSL), stream, blocking. Roughly a third of v1's line count, every package with at least one consumer, no drivers for single databases, no UI kernel, no jsoo, no HTTP/2 until pulled.
+eta-next at the end of this plan: core, test, json, observability (+otel), app, process, ipc, rpc, http (client, server, ws, tls, routing), ai (core, System One, chat, Responses/embeddings/audio, Codex Realtime), sql (sqlite + DSL), blocking. Row 27 is closed without a stream package: Eio/Seq and consumer-owned admission state suffice. Roughly a third of v1's line count, every package with at least one consumer, no drivers for single databases, no UI kernel, no jsoo, no HTTP/2 until pulled.
 
 ## Appendix: measurements (2026-09-27)
 
