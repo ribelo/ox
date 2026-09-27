@@ -1,0 +1,8 @@
+(library
+ (name eta_ai_systemone)
+ (public_name eta_ai_systemone)
+ (synopsis "Fail-closed System One (JEV) client over eta_http")
+ (libraries eta eta_ai eta_json eta_observability eta_http eio yojson)
+ (preprocess
+  (action
+   (run %{bin:ppx-yojson-minimal} %{input-file}))))

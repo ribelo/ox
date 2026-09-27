@@ -1,0 +1,6 @@
+(library
+ (name eta_ai)
+ (public_name eta_ai)
+ (synopsis
+  "Shared AI transport: bearer auth, bounded JSON POST, typed errors")
+ (libraries eta eta_json eta_http eta_observability eio yojson))

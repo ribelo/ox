@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_ai (new: shared transport types) and eta_ai_systemone
 consumer: Leash milestone 5 (drive-zml5, drive-e7oi, drive-kh2u, drive-7tvn)
 ---
@@ -35,8 +35,21 @@ JEV answers choice questions over a JSON state with probability distributions. L
 
 ## Testing Decisions
 
-- `test/ai/`: one test per story against the fake server with the mock clock for backoff and deadlines.
+- `test/ai/`: one test per story against the fake server. The clock is Eio's real one, not
+  the mock one: advancing a mock clock needs the test fiber to run while the client's
+  socket wait needs the scheduler to poll, and one domain cannot do both. The backoff
+  (100 ms), an attempt's cap (50 ms) and a short deadline are therefore real and short —
+  the whole suite costs under a second.
 
 ## Out of Scope
 
 Score-question consumers, streaming, batching, any other provider endpoint.
+
+## Verified
+
+`nix develop -c dune build @install`, `dune test` (34 cases in `test/ai/`: contract,
+bounds, fail-closed decoding, retry matrix, logging) and `dune build @fmt` are green; the
+live smoke is opt-in (`ETA_AI_LIVE_SMOKE=1` with `OPENROUTER_API_KEY`) and was not run
+here. Two deviations from `reference/jev.ts` are recorded rather than dropped: the 400/422
+context-overflow heuristic is not implemented (that reply is `Invalid_response`), and
+``Unavailable`` carries the reference's two forms through `retryable`.

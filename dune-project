@@ -146,3 +146,33 @@
   (yojson (>= 2.0))
   (eta_test :with-test)
   (alcotest :with-test)))
+(package
+ (name eta_ai)
+ (synopsis "Shared AI transport: bearer auth, bounded JSON POST, typed errors")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_json
+  eta_http
+  eta_observability
+  eio
+  (yojson (>= 2.0))
+  (alcotest :with-test)))
+
+(package
+ (name eta_ai_systemone)
+ (synopsis "Fail-closed System One (JEV) client over eta_http")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eta_ai
+  eta_json
+  eta_observability
+  eta_http
+  eio
+  (yojson (>= 2.0))
+  (eio_main :with-test)
+  (alcotest :with-test)))
+

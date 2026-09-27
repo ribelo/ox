@@ -1,0 +1,59 @@
+(test
+ (name test_contract)
+ (modules test_contract test_helpers test_live fake_server)
+ (libraries
+  eta
+  eta_ai
+  eta_ai_systemone
+  eta_http
+  eta_json
+  eta_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
+
+(test
+ (name test_fail_closed)
+ (modules test_fail_closed test_helpers fake_server)
+ (libraries
+  eta
+  eta_ai
+  eta_ai_systemone
+  eta_http
+  eta_json
+  eta_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
+
+(test
+ (name test_bounds)
+ (modules test_bounds test_helpers fake_server)
+ (libraries
+  eta
+  eta_ai
+  eta_ai_systemone
+  eta_http
+  eta_json
+  eta_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
+
+(test
+ (name test_retry)
+ (modules test_retry test_helpers fake_server)
+ (libraries
+  eta
+  eta_ai
+  eta_ai_systemone
+  eta_http
+  eta_json
+  eta_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
