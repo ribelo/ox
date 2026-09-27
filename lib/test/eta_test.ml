@@ -124,7 +124,13 @@ let flow_pair ?(label = "scripted") chunks =
   (source, Eio_mock.Flow.make (label ^ ":sink"))
 
 module Process = struct
-  type script = Exit of Eio.Process.exit_status | Block_until_signal
+  type stream = Stdout | Stderr
+  type chunk = { stream : stream; data : string; after : Eta.Duration.t }
+
+  type script =
+    | Exit of Eio.Process.exit_status
+    | Block_until_signal
+    | Output of chunk list * script
 
   type spawn = {
     argv : string list;
@@ -135,16 +141,47 @@ module Process = struct
     fds : (int * Eio_unix.Fd.t * Eio_unix.Private.Fork_action.blocking) list;
   }
 
+  (* The script's clock, kept as its two operations so that [t] stays monomorphic. *)
+  type timer = { now : unit -> float; sleep_until : float -> unit }
+
   type t = {
     mutable scripts : script list;
     mutable spawn_log : spawn list;
     mutable signal_log : int list;
     mutable next_pid : int;
+    timer : timer option;
   }
 
-  let make scripts = { scripts; spawn_log = []; signal_log = []; next_pid = 1000 }
+  let rec delayed = function
+    | Exit _ | Block_until_signal -> false
+    | Output (chunks, rest) ->
+        List.exists (fun chunk -> not (Eta.Duration.is_zero chunk.after)) chunks
+        || delayed rest
+
+  let make ?clock scripts =
+    if Option.is_none clock && List.exists delayed scripts then
+      invalid_arg "Eta_test.Process: a delayed chunk needs a clock";
+    let timer =
+      Option.map
+        (fun clock ->
+          {
+            now = (fun () -> Eio.Time.now clock);
+            sleep_until = (fun due -> Eio.Time.sleep_until clock due);
+          })
+        clock
+    in
+    { scripts; spawn_log = []; signal_log = []; next_pid = 1000; timer }
+
   let spawns t = List.rev t.spawn_log
   let signals t = List.rev t.signal_log
+
+  (* Nested [Output] is the same run of chunks; only the last script terminates. *)
+  let rec plan = function
+    | Exit status -> ([], `Exit status)
+    | Block_until_signal -> ([], `Block)
+    | Output (chunks, rest) ->
+        let rest_chunks, terminal = plan rest in
+        (chunks @ rest_chunks, terminal)
 
   module Child = struct
     type tag = [ `Generic | `Unix ]
@@ -164,15 +201,111 @@ module Process = struct
     let await c =
       match c.status with Some status -> status | None -> Eio.Promise.await c.finished
 
+    let finish c status =
+      match c.status with
+      | Some _ -> ()
+      | None ->
+          c.status <- Some status;
+          Eio.Promise.resolve c.resolver status
+
     let signal c n =
       match c.status with
       | Some _ -> ()
       | None ->
           c.owner.record_signal n;
-          let status = `Signaled n in
-          c.status <- Some status;
-          Eio.Promise.resolve c.resolver status
+          finish c (`Signaled n)
   end
+
+  let descriptor = function Stdout -> 1 | Stderr -> 2
+  let name = function Stdout -> "stdout" | Stderr -> "stderr"
+  let prints stream chunks = List.exists (fun chunk -> chunk.stream = stream) chunks
+
+  (* The spawn borrows its descriptors, so keep a private write end: closing the caller's
+     copy when [spawn_unix] returns must not take the child's away. *)
+  let borrow fds stream =
+    match List.find_opt (fun (n, _, _) -> n = descriptor stream) fds with
+    | None ->
+        invalid_arg
+          (Printf.sprintf "Eta_test.Process: no descriptor mapped to the child's %s"
+             (name stream))
+    | Some (_, fd, _) ->
+        Eio_unix.Fd.use fd
+          (fun unix_fd ->
+            let copy = Unix.dup unix_fd in
+            Unix.set_close_on_exec copy;
+            copy)
+          ~if_closed:(fun () ->
+            invalid_arg
+              (Printf.sprintf "Eta_test.Process: the child's %s is already closed"
+                 (name stream)))
+
+  (* Descriptors are Eio's, so non-blocking: a full pipe waits instead of spinning, and a
+     reader that closed its end ends this chunk, as SIGPIPE would end a real child. *)
+  let write_all fd data =
+    let buffer = Bytes.of_string data in
+    let total = Bytes.length buffer in
+    let rec loop written =
+      if written < total then
+        match Unix.write fd buffer written (total - written) with
+        | progress -> loop (written + progress)
+        | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
+            Eio_unix.await_writable fd;
+            loop written
+        | exception Unix.Unix_error ((Unix.EPIPE | Unix.EBADF), _, _) -> ()
+    in
+    loop 0
+
+  (* Chunks are timed from the spawn, so a test that advances the clock before this fiber
+     is scheduled still sees them: a due time already reached does not wait. *)
+  let schedule timer chunks =
+    match timer with
+    | None -> List.map (fun chunk -> (chunk, None)) chunks
+    | Some timer ->
+        let spawned = timer.now () in
+        let _, scheduled =
+          List.fold_left
+            (fun (at, scheduled) chunk ->
+              let at = at +. Eta.Duration.to_seconds_float chunk.after in
+              (at, (chunk, Some (spawned +. at)) :: scheduled))
+            (0., []) chunks
+        in
+        List.rev scheduled
+
+  (* One daemon per output script, owned by the spawn's switch: Eio cancels daemons when
+     the switch's own work ends, which is the retirement signal. The caller's copy of the
+     write ends closes when [spawn_unix] returns; this daemon's copy closes when the
+     script ends or the daemon is cancelled, so a reader sees everything up to that point
+     followed by EOF. *)
+  let start_output t ~sw child fds chunks terminal =
+    let outputs =
+      List.filter_map
+        (fun stream ->
+          if prints stream chunks then Some (stream, borrow fds stream) else None)
+        [ Stdout; Stderr ]
+    in
+    let scheduled = schedule t.timer chunks in
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        Fun.protect
+          ~finally:(fun () ->
+            List.iter
+              (fun (_, fd) -> try Unix.close fd with Unix.Unix_error _ -> ())
+              outputs)
+          (fun () ->
+            List.iter
+              (fun (chunk, due) ->
+                (match (due, t.timer) with
+                | Some due, Some timer -> timer.sleep_until due
+                | _ -> ());
+                if child.Child.status = None then
+                  write_all (List.assoc chunk.stream outputs) chunk.data)
+              scheduled;
+            match terminal with
+            | `Exit status -> Child.finish child status
+            | `Block ->
+                (* A blocked child holds the write ends open until it is signalled, and
+                   the switch cancels this daemon once the child is retired. *)
+                ignore (Eio.Promise.await child.Child.finished : Eio.Process.exit_status));
+        `Stop_daemon)
 
   let spawn_unix t ~sw ?cwd ?pgid ~env ~fds ~executable argv =
     let script =
@@ -184,25 +317,23 @@ module Process = struct
     in
     t.spawn_log <-
       { argv; env = Array.copy env; cwd; pgid; executable; fds } :: t.spawn_log;
+    let chunks, terminal = plan script in
     let finished, resolver = Eio.Promise.create () in
-    let status =
-      match script with
-      | Exit status ->
-          Eio.Promise.resolve resolver status;
-          Some status
-      | Block_until_signal -> None
-    in
     let child =
       {
         Child.pid = t.next_pid;
         owner = { record_signal = (fun n -> t.signal_log <- n :: t.signal_log) };
-        status;
+        status = None;
         finished;
         resolver;
       }
     in
     t.next_pid <- t.next_pid + 1;
     Eio.Switch.on_release sw (fun () -> Child.signal child Sys.sigkill);
+    (match (chunks, terminal) with
+    | [], `Exit status -> Child.finish child status
+    | [], `Block -> ()
+    | chunks, terminal -> start_output t ~sw child fds chunks terminal);
     Eio.Resource.T (child, Eio.Process.Pi.process (module Child))
 
   module Mgr = struct

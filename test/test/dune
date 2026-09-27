@@ -1,3 +1,3 @@
 (test
  (name run)
- (libraries eta_test eta eio eio_main eio.mock eio.unix alcotest))
+ (libraries eta_test eta eta_process eio eio_main eio.mock eio.unix alcotest))

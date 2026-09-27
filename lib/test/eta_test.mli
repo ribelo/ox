@@ -50,7 +50,19 @@ val flow_pair : ?label:string -> string list -> Eio_mock.Flow.t * Eio_mock.Flow.
     sink using Eio_mock.Flow. *)
 
 module Process : sig
-  type script = Exit of Eio.Process.exit_status | Block_until_signal
+  type stream = Stdout | Stderr  (** The child's standard output or standard error. *)
+
+  type chunk = { stream : stream; data : string; after : Eta.Duration.t }
+  (** One write to [stream], delivered [after] the spawn or the preceding chunk on the
+      script's clock; a zero [after] writes without waiting. *)
+
+  type script =
+    | Exit of Eio.Process.exit_status
+    | Block_until_signal
+    | Output of chunk list * script
+        (** What one spawn does: [Exit status] ends at once, [Block_until_signal] waits
+            for a signal, and [Output (chunks, rest)] writes [chunks] in order and then
+            behaves as [rest]. *)
 
   type spawn = {
     argv : string list;
@@ -63,14 +75,23 @@ module Process : sig
 
   type t
 
-  val make : script list -> t
-  (** Each spawn consumes one script. Exhaustion is a test defect. *)
+  val make : ?clock:_ Eio.Time.clock -> script list -> t
+  (** Each spawn consumes one script. Exhaustion is a test defect, as is a chunk delayed
+      without [clock]; the clock is the mock one [advance] moves. *)
 
   val mgr : t -> Eio_unix.Process.mgr_ty Eio.Resource.t
   (** Real Eio process-manager resource supporting both [spawn] and [spawn_unix]. Pipes
       use Eio's Unix backend, but no child OS process is started. Generic spawns accept
       FD-backed standard streams only and do not check whether the executable exists. [sw]
-      cleanup sends SIGKILL to a blocked child. *)
+      cleanup sends SIGKILL to a blocked child.
+
+      A script's chunks are written to the descriptors the spawn maps to child fds 1 and
+      2, so a [Pipe] child is read exactly as a real one. A daemon of the spawn's switch
+      writes them in script order; it ends after the last chunk of an [Exit] script and
+      when the child is signalled or retired, and its last act is to close the write ends,
+      so a reader sees the bytes written so far followed by EOF. A chunk whose delay had
+      not elapsed when the child was signalled is not written. The fake still records
+      argv, env, cwd and fds. *)
 
   val spawns : t -> spawn list
   (** Spawns in call order; descriptors are retained as opaque references. *)

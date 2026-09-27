@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_test
 consumer: Leash milestone 4 (hand-phof), recorded as Leash etagap-43zf
 ---
@@ -28,6 +28,9 @@ Scripts carry output: a child may write chunks to stdout/stderr, optionally afte
 ## Testing Decisions
 
 - `test/test`: a scripted child printing lines read through `Eta_process.Child` stdout; a delayed chunk on the mock clock; a child stopped before its delayed chunk — its reader sees EOF, not the chunk.
+
+Verified: ^ntest-f2rm has a child whose stdout and stderr chunks are read back through `Eta_process.Child`'s `Pipe` streams; ^ntest-8v5z has a chunk delivered by advancing the mock clock and a child stopped before its delayed chunk whose reader sees EOF (`test/test/run.ml`).
+All three gates pass: `nix develop -c dune build @install`, `nix develop -c dune test`, `nix develop -c dune build @fmt`.
 
 ## Out of Scope
 

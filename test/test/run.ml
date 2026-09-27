@@ -146,6 +146,102 @@ let test_process () =
         "TERM and switch KILL" [ Sys.sigterm; Sys.sigkill ]
         (Eta_test.Process.signals fake))
 
+module Fake = Eta_test.Process
+module Child = Eta_process.Child
+
+let some = function Some pipe -> pipe | None -> Alcotest.fail "expected a piped stream"
+let out ?(after = Eta.Duration.zero) data = { Fake.stream = Fake.Stdout; data; after }
+let err ?(after = Eta.Duration.zero) data = { Fake.stream = Fake.Stderr; data; after }
+
+(* The same notify-send-shaped child every output test scripts: the real executable path
+   the fake manager still has to be handed, and the argv Leash would run. *)
+let fake_child (env : Eta_test.env) ~sw fake =
+  match
+    Child.spawn ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
+      ~argv:[ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
+      ~stdout:Child.Pipe ~stderr:Child.Pipe ~grace:Eta.Duration.zero ~fds:[] ()
+  with
+  | Ok child -> child
+  | Error _ -> Alcotest.fail "unexpected typed spawn failure"
+
+let check_child_exit expected actual =
+  let pp = function
+    | Child.Exited n -> Printf.sprintf "exit %d" n
+    | Child.Signaled n -> Printf.sprintf "signal %d" n
+  in
+  Alcotest.(check string) "child exit" (pp expected) (pp actual)
+
+let test_process_output () =
+  (* ntest-f2rm *)
+  Eta_test.run (fun env sw ->
+      let fake =
+        Fake.make
+          [
+            Fake.Output
+              ([ out "done\n"; err "warn\n"; out "again\n" ], Fake.Exit (`Exited 0));
+          ]
+      in
+      let child = fake_child env ~sw fake in
+      Alcotest.(check string)
+        "stdout read through the real Child path" "done\nagain\n"
+        (Eio.Flow.read_all (some (Child.stdout child)));
+      Alcotest.(check string)
+        "stderr read through the real Child path" "warn\n"
+        (Eio.Flow.read_all (some (Child.stderr child)));
+      check_child_exit (Child.Exited 0) (Child.await child);
+      Alcotest.(check (list string))
+        "argv recorded as before"
+        [ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
+        (List.hd (Fake.spawns fake)).argv)
+
+let test_process_output_delayed () =
+  (* ntest-8v5z *)
+  Eta_test.run (fun env sw ->
+      let fake =
+        Fake.make ~clock:env#clock
+          [
+            Fake.Output
+              ([ out ~after:(Eta.Duration.minutes 30) "done\n" ], Fake.Block_until_signal);
+          ]
+      in
+      let child = fake_child env ~sw fake in
+      let source = some (Child.stdout child) in
+      let buffer = Cstruct.create 5 in
+      let reading =
+        Eio.Fiber.fork_promise ~sw (fun () -> Eio.Flow.single_read source buffer)
+      in
+      Eta_test.advance env#clock (Eta.Duration.seconds 1);
+      Alcotest.(check bool)
+        "no byte before the delay" false
+        (Eio.Promise.is_resolved reading);
+      Eta_test.advance env#clock (Eta.Duration.minutes 30);
+      (match Eio.Promise.await reading with
+      | Ok read -> Alcotest.(check int) "chunk after the delay" 5 read
+      | Error ex -> Alcotest.failf "reader failed: %s" (Printexc.to_string ex));
+      Alcotest.(check string) "chunk bytes" "done\n" (Cstruct.to_string buffer);
+      check_child_exit (Child.Signaled Sys.sigterm) (Child.stop child);
+      Alcotest.(check string)
+        "EOF when the child is stopped" "" (Eio.Flow.read_all source))
+
+let test_process_output_stopped () =
+  (* ntest-8v5z *)
+  Eta_test.run (fun env sw ->
+      let fake =
+        Fake.make ~clock:env#clock
+          [
+            Fake.Output
+              ([ out ~after:(Eta.Duration.hours 1) "done\n" ], Fake.Block_until_signal);
+          ]
+      in
+      let child = fake_child env ~sw fake in
+      let source = some (Child.stdout child) in
+      check_child_exit (Child.Signaled Sys.sigterm) (Child.stop child);
+      Alcotest.(check string) "EOF, not the pending chunk" "" (Eio.Flow.read_all source);
+      Alcotest.(check (list int)) "TERM only" [ Sys.sigterm ] (Fake.signals fake);
+      Alcotest.(check bool)
+        "clock never advanced" true
+        (Float.equal 0. (Eio.Time.now env#clock)))
+
 let test_package () =
   (* ntest-n53y *)
   Alcotest.(check bool)
@@ -168,5 +264,17 @@ let () =
       ("ntest-knpg", [ Alcotest.test_case "scripted source sink" `Quick test_flow ]);
       ( "ntest-0b6v",
         [ Alcotest.test_case "process spawn fds and signals" `Quick test_process ] );
+      ( "ntest-f2rm",
+        [
+          Alcotest.test_case "scripted child output through Child" `Quick
+            test_process_output;
+        ] );
+      ( "ntest-8v5z",
+        [
+          Alcotest.test_case "delayed chunk on the mock clock" `Quick
+            test_process_output_delayed;
+          Alcotest.test_case "stopped before its delayed chunk" `Quick
+            test_process_output_stopped;
+        ] );
       ("ntest-n53y", [ Alcotest.test_case "package links" `Quick test_package ]);
     ]
