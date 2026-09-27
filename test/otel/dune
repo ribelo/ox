@@ -1,0 +1,12 @@
+(test
+ (name run)
+ (libraries
+  eta_otel
+  eta_observability
+  eta_http
+  eta_json
+  eta
+  eio
+  eio_main
+  yojson
+  alcotest))

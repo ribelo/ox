@@ -511,6 +511,44 @@ let test_dependency_ceiling () =
         Alcotest.failf "%s is missing from eta_observability's runtime deps" name)
     [ "eta"; "eio"; "eta_json"; "yojson" ]
 
+(* ^nobs-xovg ^notel-6m2q: the optional generator binds nested IDs to the
+   fiber; the typed reporter observes exactly the same records as a journal. *)
+let test_span_ids_and_records () =
+  Eta_test.run (fun env _sw ->
+      let records = ref [] in
+      let next = ref 0 in
+      let generate () =
+        incr next;
+        Printf.sprintf "%016x%016x" !next !next
+      in
+      let logger =
+        Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~span_ids:generate
+          ~reporter:
+            (Logger.Reporter.records (fun record -> records := record :: !records))
+          ()
+      in
+      ignore
+        (Logger.span logger "outer" (fun () ->
+             Logger.info logger "inside";
+             ignore (Logger.span logger "inner" (fun () -> Ok ()) : (unit, string) result);
+             Ok ())
+          : (unit, string) result);
+      let records = List.rev !records in
+      let outer = List.hd records in
+      let inner = List.find (fun r -> r.Logger.msg = "inner") records in
+      let inside = List.find (fun r -> r.Logger.msg = "inside") records in
+      let get r key = Option.value (List.assoc_opt key r.Logger.context) ~default:"" in
+      check_string "logs inherit outer trace" (get outer "trace_id")
+        (get inside "trace_id");
+      check_string "logs inherit outer span" (get outer "span_id") (get inside "span_id");
+      check_string "nested span inherits trace" (get outer "trace_id")
+        (get inner "trace_id");
+      check_string "nested span names parent" (get outer "span_id")
+        (get inner "parent_span_id");
+      check_bool "nested span differs" true (get outer "span_id" <> get inner "span_id");
+      check_int "all start/end/log records delivered" 5 (List.length records))
+
 let () =
   Alcotest.run "eta_observability"
     (V1_logger.tests
@@ -564,6 +602,8 @@ let () =
           [
             Alcotest.test_case "start and end with elapsed time (^nobs-xovg)" `Quick
               test_span_ok;
+            Alcotest.test_case "nested IDs and typed records (^nobs-xovg ^notel-6m2q)"
+              `Quick test_span_ids_and_records;
             Alcotest.test_case "a typed failure is summarized (^nobs-xovg)" `Quick
               test_span_failure;
             Alcotest.test_case "a raise is a defect and propagates (^nobs-xovg)" `Quick

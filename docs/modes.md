@@ -7,7 +7,7 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Eta.Result.Syntax.( let* ), ( let+ )` | **Global**; although applied immediately, OxCaml binding-operator elaboration rejects a mode-qualified closure parameter in existing `let*` syntax. |
 | `Eta.Retry.retry, repeat` | **Local**; invoke in the calling fiber. Top-level tail-recursive helpers accept the local callback explicitly rather than capture it in an escaping recursive closure. |
 | `Eta.Resource.acquire_release ~acquire` | **Local**; acquisition runs before registering release with Eio. `~release` remains **global**: registered on the switch for later invocation. |
-| `Eta.Observability.Logger.span ~f` | **Local**; execute within the span in the same fiber. `~pp_err` remains **global**: passed through formatting and retained by the inner logging callback. |
+| `Eta.Observability.Logger.span ~f` | **Global**; optional OTLP span IDs bind through `Context.with_fields` into `Eio.Fiber.with_binding`, which requires a global callback (nmodes-8t8v, nmodes-8y46). `~pp_err` remains **global**: passed through formatting and retained by the inner logging callback. |
 | `Eta.Observability.Logger.Sink.writer` | **Global**; retains `write_line` in the resulting sink for later log records. |
 | `Eta.Timeout.timeout` | **Global**; forwarded to `Eio.Time.with_timeout`, whose signature does not accept `local`. |
 | `Eta.Scope.run` | **Global**; forwarded to `Eio.Switch.run`, whose signature does not accept `local`. |

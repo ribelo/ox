@@ -120,6 +120,8 @@ module Reporter = struct
           Eio.Mutex.use_ro mutex (fun () -> Eio.Flow.copy_string line sink));
     }
 
+  let records consume = { emit = consume }
+
   let writer write_line = { emit = (fun record -> write_line (to_string record ^ "\n")) }
 end
 
@@ -161,6 +163,7 @@ type t = {
   min_level : level;
   base_fields : (string * value) list;
   reporter : Reporter.t;
+  span_ids : (unit -> string) option;
   now : unit -> float;
   mono_now : unit -> Mtime.t;
   windows : (string, window_state) Hashtbl.t;
@@ -175,12 +178,13 @@ let merge_fields ~base ~fields =
   List.iter (fun (name, value) -> Hashtbl.replace table name value) fields;
   Hashtbl.fold (fun name value acc -> (name, value) :: acc) table [] |> sort_by_name
 
-let create ?(level = Info) ?(fields = []) ~service ~clock ~mono_clock ~reporter () =
+let create ?(level = Info) ?(fields = []) ?span_ids ~service ~clock ~mono_clock ~reporter () =
   {
     service;
     min_level = level;
     base_fields = fields;
     reporter;
+    span_ids;
     now = (fun () -> Eio.Time.now clock);
     mono_now = (fun () -> Eio.Time.Mono.now mono_clock);
     windows = Hashtbl.create 8;
@@ -243,7 +247,7 @@ let info t ?fields ?limit msg = log t Info ~msg ?fields ?limit ()
 let warn t ?fields ?limit msg = log t Warn ~msg ?fields ?limit ()
 let error t ?fields ?limit msg = log t Error ~msg ?fields ?limit ()
 
-let span t ?(level = Info) ?(fields = []) ?pp_err msg (f @ local) =
+let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
   let started = t.mono_now () in
   let pp_err =
     match pp_err with
@@ -251,6 +255,7 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg (f @ local) =
     | None -> fun fmt _ -> Format.pp_print_string fmt "<error>"
   in
   let summarize cause = Format.asprintf "%a" (Eta.Cause.pp_compact pp_err) cause in
+  let run () =
   emit_if_enabled t level ~msg ~fields:(("event", String "start") :: fields);
   let finish outcome exit_level extra =
     let elapsed_ms = int_of_float (milliseconds_between started (t.mono_now ())) in
@@ -281,3 +286,33 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg (f @ local) =
          already propagating out of the span. *)
       (try finish outcome exit_level extra with _ -> ());
       Printexc.raise_with_backtrace exn backtrace
+  in
+  match t.span_ids with
+  | None -> run ()
+  | Some generate ->
+      let valid_hex length id =
+        String.length id = length
+        && String.for_all (function '0' .. '9' | 'a' .. 'f' -> true | _ -> false) id
+      in
+      let inherited = Context.fields (Context.current ()) in
+      let fresh () =
+        let id = generate () in
+        if not (valid_hex 32 id) then
+          invalid_arg "Logger.span: span_ids must yield 32 lowercase hex digits";
+        id
+      in
+      let trace_id =
+        match List.assoc_opt "trace_id" inherited with
+        | Some id when valid_hex 32 id -> id
+        | _ -> String.sub (fresh ()) 0 32
+      in
+      let parent_span_id =
+        match List.assoc_opt "span_id" inherited with
+        | Some id when valid_hex 16 id -> id
+        | _ -> ""
+      in
+      let span_id = String.sub (fresh ()) 0 16 in
+      Context.with_fields
+        [ ("trace_id", trace_id); ("span_id", span_id);
+          ("parent_span_id", parent_span_id) ]
+        run

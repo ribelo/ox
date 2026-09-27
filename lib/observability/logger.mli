@@ -93,6 +93,10 @@ module Reporter : sig
       interleave halves of a line. The Door passes [Eio.Stdenv.stderr]; the sink is used
       until the program ends and no finalizer is registered on it. *)
 
+  val records : (record -> unit) -> t
+  (** [records consume] receives the typed record without serializing it; an exporter
+      can use it without making observability depend on any transport. ^notel-6m2q *)
+
   val writer : (string -> unit) -> t
   (** [writer write_line] calls [write_line] once per record with the same text {!journal}
       writes. The caller owns synchronization and the newline is included in the argument.
@@ -137,6 +141,7 @@ type t
 val create :
   ?level:level ->
   ?fields:(string * value) list ->
+  ?span_ids:(unit -> string) ->
   service:string ->
   clock:_ Eio.Time.clock ->
   mono_clock:_ Eio.Time.Mono.t ->
@@ -148,7 +153,11 @@ val create :
     rate-limit windows on [mono_clock]. [level] is the minimum level this logger writes,
     [Info] by default; [fields] are attached to every record it writes, and a record's own
     field with the same name wins. A base field with the same name as an inherited context
-    field is unaffected: they render as separate objects. *)
+    field is unaffected: they render as separate objects. [span_ids], when supplied,
+    generates exactly 32 lowercase hexadecimal digits per call: a new trace takes
+    32 digits, and each span takes the first 16 digits of a fresh ID. Nested spans inherit their trace_id and
+    parent_span_id; absent [span_ids], existing behavior is unchanged.
+    ^nobs-xovg ^notel-6m2q *)
 
 val enabled : t -> level -> bool
 (** [enabled logger level] is [true] when a record of that level would pass the logger's
@@ -184,10 +193,12 @@ val span :
   ?fields:(string * value) list ->
   ?pp_err:(Format.formatter -> 'e -> unit) ->
   string ->
-  (unit -> ('a, 'e) result) @ local ->
+  (unit -> ('a, 'e) result) ->
   ('a, 'e) result
 (** [span logger name f] logs the start and the end of one unit of work and returns what
     [f ()] returned: tracing as structured logs, before any exporter exists.
+    [f] is global because optional IDs bind through [Context.with_fields] into
+    [Eio.Fiber.with_binding], which requires a global callback (nmodes-8t8v, nmodes-8y46).
 
     Both records carry [name] as their message, [event] as ["start"] or ["end"], the
     span's own [fields] and the fiber's inherited context. The end record also carries
