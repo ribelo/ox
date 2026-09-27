@@ -22,11 +22,14 @@ Extend the deriver with the four behaviours, each opt-in by attribute where the 
 4. As a service author, I want `[@name "with_human"]` on a constructor to set its wire string (a bare string for constant constructors, the tag for constructors with payload), so that variant wire names are declared on the type. ^nderive-q2om
 5. As a service author, I want an empty record to derive as `{}`, so that empty arguments and replies need no special case. ^nderive-qk91
 6. As a kernel maintainer, I want each behaviour pinned by a round-trip test under `test/ppx/` and the existing suites unchanged, so that the deriver's contract grows without regressing. ^nderive-l1y6
+7. As a service author, I want `Eta_json.Of_json` decoder combinators — `field`, `at`, `list`, `option`, `one_of`, `try_or_none`, primitives — where a decoder is `Yojson.Safe.t -> ('a, issue) result` carrying the path of the failure, so that dynamic JSON (CDP payloads) is read by composing functions rather than nesting `member` calls. ^nderive-vq4n
+8. As a kernel maintainer, I want the deriver's attributes named as jsonkit's (`[@json.default e]`, `[@json.key "name"]`, `[@json.name "tag"]` on constructors, `[@json.null]` for explicit null), so that a later switch to jsonkit's ppx and its JSON Schema derivation is mechanical. ^nderive-ze85
 
 ## Implementation Decisions
 
 - Default for `option`: omit when `None` (story 1); the previous null behaviour is behind `[@yojson.null]` (story 2). Update any `eta_app` config test that depended on null.
 - Variant wire names apply to both encoding and decoding; unknown tags fail with the offending subtree as today.
+- The combinators follow jsonkit's `Of_json` shape (a decoder is a function; builders take decoders) but return `result`, never raise; ~60 lines, no dependency.
 - OxCaml 5.4.0+ox rejects `type t = {}` at parse time. Express its one-value wire shape as `type t = unit [@@deriving yojson] [@@yojson.empty_record]`; it encodes as `{}` and decodes only `{}`, refusing unknown keys.
 
 ## Testing Decisions
@@ -39,3 +42,7 @@ All three gates pass: `nix develop -c dune build @install`, `nix develop -c dune
 ## Out of Scope
 
 Polymorphic variants, GADTs, inline records with payload renaming, JSON Schema derivation.
+
+## Further Notes
+
+jsonkit (https://github.com/melange-community/jsonkit, Melange core maintainers, LGPL-3/MPL-2) is natively `Yojson.Basic` plus decoder combinators, a ppxlib-based `[@@deriving json]` with these attribute names, and JSON Schema derivation. Its ppx cannot build on OxCaml 5.4 (ppxlib), which is why `ppx_yojson_minimal` exists. When ppxlib works on our compiler, evaluate replacing `ppx_yojson_minimal` with jsonkit's ppx (ADR required under ADR-0005); stories 7 and 8 keep that switch mechanical.
