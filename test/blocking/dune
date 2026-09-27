@@ -1,0 +1,3 @@
+(test
+ (name run)
+ (libraries eta_blocking eta eio eio_main eio.unix alcotest))
