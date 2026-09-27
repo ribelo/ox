@@ -143,8 +143,9 @@ let allows_extra_fields (decl : Parsetree.type_declaration) : bool =
 (* ---------- Type shapes ---------- *)
 
 type env = { source : string; group : string list }
-(** [source] is the file text (for [@default] slices); [group] names the types derived in
-    the current [type ... and ...] group, whose converters may call each other. *)
+(** [source] is the file text (for [@json.default] slices); [group] names the types
+    derived in the current [type ... and ...] group, whose converters may call each other.
+*)
 
 type field_info = {
   fname : string;
@@ -160,35 +161,38 @@ let rec is_option_type (ty : Parsetree.core_type) : bool =
   | Parsetree.Ptyp_alias (inner, _, _) -> is_option_type inner
   | _ -> false
 
+(** The names this deriver accepted before ^nderive-ze85 renamed them to jsonkit's. An old
+    name left behind would silently change the wire — [zip] instead of [zipCode] — so it
+    is refused with the name to write instead, never ignored. *)
+let retired_attribute ~context old replacement =
+  failf "%s: [@%s] is not the deriver's attribute name any more: write [@%s]" context old
+    replacement
+
 let field_of_label env (label : Parsetree.label_declaration) : field_info =
+  let context = Printf.sprintf "field %s" label.Parsetree.pld_name.txt in
   let key = ref label.Parsetree.pld_name.txt in
   let default = ref None in
   let encode_null = ref false in
   List.iter
     (fun attr ->
       match attr.Parsetree.attr_name.txt with
-      | "key" -> (
+      | "json.key" -> (
           match string_of_key_payload attr with
           | Some name -> key := name
-          | None ->
-              failf "field %s: [@key] expects a string literal"
-                label.Parsetree.pld_name.txt)
-      | "default" -> (
+          | None -> failf "%s: [@json.key] expects a string literal" context)
+      | "json.default" -> (
           match expr_of_default_payload ~source:env.source attr with
           | Some expr -> default := Some expr
-          | None ->
-              failf "field %s: [@default] expects one expression"
-                label.Parsetree.pld_name.txt)
-      | "yojson.null" -> (
+          | None -> failf "%s: [@json.default] expects one expression" context)
+      | "json.null" -> (
           match attr.Parsetree.attr_payload with
           | Parsetree.PStr [] when is_option_type label.Parsetree.pld_type ->
               encode_null := true
-          | Parsetree.PStr [] ->
-              failf "field %s: [@yojson.null] requires an option type"
-                label.Parsetree.pld_name.txt
-          | _ ->
-              failf "field %s: [@yojson.null] takes no payload"
-                label.Parsetree.pld_name.txt)
+          | Parsetree.PStr [] -> failf "%s: [@json.null] requires an option type" context
+          | _ -> failf "%s: [@json.null] takes no payload" context)
+      | "key" -> retired_attribute ~context "key" "json.key"
+      | "default" -> retired_attribute ~context "default" "json.default"
+      | "yojson.null" -> retired_attribute ~context "yojson.null" "json.null"
       | _ -> ())
     label.Parsetree.pld_attributes;
   {
@@ -462,9 +466,17 @@ let decode_record env ~allow_extra_fields fields =
     (error_at ~path:"_ppx_yojson_path" "object" "_ppx_yojson_json")
 
 let wire_name type_name (ctor : Parsetree.constructor_declaration) =
+  let context =
+    Printf.sprintf "type %s constructor %s" type_name ctor.Parsetree.pcd_name.txt
+  in
+  List.iter
+    (fun attr ->
+      if attr.Parsetree.attr_name.txt = "name" then
+        retired_attribute ~context "name" "json.name")
+    ctor.Parsetree.pcd_attributes;
   let names =
     List.filter
-      (fun attr -> attr.Parsetree.attr_name.txt = "name")
+      (fun attr -> attr.Parsetree.attr_name.txt = "json.name")
       ctor.Parsetree.pcd_attributes
   in
   match names with
@@ -472,12 +484,8 @@ let wire_name type_name (ctor : Parsetree.constructor_declaration) =
   | [ attr ] -> (
       match string_of_key_payload attr with
       | Some name -> name
-      | None ->
-          failf "type %s constructor %s: [@name] expects a string literal" type_name
-            ctor.Parsetree.pcd_name.txt)
-  | _ ->
-      failf "type %s constructor %s: duplicate [@name]" type_name
-        ctor.Parsetree.pcd_name.txt
+      | None -> failf "%s: [@json.name] expects a string literal" context)
+  | _ -> failf "%s: duplicate [@json.name]" context
 
 let encode_constructor env type_name (ctor : Parsetree.constructor_declaration) =
   let tag = ctor.Parsetree.pcd_name.txt in

@@ -31,7 +31,7 @@ type settings = { models : models; port : int } [@@deriving yojson]
 (* ^nnoschema-5mdj: what the Door takes is the type's derived decoder, its
    derived encoder (for [config check]) and the environment function. Applied
    after decoding, so a field the environment supplies is optional or carries
-   [@default]; an override that does not parse is ignored. *)
+   [@json.default]; an override that does not parse is ignored. *)
 let config : settings Config.t =
   {
     of_yojson = settings_of_yojson;

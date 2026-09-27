@@ -16,12 +16,12 @@
     declaration that requested it; a second directive after the insert restores the
     original numbering for the code that follows.
 
-    Supported shapes: records (with [@key "name"] renames and [@default expr]
+    Supported shapes: records (with [@json.key "name"] renames and [@json.default expr]
     missing-field defaults), variants (nullary constructors as strings, payload
-    constructors as [[tag, values...]] arrays, [@name "wire_tag"] on either kind), aliases
-    over any supported shape, options (absent or null is [None]; a [None] record field is
-    omitted on encoding unless it carries [@yojson.null]), raw [Yojson.Safe.t] (passed
-    through unchanged), lists, arrays, tuples, [string], [int] (accepting integer
+    constructors as [[tag, values...]] arrays, [@json.name "wire_tag"] on either kind),
+    aliases over any supported shape, options (absent or null is [None]; a [None] record
+    field is omitted on encoding unless it carries [@json.null]), raw [Yojson.Safe.t]
+    (passed through unchanged), lists, arrays, tuples, [string], [int] (accepting integer
     literals), [float] (accepting integers), [bool], [unit] (as null), and references to
     other types by name: a name in the same [type ... and ...] group threads the dotted
     path through, while any other name delegates to its public converters ([Other.t] to
@@ -29,6 +29,15 @@
     [user.home] failing inside [address] reports [user.home: address.city: ...]. A
     qualified name works the same way at any depth ([A.B.t] calls [A.B.yojson_of_t] and
     [A.B.t_of_yojson]), so a field of another package's type needs no [open].
+
+    Field and constructor attributes carry jsonkit's names — [@json.key], [@json.default],
+    [@json.null], [@json.name] — so that a later switch to jsonkit's ppx is a change of
+    deriver, not of every declaration (^nderive-ze85). The names this deriver accepted
+    before the rename ([@key], [@default], [@yojson.null], [@name]) are refused with the
+    name to write instead: ignoring one would silently change a wire key or tag. The
+    declaration attributes keep their [yojson] namespace — [[@@yojson.allow_extra_fields]]
+    and [[@@yojson.empty_record]] — because the deriver they configure is still
+    [@@deriving yojson], and the empty-record marker has no jsonkit counterpart.
 
     OxCaml cannot parse [type t = {}]. For the same one-value shape on the wire,
     [type t = unit [@@deriving yojson] [@@yojson.empty_record]] encodes as [{}] and
@@ -57,8 +66,8 @@
     interrupted and nothing is released afterwards.
 
     ^nppx-h4gz: this module is the yojson deriver the row delivers. ^nppx-mao8 and
-    ^nderive-mmnx ^nderive-0wzg ^nderive-fpd4 ^nderive-q2om ^nderive-qk91: its contract is
-    pinned by [test/ppx/run.ml]. *)
+    ^nderive-mmnx ^nderive-0wzg ^nderive-fpd4 ^nderive-q2om ^nderive-qk91 ^nderive-ze85:
+    its contract is pinned by [test/ppx/run.ml]. *)
 
 val process : filename:string -> source:string -> (string, string) result
 (** [process ~filename ~source] is [Ok output] with the converters spliced in, or

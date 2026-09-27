@@ -3,12 +3,14 @@
    ^nppx-h4gz: [type ... [@@deriving yojson]] yields [yojson_of_t] and
    [t_of_yojson] on the 5.4.0+ox switch, where no ppxlib-based deriver
    installs. ^nppx-mao8: a record, a variant, an option, a list and a nested
-   record round-trip, and a decode failure carries the offending subtree. *)
+   record round-trip, and a decode failure carries the offending subtree.
+   ^nderive-ze85: the field and constructor attributes carry jsonkit's names,
+   and the pre-rename names are refused with the name to write instead. *)
 
 type tag_list = string list [@@deriving yojson]
 (** An alias: converters delegate to the element converters. *)
 
-type address = { city : string; zip : int; [@key "zipCode"] coords : float * float }
+type address = { city : string; zip : int; [@json.key "zipCode"] coords : float * float }
 [@@deriving yojson]
 (** A nested record with a renamed key and a tuple field. *)
 
@@ -18,19 +20,20 @@ type role = Admin | Member of string | Guest of int * bool [@@deriving yojson]
 type unit_alias = unit [@@deriving yojson]
 
 (* ^nderive-mmnx ^nderive-0wzg: optional fields are absent by default, with an
-   explicit-null escape hatch. *)
-type option_wire = { omitted : string option; retained : int option [@yojson.null] }
+   explicit-null escape hatch (^nderive-ze85: spelled [@json.null]). *)
+type option_wire = { omitted : string option; retained : int option [@json.null] }
 [@@deriving yojson]
 
 (* ^nderive-fpd4: raw JSON is opaque to the deriver, even inside containers. *)
 type raw_wire = { content : Yojson.Safe.t; pieces : Yojson.Safe.t list }
 [@@deriving yojson]
 
-(* ^nderive-q2om: nullary and payload constructors can both name their wire tag. *)
+(* ^nderive-q2om ^nderive-ze85: nullary and payload constructors can both name their
+   wire tag, with jsonkit's attribute name. *)
 type renamed_wire =
-  | With_human [@name "with_human"]
-  | With_agent of string [@name "with_agent"]
-  | With_both of string * int [@name "with_both"]
+  | With_human [@json.name "with_human"]
+  | With_agent of string [@json.name "with_agent"]
+  | With_both of string * int [@json.name "with_both"]
 [@@deriving yojson]
 
 (* ^nderive-qk91: OxCaml rejects [type t = {}], so unit is the single inhabitant. *)
@@ -44,9 +47,22 @@ type a = { b : b }
 and b = { x : int } [@@deriving yojson]
 (** A mutually recursive group becomes one [let rec ... and] chain. *)
 
+(* ^nderive-ze85: every field and constructor attribute in jsonkit's spelling, honoured
+   in both directions. *)
+type json_attributes = {
+  kept : int; [@json.key "keptKey"] [@json.default 7]
+  maybe : string option; [@json.null]
+}
+[@@deriving yojson]
+
+type json_named_variant =
+  | Plain [@json.name "plain"]
+  | Payload of int [@json.name "payload"]
+[@@deriving yojson]
+
 type user = {
   name : string;
-  age : int; [@default 0]
+  age : int; [@json.default 0]
   nickname : string option;
   initial : char;
   tags : tag_list;
@@ -116,6 +132,36 @@ let test_key_rename () =
     expect_ok "renamed key decodes" (address_of_yojson (yojson_of_address home))
   in
   Alcotest.(check bool) "renamed key round-trips" true (back = home)
+
+(* ^nderive-ze85: jsonkit's names are the deriver's, so each one is honoured in both
+   directions. *)
+let test_json_attribute_names () =
+  let value = { kept = 3; maybe = None } in
+  Alcotest.(check string)
+    "renamed key and explicit null" "{\"keptKey\":3,\"maybe\":null}"
+    (Yojson.Safe.to_string (yojson_of_json_attributes value));
+  Alcotest.(check bool)
+    "renamed key round-trips" true
+    (expect_ok "renamed key" (json_attributes_of_yojson (yojson_of_json_attributes value))
+    = value);
+  let decoded =
+    expect_ok "default applies"
+      (json_attributes_of_yojson (`Assoc [ ("maybe", `String "m") ]))
+  in
+  Alcotest.(check int) "missing key uses [@json.default]" 7 decoded.kept;
+  Alcotest.(check (option string))
+    "explicit null decodes as None" (Some "m") decoded.maybe;
+  List.iter
+    (fun (value, wire) ->
+      Alcotest.(check string)
+        "renamed constructor tag" wire
+        (Yojson.Safe.to_string (yojson_of_json_named_variant value));
+      Alcotest.(check bool)
+        "renamed tag decodes" true
+        (expect_ok "renamed tag"
+           (json_named_variant_of_yojson (yojson_of_json_named_variant value))
+        = value))
+    [ (Plain, "\"plain\""); (Payload 5, "[\"payload\",5]") ]
 
 (* ^nderive-l1y6: exercise the actual generated converters, not just output text. *)
 let test_option_omission () =
@@ -411,6 +457,29 @@ let test_typo_is_loud () =
   let source = "type t = int [@@deriving yosjon]\n" in
   expect_error_contains "typo" [ "yosjon" ] (process "a.ml" source)
 
+(* ^nderive-ze85: a leftover pre-rename name fails loudly with the name to write instead.
+   Ignoring [@key] would silently change the wire key or tag. *)
+let test_retired_attribute_names () =
+  let cases =
+    [
+      ("key", "json.key", "type t = { x : int [@key \"y\"] } [@@deriving yojson]\n");
+      ( "default",
+        "json.default",
+        "type t = { x : int [@default 0] } [@@deriving yojson]\n" );
+      ( "yojson.null",
+        "json.null",
+        "type t = { x : int option [@yojson.null] } [@@deriving yojson]\n" );
+      ("name", "json.name", "type t = A [@name \"a\"] [@@deriving yojson]\n");
+    ]
+  in
+  List.iter
+    (fun (old, replacement, source) ->
+      expect_error_contains
+        ("retired [@" ^ old ^ "]")
+        [ "[@" ^ old ^ "]"; "write [@" ^ replacement ^ "]" ]
+        (process "a.ml" source))
+    cases
+
 let test_other_deriver_is_loud () =
   let source = "type t = int [@@deriving show]\n" in
   expect_error_contains "other deriver" [ "show" ] (process "a.ml" source)
@@ -429,13 +498,14 @@ let test_unsupported_shapes_are_loud () =
       ("abstract", "abstract", "type t [@@deriving yojson]\n");
       ( "explicit-null only on option",
         "requires an option type",
-        "type t = { x : int [@yojson.null] } [@@deriving yojson]\n" );
+        "type t = { x : int [@json.null] } [@@deriving yojson]\n" );
       ( "bad constructor wire name",
         "expects a string literal",
-        "type t = A [@name 3] [@@deriving yojson]\n" );
+        "type t = A [@json.name 3] [@@deriving yojson]\n" );
       ( "duplicate constructor wire names",
         "duplicate variant wire name",
-        "type t = A [@name \"same\"] | B [@name \"same\"] [@@deriving yojson]\n" );
+        "type t = A [@json.name \"same\"] | B [@json.name \"same\"] [@@deriving yojson]\n"
+      );
       ( "empty record marker on non-unit",
         "requires a unit alias",
         "type t = int [@@deriving yojson] [@@yojson.empty_record]\n" );
@@ -483,6 +553,8 @@ let () =
             test_constructor_wire_names;
           Alcotest.test_case "nderive-qk91 nderive-l1y6 empty object" `Quick
             test_empty_object;
+          Alcotest.test_case "nderive-ze85 jsonkit attribute names" `Quick
+            test_json_attribute_names;
           Alcotest.test_case "nppx-mao8 variant round-trips" `Quick test_role_round_trip;
           Alcotest.test_case "nppx-mao8 nested record round-trips" `Quick
             test_user_round_trip;
@@ -512,6 +584,8 @@ let () =
           Alcotest.test_case "nppx-mao8 insertion is in place" `Quick
             test_insertion_is_in_place;
           Alcotest.test_case "nppx-h4gz typo is loud" `Quick test_typo_is_loud;
+          Alcotest.test_case "nderive-ze85 retired attribute names are loud" `Quick
+            test_retired_attribute_names;
           Alcotest.test_case "nppx-h4gz other deriver is loud" `Quick
             test_other_deriver_is_loud;
           Alcotest.test_case "nppx-h4gz unsupported shapes are loud" `Quick

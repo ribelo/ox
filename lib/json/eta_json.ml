@@ -27,6 +27,19 @@ let pp_parse_error fmt = function
   | `Too_large { limit; length } ->
       Format.fprintf fmt "JSON input of %d bytes exceeds max_bytes (%d)" length limit
 
+type issue = { path : string; message : string; got : t }
+
+(* The deriver's rendering of a failure: the offending subtree, compacted and bounded, so
+   one log line cannot grow with the document. *)
+let truncate json =
+  let text = to_string json in
+  if String.length text > 200 then String.sub text 0 200 ^ "..." else text
+
+let pp_issue fmt { path; message; got } =
+  let text = Printf.sprintf "%s, got %s" message (truncate got) in
+  if path = "" then Format.pp_print_string fmt text
+  else Format.fprintf fmt "%s: %s" path text
+
 let string value = `String value
 let bool value = `Bool value
 let int value = `Int value
@@ -75,3 +88,87 @@ let array_member name json =
 
 let object_member name json =
   match member name json with Some (`Assoc _ as value) -> Some value | _ -> None
+
+(* ---------- Of_json: decoder combinators (^nderive-vq4n) ---------- *)
+
+module Of_json = struct
+  type 'a t = Yojson.Safe.t -> ('a, issue) result
+
+  (* The failure is data: what was expected, and the value that did not fit. Rendering it
+     is [pp_issue]'s job, so a decoder stays portable and a discarded attempt
+     ([one_of], [try_or_none]) costs no string. *)
+  let fail expected json =
+    Error { path = ""; message = "expected " ^ expected; got = json }
+
+  (* A decoder reports its issue relative to the value it was handed, so a builder prefixes
+     the path it adds; [""] is the value itself. Segments join the way the deriver joins
+     them: a field by name, a list by its index in brackets, both after a dot, so
+     [field "args" (field "index" int)] reports [args.index] and a list element inside it
+     reports [args.ids.[1]]. *)
+  let under prefix path = if path = "" then prefix else prefix ^ "." ^ path
+  let string = function `String value -> Ok value | json -> fail "string" json
+  let bool = function `Bool value -> Ok value | json -> fail "bool" json
+
+  let int = function
+    | `Int value -> Ok value
+    | `Intlit text as json -> (
+        match int_of_string_opt text with
+        | Some value -> Ok value
+        | None -> fail "int" json)
+    | json -> fail "int" json
+
+  let float = function
+    | `Float value -> Ok value
+    | `Int value -> Ok (float_of_int value)
+    | json -> fail "number" json
+
+  let null = function `Null -> Ok () | json -> fail "null" json
+
+  let list decoder json =
+    match json with
+    | `List items ->
+        let rec loop index acc = function
+          | [] -> Ok (List.rev acc)
+          | item :: rest -> (
+              match decoder item with
+              | Ok value -> loop (index + 1) (value :: acc) rest
+              | Error issue ->
+                  Error
+                    {
+                      issue with
+                      path = under ("[" ^ string_of_int index ^ "]") issue.path;
+                    })
+        in
+        loop 0 [] items
+    | json -> fail "array" json
+
+  let option decoder = function
+    | `Null -> Ok None
+    | json -> (
+        match decoder json with Ok value -> Ok (Some value) | Error issue -> Error issue)
+
+  let field name decoder json =
+    match json with
+    | `Assoc members -> (
+        match List.assoc_opt name members with
+        | None -> Error { path = ""; message = "missing field " ^ name; got = json }
+        | Some value -> (
+            match decoder value with
+            | Ok value -> Ok value
+            | Error issue -> Error { issue with path = under name issue.path }))
+    | json -> fail "object" json
+
+  let at names decoder json =
+    List.fold_right (fun name decoder -> field name decoder) names decoder json
+
+  let one_of alternatives json =
+    let rec loop = function
+      | [] -> fail "one of the alternatives" json
+      | decoder :: rest -> (
+          match decoder json with Ok value -> Ok value | Error _ -> loop rest)
+    in
+    loop alternatives
+
+  let try_or_none decoder json =
+    match decoder json with Ok value -> Ok (Some value) | Error _ -> Ok None
+end

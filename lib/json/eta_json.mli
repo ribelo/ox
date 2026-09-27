@@ -3,9 +3,10 @@
 (** Untyped JSON accessors shared by Eta packages.
 
     This module is the single owner of Eta's unchecked Yojson helpers: a bounded parse,
-    compact serialization, scalar constructors, object and array builders, and
-    option-returning member reads. Packages that only need a JSON value depend on this
-    package instead of on a provider package.
+    compact serialization, scalar constructors, object and array builders, option-returning
+    member reads, and the {!Of_json} decoder combinators for JSON whose shape is not a
+    type. Packages that only need a JSON value depend on this package instead of on a
+    provider package.
 
     Cancellation and finalizers: every function here is pure and synchronous. None
     performs I/O, blocks, forks a fiber, or registers a finalizer, so no call can be
@@ -45,6 +46,18 @@ val compact : t -> string @@ nonportable
 
 val pp_parse_error : Format.formatter -> parse_error -> unit
 (** [pp_parse_error fmt error] renders a refusal as one line of text. *)
+
+type issue = { path : string; message : string; got : t }
+(** Why an {!Of_json} decoder refused a value: [path] locates the value with the deriver's
+    dotted path ([user.name], [tags.[1]]) and is empty when the value decoded is the whole
+    document, [message] says what was expected there, and [got] is the value itself. A
+    value: it owns no resource and registers no finalizer. *)
+
+val pp_issue : Format.formatter -> issue -> unit @@ nonportable
+(** [pp_issue fmt issue] renders the issue on one line as [path: message, got <subtree>],
+    the path omitted when it is empty and the subtree compacted and bounded to 200
+    characters. Nonportable because it renders the subtree through {!to_string}; the
+    decoders of {!Of_json} build the issue as data and render nothing. *)
 
 val string : string -> t
 val bool : bool -> t
@@ -92,3 +105,63 @@ val array_member : string -> t -> t list option
 val object_member : string -> t -> t option
 (** [object_member name json] is [Some member] only when the named member is a JSON
     object; every other member shape and an absent member are [None]. *)
+
+(** Decoder combinators in jsonkit's [Of_json] shape: a decoder is a plain function from a
+    JSON value to a result and a builder takes decoders, so a document is read by
+    composing functions instead of nesting {!member} calls. ^nderive-vq4n
+
+    A failure is an {!issue}, never an exception, and it carries the path of the failing
+    value: {!Of_json.field} prefixes the name it read and {!Of_json.list} appends the
+    element index, so [field "args" (field "index" int)] reports [args.index].
+
+    Every function here is pure, synchronous and portable: none performs I/O, blocks,
+    forks a fiber, or registers a finalizer, so no call can be interrupted, and a failure
+    is built as an {!issue} rather than rendered. *)
+module Of_json : sig
+  type 'a t = Yojson.Safe.t -> ('a, issue) result
+  (** A decoder: the value it read, or the {!issue} saying why the JSON does not fit. *)
+
+  val string : string t
+  (** Accepts a JSON string. *)
+
+  val bool : bool t
+  (** Accepts a JSON boolean. *)
+
+  val int : int t
+  (** Accepts a JSON integer, including an integer literal that fits [int]: the same
+      coercion the deriver makes. *)
+
+  val float : float t
+  (** Accepts a JSON number: a float, or an integer widened to [float]. *)
+
+  val null : unit t
+  (** Accepts [null]. *)
+
+  val list : 'a t -> 'a list t
+  (** [list decoder] accepts a JSON array every element of which [decoder] accepts. A
+      failing element's issue is at that element's path ([tags.[1]]). *)
+
+  val option : 'a t -> 'a option t
+  (** [option decoder] accepts [null] as [None] and anything [decoder] accepts as [Some]:
+      the explicit-null encoding. A [decoder] failure is reported, not turned into [None];
+      {!try_or_none} is the combinator that does that. *)
+
+  val field : string -> 'a t -> 'a t
+  (** [field name decoder] reads the object member [name] and decodes it with [decoder].
+      A non-object input, and a missing member, are reported at the path of the object
+      itself. *)
+
+  val at : string list -> 'a t -> 'a t
+  (** [at names decoder] is {!field} applied to each name in turn: [at ["a"; "b"] decoder]
+      reads the member [b] of the member [a]. *)
+
+  val one_of : 'a t list -> 'a t
+  (** [one_of alternatives] is the first alternative that accepts the value; when every
+      alternative fails, the issue is at the value's own path and says it matched none of
+      them. *)
+
+  val try_or_none : 'a t -> 'a option t
+  (** [try_or_none decoder] is [Some] of what [decoder] accepts and [None] when [decoder]
+      fails, so a member that may be absent, [null], or of another shape reads as an
+      option. *)
+end

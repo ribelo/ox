@@ -26,8 +26,8 @@ type 'cfg t = {
   env : getenv:(string -> string option) -> 'cfg -> 'cfg;
       (** Environment overrides, applied to the decoded value: a field the service reads
           from the environment can only be supplied here after decoding, so a field with
-          no file value is an [option] or carries [[@default]]. An override that cannot be
-          parsed is ignored; bounds belong in the Door's validator. *)
+          no file value is an [option] or carries [[@json.default]]. An override that
+          cannot be parsed is ignored; bounds belong in the Door's validator. *)
 }
 
 val path :

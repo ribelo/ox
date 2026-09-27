@@ -14,7 +14,8 @@
    The protocol group is the Leash request as a derived type (^nnoschema-44wj,
    ^nnoschema-zi2m) beside a CDP-shaped document that stays unchecked through
    Eta_json (^njson-cdp0): shapes we own derive their codec, shapes a peer owns
-   do not. *)
+   do not. The of_json group (^nderive-vq4n) reads that peer-shaped JSON by composing
+   decoders. *)
 
 (* ^njson-7pjx: the value type is [Yojson.Safe.t] itself, not a copy. *)
 let (_ : Eta_json.t -> Yojson.Safe.t) = fun value -> value
@@ -325,6 +326,191 @@ let test_leash_protocol_derived () =
       Alcotest.(check string)
         "the peer's shape round-trips byte for byte" cdp (Eta_json.to_string parsed)
 
+(* ^nderive-vq4n: dynamic JSON — a CDP payload, say — is read by composing decoders, and a
+   failure is an [Eta_json.issue] carrying the path of the value that did not fit. *)
+module Decode = Eta_json.Of_json
+
+let cdp =
+  Yojson.Safe.from_string
+    {|{"id":7,"method":"Page.navigate","params":{"url":"about:blank"},"consumed":true}|}
+
+let decoded label = function
+  | Ok value -> value
+  | Error issue ->
+      Alcotest.failf "%s: unexpected failure %a" label Eta_json.pp_issue issue
+
+let issue label decoder input =
+  match decoder input with
+  | Ok _ -> Alcotest.failf "%s: expected a decoder failure" label
+  | Error issue -> issue
+
+let check_issue label ~path ~message ~got decoder input =
+  let { Eta_json.path = actual_path; message = actual_message; got = actual_got } =
+    issue label decoder input
+  in
+  Alcotest.(check string) (label ^ ": path") path actual_path;
+  Alcotest.(check string) (label ^ ": message") message actual_message;
+  Alcotest.(check json) (label ^ ": value") got actual_got
+
+(* ^nderive-vq4n: each primitive accepts its own JSON shape, with the coercions the
+   deriver makes, and refuses every other shape with what it expected and the value. *)
+let test_of_json_primitives () =
+  Alcotest.(check string)
+    "string" "eta"
+    (decoded "string" (Decode.string (`String "eta")));
+  Alcotest.(check bool) "bool" true (decoded "bool" (Decode.bool (`Bool true)));
+  Alcotest.(check int) "int" 7 (decoded "int" (Decode.int (`Int 7)));
+  Alcotest.(check int)
+    "integer literal" 42
+    (decoded "literal" (Decode.int (`Intlit "42")));
+  Alcotest.(check (float 0.0)) "float" 1.5 (decoded "float" (Decode.float (`Float 1.5)));
+  Alcotest.(check (float 0.0))
+    "an integer widens to float" 2.0
+    (decoded "int as float" (Decode.float (`Int 2)));
+  Alcotest.(check unit) "null" () (decoded "null" (Decode.null `Null));
+  check_issue "a float is not an int" ~path:"" ~message:"expected int" ~got:(`Float 3.0)
+    Decode.int (`Float 3.0);
+  check_issue "an overflowing literal" ~path:"" ~message:"expected int"
+    ~got:(`Intlit "99999999999999999999999") Decode.int
+    (`Intlit "99999999999999999999999");
+  check_issue "a string is not a number" ~path:"" ~message:"expected number"
+    ~got:(`String "x") Decode.float (`String "x");
+  check_issue "a bool is not a string" ~path:"" ~message:"expected string"
+    ~got:(`Bool true) Decode.string (`Bool true);
+  Alcotest.(check string)
+    "the issue renders like the deriver does" "expected string, got true"
+    (Format.asprintf "%a" Eta_json.pp_issue (issue "render" Decode.string (`Bool true)))
+
+(* ^nderive-vq4n: members are read by name, and the path grows with each read. *)
+let test_of_json_field_and_at () =
+  Alcotest.(check string)
+    "field" "Page.navigate"
+    (decoded "method" (Decode.field "method" Decode.string cdp));
+  Alcotest.(check string)
+    "at" "about:blank"
+    (decoded "url" (Decode.at [ "params"; "url" ] Decode.string cdp));
+  check_issue "a wrong-typed member" ~path:"params.url" ~message:"expected string"
+    ~got:(`Int 7)
+    (Decode.at [ "params"; "url" ] Decode.string)
+    (`Assoc [ ("params", `Assoc [ ("url", `Int 7) ]) ]);
+  check_issue "a missing member is reported at the path of the object" ~path:"params"
+    ~message:"missing field url" ~got:(`Assoc [])
+    (Decode.at [ "params"; "url" ] Decode.string)
+    (`Assoc [ ("params", `Assoc []) ]);
+  check_issue "a non-object" ~path:"" ~message:"expected object" ~got:(`List [])
+    (Decode.field "method" Decode.string)
+    (`List [])
+
+(* ^nderive-vq4n: an element failure is at the field path plus the index, the deriver
+   convention. *)
+let test_of_json_list_path () =
+  Alcotest.(check (list int))
+    "list" [ 1; 2 ]
+    (decoded "ids" (Decode.list Decode.int (`List [ `Int 1; `Int 2 ])));
+  check_issue "a bad element" ~path:"ids.[1]" ~message:"expected int" ~got:(`String "x")
+    (Decode.field "ids" (Decode.list Decode.int))
+    (`Assoc [ ("ids", `List [ `Int 1; `String "x" ]) ]);
+  check_issue "a non-array" ~path:"" ~message:"expected array" ~got:(`Int 1)
+    (Decode.list Decode.int) (`Int 1)
+
+(* ^nderive-vq4n: [option] is the explicit-null encoding; [try_or_none] is the read that
+   turns any failure into None, which is how an absent or foreign member is tolerated. *)
+let test_of_json_option_and_try_or_none () =
+  Alcotest.(check (option int))
+    "null is None" None
+    (decoded "none" (Decode.option Decode.int `Null));
+  Alcotest.(check (option int))
+    "a value is Some" (Some 3)
+    (decoded "some" (Decode.option Decode.int (`Int 3)));
+  check_issue "option does not swallow a failure" ~path:"" ~message:"expected int"
+    ~got:(`String "x") (Decode.option Decode.int) (`String "x");
+  Alcotest.(check (option int))
+    "try_or_none on an absent member" None
+    (decoded "absent"
+       (Decode.try_or_none (Decode.field "thickness" Decode.int) (`Assoc [])));
+  Alcotest.(check (option int))
+    "try_or_none on a wrong shape" None
+    (decoded "wrong"
+       (Decode.try_or_none
+          (Decode.field "thickness" Decode.int)
+          (`Assoc [ ("thickness", `String "x") ])));
+  Alcotest.(check (option int))
+    "try_or_none on a value" (Some 4)
+    (decoded "value"
+       (Decode.try_or_none
+          (Decode.field "thickness" Decode.int)
+          (`Assoc [ ("thickness", `Int 4) ])))
+
+(* ^nderive-vq4n: [one_of] takes the first alternative that accepts the value, and names
+   the value itself when none does. *)
+let test_of_json_one_of () =
+  let name_or_id =
+    Decode.one_of [ Decode.field "name" Decode.string; Decode.field "id" Decode.string ]
+  in
+  Alcotest.(check string)
+    "the first alternative" "eta"
+    (decoded "first" (name_or_id (`Assoc [ ("name", `String "eta") ])));
+  Alcotest.(check string)
+    "the second alternative" "7"
+    (decoded "second" (name_or_id (`Assoc [ ("id", `String "7") ])));
+  check_issue "no alternative matched" ~path:"args"
+    ~message:"expected one of the alternatives" ~got:(`Bool true)
+    (Decode.field "args" name_or_id)
+    (`Assoc [ ("args", `Bool true) ]);
+  check_issue "an empty alternative list never matches" ~path:""
+    ~message:"expected one of the alternatives" ~got:`Null
+    (Decode.one_of [] : unit Eta_json.Of_json.t)
+    `Null
+
+(* ^nderive-vq4n: a decoder is a total read — any JSON value is an Ok or an issue, never
+   an exception, whatever shape a peer sent. *)
+let test_of_json_never_raises () =
+  let exotic =
+    [
+      `Null;
+      `Bool true;
+      `Int 1;
+      `Intlit "1";
+      `Float 1.0;
+      `String "x";
+      `Assoc [ ("a", `Null) ];
+      `List [ `Null ];
+      `Tuple [ `Int 1 ];
+      `Variant ("V", None);
+    ]
+  in
+  let attempts =
+    [
+      (fun json -> ignore (Decode.string json));
+      (fun json -> ignore (Decode.bool json));
+      (fun json -> ignore (Decode.int json));
+      (fun json -> ignore (Decode.float json));
+      (fun json -> ignore (Decode.null json));
+      (fun json -> ignore (Decode.list Decode.int json));
+      (fun json -> ignore (Decode.option Decode.int json));
+      (fun json -> ignore (Decode.field "a" Decode.int json));
+      (fun json -> ignore (Decode.at [ "a"; "b" ] Decode.int json));
+      (fun json ->
+        ignore
+          (Decode.one_of
+             [ Decode.field "a" Decode.int; Decode.field "b" Decode.int ]
+             json));
+      (fun json -> ignore (Decode.try_or_none (Decode.field "a" Decode.string) json));
+      (fun json -> ignore ((Decode.one_of [] : unit Eta_json.Of_json.t) json));
+    ]
+  in
+  List.iter
+    (fun json ->
+      List.iter
+        (fun attempt ->
+          match attempt json with
+          | () -> ()
+          | exception error ->
+              Alcotest.failf "a decoder raised %s on %s" (Printexc.to_string error)
+                (Eta_json.to_string json))
+        attempts)
+    exotic
+
 let () =
   Alcotest.run "eta_json"
     [
@@ -350,5 +536,17 @@ let () =
           Alcotest.test_case
             "^nnoschema-44wj ^nnoschema-zi2m ^njson-cdp0 leash request as a derived type"
             `Quick test_leash_protocol_derived;
+        ] );
+      ( "of_json",
+        [
+          Alcotest.test_case "nderive-vq4n primitives" `Quick test_of_json_primitives;
+          Alcotest.test_case "nderive-vq4n field and at" `Quick test_of_json_field_and_at;
+          Alcotest.test_case "nderive-vq4n list element path" `Quick
+            test_of_json_list_path;
+          Alcotest.test_case "nderive-vq4n option and try_or_none" `Quick
+            test_of_json_option_and_try_or_none;
+          Alcotest.test_case "nderive-vq4n one_of" `Quick test_of_json_one_of;
+          Alcotest.test_case "nderive-vq4n decoders never raise" `Quick
+            test_of_json_never_raises;
         ] );
     ]
