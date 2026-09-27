@@ -1,0 +1,5 @@
+(test
+ (name run)
+ (libraries eta_http eta eio eio.unix eio_main alcotest)
+ (action
+  (run %{test})))

@@ -1,0 +1,4 @@
+(test
+ (name test_router)
+ (modules test_router)
+ (libraries eta_http alcotest))
