@@ -1,6 +1,0 @@
-description = ""
-requires = "eio"
-archive(byte) = "eta.cma"
-archive(native) = "eta.cmxa"
-plugin(byte) = "eta.cma"
-plugin(native) = "eta.cmxs"

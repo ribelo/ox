@@ -27,7 +27,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 18 | `fake-child-output/01-fake-child-output.md` | `eta_test` | 2 | Leash drops its scripted runner (etagap-43zf, hand-phof) | [x] |
 | 19 | `http-client/01-http-client.md` | `eta_http` (client, h1, TLS) | 1, 2 | Leash milestone 5; every future HTTPS consumer | [x] |
 | 20 | `ai-systemone/01-ai-systemone.md` | `eta_ai`, `eta_ai_systemone` | 19 | Leash drive (JEV) | [x] |
-| 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [ ] |
+| 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [x] |
 | 22 | (spec pending) `eta_http` WebSocket client | `eta_http` | 19 | Pie (Codex Realtime) | [ ] |
 | 23 | (spec pending) `eta_http` server, routing, service helpers | `eta_http` | 19 | inn, nema | [ ] |
 | 24 | (spec pending) `eta_sql` sqlite, DSL, pool, migrate | `eta_sql` | 1 | inn | [ ] |

@@ -1,4 +1,5 @@
 _build/
+_build_*/
 # `nix build .#packages.<system>.<name>` links ./result
 /result
 /result-*/

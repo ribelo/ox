@@ -1,13 +1,12 @@
 (** One OpenAI-compatible chat completion, with a JSON-object reply.
 
     [Eta_ai_chat.complete] is {!Chat.complete} under the name Leash's drive spec uses
-    (drive-ls3c) and [Eta_ai_chat.Chat.complete] is the same call under the name
-    {!Chat} documents; [t] is manifestly {!Chat.t}, so the two spellings interchange
-    freely.
+    (drive-ls3c) and [Eta_ai_chat.Chat.complete] is the same call under the name {!Chat}
+    documents; [t] is manifestly {!Chat.t}, so the two spellings interchange freely.
 
-    Cancellation and finalizers: nothing in this package owns a resource.
-    {!Chat.complete} performs HTTP in the calling fiber and closes each attempt's socket;
-    see its contract. *)
+    Cancellation and finalizers: nothing in this package owns a resource. {!Chat.complete}
+    performs HTTP in the calling fiber and closes each attempt's socket; see its contract.
+*)
 
 module Types = Types
 (** The chat wire types. *)

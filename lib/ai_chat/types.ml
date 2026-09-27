@@ -11,13 +11,13 @@
    without [max_tokens], [json_object] or [reasoning] sends no such member at all
    (^nchat-6kd8 ^nchat-02vr). *)
 
+(** Who speaks a message, written as the API's lowercase word. [Assistant] is the role a
+    reply's message carries, so a reply that names another role is refused. *)
 type role =
   | System [@json.name "system"]
   | User [@json.name "user"]
   | Assistant [@json.name "assistant"]
 [@@deriving yojson]
-(** Who speaks a message, written as the API's lowercase word. [Assistant] is the role a
-    reply's message carries, so a reply that names another role is refused. *)
 
 type message = { role : role; content : string }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
@@ -31,15 +31,15 @@ type usage = { prompt_tokens : int; completion_tokens : int; total_tokens : int 
     is refused rather than read as zero; a provider's extra usage members (OpenRouter's
     `cost`) are ignored. *)
 
-type response_format_kind = Json_object [@json.name "json_object"] [@@deriving yojson]
 (** The one response format this client asks for. ^nchat-02vr *)
+type response_format_kind = Json_object [@json.name "json_object"] [@@deriving yojson]
 
 type response_format = { kind : response_format_kind [@json.key "type"] }
 [@@deriving yojson]
-(** `{"type": "json_object"}`: sent only when the caller requires JSON. *)
+(** [{"type": "json_object"}]: sent only when the caller requires JSON. *)
 
 type reasoning = { enabled : bool option; effort : string option } [@@deriving yojson]
-(** OpenRouter's reasoning control: `{"enabled": false}` or `{"effort": "low"}`. One of
+(** OpenRouter's reasoning control: [{"enabled": false}] or [{"effort": "low"}]. One of
     the two members is set; a call that says nothing about reasoning sends no member at
     all. ^nchat-6kd8 *)
 

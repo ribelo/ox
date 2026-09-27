@@ -1,7 +1,0 @@
-description =
-"Untyped JSON accessors for Eta: bounded parse, builders, member reads"
-requires = "yojson"
-archive(byte) = "eta_json.cma"
-archive(native) = "eta_json.cmxa"
-plugin(byte) = "eta_json.cma"
-plugin(native) = "eta_json.cmxs"

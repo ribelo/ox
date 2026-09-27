@@ -1,6 +1,0 @@
-description = ""
-requires = "eio eio.unix eta"
-archive(byte) = "eta_process.cma"
-archive(native) = "eta_process.cmxa"
-plugin(byte) = "eta_process.cma"
-plugin(native) = "eta_process.cmxs"

@@ -46,18 +46,18 @@ let test_complete () =
       Alcotest.(check string) "model" chat_model (text_of (member "model" body));
       Alcotest.(check (option int))
         "max_tokens" (Some 1024)
-        (match member "max_tokens" body with
-        | `Int tokens -> Some tokens
-        | _ -> None);
+        (match member "max_tokens" body with `Int tokens -> Some tokens | _ -> None);
       let sent = list_of (member "messages" body) in
       Alcotest.(check int) "two messages" 2 (List.length sent);
       Alcotest.(check string)
-        "system role" "system" (text_of (member "role" (List.nth sent 0)));
+        "system role" "system"
+        (text_of (member "role" (List.nth sent 0)));
       Alcotest.(check string)
         "system content" "Answer with one JSON object."
         (text_of (member "content" (List.nth sent 0)));
       Alcotest.(check string)
-        "user role" "user" (text_of (member "role" (List.nth sent 1)));
+        "user role" "user"
+        (text_of (member "role" (List.nth sent 1)));
       Alcotest.(check string)
         "user content" {|{"goal":"type ada"}|}
         (text_of (member "content" (List.nth sent 1)));
@@ -136,13 +136,11 @@ let test_request_round_trip () =
       let client = client ~sw env server () in
       ignore
         (expect_ok
-           (complete client ~max_tokens:32 ~json_object:true
-              ~reasoning:(`Effort "low") ()));
+           (complete client ~max_tokens:32 ~json_object:true ~reasoning:(`Effort "low") ()));
       match Types.request_of_yojson (jbody server) with
       | Error message -> Alcotest.failf "the request does not decode: %s" message
       | Ok request ->
-          Alcotest.(check (option int))
-            "max_tokens" (Some 32) request.Types.max_tokens;
+          Alcotest.(check (option int)) "max_tokens" (Some 32) request.Types.max_tokens;
           Alcotest.(check bool)
             "response_format" true
             (Option.is_some request.Types.response_format);
@@ -160,13 +158,14 @@ let refusal where body =
       Alcotest.(check int) "one attempt" 1 (Chat_server.connections server);
       Alcotest.(check bool)
         ("^nchat-wtog " ^ where ^ " is not retryable")
-        false (Eta_ai.Error.retryable error);
+        false
+        (Eta_ai.Error.retryable error);
       error)
 
 let expect_message needle error =
   Alcotest.(check bool)
-    ("the error names " ^ needle)
-    true (contains (Eta_ai.Error.to_string error) needle)
+    ("the error names " ^ needle) true
+    (contains (Eta_ai.Error.to_string error) needle)
 
 let test_no_choices () =
   (* ^nchat-wtog: a reply that names no completion is refused, not defaulted. *)
@@ -249,8 +248,7 @@ let test_429_exhausted () =
       let client = client ~sw env server () in
       let error = expect_error (complete client ()) in
       Alcotest.(check int) "exactly two attempts" 2 (Chat_server.connections server);
-      Alcotest.(check bool)
-        "^nchat-wtog retryable" true (Eta_ai.Error.retryable error))
+      Alcotest.(check bool) "^nchat-wtog retryable" true (Eta_ai.Error.retryable error))
 
 let test_transport_failure_retries () =
   (* ^nchat-wtog: the first attempt fails on the wire, so the second is tried. *)
@@ -336,8 +334,7 @@ let test_completion_of_empty_reply () =
       match Codecs.completion_of_response response with
       | Error message ->
           Alcotest.(check bool)
-            "the refusal names choices" true
-            (contains message "choice")
+            "the refusal names choices" true (contains message "choice")
       | Ok _ -> Alcotest.fail "a reply without a choice was accepted")
 
 let test_extra_members_ignored () =
@@ -369,7 +366,8 @@ let test_fake_chat_server () =
       expect_content {|{"text":"second"}|} (expect_ok (complete client ()));
       Alcotest.(check int) "one connection per call" 2 (Chat_server.connections server);
       Alcotest.(check int)
-        "both requests recorded" 2 (List.length (Chat_server.requests server));
+        "both requests recorded" 2
+        (List.length (Chat_server.requests server));
       Alcotest.(check string)
         "the client's path" Chat_server.path
         (match Option.get (Chat_server.request server) with
@@ -390,8 +388,7 @@ let test_usage_logged () =
       let record =
         match
           List.find_opt
-            (fun record ->
-              String.equal record.Eta_observability.Logger.msg "chat")
+            (fun record -> String.equal record.Eta_observability.Logger.msg "chat")
             records
         with
         | Some record -> record
@@ -439,8 +436,7 @@ let () =
           Alcotest.test_case "^nchat-6kd8 reasoning disabled" `Quick
             test_reasoning_disabled;
           Alcotest.test_case "^nchat-6kd8 reasoning effort" `Quick test_reasoning_effort;
-          Alcotest.test_case "^nchat-6kd8 reasoning omitted" `Quick
-            test_reasoning_omitted;
+          Alcotest.test_case "^nchat-6kd8 reasoning omitted" `Quick test_reasoning_omitted;
           Alcotest.test_case "^nchat-02vr json_object" `Quick test_json_object;
           Alcotest.test_case "^nchat-02vr json_object omitted" `Quick
             test_json_object_omitted;
@@ -476,12 +472,12 @@ let () =
         ] );
       ( "observability",
         [
-          Alcotest.test_case "^nchat-96zw usage logged at debug" `Quick
-            test_usage_logged;
+          Alcotest.test_case "^nchat-96zw usage logged at debug" `Quick test_usage_logged;
           Alcotest.test_case "^nchat-wtog the key is never logged" `Quick
             test_key_never_logged;
         ] );
       ( "live",
-        [ Alcotest.test_case "^nchat-kk3g live smoke (opt-in)" `Quick Test_chat_live.smoke ]
-        );
+        [
+          Alcotest.test_case "^nchat-kk3g live smoke (opt-in)" `Quick Test_chat_live.smoke;
+        ] );
     ]

@@ -1,4 +1,0 @@
-(lang dune 3.22)
-(name conf-eta-oxcaml)
-(sections (lib .) (doc ../../doc/conf-eta-oxcaml))
-(files (lib (META dune-package opam)) (doc (README.md)))

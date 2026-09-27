@@ -12,7 +12,6 @@ type t = Fake_server.t
 
 let path = "/api/v1/chat/completions"
 let url server = Fake_server.url server path
-let port = Fake_server.port
 let connections = Fake_server.connections
 let requests = Fake_server.requests
 let request server = Fake_server.request server
@@ -29,37 +28,37 @@ let reply ?(model = "inception/mercury-2.5") ?(content = {|{"text":"ada"}|})
     ?(total_tokens = 14) () =
   Yojson.Safe.to_string
     (`Assoc
-      [
-        ("id", `String "gen-chat-1");
-        ("object", `String "chat.completion");
-        ("created", `Int 1759000000);
-        ("model", `String model);
-        ( "choices",
-          `List
-            [
-              `Assoc
-                [
-                  ("index", `Int 0);
-                  ( "message",
-                    `Assoc [ ("role", `String "assistant"); ("content", `String content) ]
-                  );
-                  ( "finish_reason",
-                    match finish_reason with
-                    | Some reason -> `String reason
-                    | None -> `Null );
-                  ("logprobs", `Null);
-                ];
-            ] );
-        ( "usage",
-          `Assoc
-            [
-              ("prompt_tokens", `Int prompt_tokens);
-              ("completion_tokens", `Int completion_tokens);
-              ("total_tokens", `Int total_tokens);
-              ("cost", `Float 0.00002);
-            ] );
-        ("provider", `String "Inception");
-      ])
+       [
+         ("id", `String "gen-chat-1");
+         ("object", `String "chat.completion");
+         ("created", `Int 1759000000);
+         ("model", `String model);
+         ( "choices",
+           `List
+             [
+               `Assoc
+                 [
+                   ("index", `Int 0);
+                   ( "message",
+                     `Assoc
+                       [ ("role", `String "assistant"); ("content", `String content) ] );
+                   ( "finish_reason",
+                     match finish_reason with
+                     | Some reason -> `String reason
+                     | None -> `Null );
+                   ("logprobs", `Null);
+                 ];
+             ] );
+         ( "usage",
+           `Assoc
+             [
+               ("prompt_tokens", `Int prompt_tokens);
+               ("completion_tokens", `Int completion_tokens);
+               ("total_tokens", `Int total_tokens);
+               ("cost", `Float 0.00002);
+             ] );
+         ("provider", `String "Inception");
+       ])
 
 (* One scripted reply body per connection, answered in order; a connection past the script
    is closed with no reply at all, as {!Fake_server} does. *)

@@ -1,8 +1,7 @@
 (library
  (name eta_ai_chat)
  (public_name eta_ai_chat)
- (synopsis
-  "One OpenAI-compatible chat completion with a JSON-object reply")
+ (synopsis "One OpenAI-compatible chat completion with a JSON-object reply")
  (libraries eta eta_ai eta_json eta_observability eta_http eio yojson)
  (preprocess
   (action

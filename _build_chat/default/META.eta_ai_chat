@@ -1,7 +1,0 @@
-description =
-"One OpenAI-compatible chat completion with a JSON-object reply"
-requires = "eio eta eta_ai eta_http eta_json eta_observability yojson"
-archive(byte) = "eta_ai_chat.cma"
-archive(native) = "eta_ai_chat.cmxa"
-plugin(byte) = "eta_ai_chat.cma"
-plugin(native) = "eta_ai_chat.cmxs"

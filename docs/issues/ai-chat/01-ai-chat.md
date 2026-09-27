@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_ai_chat
 consumer: Leash milestone 5 (drive-ls3c, drive-fh1h: the text helper)
 ---
@@ -35,3 +35,16 @@ The drive loop's text helper is one non-streaming chat completion with `response
 ## Out of Scope
 
 Streaming, tool calls, multimodal, provider-specific parameters beyond reasoning.
+
+## Verified
+
+`nix develop -c dune build @install`, `dune test` (26 cases in `test/ai/`: one call and
+the request it writes, the reasoning and JSON-object forms, fail-closed decoding, both
+bounds, the retry matrix, the usage log and the fake chat server) and `dune build @fmt`
+are green; the live smoke is opt-in (`ETA_AI_LIVE_SMOKE=1` with `OPENROUTER_API_KEY`,
+`ETA_AI_LIVE_CHAT_MODEL` and `ETA_AI_LIVE_CHAT_ENDPOINT` overrides) and was not run here.
+Two decisions are recorded rather than dropped: `~endpoint` is the full
+`chat/completions` URL, exactly as the System One client's `~endpoint` is, so a consumer
+holding a base URL appends the route; and `Model_mismatch` is never returned — the model
+is per call and a provider may route it, so the reply's model travels in
+`Codecs.completion.model` for a caller that pins one.

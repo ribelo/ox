@@ -1,6 +1,0 @@
-description = ""
-requires = "cstruct eio eio.unix eta unix"
-archive(byte) = "eta_http.cma"
-archive(native) = "eta_http.cmxa"
-plugin(byte) = "eta_http.cma"
-plugin(native) = "eta_http.cmxs"

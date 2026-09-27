@@ -1,16 +1,16 @@
 (** The OpenAI-compatible chat client: one non-streaming completion.
 
     [Chat.complete] writes one request — the model, the messages, and the caller's cap,
-    JSON-object requirement and reasoning control — posts it through
-    {!Eta_ai.Transport} to an OpenAI-compatible `chat/completions` endpoint (OpenRouter by
-    default), and reads the first choice's content and usage out of the reply, fail-closed
-    and bounded on both sides (^nchat-dys0 ^nchat-wtog).
+    JSON-object requirement and reasoning control — posts it through {!Eta_ai.Transport}
+    to an OpenAI-compatible `chat/completions` endpoint (OpenRouter by default), and reads
+    the first choice's content and usage out of the reply, fail-closed and bounded on both
+    sides (^nchat-dys0 ^nchat-wtog).
 
     Cancellation and finalizers: {!complete} runs in the calling fiber, opens and closes
     one socket per attempt through {!Eta_http.Client}, sleeps its backoff on the caller's
-    clock and registers no finalizer. Cancelling the fiber closes the socket of the attempt
-    in flight; the typed result is [`Timeout] when the caller's deadline passed, and
-    cancellation itself propagates as [Eio.Cancel.Cancelled] and is classified by
+    clock and registers no finalizer. Cancelling the fiber closes the socket of the
+    attempt in flight; the typed result is [`Timeout] when the caller's deadline passed,
+    and cancellation itself propagates as [Eio.Cancel.Cancelled] and is classified by
     [Eta.Scope.run] at the boundary. *)
 
 val default_endpoint : string
@@ -36,8 +36,8 @@ val create :
     `chat/completions` route, so an OpenAI-compatible server of any base URL works — a
     DeepSeek key, a local model server, or a fake server in a test. [api_key] is a
     {!Eta_observability.Redact.t}: only {!Eta_ai.Bearer.header} reveals it, on the request
-    path. [timeout] (10 s by default) caps one attempt's read and [max_request_bytes]
-    (4 MiB by default) bounds the serialized request. Pure and synchronous: it takes no
+    path. [timeout] (10 s by default) caps one attempt's read and [max_request_bytes] (4
+    MiB by default) bounds the serialized request. Pure and synchronous: it takes no
     switch, opens no socket and registers no finalizer. *)
 
 val complete :
@@ -55,9 +55,9 @@ val complete :
     reported.
 
     [messages] are the system and user messages in order. [json_object] (default [false])
-    sends `response_format: {"type": "json_object"}`, so the reply's content is required
+    sends [response_format: {"type": "json_object"}], so the reply's content is required
     to be JSON by the endpoint (^nchat-02vr). [reasoning] sends OpenRouter's
-    `{"enabled": false}` for [`Disabled] and `{"effort": e}` for [`Effort e], and omits
+    [{"enabled": false}] for [`Disabled] and [{"effort": e}] for [`Effort e], and omits
     the member entirely when the caller says nothing (^nchat-6kd8). [max_tokens] is sent
     when given and omitted when not.
 
@@ -78,6 +78,5 @@ val complete :
     request, so the model the reply named travels in {!Codecs.completion.model} for a
     caller that pins one.
 
-    A successful call logs `model`, `prompt_tokens`, `completion_tokens`,
-    `total_tokens` and `request_id` at debug under the message ["chat"] (^nchat-96zw).
-*)
+    A successful call logs `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`
+    and `request_id` at debug under the message ["chat"] (^nchat-96zw). *)

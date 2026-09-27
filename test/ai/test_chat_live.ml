@@ -32,13 +32,13 @@ let smoke () =
               let logger, _ = Chat_helpers.memory_logger env in
               let client =
                 Eta_ai_chat.Chat.create ~http ~clock:env#clock ~logger ~endpoint
-                  ~api_key:(Eta_observability.Redact.make key) ()
+                  ~api_key:(Eta_observability.Redact.make key)
+                  ()
               in
               let messages =
                 [
                   Chat_helpers.system;
-                  Chat_helpers.user
-                    {|Return the JSON object {"text": "ada"}.|};
+                  Chat_helpers.user {|Return the JSON object {"text": "ada"}.|};
                 ]
               in
               match
@@ -46,7 +46,7 @@ let smoke () =
                   ~model ~messages ~max_tokens:64 ~json_object:true ~reasoning:`Disabled
                   ()
               with
-              | Ok completion -> (
+              | Ok completion ->
                   let content = completion.Eta_ai_chat.Codecs.content in
                   let is_object =
                     match Eta_json.parse content with
@@ -59,9 +59,10 @@ let smoke () =
                   Alcotest.(check bool) "the completion is a JSON object" true is_object;
                   Alcotest.(check bool)
                     "usage reported" true
-                    (completion.Eta_ai_chat.Codecs.usage.total_tokens > 0))
+                    (completion.Eta_ai_chat.Codecs.usage.total_tokens > 0)
               | Error error ->
                   Alcotest.failf "live chat smoke failed: %s"
                     (Eta_ai.Error.to_string error))
-      | _ -> Alcotest.fail "ETA_AI_LIVE_SMOKE=1 needs OPENROUTER_API_KEY in the environment")
+      | _ ->
+          Alcotest.fail "ETA_AI_LIVE_SMOKE=1 needs OPENROUTER_API_KEY in the environment")
   | _ -> ()

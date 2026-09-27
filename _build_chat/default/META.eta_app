@@ -1,6 +1,0 @@
-description = ""
-requires = "cmdliner eio eio_main eta eta_observability toml yojson"
-archive(byte) = "eta_app.cma"
-archive(native) = "eta_app.cmxa"
-plugin(byte) = "eta_app.cma"
-plugin(native) = "eta_app.cmxs"

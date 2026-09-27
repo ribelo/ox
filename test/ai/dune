@@ -60,7 +60,13 @@
 
 (test
  (name test_chat)
- (modules test_chat test_chat_live chat_helpers chat_server test_helpers fake_server)
+ (modules
+  test_chat
+  test_chat_live
+  chat_helpers
+  chat_server
+  test_helpers
+  fake_server)
  (libraries
   eta
   eta_ai

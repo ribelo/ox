@@ -14,10 +14,7 @@ let chat_deadline = Eta.Duration.seconds 5
 
 (* One attempt's read cap, when a test wants an attempt to time out quickly. *)
 let attempt_timeout = Eta.Duration.ms 50
-
-let system =
-  Eta_ai_chat.Types.{ role = System; content = "Answer with one JSON object." }
-
+let system = Eta_ai_chat.Types.{ role = System; content = "Answer with one JSON object." }
 let user content = Eta_ai_chat.Types.{ role = User; content }
 let chat_messages = [ system; user {|{"goal":"type ada"}|} ]
 
@@ -31,7 +28,6 @@ let member = Test_helpers.member
 let text_of = Test_helpers.text_of
 let list_of = Test_helpers.list_of
 let contains = Test_helpers.contains
-let expect_part = Test_helpers.expect_part
 
 let member_opt name json =
   match json with `Assoc fields -> List.assoc_opt name fields | _ -> None

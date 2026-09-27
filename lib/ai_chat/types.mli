@@ -12,9 +12,9 @@
 
     ^nchat-dys0 ^nchat-6kd8 ^nchat-02vr *)
 
-type role = System | User | Assistant
 (** Who speaks a message: the API's `system`, `user` and `assistant`, written as the
     lowercase word the endpoint expects. *)
+type role = System | User | Assistant
 
 type message = { role : role; content : string }
 (** One message: its speaker and its text. `content` is required and a string. *)
@@ -22,11 +22,11 @@ type message = { role : role; content : string }
 type usage = { prompt_tokens : int; completion_tokens : int; total_tokens : int }
 (** The tokens the completion cost, all three required. *)
 
-type response_format_kind = Json_object
 (** The one response format this client asks for. *)
+type response_format_kind = Json_object
 
 type response_format = { kind : response_format_kind }
-(** `{"type": "json_object"}`, on the wire. *)
+(** [{"type": "json_object"}], on the wire. *)
 
 type reasoning = { enabled : bool option; effort : string option }
 (** OpenRouter's reasoning control; one member is set. *)
@@ -43,7 +43,12 @@ type request = {
 type choice = { message : message; finish_reason : string option }
 (** One completion. *)
 
-type response = { id : string option; model : string; choices : choice list; usage : usage }
+type response = {
+  id : string option;
+  model : string;
+  choices : choice list;
+  usage : usage;
+}
 (** The reply. *)
 
 val yojson_of_request : request -> Yojson.Safe.t

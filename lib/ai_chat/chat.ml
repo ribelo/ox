@@ -17,17 +17,17 @@ let create ~http ~clock ~logger ?(endpoint = default_endpoint) ~api_key
   T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes)
 
 (* The caller's control, in the spelling [complete] takes, becomes the wire record: the
-   two forms name different members, and {} is not one of them. *)
+   two forms set different members, and the third state — the caller saying nothing — is
+   the option's [None], so no member is written at all. *)
 let wire_reasoning : [< `Disabled | `Effort of string ] -> Types.reasoning = function
   | `Disabled -> { Types.enabled = Some false; effort = None }
   | `Effort effort -> { Types.enabled = None; effort = Some effort }
 
-let complete
-    (T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes)) ~deadline
-    ~model ~messages ?max_tokens ?(json_object = false) ?reasoning () =
+let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes))
+    ~deadline ~model ~messages ?max_tokens ?(json_object = false) ?reasoning () =
   let request =
     {
-      Types.model = model;
+      Types.model;
       messages;
       max_tokens;
       response_format =
@@ -37,8 +37,9 @@ let complete
   in
   let body = Eta_ai.Transport.bytes_of_json (Types.yojson_of_request request) in
   match
-    Eta_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes
-      ~endpoint ~authorization:(Eta_ai.Bearer.header ~api_key) ~body ~deadline ()
+    Eta_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes ~endpoint
+      ~authorization:(Eta_ai.Bearer.header ~api_key)
+      ~body ~deadline ()
   with
   | Error error -> Error error
   | Ok response -> (
@@ -73,9 +74,8 @@ let complete
                             completion.Codecs.usage.total_tokens );
                         ( "request_id",
                           Eta_observability.Logger.String
-                            (match completion.Codecs.id with
-                            | Some id -> id
-                            | None -> "") );
+                            (match completion.Codecs.id with Some id -> id | None -> "")
+                        );
                       ]
                     "chat";
                   Ok completion)))
