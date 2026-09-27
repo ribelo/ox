@@ -90,6 +90,18 @@ let test_census () =
       Eio.Promise.await done_;
       Eta_test.assert_no_fibers_left ())
 
+let test_census_ring () =
+  (* nlimit-gmur *)
+  Eta_test.run (fun _ _ ->
+      Alcotest.(check int) "census still counts" 0 (Eta_test.with_census (fun () -> ()));
+      let rings =
+        Sys.readdir (Sys.getcwd ())
+        |> Array.to_list
+        |> List.filter (fun name -> Filename.check_suffix name ".events")
+      in
+      Alcotest.(check (list string))
+        "no runtime_events ring left in the working directory" [] rings)
+
 let test_flow () =
   (* ntest-knpg *)
   Eta_test.run (fun _ _ ->
@@ -260,7 +272,10 @@ let () =
       ( "ntest-190d",
         [ Alcotest.test_case "structural Exit and Cause" `Quick test_structural ] );
       ( "ntest-8ug3",
-        [ Alcotest.test_case "detect actual leaked fiber" `Quick test_census ] );
+        [
+          Alcotest.test_case "detect actual leaked fiber" `Quick test_census;
+          Alcotest.test_case "census ring outside the cwd" `Quick test_census_ring;
+        ] );
       ("ntest-knpg", [ Alcotest.test_case "scripted source sink" `Quick test_flow ]);
       ( "ntest-0b6v",
         [ Alcotest.test_case "process spawn fds and signals" `Quick test_process ] );

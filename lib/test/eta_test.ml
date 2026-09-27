@@ -22,9 +22,49 @@ let callbacks =
       | _ -> ())
     (Runtime_events.Callbacks.create ~lost_events:(fun _ _ -> lost := true) ())
 
-let cursor =
-  Runtime_events.start ();
-  Runtime_events.create_cursor None
+(* The census reads this process's own runtime_events ring, which the runtime names
+   [<pid>.events] after its pid. The ring's directory is fixed before any OCaml code runs:
+   the runtime reads OCAML_RUNTIME_EVENTS_DIR in [caml_runtime_events_init] at startup, so
+   setting that variable here cannot move this process's ring. For the unset case the
+   runtime keeps the bare "[<pid>.events]" fallback, whose open resolves against the
+   working directory in effect when the ring is created, and the census owns that moment:
+   it creates the ring inside a private temporary directory by switching there for [start]
+   and for the cursor that maps the ring by name, then switching straight back. *)
+let ring_dir =
+  match Sys.getenv_opt "OCAML_RUNTIME_EVENTS_DIR" with
+  | Some _ -> None
+  | None -> (
+      try Some (Filename.temp_dir "eta-test-events-" "") with Sys_error _ -> None)
+
+let start_census () =
+  match ring_dir with
+  | None ->
+      Runtime_events.start ();
+      Runtime_events.create_cursor None
+  | Some dir ->
+      let cwd = Sys.getcwd () in
+      Sys.chdir dir;
+      Fun.protect
+        ~finally:(fun () -> Sys.chdir cwd)
+        (fun () ->
+          Runtime_events.start ();
+          Runtime_events.create_cursor None)
+
+let cursor = start_census ()
+
+(* The runtime's own exit-time unlink resolves that relative fallback path against the
+   working directory restored above, so it cannot take this ring with it; the census
+   removes the directory it created instead. *)
+let remove_ring_dir dir =
+  (try
+     Array.iter
+       (fun name -> try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
+       (Sys.readdir dir)
+   with Sys_error _ -> ());
+  try Sys.rmdir dir with Sys_error _ -> ()
+
+let () =
+  match ring_dir with None -> () | Some dir -> at_exit (fun () -> remove_ring_dir dir)
 
 let drain () =
   while Runtime_events.read_poll cursor callbacks None > 0 do

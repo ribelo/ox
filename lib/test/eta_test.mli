@@ -30,12 +30,23 @@ val await : ('a, 'e) handle -> ('a, 'e) Eta.Exit.t
 
 val with_census : (unit -> 'a) -> int
 (** Count still-live Eio fibers created during the call. Events are drained before and
-    after the call; pre-existing fibers are excluded. Does not cancel fibers. *)
+    after the call; pre-existing fibers are excluded. Does not cancel fibers.
+
+    The census starts the process's runtime_events ring when this library is loaded and
+    keeps that ring in a private temporary directory: the runtime fixes the ring's
+    directory before any OCaml code runs, so the census reaches the only lever left in the
+    process and creates the ring by turning the working directory into its temporary one
+    for the calls that name the ring by path, restoring it at once. The directory is
+    removed when the process exits, so a process killed before its exit handlers run
+    (SIGKILL) leaves its [<pid>.events] ring in that temporary directory and nowhere else.
+    Where [OCAML_RUNTIME_EVENTS_DIR] is already set in the environment, the launcher has
+    chosen the directory and the census leaves the ring there. *)
 
 val assert_no_fibers_left : unit -> unit
 (** Fails when any Eio fiber created since the current [run] began is still alive.
     Includes forks outside [fork_run]; excludes the calling root fiber. A lost trace event
-    fails closed. Does not cancel fibers or run their finalizers. *)
+    fails closed. Does not cancel fibers or run their finalizers. The ring placement that
+    {!with_census} documents applies to the whole census. *)
 
 val cause : 'e Alcotest.testable -> 'e Eta.Cause.t Alcotest.testable
 
