@@ -25,7 +25,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 16 | `remove-eta-schema/01-remove-eta-schema.md` | `eta_app`, `eta_observability`; removes `eta_schema*` | 15 | Leash L1 (Config, protocol types) | [x] |
 | 17 | `ppx-yojson-minimal-2/01-ppx-yojson-minimal-2.md` | `ppx_yojson_minimal` | 15 | Leash drops its hand-written variant codecs; milestone 2 reply shapes | [x] |
 | 18 | `fake-child-output/01-fake-child-output.md` | `eta_test` | 2 | Leash drops its scripted runner (etagap-43zf, hand-phof) | [x] |
-| 19 | `http-client/01-http-client.md` | `eta_http` (client, h1, TLS) | 1, 2 | Leash milestone 5; every future HTTPS consumer | [ ] |
+| 19 | `http-client/01-http-client.md` | `eta_http` (client, h1, TLS) | 1, 2 | Leash milestone 5; every future HTTPS consumer | [x] |
 | 20 | `ai-systemone/01-ai-systemone.md` | `eta_ai`, `eta_ai_systemone` | 19 | Leash drive (JEV) | [ ] |
 | 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [ ] |
 

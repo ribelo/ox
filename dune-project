@@ -64,6 +64,21 @@
   (alcotest :with-test)))
 
 (package
+ (name eta_http)
+ (synopsis "Bounded HTTP/1.1 client with verified OpenSSL TLS")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-eta-oxcaml (= :version))
+  eta
+  eio
+  cstruct
+  base-unix
+  conf-pkg-config
+  conf-openssl
+  (eio_main :with-test)
+  (alcotest :with-test)))
+
+(package
  (name eta_ipc)
  (synopsis "Private Unix socket listener with scoped ownership and bounded peers")
  (depends

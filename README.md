@@ -12,6 +12,7 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `eta` — core typed failures, scoped resources, schedules, and Eio concurrency
 - `eta_test` — Eio mock clocks, scripted I/O and processes, and Exit assertions
 - `eta_json` — unchecked Yojson accessors: bounded parse, builders, member reads (shapes we do not own, like CDP)
+- `eta_http` — bounded HTTP/1.1 client with verified OpenSSL TLS over Eio
 - `eta_rpc` — scoped request/reply correlation over message streams
 - `eta_ipc` — private Unix control listeners with scoped socket ownership and bounded peers
 - `eta_process` — scoped Unix children with graceful termination and scheduled supervision

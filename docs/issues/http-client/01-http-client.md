@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_http (client only: h1, TLS via OpenSSL), copied codecs from v1
 consumer: Leash milestone 5 (drive-zml5, drive-ls3c: System One and the text helper are HTTPS POSTs)
 ---
@@ -38,7 +38,10 @@ Leash's drive loop makes two kinds of HTTPS request — a System One evaluation 
 
 ## Testing Decisions
 
-- `test/http/`: codec tests copied; transport tests against the local servers for every error variant, deadline and idle timeout with the mock clock where the phase allows, cancellation mid-read with a fiber census.
+- `test/http/`: codec and OpenSSL binding regression tests copied; transport tests against local servers for every error variant, deadline and idle timeout with short local delays, and cancellation mid-read verified by peer-observed socket closure.
+
+Verified: copied v1 codecs and OpenSSL binding, direct Eio transport, local plaintext/TLS fixtures, bounded framing, deadlines, idle reads, typed errors and cancellation.
+Gates: `nix develop -c dune build @install`, `nix develop -c dune test`, `nix develop -c dune build @fmt`; live smoke is opt-in with `ETA_HTTP_LIVE_SMOKE=1`.
 
 ## Out of Scope
 
