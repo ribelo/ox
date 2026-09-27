@@ -1,0 +1,12 @@
+(test
+ (name run)
+ (modules run test_sqlite test_sql_dsl_transaction)
+ (libraries eta_sql eta_sql_dsl eio_main alcotest))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree soundness)
+  (:eta_sql_cmxa ../../lib/sql/eta_sql.cmxa))
+ (action
+  (run bash soundness/run.sh %{eta_sql_cmxa})))

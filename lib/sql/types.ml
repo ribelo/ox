@@ -1,0 +1,213 @@
+type error =
+  | Sqlite of Sqlite.error
+  | Pool_error of string
+  | Invalid_query of string
+  | Decode_error of {
+      operation : string;
+      message : string;
+    }
+
+let pp_error ppf = function
+  | Sqlite err -> Sqlite.pp_error ppf err
+  | Pool_error message -> Format.fprintf ppf "pool error: %s" message
+  | Invalid_query message -> Format.fprintf ppf "invalid query: %s" message
+  | Decode_error { operation; message } ->
+      Format.fprintf ppf "%s: %s" operation message
+
+let show_error err = Format.asprintf "%a" pp_error err
+
+type sql_error = error
+
+exception Error of error
+
+let raise_error err = raise (Error err)
+
+type 'a typ = {
+  value : ('a -> Value.t);
+  decode : (Sqlite.stmt @ local -> int -> 'a);
+  sql_type : string;
+}
+
+let decode_non_null expected decode stmt index =
+  if Sqlite.column_is_null stmt index then
+    raise_error
+      (Decode_error
+         {
+           operation = "decode";
+           message =
+             Printf.sprintf "column %d: expected non-null %s, got NULL" index
+               expected;
+         })
+  else
+    decode stmt index
+
+let int =
+  {
+    value = (fun value -> Value.Int value);
+    decode = decode_non_null "int" Sqlite.column_int;
+    sql_type = "INTEGER";
+  }
+
+let int64 =
+  {
+    value = (fun value -> Value.Int64 value);
+    decode = decode_non_null "int64" Sqlite.column_int64;
+    sql_type = "INTEGER";
+  }
+
+let text =
+  {
+    value = (fun value -> Value.String value);
+    decode = decode_non_null "text" Sqlite.column_text;
+    sql_type = "TEXT";
+  }
+
+let float =
+  {
+    value = (fun value -> Value.Float value);
+    decode = decode_non_null "float" Sqlite.column_float;
+    sql_type = "REAL";
+  }
+
+let blob =
+  {
+    value = (fun value -> Value.Bytes value);
+    decode = decode_non_null "blob" Sqlite.column_blob;
+    sql_type = "BLOB";
+  }
+
+let bool =
+  {
+    value = (fun value -> Value.Bool value);
+    decode =
+      decode_non_null "bool" (fun stmt index -> Sqlite.column_int stmt index <> 0);
+    sql_type = "INTEGER";
+  }
+
+let nullable typ =
+  {
+    value = (fun v -> match v with None -> Value.Null | Some x -> typ.value x);
+    decode =
+      (fun stmt index ->
+        if Sqlite.column_is_null stmt index then None else Some (typ.decode stmt index));
+    sql_type = typ.sql_type;
+  }
+
+let sqlite_result @ portable = function
+  | Ok value -> Ok value
+  | Result.Error err -> Result.Error (Sqlite err)
+
+let check_sqlite @ portable = fun (db @ local) ~operation rc ->
+  match Sqlite.check db ~operation rc with
+  | Ok () -> Ok ()
+  | Result.Error err -> Result.Error (Sqlite err)
+
+let unexpected_sqlite_step @ portable = fun ~operation rc ->
+  Result.Error
+    (Sqlite
+       {
+         Sqlite.operation;
+         code = rc;
+         message =
+           "unexpected SQLite step result " ^ Sqlite.rc_name rc
+           ^ " in " ^ operation;
+       })
+
+let finalize_result @ portable = fun (db @ local) (stmt @ local) result ->
+  let finalize_rc = Sqlite.finalize stmt in
+  match result with
+  | Result.Error _ -> result
+  | Ok _ -> (
+      match check_sqlite db ~operation:"finalize" finalize_rc with
+      | Ok () -> result
+      | Result.Error _ as err -> err)
+
+let bind_value @ portable = fun (stmt @ local) index -> function
+  | Value.Null -> Sqlite.bind_null stmt index
+  | Int value -> Sqlite.bind_int stmt index value
+  | Int64 value -> Sqlite.bind_int64 stmt index value
+  | Float value -> Sqlite.bind_float stmt index value
+  | String value -> Sqlite.bind_text stmt index value
+  | Bool value -> Sqlite.bind_int stmt index (if value then 1 else 0)
+  | Bytes value -> Sqlite.bind_blob stmt index value
+
+let bind_dynamic_values @ portable = fun (db @ local) (stmt @ local) values ->
+  let rec loop (db @ local) (stmt @ local) index = function
+    | [] -> Ok ()
+    | value :: rest -> (
+        match check_sqlite db ~operation:"bind" (bind_value stmt index value) with
+        | Ok () -> loop db stmt (index + 1) rest
+        | Result.Error _ as err -> err)
+  in
+  loop db stmt 1 values
+
+let with_dynamic_statement @ portable = fun (db @ local) sql params (f @ local) ->
+  match Sqlite.prepare db sql with
+  | stmt -> (
+      match bind_dynamic_values db stmt params with
+      | Result.Error err ->
+          ignore (Sqlite.finalize stmt);
+          Result.Error err
+      | Ok () ->
+          let result =
+            match f stmt with
+            | value -> value
+            | exception exn ->
+                Result.Error
+                  (Decode_error
+                     { operation = "execute"; message = Printexc.to_string exn })
+          in
+          (finalize_result db stmt result [@nontail]))
+  | exception Sqlite.Error err -> Result.Error (Sqlite err)
+
+let read_dynamic_value @ portable = fun (stmt @ local) index ->
+  match Sqlite.column_type_code stmt index with
+  | 1 ->
+      let value = Sqlite.column_int64 stmt index in
+      (match Value.int64_to_int_opt value with
+       | Some value -> Value.Int value
+       | None -> Int64 value)
+  | 2 -> Float (Sqlite.column_float stmt index)
+  | 3 -> String (Sqlite.column_text stmt index)
+  | 4 -> Bytes (Sqlite.column_blob stmt index)
+  | 5 -> Null
+  | _ -> Null
+
+let materialize_row @ portable = fun (stmt @ local) ->
+  let count = Sqlite.column_count stmt in
+  let rec loop (stmt @ local) index acc =
+    if index < 0 then
+      acc
+    else
+      loop stmt (index - 1)
+        ((Sqlite.column_name stmt index, read_dynamic_value stmt index) :: acc)
+  in
+  loop stmt (count - 1) []
+
+let query_dynamic @ portable = fun (db @ local) sql params ->
+  let result =
+    with_dynamic_statement db sql params (fun stmt ->
+      let rec loop (db @ local) (stmt @ local) acc =
+        let rc = Sqlite.step stmt in
+        if Sqlite.rc_equal rc Sqlite.row then loop db stmt (materialize_row stmt :: acc)
+        else if Sqlite.rc_equal rc Sqlite.done_ then Ok (List.rev acc)
+        else
+          match check_sqlite db ~operation:"query" rc with
+          | Ok () -> unexpected_sqlite_step ~operation:"query" rc
+          | Result.Error _ as err -> err
+      in
+      loop db stmt [])
+  in
+  result
+
+let execute_dynamic @ portable = fun (db @ local) sql params ->
+  let result =
+    with_dynamic_statement db sql params (fun stmt ->
+      let rc = Sqlite.step stmt in
+      if Sqlite.rc_equal rc Sqlite.done_ then Ok (Sqlite.changes db)
+      else
+        match check_sqlite db ~operation:"execute" rc with
+        | Ok () -> unexpected_sqlite_step ~operation:"execute" rc
+        | Result.Error _ as err -> err)
+  in
+  result

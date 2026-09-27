@@ -1,0 +1,201 @@
+module type BACKEND = sig
+  type 'a typ
+
+  val module_name : string
+  val sql_type : 'a typ -> string
+  val literal : 'a typ -> 'a -> string
+end
+
+module Make
+    (Backend : BACKEND)
+    (Model : sig
+      type 'table table = {
+        table_name : string;
+        quoted_table_name : string;
+        from_sql : string;
+        column_qualifier : string;
+      }
+
+      type ('table, 'a) column = {
+        table_name : string;
+        column_name : string;
+        typ : 'a Backend.typ;
+        quoted_column_name : string;
+        qualified_column_name : string;
+      }
+
+      type 'table any
+      (** A column whose value type is erased while its table identity is kept;
+          heterogeneous column lists are written as [any] lists. *)
+
+      val any_column_name : 'table any -> string
+      (** Rendered column name of an erased column. *)
+
+      type compiled_schema
+
+      val quote_ident : string -> string
+      val compiled_schema : string -> compiled_schema
+    end) =
+struct
+  type referential_action = Cascade | Restrict | Set_null | No_action | Set_default
+
+  type reference = {
+    table_name : string;
+    column_name : string option;
+    on_delete : referential_action option;
+    on_update : referential_action option;
+  }
+
+  type column_def = {
+    name : string;
+    sql_type : string;
+    primary_key : bool;
+    not_null : bool;
+    unique : bool;
+    default : string option;
+    references : reference option;
+  }
+
+  type t =
+    | Create_table of { if_not_exists : bool; table : string; columns : column_def list }
+    | Drop_table of { if_exists : bool; table : string }
+    | Create_index of {
+        unique : bool;
+        if_not_exists : bool;
+        name : string;
+        table : string;
+        columns : string list;
+      }
+
+  let references ?on_delete ?on_update (column : (_, _) Model.column) =
+    {
+      table_name = column.table_name;
+      column_name = Some column.column_name;
+      on_delete;
+      on_update;
+    }
+
+  let column ?(primary_key = false) ?(not_null = false) ?(unique = false) ?default
+      ?references (column : (_, _) Model.column) =
+    {
+      name = column.column_name;
+      sql_type = Backend.sql_type column.typ;
+      primary_key;
+      not_null;
+      unique;
+      default = Option.map (Backend.literal column.typ) default;
+      references;
+    }
+
+  let create_table ?(if_not_exists = false) (table : _ Model.table) columns =
+    if columns = [] then
+      invalid_arg
+        (Backend.module_name ^ ".Eta_schema.create_table: columns must not be empty");
+    Create_table { if_not_exists; table = table.table_name; columns }
+
+  let drop_table ?(if_exists = false) (table : _ Model.table) =
+    Drop_table { if_exists; table = table.table_name }
+
+  let create_index ?(unique = false) ?(if_not_exists = false) ~name
+      (table : 'table Model.table) (columns : 'table Model.any list) =
+    match columns with
+    | [] ->
+        invalid_arg
+          (Backend.module_name ^ ".Eta_schema.create_index: columns must not be empty")
+    | columns ->
+        Create_index
+          {
+            unique;
+            if_not_exists;
+            name;
+            table = table.table_name;
+            columns = List.map Model.any_column_name columns;
+          }
+
+  let referential_action_sql = function
+    | Cascade -> "CASCADE"
+    | Restrict -> "RESTRICT"
+    | Set_null -> "SET NULL"
+    | No_action -> "NO ACTION"
+    | Set_default -> "SET DEFAULT"
+
+  let reference_sql reference =
+    let buf = Buffer.create 48 in
+    Buffer.add_string buf " REFERENCES ";
+    Buffer.add_string buf (Model.quote_ident reference.table_name);
+    (match reference.column_name with
+    | None -> ()
+    | Some column ->
+        Buffer.add_string buf " (";
+        Buffer.add_string buf (Model.quote_ident column);
+        Buffer.add_char buf ')');
+    (match reference.on_delete with
+    | None -> ()
+    | Some action ->
+        Buffer.add_string buf " ON DELETE ";
+        Buffer.add_string buf (referential_action_sql action));
+    (match reference.on_update with
+    | None -> ()
+    | Some action ->
+        Buffer.add_string buf " ON UPDATE ";
+        Buffer.add_string buf (referential_action_sql action));
+    Buffer.contents buf
+
+  let column_sql def =
+    let buf = Buffer.create 64 in
+    Buffer.add_string buf (Model.quote_ident def.name);
+    Buffer.add_char buf ' ';
+    Buffer.add_string buf def.sql_type;
+    if def.primary_key then Buffer.add_string buf " PRIMARY KEY";
+    if def.not_null then Buffer.add_string buf " NOT NULL";
+    if def.unique then Buffer.add_string buf " UNIQUE";
+    (match def.default with
+    | None -> ()
+    | Some value ->
+        Buffer.add_string buf " DEFAULT ";
+        Buffer.add_string buf value);
+    (match def.references with
+    | None -> ()
+    | Some ref -> Buffer.add_string buf (reference_sql ref));
+    Buffer.contents buf
+
+  let to_sql = function
+    | Create_table { if_not_exists; table; columns } ->
+        let buf = Buffer.create 128 in
+        Buffer.add_string buf "CREATE TABLE ";
+        if if_not_exists then Buffer.add_string buf "IF NOT EXISTS ";
+        Buffer.add_string buf (Model.quote_ident table);
+        Buffer.add_string buf " (";
+        List.iteri
+          (fun i col ->
+            if i > 0 then Buffer.add_string buf ", ";
+            Buffer.add_string buf (column_sql col))
+          columns;
+        Buffer.add_char buf ')';
+        Buffer.contents buf
+    | Drop_table { if_exists; table } ->
+        let buf = Buffer.create 32 in
+        Buffer.add_string buf "DROP TABLE ";
+        if if_exists then Buffer.add_string buf "IF EXISTS ";
+        Buffer.add_string buf (Model.quote_ident table);
+        Buffer.contents buf
+    | Create_index { unique; if_not_exists; name; table; columns } ->
+        let buf = Buffer.create 64 in
+        Buffer.add_string buf "CREATE ";
+        if unique then Buffer.add_string buf "UNIQUE ";
+        Buffer.add_string buf "INDEX ";
+        if if_not_exists then Buffer.add_string buf "IF NOT EXISTS ";
+        Buffer.add_string buf (Model.quote_ident name);
+        Buffer.add_string buf " ON ";
+        Buffer.add_string buf (Model.quote_ident table);
+        Buffer.add_string buf " (";
+        List.iteri
+          (fun i col ->
+            if i > 0 then Buffer.add_string buf ", ";
+            Buffer.add_string buf (Model.quote_ident col))
+          columns;
+        Buffer.add_char buf ')';
+        Buffer.contents buf
+
+  let compile schema = Model.compiled_schema (to_sql schema)
+end
