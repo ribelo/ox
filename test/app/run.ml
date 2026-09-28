@@ -74,8 +74,8 @@ let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 (* ^napp-9x0s: [read] is the read outcome the Door sees; the default is a file that is
    there and holds [text], which is what every other case wants. *)
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
-    ?telemetry ?telemetry_result ?(read_path = fun _ -> ()) ?read
-    ?(program = fun _ _ _ -> Ok ()) () =
+    ?doc ?validation_exit ?log_level ?telemetry ?telemetry_result
+    ?(read_path = fun _ -> ()) ?read ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
         object
@@ -87,8 +87,8 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ?validate ?telemetry ?telemetry_result ~env ~name:"demo"
-          ~config ~pp_err
+        run_for_test ?on_switch ?validate ?doc ?validation_exit ?log_level ?telemetry
+          ?telemetry_result ~env ~name:"demo" ~config ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -1678,11 +1678,92 @@ let test_door3_real_signal_owned_code () =
             (Eio.Buf_read.line output);
           ignore (Eta_process.Child.stop child)))
 
+(* ^napp-fsxf: the top-level command advertises the consumer's description,
+   including when a bare invocation requests group help. *)
+let test_door4_doc () =
+  let doc = "Nema indexes a personal knowledge base." in
+  let code, output, _, _ = run ~doc ~argv:[| "demo"; "--help" |] () in
+  check_int "^napp-fsxf help succeeds" 0 code;
+  expect_part output doc;
+  Eta_test.run (fun env _ ->
+      let output = Buffer.create 128 in
+      check_int "^napp-fsxf bare group help succeeds" 0
+        (run_for_test_with_args ~bare:`Help ~doc ~service_args:(Cmdliner.Term.const ())
+           ~env ~name:"demo" ~config ~pp_err ~getenv
+           ~read:(fun _ -> Alcotest.fail "help must not read config")
+           ~journal:
+             (Eta_observability.Logger.Memory.reporter
+                (Eta_observability.Logger.Memory.create ()))
+           ~stdout:(fun text -> Buffer.add_string output text)
+           ~stderr:ignore ~argv:[| "demo" |]
+           (fun _ _ _ () _ -> Alcotest.fail "help must not start program"));
+      expect_part (Buffer.contents output) doc)
+
+(* ^napp-7hvu: decode and validator rejection use the configured code on
+   both service startup and config check, without converting validator defects. *)
+let test_door4_validation_exit () =
+  let reject _ _ = Error [ { Config.pointer = "/port"; message = "port is reserved" } ] in
+  List.iter
+    (fun argv ->
+      let code, _, err, _ =
+        run ~validation_exit:64 ~argv ~text:"port = \"bad\"\n[models]\n" ()
+      in
+      check_int "^napp-7hvu decode rejection" 64 code;
+      expect_part err "settings.port";
+      let code, _, err, _ = run ~validation_exit:64 ~argv ~validate:reject () in
+      check_int "^napp-7hvu validation rejection" 64 code;
+      expect_part err "port is reserved")
+    [ [| "demo" |]; [| "demo"; "config"; "check" |] ];
+  let code, _, err, _ =
+    run ~validation_exit:64 ~validate:(fun _ _ -> failwith "validator defect") ()
+  in
+  check_int "^napp-7hvu defect still exits two" 2 code;
+  expect_part err "validator defect"
+
+(* ^napp-k9in: one logger level filters both journal-only pre-config logs and
+   the program logger teeing journal with telemetry. *)
+let test_door4_log_level () =
+  let telemetry_logs = Eta_observability.Logger.Memory.create () in
+  let telemetry ~sw:_ env _ =
+    Eta_observability.Logger.info env.Env.logger "hook info";
+    Eta_observability.Logger.warn env.Env.logger "hook warning";
+    {
+      reporters = [ Eta_observability.Logger.Memory.reporter telemetry_logs ];
+      span_ids = None;
+    }
+  in
+  let code, _, err, journal =
+    run ~log_level:Eta_observability.Logger.Warn ~telemetry
+      ~program:(fun env _ _ ->
+        Eta_observability.Logger.info env.Env.logger "program info";
+        Eta_observability.Logger.warn env.Env.logger "program warning";
+        Ok ())
+      ()
+  in
+  check_int "^napp-k9in service runs" 0 code;
+  check_string "no diagnostics" "" err;
+  let messages memory =
+    List.map
+      (fun (record : Eta_observability.Logger.record) -> record.msg)
+      (Eta_observability.Logger.Memory.records memory)
+  in
+  Alcotest.(check (list string))
+    "^napp-k9in journal suppresses info"
+    [ "hook warning"; "program warning" ]
+    (messages journal);
+  Alcotest.(check (list string))
+    "^napp-k9in telemetry suppresses info" [ "program warning" ] (messages telemetry_logs)
+
 let () =
   Alcotest.run "eta_app"
     [
       ( "door",
         [
+          Alcotest.test_case "^napp-fsxf custom help" `Quick test_door4_doc;
+          Alcotest.test_case "^napp-7hvu validation exit" `Quick
+            test_door4_validation_exit;
+          Alcotest.test_case "^napp-k9in journal and telemetry level" `Quick
+            test_door4_log_level;
           Alcotest.test_case "^napp-k0x0 ^napp-1k5x bare help and usage" `Quick
             test_door3_bare_help_and_usage;
           Alcotest.test_case "^napp-j3qu ^napp-izjt exit codes" `Quick

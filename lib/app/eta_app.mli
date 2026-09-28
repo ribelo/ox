@@ -74,6 +74,9 @@ val run_for_test_with_args :
   ?usage_exit:int ->
   ?exit_code:('err -> int) ->
   ?interrupt_exit:int ->
+  ?doc:string ->
+  ?validation_exit:int ->
+  ?log_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -111,8 +114,13 @@ val run_for_test_with_args :
     exit 2. [bare = `Help] makes the group print help (exit 0) with no service or config
     load; the default is [`Service]. [usage_exit] defaults to 2 for Cmdliner parse errors;
     [exit_code] defaults to [(fun _ -> 1)] for typed errors of both the service and
-    [run_owned]. ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt Parsing/help do not enter a
-    switch. ^napp-ytqk ^napp-x11e
+    [run_owned]. [doc] changes the top-level help description (default
+    ["Run the service."]). [validation_exit] changes the exit for config decode and
+    validation rejections on both startup and config check (default 2); validator defects
+    still exit 2. [log_level] sets the minimum level of both the pre-config journal logger
+    and the program logger, filtering journal and telemetry alike (default [Info]).
+    ^napp-fsxf ^napp-7hvu ^napp-k9in ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt
+    Parsing/help do not enter a switch. ^napp-ytqk ^napp-x11e
 
     [config_file] names the default XDG file (default [config.toml]); [missing] decides
     whether an absent default is decoded from an empty document or rejected. Explicit
@@ -124,6 +132,9 @@ val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?doc:string ->
+  ?validation_exit:int ->
+  ?log_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -167,10 +178,10 @@ val run_for_test :
     [of_yojson], the derived [yojson_of_t] `config check` prints, and [env], which applies
     environment overrides to the decoded value. [validate] runs after decoding and after
     those overrides, with this Door's {!Env}, and before the root switch exists. An
-    [Error] list is rendered to [stderr] and returned as exit 2 without entering the
-    program; a validator that raises is a defect, rendered with `Cause.pp` and also
-    exiting 2. The `config check` path runs it too, and prints the redacted config only
-    when it accepts.
+    [Error] list is rendered to [stderr] and returned as [validation_exit] without
+    entering the program; a validator that raises is a defect, rendered with `Cause.pp`
+    and also exiting 2. The `config check` path runs it too, and prints the redacted
+    config only when it accepts.
 
     [telemetry_result] is [telemetry] for a hook whose acquisition can fail (an exporter
     that cannot be created): its [Error e] is rendered through [pp_err] with exit 1, like
@@ -206,6 +217,9 @@ val run_with_args :
   ?usage_exit:int ->
   ?exit_code:('err -> int) ->
   ?interrupt_exit:int ->
+  ?doc:string ->
+  ?validation_exit:int ->
+  ?log_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -240,6 +254,9 @@ val run_with_args :
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?doc:string ->
+  ?validation_exit:int ->
+  ?log_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->

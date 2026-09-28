@@ -49,7 +49,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 40 | `ai-transport-controls/01-ai-transport-controls.md` | `eta_ai`, `eta_ai_openrouter` | 20, 25 | nema (row 31) | [x] |
 | 41 | `door-telemetry-result/01-door-telemetry-result.md` | `eta_app` | 33 | nema (row 31) | [x] |
 | 42 | `door-3/01-door-3.md` | `eta_app` | 36 | nema (row 31) U4 | [x] |
-| 43 | `door-4/01-door-4.md` | `eta_app` | 42 | nema (row 31) U4 | [ ] |
+| 43 | `door-4/01-door-4.md` | `eta_app` | 42 | nema (row 31) U4 | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).

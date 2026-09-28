@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app
 consumer: nema row 31 (U4 deviations from nema's CLI and journal contract)
 ---
@@ -23,3 +23,6 @@ Under the Door, `nema --help` shows the Door's "Run the service." instead of nem
 ## Testing Decisions
 
 - test/app: help shows the given doc; a decode failure and a validation failure exit `validation_exit`; with `~log_level:Warn` an info record reaches neither the journal nor a telemetry reporter, a warning reaches both.
+
+Verified: test/app covers ^napp-fsxf ^napp-7hvu ^napp-k9in, including `config check` and the validator-defect boundary.
+The isolated `@install`, full `dune test`, and `@fmt` gates passed with `DUNE_BUILD_DIR=_build_door4`.
