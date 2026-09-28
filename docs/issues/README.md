@@ -35,12 +35,17 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 26 | `otel/01-otel.md` exporter | `eta_otel` | 19 | nema | [x] |
 | 27 | [stream/01-stream.md](stream/01-stream.md): measured; Eio/Seq suffice | — (no `eta_stream` package) | 1 | Pie | [x] |
 | 28 | `blocking/01-blocking.md` | `eta_blocking` | 1 | nema, grip | [x] |
+| 29 | **grip migrates to eta-next** (ticket in grip: `docs/issues/eta-next-migration/`). Move `eta_linux_input` into grip first (v1 ticket `remove-linux-input`), then port grip's ~10 Eta call sites (`Eta_eio` door → `Eta_app.run`, `Eta_blocking` → `eta_blocking`, one HTTP client call), pin eta-next, gates green, grip runs. Kernel gaps found become rows here. | grip | 19, 28 | proves the migration process on a 5k-line app | [ ] |
+| 30 | **inn migrates to eta-next** (ticket in inn). HTTP client + server + service helpers, SQL DSL/pool/migrate; port from `Effect.t` to direct style module by module; pin; gates; inn runs. First server + SQL consumer: expect gaps in rows 23–24 and file them here. | inn | 23, 24, 29 | second consumer of http server and sql | [ ] |
+| 31 | **nema migrates** (ticket in nema). Move `eta_ladybug` into nema first (copy from `v1:drivers/eta_ladybug`, keep on v1's Effect.t or rewrite direct-style, nema's call), then HTTP client + server, embeddings, OTel, blocking. | nema | 23, 25, 26, 28, 30 | largest active consumer | [ ] |
+| 32 | **Pie migrates** (ticket in Pie). WebSocket client + Codex Realtime, Responses/audio, the audio pipeline on Seq/Eio per row 27's probes, `Eta_app` door, control socket via `eta_ipc` (replacing Pie's own server). | Pie | 22, 25, 27, 31 | most specialised consumer, last active | [ ] |
+| — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).
 
 Running alongside, not blocking: the local-handler spike in `../../.scratch/research/handled-pattern/` decides whether ADR-0002's error channel is revisited. Rows do not wait for it; if it wins, the change is a new spec.
 
-Rows 22–28 are the migration plan's order (`../migration-plan.md`); each gets a spec when its consumer's migration is scheduled, written from that consumer's actual usage. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
+Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. When row 32 lands, `eta-next` becomes `master` and `v1` stays a tag. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
 
 ## Definition of done, every row
 
