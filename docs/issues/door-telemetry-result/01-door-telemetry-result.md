@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app
 consumer: nema row 31 (nemanext-ro0v)
 ---
@@ -17,3 +17,8 @@ The Door's `?telemetry` hook returns a plain value and treats a raise as a defec
 ## Testing Decisions
 
 - test/app: an `Error` from the hook exits as a typed failure with its message and never enters the program; `Ok` behaves as today.
+
+## Verified
+
+- Additive `?telemetry_result` beside `?telemetry` on `run`, `run_with_args`, `run_for_test` and `run_for_test_with_args`; giving both raises `Invalid_argument`. Existing consumers unchanged.
+- `test/app/run.ml` "^napp-scz2 typed telemetry acquisition": an `Error` exits 1 through `pp_err` and the program never runs; `Ok` runs the program and its reporter sees the program's records.

@@ -63,8 +63,8 @@ let validation_failure ~validate ~pp_err ~stderr env settings =
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     ?commands_with_env ?(service_command = "run") ?(config_file = "config.toml")
     ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry
-    ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
-    program =
+    ?telemetry_result ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read
+    ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let initial_logger =
     Eta_observability.Logger.create ~service:name ~clock:env#clock
@@ -120,23 +120,37 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
                            whose logger writes to the journal alone. Its resources are
                            acquired against this root switch, so they are released after
                            the program stops and before the Door returns. *)
-                  let program_env, program =
-                    match telemetry with
-                    | None -> (door_env, program)
-                    | Some hook ->
-                        let configured = hook ~sw door_env settings in
-                        let logger =
-                          Eta_observability.Logger.create ?span_ids:configured.span_ids
-                            ~service:name ~clock:env#clock ~mono_clock:env#mono_clock
-                            ~reporter:
-                              (Eta_observability.Logger.Reporter.tee
-                                 (journal :: configured.reporters))
-                            ()
-                        in
-                        ({ Env.base = env; logger }, program)
+                  let build (configured : telemetry) =
+                    let logger =
+                      Eta_observability.Logger.create ?span_ids:configured.span_ids
+                        ~service:name ~clock:env#clock ~mono_clock:env#mono_clock
+                        ~reporter:
+                          (Eta_observability.Logger.Reporter.tee
+                             (journal :: configured.reporters))
+                        ()
+                    in
+                    { Env.base = env; logger }
                   in
-                  Option.iter (fun f -> f sw) on_switch;
-                  program program_env source settings args sw))
+                  (* ^napp-scz2: a hook that can fail returns its error as the program
+                     would, so it is rendered through [pp_err] (exit 1) before the program
+                     logger exists and the program is never entered. *)
+                  let program_env =
+                    match (telemetry, telemetry_result) with
+                    | Some _, Some _ ->
+                        invalid_arg
+                          "Eta_app: give ?telemetry or ?telemetry_result, not both"
+                    | None, None -> Ok door_env
+                    | Some hook, None -> Ok (build (hook ~sw door_env settings))
+                    | None, Some hook -> (
+                        match hook ~sw door_env settings with
+                        | Ok configured -> Ok (build configured)
+                        | Error _ as error -> error)
+                  in
+                  match program_env with
+                  | Error _ as error -> error
+                  | Ok program_env ->
+                      Option.iter (fun f -> f sw) on_switch;
+                      program program_env source settings args sw))
         in
         render ~stop_ids:requested stderr pp_err outcome
   in
@@ -185,17 +199,17 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
 
 let run_for_test ?on_switch ?commands ?config_commands ?service_command ?config_file
-    ?missing ?validate ?validate_source ?telemetry ~env ~journal ~name ~config ~pp_err
-    ~getenv ~read ~stderr ~stdout ~argv program =
+    ?missing ?validate ?validate_source ?telemetry ?telemetry_result ~env ~journal ~name
+    ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
   run_for_test_with_args ?on_switch ?commands ?config_commands ?service_command
-    ?config_file ?missing ?validate ?validate_source ?telemetry
+    ?config_file ?missing ?validate ?validate_source ?telemetry ?telemetry_result
     ~service_args:(Cmdliner.Term.const ()) ~env ~journal ~name ~config ~pp_err ~getenv
     ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
       program env settings sw)
 
 let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
-    ?config_file ?missing ?read_file ?validate ?validate_source ?telemetry ~service_args
-    ~name ~config ~pp_err program =
+    ?config_file ?missing ?read_file ?validate ?validate_source ?telemetry
+    ?telemetry_result ~service_args ~name ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -241,7 +255,7 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
           in
           run_for_test_with_args ?commands ?config_commands ?commands_with_env
             ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
-            ~service_args ~on_switch ~env
+            ?telemetry_result ~service_args ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
@@ -249,8 +263,9 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
             ~argv:Sys.argv program))
 
 let run ?commands ?config_commands ?service_command ?config_file ?missing ?read_file
-    ?validate ?validate_source ?telemetry ~name ~config ~pp_err program =
+    ?validate ?validate_source ?telemetry ?telemetry_result ~name ~config ~pp_err program
+    =
   run_with_args ?commands ?config_commands ?service_command ?config_file ?missing
-    ?read_file ?validate ?validate_source ?telemetry
+    ?read_file ?validate ?validate_source ?telemetry ?telemetry_result
     ~service_args:(Cmdliner.Term.const ()) ~name ~config ~pp_err
     (fun env _source settings () sw -> program env settings sw)

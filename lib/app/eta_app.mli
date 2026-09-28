@@ -72,6 +72,7 @@ val run_for_test_with_args :
   ?validate_source:
     ('base Env.t -> Config.source -> 'cfg -> (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> (telemetry, 'err) result) ->
   service_args:'args Cmdliner.Term.t ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
@@ -111,6 +112,7 @@ val run_for_test :
   ?validate_source:
     ('base Env.t -> Config.source -> 'cfg -> (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> (telemetry, 'err) result) ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
   name:string ->
@@ -151,6 +153,11 @@ val run_for_test :
     exiting 2. The `config check` path runs it too, and prints the redacted config only
     when it accepts.
 
+    [telemetry_result] is [telemetry] for a hook whose acquisition can fail (an exporter
+    that cannot be created): its [Error e] is rendered through [pp_err] with exit 1, like
+    a program failure, before the program logger exists, and the program is never entered.
+    Give one of the two; both raise [Invalid_argument]. ^napp-scz2
+
     [telemetry] runs on the run path alone — `config check` never calls it — after
     [validate] accepts, inside the root switch and before the program. It receives that
     switch, the {!Env} the validator saw, and the validated config, and returns the
@@ -182,6 +189,8 @@ val run_with_args :
     'cfg ->
     (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:
+    (sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> (telemetry, 'err) result) ->
   service_args:'args Cmdliner.Term.t ->
   name:string ->
   config:'cfg Config.t ->
@@ -213,6 +222,8 @@ val run :
     'cfg ->
     (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:
+    (sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> (telemetry, 'err) result) ->
   name:string ->
   config:'cfg Config.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->

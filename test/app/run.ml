@@ -74,7 +74,8 @@ let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 (* ^napp-9x0s: [read] is the read outcome the Door sees; the default is a file that is
    there and holds [text], which is what every other case wants. *)
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
-    ?telemetry ?(read_path = fun _ -> ()) ?read ?(program = fun _ _ _ -> Ok ()) () =
+    ?telemetry ?telemetry_result ?(read_path = fun _ -> ()) ?read
+    ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
         object
@@ -86,7 +87,8 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ?validate ?telemetry ~env ~name:"demo" ~config ~pp_err
+        run_for_test ?on_switch ?validate ?telemetry ?telemetry_result ~env ~name:"demo"
+          ~config ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -767,6 +769,39 @@ let test_telemetry_hook () =
 
 (* ^napp-idii: a hook that raises is a defect on the run path, rendered and exiting 2
    without entering the program. *)
+(* ^napp-scz2: a telemetry hook whose acquisition fails is an ordinary startup failure:
+   rendered through pp_err with exit 1, the program never entered; Ok behaves as the plain
+   hook does. *)
+let test_telemetry_result () =
+  let started = ref false in
+  let code, _, err, _ =
+    run
+      ~telemetry_result:(fun ~sw:_ _ _ -> Error (`Problem "exporter endpoint refused"))
+      ~program:(fun _ _ _ ->
+        started := true;
+        Ok ())
+      ()
+  in
+  check_int "^napp-scz2 a failed acquisition exits 1" 1 code;
+  expect_part err "exporter endpoint refused";
+  Alcotest.(check bool) "^napp-scz2 the program never ran" false !started;
+  let seen = ref 0 in
+  let code, _, _, _ =
+    run
+      ~telemetry_result:(fun ~sw:_ _ _ ->
+        Ok
+          {
+            reporters = [ Eta_observability.Logger.Reporter.records (fun _ -> incr seen) ];
+            span_ids = None;
+          })
+      ~program:(fun env _ _ ->
+        Eta_observability.Logger.info env.Env.logger "hello";
+        Ok ())
+      ()
+  in
+  check_int "^napp-scz2 Ok runs the program" 0 code;
+  Alcotest.(check bool) "^napp-scz2 its reporter sees program records" true (!seen > 0)
+
 let test_telemetry_defect () =
   let started = ref false in
   let code, _, err, _ =
@@ -1582,6 +1617,8 @@ let () =
           Alcotest.test_case "^napp-idii telemetry hook" `Quick test_telemetry_hook;
           Alcotest.test_case "^napp-idii raising telemetry hook" `Quick
             test_telemetry_defect;
+          Alcotest.test_case "^napp-scz2 typed telemetry acquisition" `Quick
+            test_telemetry_result;
           Alcotest.test_case "^napp-idii config check runs no hook" `Quick
             test_telemetry_check_path;
           Alcotest.test_case "^napp-2aa6 ^nnoschema-boxo CLI and IO errors" `Quick
