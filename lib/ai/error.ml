@@ -1,4 +1,8 @@
-type unavailable = { message : string; retryable : bool }
+type unavailable = {
+  message : string;
+  retryable : bool;
+  retry_after : Eta.Duration.t option;
+}
 (** Why no reply came, and whether another attempt is worth making: a transport failure
     is, a provider error the endpoint already answered is not. *)
 

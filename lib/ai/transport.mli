@@ -43,6 +43,8 @@ val post_json :
   logger:Eta_observability.Logger.t ->
   ?timeout:Eta.Duration.t ->
   ?max_request_bytes:int ->
+  ?max_response_bytes:int ->
+  ?max_attempts:int ->
   endpoint:string ->
   authorization:(string * string) list ->
   body:bytes ->
@@ -70,7 +72,14 @@ val post_json :
     attempt; a body over the response bound is [`Invalid_response] and does not, exactly
     as the reference's bound read ends its call after one attempt.
 
-    A negative [max_request_bytes] refuses every request. *)
+    A negative [max_request_bytes] refuses every request.
+
+    [max_response_bytes] (default {!default_max_response_bytes}) bounds the reply read;
+    [max_attempts] (default {!max_attempts}, at least 1) is how many attempts the call may
+    make: [1] for a caller that owns its retry policy, one request and no backoff. Either
+    out of range raises [Invalid_argument]. A non-2xx reply's [Retry-After] (delta-seconds
+    or IMF-fixdate) is carried as [retry_after] in [`Unavailable]. ^nai-97as ^nai-337c
+    ^nai-rjkq *)
 
 val bytes_of_json : Yojson.Safe.t -> bytes
 (** [bytes_of_json json] is the compact UTF-8 encoding of [json] as the request body

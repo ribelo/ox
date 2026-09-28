@@ -57,8 +57,8 @@ let decode json =
                   | None -> Eta_json.int_member "input_tokens" u);
           }
 
-let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ~deadline
-    (request : request) =
+let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint)
+    ?max_response_bytes ?max_attempts ~deadline (request : request) =
   if
     request.model = ""
     || (match request.input with
@@ -68,7 +68,8 @@ let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ~deadlin
   then Common.invalid "model, input and dimensions must be valid" (encode request)
   else
     match
-      Common.post ~http ~clock ~logger ~api_key ~endpoint ~deadline (encode request)
+      Common.post ~http ~clock ~logger ~api_key ~endpoint ?max_response_bytes
+        ?max_attempts ~deadline (encode request)
     with
     | Error _ as error -> error
     | Ok json -> decode json

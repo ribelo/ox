@@ -204,6 +204,71 @@ let check_unavailable ~retryable what (result : ('a, Eta_ai.Error.t) result) =
   | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
+(* ^nai-97as ^nai-337c ^nai-rjkq: the caller bounds the reply, can ask for one attempt,
+   and gets the provider's Retry-After in the typed failure. *)
+let test_transport_controls () =
+  Test_helpers.run (fun ~sw env ->
+      let http () = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+      let logger = fst (Test_helpers.memory_logger env) in
+      let embed ?max_response_bytes ?max_attempts server =
+        E.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
+          ~endpoint:(Fake_server.url server "/embeddings")
+          ?max_response_bytes ?max_attempts ~deadline
+          E.{ model = "embedding-model"; input = Text "one"; dimensions = None }
+      in
+      (* A 1.5 MiB reply: refused under the default 1 MiB bound, read under 4 MiB. *)
+      let big =
+        let vector = String.concat "," (List.init 200_000 (fun _ -> "0.1234567")) in
+        Printf.sprintf {|{"data":[{"index":0,"embedding":[%s]}]}|} vector
+      in
+      let serve_big () =
+        Fake_server.serve ~net:env#net ~clock:env#clock ~sw (Fake_server.ok big)
+      in
+      check_invalid_response "^nai-97as default bound" (embed (serve_big ()));
+      (match embed ~max_response_bytes:(4 * 1024 * 1024) (serve_big ()) with
+      | Ok response ->
+          Alcotest.(check int)
+            "^nai-97as larger bound decodes" 1
+            (List.length response.embeddings)
+      | Error error -> Alcotest.failf "larger bound: %s" (Eta_ai.Error.to_string error));
+      (* One attempt means one request, and the 429's Retry-After is kept. *)
+      let throttled headers =
+        Fake_server.serve ~net:env#net ~clock:env#clock ~sw
+          (Fake_server.ok ~status:429 ~reason:"Too Many Requests" ~headers "slow"
+          @ Fake_server.ok ~status:429 ~reason:"Too Many Requests" ~headers "slow")
+      in
+      let server = throttled [ ("Retry-After", "7") ] in
+      (match embed ~max_attempts:1 server with
+      | Error (`Unavailable { retry_after; retryable; _ }) ->
+          Alcotest.(check bool) "^nai-rjkq retryable" true retryable;
+          Alcotest.(check (option int))
+            "^nai-rjkq delta-seconds" (Some 7000)
+            (Option.map Eta.Duration.to_ms retry_after)
+      | _ -> Alcotest.fail "expected Unavailable with Retry-After");
+      Alcotest.(check int)
+        "^nai-337c one attempt, one request" 1
+        (Fake_server.connections server);
+      let server = throttled [ ("Retry-After", "7") ] in
+      ignore (embed server);
+      Alcotest.(check int)
+        "^nai-337c default still two attempts" 2
+        (Fake_server.connections server);
+      (match
+         embed ~max_attempts:1
+           (throttled [ ("Retry-After", "Fri, 31 Dec 2099 23:59:59 GMT") ])
+       with
+      | Error (`Unavailable { retry_after = Some delay; _ }) ->
+          Alcotest.(check bool)
+            "^nai-rjkq HTTP-date in the future" true
+            (Eta.Duration.to_ms delay > 0)
+      | _ -> Alcotest.fail "expected an HTTP-date Retry-After");
+      (match embed ~max_attempts:1 (throttled [ ("Retry-After", "soon") ]) with
+      | Error (`Unavailable { retry_after = None; _ }) -> ()
+      | _ -> Alcotest.fail "an invalid Retry-After must be None");
+      match embed ~max_attempts:1 (throttled []) with
+      | Error (`Unavailable { retry_after = None; _ }) -> ()
+      | _ -> Alcotest.fail "no header, no retry_after")
+
 let test_failures () =
   Test_helpers.run (fun ~sw env ->
       let server ?(status = 200) body =
@@ -497,6 +562,8 @@ let () =
          [
            Alcotest.test_case "Responses WAV wire ^air2-rsp1 ^nor-pn0b" `Quick
              test_responses;
+           Alcotest.test_case "^nai-97as ^nai-337c ^nai-rjkq transport controls" `Quick
+             test_transport_controls;
            Alcotest.test_case "embeddings index ^air2-emb2" `Quick test_embeddings;
            Alcotest.test_case "strict and Realtime events ^air2-rtm4" `Quick
              test_fail_closed;

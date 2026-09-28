@@ -80,7 +80,11 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~dea
       | Error _ ->
           Error
             (`Unavailable
-               { message = "transcription transport failure"; retryable = true })
+               {
+                 message = "transcription transport failure";
+                 retryable = true;
+                 retry_after = None;
+               })
       | Ok { status = 401; _ } ->
           Error (`Authentication "transcription authentication failed")
       | Ok { status = 413; _ } ->
@@ -91,6 +95,7 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~dea
                {
                  message = Printf.sprintf "transcription HTTP %d" status;
                  retryable = status = 429 || status = 529;
+                 retry_after = None;
                })
       | Ok response -> (
           match Common.decode (Bytes.to_string response.body) with

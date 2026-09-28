@@ -7,21 +7,68 @@ let max_attempts = 2
 let backoff = Eta.Duration.ms 100
 let retryable_status status = status = 429 || status = 529
 
+(* ^nai-rjkq: Retry-After is delta-seconds or an HTTP-date (RFC 9110 10.2.3). Only the
+   IMF-fixdate form is read ("Sun, 06 Nov 1994 08:49:37 GMT"); the obsolete forms, any
+   invalid value and a date already past are None. *)
+let days_from_civil y m d =
+  let y = if m <= 2 then y - 1 else y in
+  let era = (if y >= 0 then y else y - 399) / 400 in
+  let yoe = y - (era * 400) in
+  let mp = (m + 9) mod 12 in
+  let doy = (((153 * mp) + 2) / 5) + d - 1 in
+  let doe = (yoe * 365) + (yoe / 4) - (yoe / 100) + doy in
+  (era * 146097) + doe - 719468
+
+let months =
+  [ "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec" ]
+
+let http_date value =
+  try
+    Scanf.sscanf value "%3s, %2d %3s %4d %2d:%2d:%2d GMT%!" (fun _ d mon y hh mm ss ->
+        let rec find i = function
+          | [] -> None
+          | x :: rest -> if x = mon then Some i else find (i + 1) rest
+        in
+        match find 1 months with
+        | Some m when d >= 1 && d <= 31 && hh < 24 && mm < 60 && ss < 61 ->
+            Some
+              (float_of_int
+                 ((days_from_civil y m d * 86400) + (hh * 3600) + (mm * 60) + ss))
+        | _ -> None)
+  with Scanf.Scan_failure _ | End_of_file | Failure _ -> None
+
+let retry_after ~now headers =
+  match
+    List.find_opt (fun (name, _) -> String.lowercase_ascii name = "retry-after") headers
+  with
+  | None -> None
+  | Some (_, raw) -> (
+      let value = String.trim raw in
+      if value <> "" && String.for_all (fun c -> c >= '0' && c <= '9') value then
+        Option.map Eta.Duration.seconds (int_of_string_opt value)
+      else
+        match http_date value with
+        | Some at when at > now ->
+            Some (Eta.Duration.ms (int_of_float (Float.ceil ((at -. now) *. 1000.))))
+        | _ -> None)
+
 (* The one boundary where eta_http's typed transport errors become this client's
    failures (^nso-77t7): a connection that never completed, a TLS failure, a framing
    error the peer caused and a connection that closed mid-reply are [`Unavailable]; an
    idle or overall read timeout is [`Timeout]; a body past the response bound is an
    [`Invalid_response] — the reference adapter's verdict, because the bytes that arrived
    are not the documented reply. *)
-let transport_failure message = `Unavailable { Error.message; retryable = true }
+let transport_failure message =
+  `Unavailable { Error.message; retryable = true; retry_after = None }
 
-let map_error : Eta_http.Client.error -> Error.t = function
+let map_error ~max_response_bytes : Eta_http.Client.error -> Error.t = function
   | `Timeout | `Idle_timeout -> `Timeout
   | `Body_too_large ->
       `Invalid_response
         {
           Eta_json.path = "";
-          message = "response body exceeds the 1 MiB bound";
+          message =
+            Printf.sprintf "response body exceeds the %d-byte bound" max_response_bytes;
           got = `Null;
         }
   | `Closed -> transport_failure "the connection closed before the reply completed"
@@ -46,7 +93,7 @@ let retryable_error (error : Error.t) =
    large, every other 4xx is a reply that is not the documented answer, and a 5xx is the
    provider failing. A status no client can answer from — the 3xx the reference refuses to
    follow — is [`Unavailable], like any other attempt that produced no reply. *)
-let status_error ~max_request_bytes ~length status =
+let status_error ~max_request_bytes ~length ~retry_after status =
   if status = 401 then `Authentication (Printf.sprintf "HTTP %d" status)
   else if status = 413 then
     `Input_too_large { Eta_json.limit = max_request_bytes; length }
@@ -57,16 +104,18 @@ let status_error ~max_request_bytes ~length status =
         message = Printf.sprintf "HTTP %d is not an answer" status;
         got = `Null;
       }
-  else `Unavailable { Error.message = Printf.sprintf "HTTP %d" status; retryable = false }
+  else
+    `Unavailable
+      { Error.message = Printf.sprintf "HTTP %d" status; retryable = false; retry_after }
 
-let attempt ~http ~url ~authorization ~body ~deadline =
+let attempt ~http ~url ~authorization ~body ~deadline ~max_response_bytes =
   match
     Eta_http.Client.request http ~method_:"POST" ~url
       ~headers:(("Content-Type", "application/json") :: authorization)
-      ~body ~deadline ~max_body_bytes:default_max_response_bytes ()
+      ~body ~deadline ~max_body_bytes:max_response_bytes ()
   with
-  | Ok response -> Ok { status = response.Eta_http.Client.status; body = response.body }
-  | Error error -> Error (map_error error)
+  | Ok response -> Ok (response.Eta_http.Client.status, response.headers, response.body)
+  | Error error -> Error (map_error ~max_response_bytes error)
 
 let bytes_of_json json = Bytes.of_string (Yojson.Safe.to_string json)
 
@@ -90,21 +139,24 @@ type verdict = Reply of response | Retry of Error.t | Final of Error.t
    {!Eta.Timeout.timeout}. [timeout] caps one attempt's read so a hung peer cannot eat the
    whole budget. *)
 let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-    ~max_request_bytes ~length ~attempts =
+    ~max_request_bytes ~max_response_bytes ~length ~attempts =
   let verdict =
     match
-      attempt ~http ~url:endpoint ~authorization ~body
+      attempt ~http ~url:endpoint ~authorization ~body ~max_response_bytes
         ~deadline:(Eta.Duration.min deadline timeout)
     with
-    | Ok response when response.status >= 200 && response.status < 300 -> Reply response
-    | Ok response when retryable_status response.status ->
-        Retry
-          (`Unavailable
-             {
-               Error.message = Printf.sprintf "HTTP %d" response.status;
-               retryable = true;
-             })
-    | Ok response -> Final (status_error ~max_request_bytes ~length response.status)
+    | Ok (status, _, body) when status >= 200 && status < 300 -> Reply { status; body }
+    | Ok (status, headers, _) ->
+        let retry_after = retry_after ~now:(Eio.Time.now clock) headers in
+        if retryable_status status then
+          Retry
+            (`Unavailable
+               {
+                 Error.message = Printf.sprintf "HTTP %d" status;
+                 retryable = true;
+                 retry_after;
+               })
+        else Final (status_error ~max_request_bytes ~length ~retry_after status)
     | Error error -> if retryable_error error then Retry error else Final error
   in
   match verdict with
@@ -116,15 +168,20 @@ let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeo
         wait ~clock ~logger backoff;
         run ~http ~clock ~logger ~endpoint ~authorization ~body
           ~deadline:(Eta.Duration.subtract deadline backoff)
-          ~timeout ~max_request_bytes ~length ~attempts:(attempts - 1))
+          ~timeout ~max_request_bytes ~max_response_bytes ~length ~attempts:(attempts - 1))
 
 let post_json ~http ~clock ~logger ?(timeout = default_timeout)
-    ?(max_request_bytes = default_max_request_bytes) ~endpoint ~authorization ~body
-    ~deadline () =
+    ?(max_request_bytes = default_max_request_bytes)
+    ?(max_response_bytes = default_max_response_bytes) ?(max_attempts = max_attempts)
+    ~endpoint ~authorization ~body ~deadline () =
+  if max_response_bytes <= 0 then
+    invalid_arg "Eta_ai.Transport.post_json: max_response_bytes must be positive";
+  if max_attempts < 1 then
+    invalid_arg "Eta_ai.Transport.post_json: max_attempts must be at least 1";
   let length = Bytes.length body in
   if length > max_request_bytes then
     Error (`Input_too_large { Eta_json.limit = max_request_bytes; length })
   else
     Eta.Timeout.timeout ~clock deadline (fun () ->
         run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-          ~max_request_bytes ~length ~attempts:max_attempts)
+          ~max_request_bytes ~max_response_bytes ~length ~attempts:max_attempts)

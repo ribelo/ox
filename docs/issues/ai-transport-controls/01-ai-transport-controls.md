@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_ai, eta_ai_openrouter
 consumer: nema row 31 (nemanext-l8so, nemanext-zl1v, nemanext-791b)
 ---
@@ -19,3 +19,9 @@ consumer: nema row 31 (nemanext-l8so, nemanext-zl1v, nemanext-791b)
 ## Testing Decisions
 
 - Fake server: a 2 MiB embeddings reply under and over a configured bound; one attempt means one request; 429 with `Retry-After: 7` and with an HTTP-date; invalid value.
+
+## Verified
+
+- `Eta_ai.Transport.post_json` and `Eta_ai_openrouter.Embeddings.create` take `?max_response_bytes` (default 1 MiB) and `?max_attempts` (default 2, at least 1); `Eta_ai.Error.unavailable` gains `retry_after : Eta.Duration.t option`, parsed from `Retry-After` delta-seconds or IMF-fixdate on any non-2xx reply.
+- `test/ai/test_openrouter.ml` "transport controls": a 1.5 MiB embeddings reply is refused under the default bound and decoded under 4 MiB; `max_attempts:1` makes one request (default two); `Retry-After: 7` gives 7000 ms; an HTTP-date in the future gives a positive delay; an invalid value and no header give None.
+- Additive for callers; a consumer that builds `Error.unavailable` itself must add `retry_after` (no consumer outside eta-next does).

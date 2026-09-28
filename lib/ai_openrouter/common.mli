@@ -10,6 +10,8 @@ val post :
   logger:Eta_observability.Logger.t ->
   api_key:Eta_observability.Redact.t ->
   endpoint:string ->
+  ?max_response_bytes:int ->
+  ?max_attempts:int ->
   deadline:Eta.Duration.t ->
   Eta_json.t ->
   (Eta_json.t, Eta_ai.Error.t) result

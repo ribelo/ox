@@ -12,7 +12,11 @@
 
     ^nso-77t7 *)
 
-type unavailable = { message : string; retryable : bool }
+type unavailable = {
+  message : string;
+  retryable : bool;
+  retry_after : Eta.Duration.t option;
+}
 (** Why no reply came, and whether another attempt is worth making: [true] for a transport
     failure or a 429/529 that ran out of attempts, [false] for an error the endpoint
     itself answered. *)
@@ -29,8 +33,10 @@ type t =
   | `Model_mismatch of mismatch ]
 (** What went wrong:
     - [`Unavailable failure] — the attempt could not produce a reply, or an HTTP status
-      the client cannot use as an answer; [failure.message] says which and
-      [failure.retryable] whether another attempt is reasonable.
+      the client cannot use as an answer; [failure.message] says which,
+      [failure.retryable] whether another attempt is reasonable, and [failure.retry_after]
+      the delay the provider asked for in [Retry-After], so a caller that schedules its
+      own retries waits as told. ^nai-rjkq
     - [`Timeout] — the caller's deadline passed, or an attempt's own transport slice did.
     - [`Authentication why] — the endpoint refused the key (HTTP 401).
     - [`Invalid_response issue] — bytes arrived that are not the documented reply; the
