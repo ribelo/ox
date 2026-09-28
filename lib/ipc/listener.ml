@@ -206,19 +206,27 @@ let respond ~clock ~policy ~encode ~on_peer_error flow reply =
     | Error `Timeout -> on_peer_error `Egress_timeout
     | Error `Egress_closed -> on_peer_error `Egress_closed
 
-let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~handler
-    ~on_peer_error flow =
+let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~error_response
+    ~handler ~on_peer_error flow =
+  (* An ingress failure reaches no handler, so the caller decides whether the peer still
+     hears about it: the chosen reply goes through the same egress path as a handler's. *)
+  let refuse e =
+    on_peer_error e;
+    match error_response e with
+    | None -> ()
+    | Some reply -> respond ~clock ~policy ~encode ~on_peer_error flow reply
+  in
   let ingress =
     Eta.Timeout.timeout ~clock policy.ingress (fun () ->
         read_line flow policy.max_line_bytes)
   in
   match ingress with
-  | Error `Timeout -> on_peer_error `Ingress_timeout
-  | Error (`Ingress_too_large as e) -> on_peer_error e
+  | Error `Timeout -> refuse `Ingress_timeout
+  | Error (`Ingress_too_large as e) -> refuse e
   | Error (`Ingress_closed as e) -> on_peer_error e
   | Ok line -> (
       match decode line with
-      | Error e -> on_peer_error (`Decode e)
+      | Error e -> refuse (`Decode e)
       | Ok request -> (
           let work () =
             match budget request with
@@ -262,7 +270,7 @@ let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~handler
 
 let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock ~path
     ?(policy = default_policy) ~decode ~encode ~budget ~handler ?on_budget_exceeded
-    ?(on_peer_error = fun _ -> ()) () =
+    ?(error_response = fun _ -> None) ?(on_peer_error = fun _ -> ()) () =
   try
     validate policy;
     let dirname = Filename.dirname path in
@@ -332,7 +340,7 @@ let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
                               (fun () -> Eio.Flow.close flow)))
                       (fun () ->
                         peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded
-                          ~handler ~on_peer_error flow);
+                          ~error_response ~handler ~on_peer_error flow);
                     `Stop_daemon)
               done;
               `Stop_daemon

@@ -52,6 +52,7 @@ val run :
   budget:('request -> Eta.Duration.t option) ->
   handler:('request -> ('response, 'handler) result) ->
   ?on_budget_exceeded:('request -> Eta.Duration.t -> 'response) ->
+  ?error_response:(('decode, 'handler) peer_error -> 'response option) ->
   ?on_peer_error:(('decode, 'handler) peer_error -> unit) ->
   unit ->
   (unit, error) result
@@ -69,4 +70,15 @@ val run :
     reply — byte bound, then egress deadline — and the connection closes as after any
     reply. [on_peer_error] still reports `Handler_budget_exceeded. Without the callback
     the request is answered with nothing, as before. The callback runs in that peer's
-    fiber with no listener-imposed deadline of its own, so it must be quick. *)
+    fiber with no listener-imposed deadline of its own, so it must be quick.
+
+    When [error_response] is supplied, an ingress-side failure — a decode failure, an
+    over-large request line, or an ingress deadline — is answered with the response the
+    callback derives from that peer error, encoded and written through the same egress
+    path as a handler's own reply: byte bound, then egress deadline, then close. It is
+    consulted at most once per peer and never for `Ingress_closed or `Disconnected: a peer
+    that went away gets nothing. A reply the byte bound or egress deadline refuses is
+    reported through [on_peer_error] without replacing the ingress cause that prompted it.
+    Handler failures and egress failures are not ingress failures: [on_budget_exceeded]
+    owns a budget cut, and no reply is attempted after a write has already failed. The
+    callback runs in that peer's fiber, so it must be quick. *)

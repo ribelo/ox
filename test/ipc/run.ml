@@ -23,11 +23,11 @@ let with_dir f =
       clean dir)
     (fun () -> f dir (dir ^ "/s"))
 
-let start ?policy ?on_peer_error ?on_budget_exceeded ?(budget = fun _ -> None)
-    ?(handler = fun x -> Ok x) env sw path =
-  L.run ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy
-    ~decode:(fun s -> Ok s)
-    ~encode:Fun.id ~budget ~handler ?on_budget_exceeded ?on_peer_error ()
+let start ?policy ?on_peer_error ?on_budget_exceeded ?error_response
+    ?(decode = fun s -> Ok s) ?(budget = fun _ -> None) ?(handler = fun x -> Ok x) env sw
+    path =
+  L.run ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy ~decode ~encode:Fun.id
+    ~budget ~handler ?on_budget_exceeded ?error_response ?on_peer_error ()
 
 let client env sw path = Eio.Net.connect ~sw env#net (`Unix path)
 
@@ -515,6 +515,215 @@ let budget_reply_absent () =
                 | _ -> false
                 | exception End_of_file -> true))))
 
+let error_reply_decode () =
+  (* nipc-c871 nipc-x8ph nipc-ajmi *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let admitted = ref 0 in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~decode:(fun line ->
+                     if line = "ping" then Ok line
+                     else Error (Printf.sprintf "unparsable: %s" line))
+                   ~error_response:(function
+                     | `Decode reason ->
+                         Some (Printf.sprintf "error malformed-request %s" reason)
+                     | _ -> None)
+                   ~handler:(fun x ->
+                     incr admitted;
+                     Ok x)
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "nonsense\n" flow;
+              let reader = Eio.Buf_read.of_flow ~max_size:64 flow in
+              Alcotest.(check string)
+                "malformed request answered with the chosen reply"
+                "error malformed-request unparsable: nonsense" (Eio.Buf_read.line reader);
+              Alcotest.(check bool)
+                "one reply then close" true
+                (match Eio.Buf_read.line reader with
+                | _ -> false
+                | exception End_of_file -> true);
+              Alcotest.(check string)
+                "a valid request still reaches the handler" "ping"
+                (request env sw path "ping\n");
+              Alcotest.(check int) "only the valid request was admitted" 1 !admitted)))
+
+let error_reply_oversized () =
+  (* nipc-c871 nipc-x8ph *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let admitted = ref 0 in
+          let policy = { L.default_policy with max_line_bytes = 4 } in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start ~policy
+                   ~error_response:(function
+                     | `Ingress_too_large -> Some "error too-large" | _ -> None)
+                   ~handler:(fun x ->
+                     incr admitted;
+                     Ok x)
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "abcdef\n" flow;
+              let reader = Eio.Buf_read.of_flow ~max_size:64 flow in
+              Alcotest.(check string)
+                "overlong request answered with the chosen reply" "error too-large"
+                (Eio.Buf_read.line reader);
+              Alcotest.(check bool)
+                "one reply then close" true
+                (match Eio.Buf_read.line reader with
+                | _ -> false
+                | exception End_of_file -> true);
+              Alcotest.(check int) "no handler admitted" 0 !admitted)))
+
+let error_reply_ingress_timeout () =
+  (* nipc-c871 nipc-x8ph *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let reported, signal_reported = Eio.Promise.create () in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~error_response:(function
+                     | `Ingress_timeout -> Some "error timeout" | _ -> None)
+                   ~on_peer_error:(function
+                     | `Ingress_timeout -> Eio.Promise.resolve signal_reported ()
+                     | _ -> ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "partial" flow;
+              Eio.Fiber.yield ();
+              Eio.Fiber.yield ();
+              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Eio.Promise.await reported;
+              Alcotest.(check string)
+                "stalled ingress answered with the chosen reply" "error timeout"
+                (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow)))))
+
+let error_reply_declined () =
+  (* nipc-c871 nipc-ajmi *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let admitted = ref 0 in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~decode:(fun _ -> Error "unparsable")
+                   ~error_response:(fun _ -> None)
+                   ~handler:(fun x ->
+                     incr admitted;
+                     Ok x)
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "junk\n" flow;
+              Alcotest.(check bool)
+                "declined reply closes without writing" true
+                (match Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow) with
+                | _ -> false
+                | exception End_of_file -> true);
+              Alcotest.(check int) "no handler admitted" 0 !admitted)))
+
+let error_reply_byte_bound () =
+  (* nipc-c871 nipc-eiy8 *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let seen = ref [] in
+          let decoded, signal_decoded = Eio.Promise.create () in
+          let rejected, signal_rejected = Eio.Promise.create () in
+          let policy = { L.default_policy with max_reply_bytes = 4 } in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start ~policy
+                   ~decode:(fun _ -> Error "unparsable")
+                   ~error_response:(fun _ -> Some "oversize")
+                   ~on_peer_error:(fun e ->
+                     seen := e :: !seen;
+                     if e = `Decode "unparsable" then
+                       Eio.Promise.resolve signal_decoded ();
+                     if e = `Egress_too_large then Eio.Promise.resolve signal_rejected ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "junk\n" flow;
+              Eio.Promise.await decoded;
+              Eio.Promise.await rejected;
+              Alcotest.(check bool)
+                "the refused reply does not replace the decode cause" true
+                (List.mem (`Decode "unparsable") !seen);
+              Alcotest.(check bool)
+                "oversized error reply writes nothing" true
+                (match Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow) with
+                | _ -> false
+                | exception End_of_file -> true))))
+
+let error_reply_egress_timeout () =
+  (* nipc-c871 nipc-eiy8 *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let decoded, signal_decoded = Eio.Promise.create () in
+          let timed_out, signal_timed_out = Eio.Promise.create () in
+          let payload = String.make 8_000_000 'x' in
+          let policy =
+            { L.default_policy with max_reply_bytes = String.length payload }
+          in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start ~policy
+                   ~decode:(fun _ -> Error "unparsable")
+                   ~error_response:(function `Decode _ -> Some payload | _ -> None)
+                   ~on_peer_error:(function
+                     | `Decode _ -> Eio.Promise.resolve signal_decoded ()
+                     | `Egress_timeout -> Eio.Promise.resolve signal_timed_out ()
+                     | _ -> ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "junk\n" flow;
+              Eio.Promise.await decoded;
+              (* The client never reads, so the error reply write blocks; each advance
+                 moves the mock clock past the egress deadline measured from wherever
+                 that write began. *)
+              let rec settle left =
+                if (not (Eio.Promise.is_resolved timed_out)) && left > 0 then (
+                  Eta_test.advance env#clock (Eta.Duration.seconds 2);
+                  Eio.Fiber.yield ();
+                  settle (left - 1))
+              in
+              settle 5;
+              Eio.Promise.await timed_out)))
+
+let error_reply_disconnect () =
+  (* nipc-c871 nipc-1v8z *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let seen = ref [] in
+          let asked = ref 0 in
+          let reported, signal_reported = Eio.Promise.create () in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~decode:(fun line ->
+                     if line = "ok" then Ok line else Error "unparsable")
+                   ~error_response:(fun _ ->
+                     incr asked;
+                     Some "error")
+                   ~on_peer_error:(fun e ->
+                     seen := e :: !seen;
+                     if not (Eio.Promise.is_resolved reported) then
+                       Eio.Promise.resolve signal_reported ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "partial" flow;
+              Eio.Flow.close flow;
+              Eio.Promise.await reported;
+              Alcotest.(check bool)
+                "an unfinished request is reported as ingress closed" true
+                (List.mem `Ingress_closed !seen);
+              Alcotest.(check int) "disconnect never asks for a reply" 0 !asked;
+              Alcotest.(check string)
+                "listener still serves after the disconnect" "ok"
+                (request env sw path "ok\n"))))
+
 let () =
   if Array.length Sys.argv = 3 && Sys.argv.(1) = "--check-lock" then (
     let fd = Unix.openfile (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0 in
@@ -555,6 +764,23 @@ let () =
       ( "nipc-6i86 nipc-01bn",
         [
           Alcotest.test_case "None does not impose handler budget" `Quick unbounded_budget;
+        ] );
+      ( "nipc-c871 nipc-x8ph nipc-eiy8 nipc-ajmi nipc-1v8z",
+        [
+          Alcotest.test_case "malformed request gets the chosen error reply" `Quick
+            error_reply_decode;
+          Alcotest.test_case "overlong request gets the chosen error reply" `Quick
+            error_reply_oversized;
+          Alcotest.test_case "stalled ingress gets the chosen error reply" `Quick
+            error_reply_ingress_timeout;
+          Alcotest.test_case "no chosen reply closes without writing" `Quick
+            error_reply_declined;
+          Alcotest.test_case "error reply obeys the reply byte bound" `Quick
+            error_reply_byte_bound;
+          Alcotest.test_case "stalled reader hits the egress deadline" `Quick
+            error_reply_egress_timeout;
+          Alcotest.test_case "disconnect never asks for a reply" `Quick
+            error_reply_disconnect;
         ] );
       ( "nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi",
         [
