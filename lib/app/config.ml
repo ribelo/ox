@@ -42,19 +42,33 @@ let json_pointer steps =
 
 let refuse path message = Error (`Config (pointer_text (json_pointer path) message))
 
+(* ^napp-9x0s: why a read failed, which is exactly the difference the Door's rule turns
+   on. An absent file at the Door's own default path is the empty document; a file that is
+   there and cannot be read is an error at either path. *)
+type read_error = [ `Missing | `Unreadable of string ]
+
+(* ^napp-9x0s: where the text comes from. Only the Door's own default path for [name] may
+   be absent; a path the operator named with --config must exist. *)
+type source = [ `Default of string | `Explicit of string ]
+
+let default_path ~name ~getenv =
+  let base =
+    match getenv "XDG_CONFIG_HOME" with
+    | Some value when value <> "" -> value
+    | _ -> (
+        match getenv "HOME" with
+        | Some home -> Filename.concat home ".config"
+        | None -> ".config")
+  in
+  Filename.concat (Filename.concat base name) "config.toml"
+
 let path ~name ~config ~getenv =
+  match config with Some file -> file | None -> default_path ~name ~getenv
+
+let resolve ~name ~config ~getenv =
   match config with
-  | Some file -> file
-  | None ->
-      let base =
-        match getenv "XDG_CONFIG_HOME" with
-        | Some value when value <> "" -> value
-        | _ -> (
-            match getenv "HOME" with
-            | Some home -> Filename.concat home ".config"
-            | None -> ".config")
-      in
-      Filename.concat (Filename.concat base name) "config.toml"
+  | Some file -> `Explicit file
+  | None -> `Default (default_path ~name ~getenv)
 
 (* Story ^nnoschema-boxo: the config file format is unchanged. TOML is parsed and
    converted to Yojson.Safe.t here; the consumer's derived decoder takes over from
@@ -116,7 +130,16 @@ let decode ~spec ~getenv text =
   in
   Ok (spec.env ~getenv settings)
 
-let load ~spec ~getenv ~read ~path =
+(* ^napp-9x0s: an absent file is the empty document only where the Door chose the path.
+   A config type whose fields all carry defaults then starts a fresh install with no file;
+   an absent --config path, and a file that is there and cannot be read at either path,
+   stay errors naming the path. *)
+let load ~spec ~getenv ~read ~(source : source) =
+  let path = match source with `Explicit path | `Default path -> path in
   match read path with
-  | Error msg -> Error (`Config (Printf.sprintf "%s: %s" path msg))
   | Ok text -> decode ~spec ~getenv text
+  | Error (`Unreadable message) -> Error (`Config (Printf.sprintf "%s: %s" path message))
+  | Error `Missing -> (
+      match source with
+      | `Default _ -> decode ~spec ~getenv ""
+      | `Explicit _ -> Error (`Config (Printf.sprintf "%s: no such file" path)))

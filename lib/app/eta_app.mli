@@ -69,16 +69,18 @@ val run_for_test :
   config:'cfg Config.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->
   getenv:(string -> string option) ->
-  read:(string -> (string, string) result) ->
+  read:(string -> (string, Config.read_error) result) ->
   stderr:(string -> unit) ->
   stdout:(string -> unit) ->
   argv:string array ->
   ('base Env.t -> 'cfg -> Eio.Switch.t -> (unit, 'err) result) ->
   int
 (** Evaluate the complete Door in the current Eio fiber without installing OS signals or
-    accessing files except via [read]. [on_switch] can initiate interruption via
-    {!request_stop}. Cmdliner help is sent to [stdout], diagnostics to [stderr]. All
-    switch finalizers finish before return.
+    accessing files except via [read], which reports [`Missing] for a path that is not
+    there and [`Unreadable message] for one that exists and could not be read; whether
+    absence is allowed is {!Config.load}'s decision. [on_switch] can initiate interruption
+    via {!request_stop}. Cmdliner help is sent to [stdout], diagnostics to [stderr]. All
+    switch finalizers finish before return. ^napp-9x0s
 
     [commands] are added to the top-level group; [config_commands] are added to the Door's
     own `config` group beside `check`, so a service author writes `config init` without
@@ -118,9 +120,13 @@ val run :
   (Eio_unix.Stdenv.base Env.t -> 'cfg -> Eio.Switch.t -> (unit, 'err) result) ->
   int
 (** Own Eio_main, filesystem config loading, a journal logger, and SIGINT / SIGTERM
-    handlers. Signal handlers only set an atomic flag and broadcast an Eio condition; a
-    monitor fiber requests the interruption. Handlers are restored after all finalizers.
-    [validate] is forwarded to {!run_for_test} unchanged, so it runs on both the run and
-    `config check` paths before the program's switch. [telemetry] is forwarded too, so the
-    reporters and the ID generator it returns reach the program's logger, and its
-    resources live on the root switch a signal interrupts. ^napp-idii *)
+    handlers. A config file that is absent at the default path — no --config was given —
+    decodes as the empty document, so a config type with defaults starts a fresh install
+    with no file; a --config path that is absent is an error naming it, and a file that
+    exists and cannot be read is an error either way (^napp-9x0s). Signal handlers only
+    set an atomic flag and broadcast an Eio condition; a monitor fiber requests the
+    interruption. Handlers are restored after all finalizers. [validate] is forwarded to
+    {!run_for_test} unchanged, so it runs on both the run and `config check` paths before
+    the program's switch. [telemetry] is forwarded too, so the reporters and the ID
+    generator it returns reach the program's logger, and its resources live on the root
+    switch a signal interrupts. ^napp-idii *)

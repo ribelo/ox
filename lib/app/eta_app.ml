@@ -71,8 +71,8 @@ let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
       & info [ "config" ] ~docv:"FILE" ~doc:"TOML configuration file.")
   in
   let execute check file () =
-    let path = Config.path ~name ~config:file ~getenv in
-    match Config.load ~spec:config ~getenv ~read ~path with
+    let source = Config.resolve ~name ~config:file ~getenv in
+    match Config.load ~spec:config ~getenv ~read ~source with
     | Error (`Config message) ->
         stderr (message ^ "\n");
         2
@@ -186,9 +186,14 @@ let run ?commands ?config_commands ?validate ?telemetry ~name ~config ~pp_err pr
                 request_stop ~sw (if signo = Sys.sigint then sigint_id else sigterm_id);
                 `Stop_daemon)
           in
+          (* ^napp-9x0s: nothing at a path is a read outcome, not a message, because the
+             Door's own default path may be absent — Config.load decodes it as the empty
+             document — while a file that is there and cannot be read is an error at
+             either path. *)
           let read path =
-            try Ok (Eio.Path.load Eio.Path.(env#fs / path))
-            with Eio.Io _ as e -> Error (Printexc.to_string e)
+            try Ok (Eio.Path.load Eio.Path.(env#fs / path)) with
+            | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
+            | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn))
           in
           run_for_test ?commands ?config_commands ?validate ?telemetry ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)

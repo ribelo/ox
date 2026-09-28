@@ -10,9 +10,12 @@
    ^notel-1stb: with `otlp_endpoint` it is also the only executable that proves a real
    eta_otel exporter on that path: the exporter's own release hook exports the record
    logged while the signal stops it, and `otlp_shutdown` adds the pre-fix consumer
-   pattern — an explicit shutdown registered with the same switch's release — beside it. *)
+   pattern — an explicit shutdown registered with the same switch's release — beside it.
+   ^napp-9x0s: the port carries a default too, so the same executable proves the real Door
+   starts with no config file at the default path; the tests that write a port still
+   override it. *)
 type config = {
-  port : int;
+  port : int; [@json.default 4242]
   telemetry : bool; [@json.default false]
   otlp_endpoint : string option;
   (* ^notel-1stb: the pre-fix consumer pattern — the exporter's shutdown registered with

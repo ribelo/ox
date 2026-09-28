@@ -1,7 +1,7 @@
 ---
 status: completed
 package: eta_app
-consumer: Leash milestone 1 (chrome-fuao, chrome-b288, chrome-fwnu) and milestone 6 (svc-dit8, svc-ljl3, svc-kzt6, svc-p67t, svc-gxhu, svc-tkor)
+consumer: Leash milestone 1 (chrome-fuao, chrome-b288, chrome-fwnu) and milestone 6 (svc-dit8, svc-ljl3, svc-kzt6, svc-p67t, svc-gxhu, svc-tkor, svc-x8rp)
 ---
 
 # App: the Door, the Service shape, and config
@@ -30,6 +30,7 @@ Every service needs the same twenty things at its edge — build the Eio environ
 12. As a service author, I want the Door to create the journal logger (`eta_observability`) with the service name and hand it in Env, so that logging is configured once. ^napp-mbpr
 13. As a test author, I want `Eta_app.run_for_test` (or the Door's internals exposed as functions taking an Env) so that a whole program runs in-process under `Eio_mock` without signals or a real config file. ^napp-433c
 14. As a kernel maintainer, I want `eta_app` to depend only on `eta`, `eta_observability`, `eio`, `eio_main`, `cmdliner`, `toml` and `yojson` — the last admitted by ADR-0007 for the Door's config codecs — so that the Door is small. Supersedes ^napp-fu4q. ^napp-deps
+15. As an operator, I want the service to start with its defaults when no config file exists at the default path, while a `--config` path that does not exist is still an error, so that a fresh install needs no file. ^napp-9x0s
 
 The validator half of the Door is its own spec, `docs/issues/door-validate/01-door-validate.md` (^napp-57qi, ^napp-noiv, ^napp-dnru): `?validate` keeps the signature it was delivered with.
 
@@ -40,6 +41,7 @@ The validator half of the Door is its own spec, `docs/issues/door-validate/01-do
 - The program's Switch is the root Switch; Services acquire against it; `serve` blocks in `Eio.Fiber.await_cancel`, so the Door's signal monitor ends the program by cancelling that switch.
 - Config pipeline (^nnoschema-boxo, ^nnoschema-5mdj): file → TOML (`toml` opam) → `Yojson.Safe.t` in `eta_app` → the consumer's derived `of_yojson` → the consumer's `env ~getenv` overrides → `?validate` → the program. A decode failure is the deriver's message, which names the dotted path and carries the offending subtree (bounded); TOML dates and non-finite floats are refused with the JSON pointer of the value.
 - The config the Door takes is `'cfg Eta_app.Config.t` (`of_yojson`, `yojson_of_t`, `env`): a plain type with `[@@deriving yojson]` is the schema (ADR-0008). `config check` prints `yojson_of_t` of the effective config after the overrides and only when the validator accepts.
+- An absent config file is an error only where the operator named it. `Config.resolve` says which path came from where — `` `Explicit` `` for `--config`, `` `Default` `` for the path resolved from the service name — and `Config.load` decodes the empty document for a `` `Default` `` that is `` `Missing` ``, so a config type whose fields all carry defaults starts with no file. The read outcome separates `` `Missing` `` from `` `Unreadable` ``, so a file that is there and cannot be read stays an error at either path, and `config check` loads through the same function, which is why it follows the same rule. ^napp-9x0s
 - Cmdliner provides `run`, `config check`, `--config`; a consumer may add subcommands through a hook.
 - Status is a value; `Eta_app.status_query` composes the thunks into one query, so status is read at call time and a Service can hold the query before `serve` blocks.
 
@@ -49,6 +51,7 @@ The validator half of the Door is its own spec, `docs/issues/door-validate/01-do
 - Config tests are table-driven over files and env — napp-2aa6, ^nnoschema-zi2m, ^nnoschema-5mdj.
 - An unknown config key is refused at boot by the derived decoder, which names the path and the key — ^napp-yplu, ^nnoschema-zi2m (Leash svc-ljl3).
 - The derived config's round-trip, a decode failure's path and subtree, the environment override, and redaction in `config check` — ^nnoschema-5mdj, ^nnoschema-zi2m, ^nnoschema-ifg0, ^nnoschema-36cj, ^nnoschema-boxo.
+- An absent config file is table-driven over the two sources and both subcommands: a missing default path starts a program whose config type has defaults and prints them from `config check`, a missing `--config` exits 2 naming the path, an unreadable file exits 2 either way, and a type without defaults still refuses the empty document. The fixture — the only executable that goes through `Eta_app.run` — runs with `XDG_CONFIG_HOME` set to a directory that is not there, so the real read's classification of Eio's `Not_found` is covered too — ^napp-9x0s.
 - A two-Service program with a fake dep proves the SERVICE shape composes, and its Services take the derived config type — napp-qg7n, napp-pn0a, napp-kq3b, ^nnoschema-p7fv.
 
 ## Out of Scope
@@ -63,5 +66,6 @@ Story ^napp-kq3b's `serve ~publish` shape is superseded by `docs/issues/review-f
 
 ## Verification
 
-`nix develop -c dune build @install`, `dune test` and `dune build @fmt` passed for the whole tree after row 16 (`^nnoschema-ttb5`) deleted the schema packages.
-`dune test test/app` runs 19 cases green, every case named for its story IDs: the derived config round-trip and environment override, the deriver's decode failure (missing field, wrong type, nested path, unknown key — each exit 2 with the program never entered), redaction in `config check`, the retained Door, Service, status, CLI and real-signal cases, and row 14's four validator cases, which are unchanged.
+`nix develop -c dune build @install`, `dune test` and `dune build @fmt` passed for the whole tree after row 16 (`^nnoschema-ttb5`) deleted the schema packages, and again with story 15 `^napp-9x0s` (Leash L24) landed.
+`dune test test/app` runs 28 cases green, every case named for its story IDs: the derived config round-trip and environment override, the deriver's decode failure (missing field, wrong type, nested path, unknown key — each exit 2 with the program never entered), redaction in `config check`, the retained Door, Service, status, CLI and real-signal cases, and row 14's four validator cases, which are unchanged.
+`^napp-9x0s` adds two of those cases: the absent-config table over both sources and both subcommands — a missing default file starts a program whose config type has defaults and `config check` prints them, a missing `--config` exits 2 naming the path, an unreadable file exits 2, and a type without defaults still refuses the empty document — and the fixture invocation that runs with `XDG_CONFIG_HOME` pointing at a directory that is not there, which is what proves the real `Eta_app.run` reads Eio's `Not_found` as absence.

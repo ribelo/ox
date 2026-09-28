@@ -6,7 +6,8 @@
    (derived config, environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
    (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
    ^nnoschema-boxo (TOML-to-JSON stays here), ^nnoschema-p7fv (a two-Service
-   program on a derived config type). ^napp-yplu's unknown-key refusal stands
+   program on a derived config type), ^napp-9x0s (an absent file at the default path is
+   the empty document). ^napp-yplu's unknown-key refusal stands
    (^nnoschema-zi2m carries it into the derived decoder); ^napp-tuvw's
    schema-declared overrides are superseded. *)
 open Eta_app
@@ -68,8 +69,10 @@ let good = "port = 42\n[models]\napi_key = \"file-secret\"\n"
 let getenv = function "HOME" -> Some "/home/demo" | _ -> None
 let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 
+(* ^napp-9x0s: [read] is the read outcome the Door sees; the default is a file that is
+   there and holds [text], which is what every other case wants. *)
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
-    ?telemetry ?(read_path = fun _ -> ()) ?(program = fun _ _ _ -> Ok ()) () =
+    ?telemetry ?(read_path = fun _ -> ()) ?read ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
         object
@@ -86,12 +89,45 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
           ~getenv:envvars
           ~read:(fun path ->
             read_path path;
-            Ok text)
+            match read with Some read -> read path | None -> Ok text)
           ~stderr:(fun text -> Buffer.add_string errors text)
           ~stdout:(fun text -> Buffer.add_string output text)
           ~argv program
       in
       (code, Buffer.contents output, Buffer.contents errors, memory))
+
+(* ^napp-9x0s: the story's shape is a config type whose fields carry defaults, so the
+   empty document the Door decodes for an absent default file is a valid configuration. *)
+type defaults = { port : int [@json.default 4242] } [@@deriving yojson]
+
+let defaults_config : defaults Config.t =
+  {
+    of_yojson = defaults_of_yojson;
+    yojson_of_t = yojson_of_defaults;
+    env = (fun ~getenv:_ settings -> settings);
+  }
+
+(* ^napp-9x0s: the Door over whichever config type a case needs, in a scheduler the case
+   owns. [config] is a parameter, not a default, so this stays polymorphic over the config
+   type, and one scheduler serves several invocations of the Door — only the argv and the
+   read outcome change between them. *)
+let door ~env ~config ?(argv = [| "demo" |]) ?(read_path = fun _ -> ())
+    ?(read = fun _ -> Ok "") ?(program = fun _ _ _ -> Ok ()) () =
+  let output = Buffer.create 80 and errors = Buffer.create 80 in
+  let code =
+    run_for_test ~env ~name:"demo" ~config ~pp_err
+      ~journal:
+        (Eta_observability.Logger.Memory.reporter
+           (Eta_observability.Logger.Memory.create ()))
+      ~getenv
+      ~read:(fun path ->
+        read_path path;
+        read path)
+      ~stderr:(fun text -> Buffer.add_string errors text)
+      ~stdout:(fun text -> Buffer.add_string output text)
+      ~argv program
+  in
+  (code, Buffer.contents output, Buffer.contents errors)
 
 (* ^nnoschema-5mdj: the derived decoder and encoder are the config's single
    description; ^nnoschema-ifg0: a secret field encodes as "<redacted>". *)
@@ -121,7 +157,7 @@ let test_derived_config () =
 
 let test_clean () =
   let started = ref false in
-  let program env settings _ =
+  let program env (settings : settings) _ =
     started := true;
     check_int "^nnoschema-5mdj derived config reaches the program" 42 settings.port;
     Eta_observability.Logger.info env.Env.logger "started";
@@ -310,6 +346,160 @@ let test_config () =
   check_int "XDG" 0 code;
   check_string "XDG path" "/xdg/demo/config.toml" !seen
 
+(* ^napp-9x0s: no --config and no file at the default path is the empty document, so the
+   program starts on the type's defaults; the same absence at a path the operator named is
+   an error naming it; config check follows the same rule; and a file that is there and
+   cannot be read is an error at the default path too. *)
+let test_absent_default_config () =
+  Eta_test.run (fun base _ ->
+      let env =
+        object
+          method clock = base#clock
+          method mono_clock = base#mono_clock
+          method fs = base#fs
+        end
+      in
+      let started = ref false and seen = ref "" in
+      let code, _, err =
+        door ~env ~config:defaults_config
+          ~read_path:(fun path -> seen := path)
+          ~read:(fun _ -> Error `Missing)
+          ~program:(fun _ (cfg : defaults) _ ->
+            started := true;
+            check_int "^napp-9x0s the empty document decoded to the defaults" 4242
+              cfg.port;
+            Ok ())
+          ()
+      in
+      check_int "^napp-9x0s a missing default file starts the program" 0 code;
+      check_string "^napp-9x0s and reports no error" "" err;
+      check_string "^napp-9x0s the Door read its own default path"
+        "/home/demo/.config/demo/config.toml" !seen;
+      Alcotest.(check bool) "^napp-9x0s the program ran" true !started;
+      let code, out, err =
+        door ~env ~config:defaults_config
+          ~argv:[| "demo"; "config"; "check" |]
+          ~read:(fun _ -> Error `Missing)
+          ~program:(fun _ _ _ -> failwith "check must not start the program")
+          ()
+      in
+      check_int "^napp-9x0s config check of an absent default file exits 0" 0 code;
+      check_string "no error" "" err;
+      expect_part out "\"port\":4242";
+      let code, _, err =
+        door ~env ~config:defaults_config
+          ~argv:[| "demo"; "--config"; "absent.toml" |]
+          ~read:(fun _ -> Error `Missing)
+          ~program:(fun _ _ _ -> failwith "must not start the program")
+          ()
+      in
+      check_int "^napp-9x0s an absent --config path exits 2" 2 code;
+      expect_part err "absent.toml";
+      expect_part err "no such file";
+      let code, out, err =
+        door ~env ~config:defaults_config
+          ~argv:[| "demo"; "config"; "check"; "--config"; "absent.toml" |]
+          ~read:(fun _ -> Error `Missing)
+          ~program:(fun _ _ _ -> failwith "must not start the program")
+          ()
+      in
+      check_int "^napp-9x0s config check agrees about --config" 2 code;
+      check_string "^napp-9x0s and prints no config" "" out;
+      expect_part err "absent.toml";
+      let code, _, err =
+        door ~env ~config:defaults_config
+          ~read:(fun _ -> Error (`Unreadable "permission denied"))
+          ~program:(fun _ _ _ -> failwith "must not start the program")
+          ()
+      in
+      check_int "^napp-9x0s a default file that cannot be read exits 2" 2 code;
+      expect_part err "/home/demo/.config/demo/config.toml";
+      expect_part err "permission denied";
+      (* The absence is decoded, not tolerated blindly: a config type without defaults
+         still refuses the empty document. *)
+      let code, _, err =
+        door ~env ~config
+          ~read:(fun _ -> Error `Missing)
+          ~program:(fun _ _ _ -> failwith "must not start the program")
+          ()
+      in
+      check_int "^napp-9x0s a type without defaults still refuses the empty document" 2
+        code;
+      expect_part err "missing field models")
+
+(* ^napp-9x0s: the Door's own read — not only run_for_test's — classifies Eio's Not_found
+   as absence, so the real executable starts on its defaults when the default path holds no
+   file, config check prints those defaults, and the path --config names must exist. The
+   fixture runs with XDG_CONFIG_HOME pointing at a directory that is not there. *)
+let test_default_path_absent () =
+  let absent =
+    Filename.concat
+      (Filename.get_temp_dir_name ())
+      (Printf.sprintf "eta-app-absent-%d" (Unix.getpid ()))
+  in
+  let missing = Filename.concat absent "config.toml" in
+  let env =
+    Array.of_list
+      (("XDG_CONFIG_HOME=" ^ absent)
+      :: List.filter
+           (fun entry -> not (String.starts_with ~prefix:"XDG_CONFIG_HOME=" entry))
+           (Array.to_list (Unix.environment ())))
+  in
+  Eio_main.run (fun base ->
+      Eio.Switch.run (fun sw ->
+          let fixture =
+            Filename.concat (Filename.dirname Sys.executable_name) "signal_fixture.exe"
+          in
+          let spawn argv =
+            match
+              Eta_process.Child.spawn ~sw ~clock:base#clock ~mgr:base#process_mgr ~argv
+                ~env ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+            with
+            | Ok child -> child
+            | Error _ -> Alcotest.fail "invalid absent-config fixture spawn"
+          in
+          let await child =
+            Eio.Time.with_timeout_exn base#clock 5. (fun () ->
+                Eta_process.Child.await child)
+          in
+          let code_of status =
+            match status with Eta_process.Child.Exited code -> code | _ -> -1
+          in
+          let printed child =
+            Eio.Flow.read_all (Option.get (Eta_process.Child.stdout child))
+          in
+          let errors child =
+            Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+          in
+          (* No file at the default path: the program starts, as a fresh install must. *)
+          let child = spawn [ fixture ] in
+          let ready =
+            Eio.Time.with_timeout_exn base#clock 5. (fun () ->
+                Eio.Buf_read.line
+                  (Eio.Buf_read.of_flow ~max_size:1024
+                     (Option.get (Eta_process.Child.stdout child))))
+          in
+          check_string "Door ready" "ready" ready;
+          Eta_process.Child.signal child Sys.sigterm;
+          check_int "^napp-9x0s the real Door starts with no config file" 0
+            (code_of (await child));
+          (* config check sees the same defaults. *)
+          let child = spawn [ fixture; "config"; "check" ] in
+          let status = await child in
+          let out = printed child and err = errors child in
+          check_int "^napp-9x0s the real config check exits zero" 0 (code_of status);
+          check_string "no diagnostics" "" err;
+          expect_part out "\"port\":4242";
+          (* An explicit --config that is not there is still an error naming it. *)
+          let child = spawn [ fixture; "config"; "check"; "--config"; missing ] in
+          let status = await child in
+          let out = printed child and err = errors child in
+          check_int "^napp-9x0s a missing --config exits 2" 2 (code_of status);
+          check_string "^napp-9x0s and prints no config" "" out;
+          expect_part err missing;
+          expect_part err "no such file"))
+
 (* ^nnoschema-zi2m: a decode failure prints the deriver's message — the dotted
    path of the offending value plus the value itself, bounded — and exits 2
    without starting. A key the type does not name is such a failure: ^napp-yplu's
@@ -367,7 +557,7 @@ let test_env_override_and_check () =
   in
   let code, _, err, _ =
     run ~envvars ~text:"port = 3\n[models]\n"
-      ~program:(fun _ cfg _ ->
+      ~program:(fun _ (cfg : settings) _ ->
         check_int "^nnoschema-5mdj typed environment override" 73 cfg.port;
         check_string "the environment fills the optional secret" "override-secret"
           (Eta_observability.Redact.expose (Option.get cfg.models.api_key));
@@ -434,7 +624,7 @@ let test_validate_env_and_config () =
     | _ -> None
   in
   let seen_port = ref 0 in
-  let validate env cfg =
+  let validate env (cfg : settings) =
     seen_port := cfg.port;
     Eta_observability.Logger.info env.Env.logger "validated";
     Ok ()
@@ -487,7 +677,7 @@ let test_validate_defect () =
    prints the config only when it accepts. *)
 let test_check_validates () =
   let calls = ref 0 in
-  let validate _ cfg =
+  let validate _ (cfg : settings) =
     incr calls;
     if cfg.port = 42 then Ok ()
     else Error [ { Config.pointer = "/port"; message = "port out of range" } ]
@@ -713,12 +903,12 @@ let test_cli_and_io_errors () =
             (Eta_observability.Logger.Memory.reporter
                (Eta_observability.Logger.Memory.create ()))
           ~getenv
-          ~read:(fun _ -> Error "no such file")
+          ~read:(fun _ -> Error (`Unreadable "no such file"))
           ~stderr:(fun text -> Buffer.add_string err text)
           ~stdout:ignore ~argv:[| "demo" |]
           (fun _ _ _ -> failwith "must not start")
       in
-      check_int "^napp-2aa6 unreadable config" 2 code;
+      check_int "^napp-2aa6 ^napp-9x0s unreadable config" 2 code;
       expect_part (Buffer.contents err) "no such file")
 
 (* ^napp-57qi: Eta_app.run itself, not only run_for_test, runs the validator before the
@@ -1009,6 +1199,9 @@ let () =
             `Quick test_status_query_before_serve;
           Alcotest.test_case "^napp-78pf child fiber stop" `Quick test_daemon_stop;
           Alcotest.test_case "^napp-2aa6 path precedence" `Quick test_config;
+          Alcotest.test_case "^napp-9x0s absent config" `Quick test_absent_default_config;
+          Alcotest.test_case "^napp-9x0s absent default path, real Door" `Quick
+            test_default_path_absent;
           Alcotest.test_case "^nnoschema-zi2m decode failures" `Quick test_decode_failure;
           Alcotest.test_case
             "^nnoschema-5mdj ^nnoschema-36cj ^nnoschema-ifg0 env and check" `Quick

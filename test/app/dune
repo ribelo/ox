@@ -22,7 +22,8 @@
   eio.mock
   cmdliner
   yojson
-  alcotest)
+  alcotest
+  unix)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))

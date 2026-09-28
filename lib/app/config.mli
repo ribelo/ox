@@ -30,9 +30,25 @@ type 'cfg t = {
           cannot be parsed is ignored; bounds belong in the Door's validator. *)
 }
 
+type read_error = [ `Missing | `Unreadable of string ]
+(** Why reading the config file failed: [`Missing] is nothing at that path,
+    [`Unreadable message] a path that exists and could not be read. The Door's rule turns
+    on the difference, so a reader that cannot tell them apart cannot supply it.
+    ^napp-9x0s *)
+
+type source = [ `Default of string | `Explicit of string ]
+(** Where the config text comes from: [`Explicit] is a path the operator passed with
+    --config, [`Default] the path {!path} resolves for the service's name. Only the latter
+    may be absent. A value: it owns no resource. ^napp-9x0s *)
+
 val path :
   name:string -> config:string option -> getenv:(string -> string option) -> string
 (** Resolve --config or XDG_CONFIG_HOME, falling back to HOME/.config. *)
+
+val resolve :
+  name:string -> config:string option -> getenv:(string -> string option) -> source
+(** [resolve] is {!path} with its origin kept, which is what {!load} needs to decide
+    whether an absent file is allowed. ^napp-9x0s *)
 
 val decode :
   spec:'cfg t -> getenv:(string -> string option) -> string -> ('cfg, error) result
@@ -43,7 +59,11 @@ val decode :
 val load :
   spec:'cfg t ->
   getenv:(string -> string option) ->
-  read:(string -> (string, string) result) ->
-  path:string ->
+  read:(string -> (string, read_error) result) ->
+  source:source ->
   ('cfg, error) result
-(** Read then decode; [read] is supplied by the Door to allow in-memory tests. *)
+(** Read then decode; [read] is supplied by the Door to allow in-memory tests. A
+    [`Default] source that is [`Missing] decodes the empty document — so a config type
+    whose fields all carry defaults starts a fresh install with no file — while an
+    [`Explicit] source that is [`Missing] is an error naming the path, and an
+    [`Unreadable] file is an error naming the path either way. ^napp-9x0s *)
