@@ -151,3 +151,107 @@ let log_json (r : Eta_observability.Logger.record) : yj =
 let encode_logs_request ~resource_attrs ~scope_name records =
   encode_otlp_request ~resource_attrs ~scope_name ~wrapper_key:"resourceLogs"
     ~scope_key:"scopeLogs" ~records_key:"logRecords" log_json records
+
+(* Metric rows: copied from v1:lib/otel/otlp_json.ml, less the gauge, frequency and
+   summary encoders, which no story in row 34 pulls. *)
+module Metric_aggregation = Metric_aggregation
+
+(* ProtoJSON represents the special IEEE-754 doubles as the JSON strings "NaN",
+   "Infinity" and "-Infinity"; a bare NaN/Infinity/-Infinity token is not JSON and no
+   strict consumer accepts it. Every supported double result crosses this one conversion,
+   while ordinary finite doubles -- including signed zero -- keep their JSON number
+   encoding. Field-specific admission is deliberately not relaxed here: a value that must
+   be finite (a histogram boundary) is still rejected by its own validator instead of
+   being made representable on the wire. *)
+let wire_double value : yj =
+  match classify_float value with
+  | FP_nan -> `String "NaN"
+  | FP_infinite -> `String (if value > 0.0 then "Infinity" else "-Infinity")
+  | FP_normal | FP_subnormal | FP_zero -> `Float value
+
+(* Metric window timestamps are already nanoseconds in an [int], not the [int64] a span
+   carries, so they use their own decimal-string conversion. *)
+let ns_string n = `String (string_of_int n)
+
+let value_field (v : Meter.number) =
+  match v with
+  | Int n -> ("asInt", `String (string_of_int n))
+  | Float f -> ("asDouble", wire_double f)
+
+let number_data_point_json (key : Metric_aggregation.Metric_key.t) value start_ts end_ts :
+    yj =
+  `Assoc
+    [
+      ("attributes", attrs_json key.attrs);
+      ("startTimeUnixNano", ns_string start_ts);
+      ("timeUnixNano", ns_string end_ts);
+      value_field value;
+    ]
+
+let count_json count = `String (string_of_int count)
+
+let[@inline always] add_min_max fields ~min ~max =
+  let fields =
+    match min with None -> fields | Some value -> ("min", wire_double value) :: fields
+  in
+  match max with None -> fields | Some value -> ("max", wire_double value) :: fields
+
+let histogram_data_point_json (key : Metric_aggregation.Metric_key.t)
+    (state : Metric_aggregation.histogram_state) start_ts end_ts =
+  let fields =
+    [
+      ("attributes", attrs_json key.attrs);
+      ("startTimeUnixNano", ns_string start_ts);
+      ("timeUnixNano", ns_string end_ts);
+      ("count", count_json state.count);
+      ("sum", wire_double state.sum);
+      ("bucketCounts", `List (List.map count_json state.bucket_counts));
+      (* Explicit bounds are configuration, not samples: Meter.histogram_config admits
+         only finite strictly ascending values, so a nonfinite bound cannot reach this
+         encoder and is not made representable here. *)
+      ( "explicitBounds",
+        `List (List.map (fun bound -> `Float bound) state.explicit_bounds) );
+    ]
+  in
+  `Assoc (add_min_max fields ~min:state.min ~max:state.max)
+
+(* ^notel-8ixo: both counters are delta sums, so a counter and an up-down counter differ
+   only in [isMonotonic]: an export window reports the increments it holds. v1 encoded the
+   non-monotonic counter as a cumulative value because its meter callers passed running
+   totals; row 34's instruments add deltas, and an up-down counter that adds [-1] must not
+   report [-1] as its total. *)
+let metric_json (key : Metric_aggregation.Metric_key.t) point : yj =
+  let value, start_ts, end_ts = point in
+  let body : yj =
+    match (key.kind, value) with
+    | Meter.Counter { monotonic }, Metric_aggregation.Sum value ->
+        `Assoc
+          [
+            ("dataPoints", `List [ number_data_point_json key value start_ts end_ts ]);
+            ("aggregationTemporality", `Int 1);
+            ("isMonotonic", `Bool monotonic);
+          ]
+    | Histogram _, Metric_aggregation.Histogram state ->
+        `Assoc
+          [
+            ("dataPoints", `List [ histogram_data_point_json key state start_ts end_ts ]);
+            ("aggregationTemporality", `Int 1);
+          ]
+    | _ -> invalid_arg "Eta_otel.Otlp_json.metric_json: metric kind/value mismatch"
+  in
+  let kind_field =
+    match key.kind with Meter.Counter _ -> "sum" | Histogram _ -> "histogram"
+  in
+  `Assoc
+    [
+      ("name", `String key.name);
+      ("description", `String key.description);
+      ("unit", `String key.unit_);
+      (kind_field, body);
+    ]
+
+let encode_metrics_request ~resource_attrs ~scope_name rows =
+  encode_otlp_request ~resource_attrs ~scope_name ~wrapper_key:"resourceMetrics"
+    ~scope_key:"scopeMetrics" ~records_key:"metrics"
+    (fun (key, point) -> metric_json key point)
+    rows

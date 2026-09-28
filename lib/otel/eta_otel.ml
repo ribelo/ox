@@ -1,6 +1,8 @@
 module Logger = Eta_observability.Logger
 module Otlp_json = Otlp_json
 module Json = Otlp_json
+module Meter = Meter
+module Metric_aggregation = Metric_aggregation
 
 type error =
   [ `Invalid_config of string
@@ -33,6 +35,7 @@ type t = {
   http_client : Eta_http.Client.t;
   logs_url : string;
   traces_url : string;
+  metrics_url : string;
   resource_attrs : (string * string) list;
   scope_name : string;
   batch_size : int;
@@ -41,8 +44,16 @@ type t = {
   headers : (string * string) list;
   on_error : error -> unit;
   with_timeout : float -> (unit -> (unit, error) result) -> (unit, error) result;
+  (* ^notel-8ixo: the worker blocks here at most [seconds]: a command when one arrives,
+     [None] when that wait expires. Built in [create] because the exporter's clock is
+     polymorphic and a record field cannot hold it. *)
+  wait : float -> command option;
+  metrics_interval_ms : int;
+  now_ms : unit -> int;
   ids : Random.State.t;
   mutable dropped : int;
+  metrics : Metric_aggregation.t;
+  mutable pending_metric_rows : Metric_aggregation.row list option;
   mutable closed : bool;
   mutable stopping : bool;
   mutable worker_done : bool;
@@ -121,35 +132,38 @@ let reporter t =
           | None -> submit t (Log record))
       | _ -> submit t (Log record))
 
+(* The one place a signal leaves the exporter: content type first, the caller's headers
+   beside it, the configured deadline, and never a response body. Metrics, logs and traces
+   share it, so a collector that accepts one accepts the others. *)
+let post t ~url body =
+  match
+    Eta_http.Client.request t.http_client ~method_:"POST" ~url
+      ~headers:(("content-type", "application/json") :: t.headers)
+      ~body:(Bytes.of_string body) ?deadline:t.request_deadline ~max_body_bytes:0 ()
+  with
+  | Ok { status; _ } when status >= 200 && status < 300 -> Ok ()
+  | Ok { status; _ } -> Error (`Status status)
+  | Error error -> Error (`Http error)
+
 let send t items =
   match items with
   | [] -> Ok ()
   | first :: _ -> (
-      let body, url =
-        match first with
-        | Log _ ->
-            let records =
-              List.filter_map (function Log r -> Some r | Span _ -> None) items
-            in
-            ( Json.encode_logs_request ~resource_attrs:t.resource_attrs
-                ~scope_name:t.scope_name records,
-              t.logs_url )
-        | Span _ ->
-            let spans =
-              List.filter_map (function Span s -> Some s | Log _ -> None) items
-            in
-            ( Json.encode_traces_request ~resource_attrs:t.resource_attrs
-                ~scope_name:t.scope_name spans,
-              t.traces_url )
-      in
-      match
-        Eta_http.Client.request t.http_client ~method_:"POST" ~url
-          ~headers:(("content-type", "application/json") :: t.headers)
-          ~body:(Bytes.of_string body) ?deadline:t.request_deadline ~max_body_bytes:0 ()
-      with
-      | Ok { status; _ } when status >= 200 && status < 300 -> Ok ()
-      | Ok { status; _ } -> Error (`Status status)
-      | Error error -> Error (`Http error))
+      match first with
+      | Log _ ->
+          let records =
+            List.filter_map (function Log r -> Some r | Span _ -> None) items
+          in
+          post t ~url:t.logs_url
+            (Json.encode_logs_request ~resource_attrs:t.resource_attrs
+               ~scope_name:t.scope_name records)
+      | Span _ ->
+          let spans =
+            List.filter_map (function Span s -> Some s | Log _ -> None) items
+          in
+          post t ~url:t.traces_url
+            (Json.encode_traces_request ~resource_attrs:t.resource_attrs
+               ~scope_name:t.scope_name spans))
 
 let same_signal a b =
   match (a, b) with Log _, Log _ | Span _, Span _ -> true | _ -> false
@@ -175,6 +189,33 @@ let settled t =
   let result = match t.first_failure with None -> Ok () | Some error -> Error error in
   t.first_failure <- None;
   result
+
+let send_metrics t rows =
+  if rows = [] then Ok ()
+  else
+    post t ~url:t.metrics_url
+      (Json.encode_metrics_request ~resource_attrs:t.resource_attrs
+         ~scope_name:t.scope_name rows)
+
+(* ^notel-8ixo: one metrics window leaves the exporter here. The window a worker was
+   posting when it was cancelled is recorded in [pending_metric_rows], so the release
+   drain re-sends it before the window the exporter still holds: an interruption costs a
+   duplicate window, never a lost one. Aggregation is at record time, so a full log or
+   trace queue never costs a measurement. *)
+let export_metrics t =
+  let send_window rows =
+    if rows <> [] then begin
+      t.pending_metric_rows <- Some rows;
+      note t (send_metrics t rows);
+      t.pending_metric_rows <- None
+    end
+  in
+  (match t.pending_metric_rows with
+  | Some rows ->
+      t.pending_metric_rows <- None;
+      send_window rows
+  | None -> ());
+  send_window (Metric_aggregation.drain t.metrics)
 
 (* ^notel-1stb: exports everything the queue still holds, in the same signal batches the
    worker would have sent, and settles every flush waiting there. Eio cancels a switch's
@@ -218,6 +259,7 @@ let drain t =
             batch :: batches rest
       in
       List.iter (fun batch -> note t (send t batch)) (batches (List.rev !items));
+      export_metrics t;
       let result = settled t in
       List.iter (fun resolve -> Eio.Promise.resolve resolve result) !flushes;
       if !stopped then
@@ -242,20 +284,33 @@ let finish t =
       | None -> drained)
 
 let worker t =
-  let rec loop () =
+  (* ^notel-8ixo: the metrics window is exported once the interval has elapsed, whether
+     the worker spent it idle or carrying logs and traces, so a busy exporter cannot
+     starve its metrics; each export re-arms the deadline, and the wait is bounded by
+     the time that remains. A flush or a stop exports the window there and then, because
+     it must settle what was recorded before it. *)
+  let due = ref (t.now_ms () + t.metrics_interval_ms) in
+  let flush_window () =
+    export_metrics t;
+    due := t.now_ms () + t.metrics_interval_ms
+  in
+  let rec loop () : unit =
     let command =
       match t.pending with
       | Some command ->
           t.pending <- None;
-          command
-      | None -> Eio.Stream.take t.queue
+          Some command
+      | None -> t.wait (float_of_int (max 0 (!due - t.now_ms ())) /. 1000.)
     in
-    match command with
-    | Flush resolve ->
-        Eio.Promise.resolve resolve (settled t);
-        loop ()
-    | Stop -> Eio.Promise.resolve (ending t).resolve (settled t)
-    | Item item ->
+    (match command with
+    | None -> ()
+    | Some (Flush resolve) ->
+        flush_window ();
+        Eio.Promise.resolve resolve (settled t)
+    | Some Stop ->
+        flush_window ();
+        Eio.Promise.resolve (ending t).resolve (settled t)
+    | Some (Item item) ->
         let rec gather count reversed =
           if count = t.batch_size then List.rev reversed
           else
@@ -275,15 +330,20 @@ let worker t =
         t.in_flight <- gather 1 [ item ];
         note t (send t t.in_flight);
         t.in_flight <- [];
-        loop ()
+        ());
+    if t.now_ms () >= !due then flush_window ();
+    loop ()
   in
   loop ()
 
 let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_otel")
     ?(resource = []) ?(headers = []) ?(batch_size = 64) ?(max_queue = 1024)
+    ?(metrics_interval = Eta.Duration.seconds 60) ?(max_metric_series = 1024)
     ?request_deadline ?(on_error = fun _ -> ()) () =
-  if batch_size < 1 || max_queue < 1 then
-    Error (`Invalid_config "batch_size and max_queue must be positive")
+  if batch_size < 1 || max_queue < 1 || max_metric_series < 1 then
+    Error (`Invalid_config "batch_size, max_queue and max_metric_series must be positive")
+  else if Eta.Duration.compare metrics_interval Eta.Duration.zero <= 0 then
+    Error (`Invalid_config "metrics_interval must be positive")
   else if String.trim service_name = "" then
     Error (`Invalid_config "service_name must not be empty")
   else
@@ -298,12 +358,14 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
             String.sub endpoint 0 (String.length endpoint - 1)
           else endpoint
         in
+        let queue = Eio.Stream.create max_queue in
         let t =
           {
-            queue = Eio.Stream.create max_queue;
+            queue;
             http_client;
             logs_url = base ^ "/v1/logs";
             traces_url = base ^ "/v1/traces";
+            metrics_url = base ^ "/v1/metrics";
             (* ^notel-jzdm: the exporter's own identity stays first; a caller's duplicate
                [service.name] would be a second, contradictory resource identity. *)
             resource_attrs =
@@ -316,8 +378,20 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
             headers;
             on_error;
             with_timeout = (fun seconds f -> Eio.Time.with_timeout_exn clock seconds f);
+            wait =
+              (fun seconds ->
+                match
+                  Eio.Time.with_timeout clock seconds (fun () ->
+                      Ok (Eio.Stream.take queue))
+                with
+                | Ok command -> Some command
+                | Error `Timeout -> None);
+            metrics_interval_ms = max 1 (Eta.Duration.to_ms metrics_interval);
+            now_ms = (fun () -> int_of_float (Eio.Time.now clock *. 1000.));
             ids = Random.State.make_self_init ();
             dropped = 0;
+            metrics = Metric_aggregation.create ~max_series:max_metric_series;
+            pending_metric_rows = None;
             closed = false;
             stopping = false;
             worker_done = false;
@@ -338,6 +412,14 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
            records they log are still exported. *)
         Eio.Switch.on_release sw (fun () -> ignore (finish t : (unit, error) result));
         Ok t
+
+(* ^notel-bez2: instruments record into the exporter's own aggregation table — one table
+   per exporter, single domain — and a record that would add a series beyond
+   [max_metric_series] is counted as dropped instead of growing memory without bound. *)
+let meter t =
+  Meter.create ~now_ms:t.now_ms ~record:(fun point ->
+      if not t.closed then
+        if not (Metric_aggregation.add t.metrics point) then t.dropped <- t.dropped + 1)
 
 let flush t =
   if t.closed then Error `Closed

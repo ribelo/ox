@@ -40,6 +40,27 @@ let log_records received =
       else [])
     received
 
+(* Every OTLP metric row the collector received, in arrival order. *)
+let metric_rows received =
+  List.concat_map
+    (fun request ->
+      if contains request.target "/v1/metrics" then
+        request.body |> first "resourceMetrics" |> first "scopeMetrics"
+        |> member "metrics" |> list
+      else [])
+    received
+
+let metric_row name received =
+  List.find_opt (fun row -> row |> member "name" |> string = name) (metric_rows received)
+
+let metric_named name received =
+  match metric_row name received with
+  | Some row -> row
+  | None -> Alcotest.failf "no metric named %s on the wire" name
+
+let data_point metric field =
+  metric |> member field |> member "dataPoints" |> list |> List.hd
+
 let wire_encoding () =
   (* ^notel-z7dk: v1 OTLP resource/scope/span envelope and decimal ns strings. *)
   let span : O.Otlp_json.span =
@@ -96,6 +117,199 @@ let wire_encoding () =
   let retry = List.find (fun attr -> attr |> member "key" |> string = "retry") attrs in
   check_string "integer attribute encoded as OTLP intValue" "3"
     (retry |> member "value" |> member "intValue" |> string)
+
+(* A measurement exactly as the exporter records it, so the wire tests can bypass the
+   instruments and assert the encoder boundary itself. *)
+let metric ?(description = "") ?(unit_ = "") ?(attrs = []) ?(ts_ms = 1_000) ~name ~kind
+    value : O.Meter.point =
+  { name; description; unit_; attrs; kind; value; ts_ms }
+
+let encode_metrics ?(resource_attrs = [ ("service.name", "nema") ]) points =
+  let rows = O.Metric_aggregation.aggregate_points points in
+  O.Otlp_json.encode_metrics_request ~resource_attrs ~scope_name:"eta_otel" rows |> json
+
+let metrics_of body =
+  body |> first "resourceMetrics" |> first "scopeMetrics" |> member "metrics" |> list
+
+let metric_of name body =
+  match
+    List.find_opt (fun row -> row |> member "name" |> string = name) (metrics_of body)
+  with
+  | Some row -> row
+  | None -> Alcotest.failf "no metric named %s in %s" name (Yojson.Safe.to_string body)
+
+let attr attrs key =
+  match List.find_opt (fun row -> row |> member "key" |> string = key) attrs with
+  | Some row -> row |> member "value" |> member "stringValue" |> string
+  | None -> "<absent>"
+
+(* Copied from v1's metric assertions: an overflowing integer sum must leave the integer
+   path, and a saturated timestamp must never render as a negative decimal. *)
+let rec json_has_negative_as_int = function
+  | `Assoc fields ->
+      List.exists
+        (function
+          | "asInt", `String s -> String.length s > 0 && Char.equal s.[0] '-'
+          | _, value -> json_has_negative_as_int value)
+        fields
+  | `List values -> List.exists json_has_negative_as_int values
+  | _ -> false
+
+let rec json_has_negative_time = function
+  | `Assoc fields ->
+      List.exists
+        (function
+          | ("timeUnixNano" | "startTimeUnixNano" | "observedTimeUnixNano"), `String s ->
+              String.length s > 0 && Char.equal s.[0] '-'
+          | _, value -> json_has_negative_time value)
+        fields
+  | `List values -> List.exists json_has_negative_time values
+  | _ -> false
+
+(* ^notel-bez2 ^notel-8ixo: v1's pure OTLP metric encoding kept — resource and scope
+   envelopes, delta sums, bucket counts of bounds+1, decimal-string integers and
+   timestamps, and the ProtoJSON spellings of the special doubles. *)
+let metric_wire_encoding () =
+  let counter = O.Meter.Counter { monotonic = true } in
+  let up_down = O.Meter.Counter { monotonic = false } in
+  let histogram = O.Meter.Histogram (O.Meter.histogram_config [ 10.0; 20.0 ]) in
+  let body =
+    encode_metrics
+      [
+        metric ~name:"http.requests" ~unit_:"{request}"
+          ~attrs:[ ("route", "/query") ]
+          ~kind:counter (Int 2);
+        metric ~name:"http.requests" ~unit_:"{request}"
+          ~attrs:[ ("route", "/query") ]
+          ~kind:counter (Int 1);
+        metric ~name:"queue.depth" ~kind:up_down (Int 5);
+        metric ~name:"queue.depth" ~kind:up_down (Int (-7));
+        metric ~name:"http.duration" ~unit_:"ms" ~kind:histogram (Float 5.0);
+        metric ~name:"http.duration" ~unit_:"ms" ~kind:histogram (Float 15.0);
+        metric ~name:"http.duration" ~unit_:"ms" ~kind:histogram (Float 25.0);
+      ]
+  in
+  let resource =
+    body |> first "resourceMetrics" |> member "resource" |> member "attributes" |> list
+  in
+  check_string "the resource identity" "nema" (attr resource "service.name");
+  check_string "the scope" "eta_otel"
+    (body |> first "resourceMetrics" |> first "scopeMetrics" |> member "scope"
+   |> member "name" |> string);
+  let requests = metric_of "http.requests" body in
+  let sum = requests |> member "sum" in
+  check_int "a counter is a delta sum" 1
+    (sum |> member "aggregationTemporality" |> Yojson.Safe.Util.to_int);
+  Alcotest.(check bool)
+    "a counter is monotonic" true
+    (sum |> member "isMonotonic" |> Yojson.Safe.Util.to_bool);
+  let point = data_point requests "sum" in
+  check_string "increments are summed" "3" (point |> member "asInt" |> string);
+  check_string "the unit" "{request}" (requests |> member "unit" |> string);
+  check_string "the series attributes" "/query"
+    (attr (point |> member "attributes" |> list) "route");
+  check_string "the window start is a decimal nanosecond string" "1000000000"
+    (point |> member "startTimeUnixNano" |> string);
+  let depth = metric_of "queue.depth" body |> member "sum" in
+  check_int "an up-down counter is a delta sum too" 1
+    (depth |> member "aggregationTemporality" |> Yojson.Safe.Util.to_int);
+  Alcotest.(check bool)
+    "and not monotonic" false
+    (depth |> member "isMonotonic" |> Yojson.Safe.Util.to_bool);
+  check_string "signed increments are summed" "-2"
+    (data_point (metric_of "queue.depth" body) "sum" |> member "asInt" |> string);
+  let durations = metric_of "http.duration" body in
+  let histogram = durations |> member "histogram" in
+  check_int "a histogram is a delta histogram" 1
+    (histogram |> member "aggregationTemporality" |> Yojson.Safe.Util.to_int);
+  let point = data_point durations "histogram" in
+  check_string "count" "3" (point |> member "count" |> string);
+  Alcotest.(check (float 0.001))
+    "sum" 45.0
+    (point |> member "sum" |> Yojson.Safe.Util.to_float);
+  Alcotest.(check (list string))
+    "one count per bucket, overflow last" [ "1"; "1"; "1" ]
+    (point |> member "bucketCounts" |> list |> List.map string);
+  Alcotest.(check (list (float 0.001)))
+    "explicitBounds are configuration" [ 10.0; 20.0 ]
+    (point |> member "explicitBounds" |> list |> List.map Yojson.Safe.Util.to_float);
+  let overflow =
+    encode_metrics
+      [
+        metric ~name:"wrap" ~kind:counter (Int (max_int - 1));
+        metric ~name:"wrap" ~kind:counter (Int 3);
+      ]
+  in
+  Alcotest.(check bool)
+    "an integer sum that overflows leaves the integer path" false
+    (json_has_negative_as_int overflow);
+  let late =
+    encode_metrics
+      [ metric ~name:"late" ~kind:counter ~ts_ms:((max_int / 1_000_000) + 1) (Int 1) ]
+  in
+  Alcotest.(check bool)
+    "a saturated timestamp never renders negative" false (json_has_negative_time late);
+  let special = encode_metrics [ metric ~name:"special" ~kind:counter (Float nan) ] in
+  check_string "NaN crosses the wire in its ProtoJSON spelling" "NaN"
+    (data_point (metric_of "special" special) "sum" |> member "asDouble" |> string)
+
+(* ^notel-bez2: the histogram's explicit bounds are validated where the instrument is
+   built, and each instrument records the point its caller intended. *)
+let instruments_stamp_points () =
+  let seen = ref [] in
+  let meter =
+    O.Meter.create ~now_ms:(fun () -> 42) ~record:(fun p -> seen := p :: !seen)
+  in
+  let requests =
+    O.Meter.counter meter ~name:"http.requests" ~unit_:"{request}" ~description:"served"
+      ~attrs:[ ("route", "/query") ]
+      ()
+  in
+  O.Meter.add requests 2.5;
+  let durations = O.Meter.histogram meter ~boundaries:[ 10.0 ] ~name:"http.duration" () in
+  O.Meter.record durations 7.0;
+  let points = List.rev !seen in
+  Alcotest.(check int) "one point per measurement" 2 (List.length points);
+  let counter : O.Meter.point = List.nth points 0 in
+  check_string "the counter's name" "http.requests" counter.name;
+  check_string "its unit" "{request}" counter.unit_;
+  check_string "its description" "served" counter.description;
+  check_string "its attribute" "/query" (List.assoc "route" counter.attrs);
+  Alcotest.(check bool)
+    "a counter is monotonic" true
+    (counter.kind = O.Meter.Counter { monotonic = true });
+  Alcotest.(check bool) "recorded as a double" true (counter.value = O.Meter.Float 2.5);
+  check_int "stamped by the meter's clock" 42 counter.ts_ms;
+  let sample : O.Meter.point = List.nth points 1 in
+  check_string "the histogram's name" "http.duration" sample.name;
+  Alcotest.(check bool) "the sample value" true (sample.value = O.Meter.Float 7.0);
+  Alcotest.(check bool)
+    "the instrument's bounds" true
+    (sample.kind = O.Meter.Histogram (O.Meter.histogram_config [ 10.0 ]));
+  let reject bounds =
+    match O.Meter.histogram meter ~boundaries:bounds ~name:"h" () with
+    | exception Invalid_argument _ -> ()
+    | _ ->
+        Alcotest.failf "expected Invalid_argument for bounds %s"
+          (String.concat ";" (List.map string_of_float bounds))
+  in
+  reject [ nan ];
+  reject [ infinity ];
+  reject [ neg_infinity ];
+  reject [ 2.0; 1.0 ];
+  reject [ 1.0; 1.0 ];
+  reject [ 0.0; -0.0 ];
+  Alcotest.(check (list (float 0.0)))
+    "the empty bound list is valid" []
+    (O.Meter.histogram_boundaries (O.Meter.histogram_config []));
+  ignore (O.Meter.histogram meter ~boundaries:[ -1.0; 0.0; 1.0 ] ~name:"h" ());
+  let durations = O.Meter.histogram meter ~boundaries:[] ~name:"h" () in
+  (match O.Meter.add durations 1.0 with
+  | exception Invalid_argument _ -> ()
+  | () -> Alcotest.fail "a histogram records samples, not adds");
+  match O.Meter.record requests 1.0 with
+  | exception Invalid_argument _ -> ()
+  | () -> Alcotest.fail "a counter adds increments, not records"
 
 let with_collector ?(status = 200) f =
   Eio_main.run (fun env ->
@@ -453,6 +667,214 @@ let flush_failure_and_closed () =
       | _ -> Alcotest.fail "flush after shutdown must be closed");
       check_int "one failed request" 1 (List.length !received))
 
+let wait_for_metrics env received =
+  (* ^notel-8ixo: the interval is real time, so the test polls the collector instead of
+     assuming a scheduler; the surrounding timeout fails it rather than hanging. *)
+  let rec loop remaining =
+    if metric_rows !received <> [] then ()
+    else if remaining = 0 then Alcotest.fail "the metrics window was never exported"
+    else begin
+      Eio.Time.sleep env#clock 0.01;
+      loop (remaining - 1)
+    end
+  in
+  loop 300
+
+(* ^notel-bez2 ^notel-8ixo ^notel-jzdm: counter, up-down counter and histogram reach the
+   collector's metrics path with the exporter's resource attributes and headers, and a
+   flush settles the window. *)
+let counter_and_histogram_on_the_wire () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ~resource:[ ("service.version", "1.2.3") ]
+          ~headers:[ ("authorization", "Bearer sk-live-secret") ]
+          ()
+        |> exporter_ok
+      in
+      let meter = O.meter exporter in
+      let requests =
+        O.Meter.counter meter ~name:"http.requests" ~unit_:"{request}"
+          ~attrs:[ ("route", "/query") ]
+          ()
+      in
+      O.Meter.add requests 2.0;
+      O.Meter.add requests 3.0;
+      let depth = O.Meter.up_down_counter meter ~name:"queue.depth" () in
+      O.Meter.add depth 4.0;
+      O.Meter.add depth (-6.0);
+      let latency =
+        O.Meter.histogram meter ~name:"http.duration" ~unit_:"ms"
+          ~boundaries:[ 10.0; 20.0 ]
+          ~attrs:[ ("route", "/query") ]
+          ()
+      in
+      List.iter (O.Meter.record latency) [ 5.0; 15.0; 25.0 ];
+      exporter_ok (O.flush exporter);
+      exporter_ok (O.shutdown exporter);
+      check_int "metrics alone: one request" 1 (List.length !received);
+      let request = List.hd !received in
+      Alcotest.(check bool)
+        "the metrics path" true
+        (String.ends_with ~suffix:"/otlp/v1/metrics HTTP/1.1" request.target);
+      Alcotest.(check (option string))
+        "the collector's API key accompanies the window" (Some "Bearer sk-live-secret")
+        (header request.headers "authorization");
+      let resource =
+        request.body |> first "resourceMetrics" |> member "resource"
+        |> member "attributes" |> list
+      in
+      check_string "the exporter's identity" "nema" (attr resource "service.name");
+      check_string "^notel-jzdm the build is distinguishable" "1.2.3"
+        (attr resource "service.version");
+      let rows = metric_rows !received in
+      Alcotest.(check int) "three instruments, three metrics" 3 (List.length rows);
+      let counter = metric_named "http.requests" !received in
+      Alcotest.(check (float 0.001))
+        "the counter's window sum" 5.0
+        (data_point counter "sum" |> member "asDouble" |> Yojson.Safe.Util.to_float);
+      check_string "the data point's attributes" "/query"
+        (attr (data_point counter "sum" |> member "attributes" |> list) "route");
+      let up_down = metric_named "queue.depth" !received in
+      Alcotest.(check bool)
+        "an up-down counter is not monotonic" false
+        (up_down |> member "sum" |> member "isMonotonic" |> Yojson.Safe.Util.to_bool);
+      Alcotest.(check (float 0.001))
+        "signed increments are summed within the window" (-2.0)
+        (data_point up_down "sum" |> member "asDouble" |> Yojson.Safe.Util.to_float);
+      let histogram = metric_named "http.duration" !received in
+      let point = data_point histogram "histogram" in
+      check_string "the histogram's count" "3" (point |> member "count" |> string);
+      Alcotest.(check (list string))
+        "its buckets, overflow last" [ "1"; "1"; "1" ]
+        (point |> member "bucketCounts" |> list |> List.map string))
+
+(* ^notel-8ixo ^notel-1stb: the switch that owns the exporter exports the window it
+   still holds when it ends, without a caller's shutdown. *)
+let metrics_drain_on_release () =
+  with_collector (fun env sw client endpoint received ->
+      Eio.Switch.run (fun owned ->
+          let exporter =
+            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
+            |> exporter_ok
+          in
+          let meter = O.meter exporter in
+          let counter = O.Meter.counter meter ~name:"release.total" () in
+          O.Meter.add counter 7.0);
+      check_int "the releasing fiber exported the window" 1 (List.length !received);
+      Alcotest.(check (float 0.001))
+        "the measurement taken before the release" 7.0
+        (data_point (metric_named "release.total" !received) "sum"
+        |> member "asDouble" |> Yojson.Safe.Util.to_float))
+
+(* ^notel-8ixo: the interval posts the window on its own, with no flush. *)
+let metrics_exported_periodically () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ~metrics_interval:(Eta.Duration.ms 30) ()
+        |> exporter_ok
+      in
+      let meter = O.meter exporter in
+      let ticks = O.Meter.counter meter ~name:"tick.total" () in
+      O.Meter.add ticks 1.0;
+      wait_for_metrics env received;
+      Alcotest.(check (float 0.001))
+        "the interval posted the measurement" 1.0
+        (data_point (metric_named "tick.total" !received) "sum"
+        |> member "asDouble" |> Yojson.Safe.Util.to_float);
+      exporter_ok (O.shutdown exporter))
+
+(* ^notel-8ixo: a window is taken once, so flushing again posts nothing. This is the
+   steady-state half of the at-least-once rule the release drain relies on: a duplicate
+   window can only come from an interrupted send, never from a completed one. *)
+let drained_window_is_not_reposted () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ~metrics_interval:(Eta.Duration.seconds 3600) ()
+        |> exporter_ok
+      in
+      let meter = O.meter exporter in
+      let counter = O.Meter.counter meter ~name:"drained.total" () in
+      O.Meter.add counter 1.0;
+      exporter_ok (O.flush exporter);
+      let posted = List.length !received in
+      check_int "the window was posted once" 1 posted;
+      exporter_ok (O.flush exporter);
+      check_int "the second flush has nothing to post" posted (List.length !received);
+      exporter_ok (O.shutdown exporter))
+
+(* ^notel-8ixo: a worker busy with logs still exports the metrics window on its
+   interval — the wait is bounded by the time left, not re-armed by every record. *)
+let metrics_export_under_load () =
+  with_collector (fun env sw client endpoint received ->
+      (* The exporter lives on its own switch, so a failing assertion still drains
+         against a live collector instead of waiting on one the teardown cancelled. *)
+      Eio.Switch.run (fun owned ->
+          let exporter =
+            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ~metrics_interval:(Eta.Duration.ms 40) ()
+            |> exporter_ok
+          in
+          let logger =
+            L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+              ~reporter:(O.reporter exporter) ()
+          in
+          let meter = O.meter exporter in
+          let counter = O.Meter.counter meter ~name:"busy.total" () in
+          O.Meter.add counter 1.0;
+          let deadline = Eio.Time.now env#clock +. 0.3 in
+          let exported_during_load = ref false in
+          while Eio.Time.now env#clock < deadline do
+            L.info logger "busy";
+            if metric_rows !received <> [] then exported_during_load := true;
+            Eio.Time.sleep env#clock 0.005
+          done;
+          Alcotest.(check bool)
+            "the window was exported while logs kept arriving" true !exported_during_load))
+
+(* ^notel-8ixo: the series bound drops the record that would begin one more series and
+   counts it, so attribute cardinality a program does not control stays finite. *)
+let metric_series_bound () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ~max_metric_series:1 ()
+        |> exporter_ok
+      in
+      let meter = O.meter exporter in
+      let admitted = O.Meter.counter meter ~name:"admitted" () in
+      let rejected = O.Meter.counter meter ~name:"rejected" () in
+      O.Meter.add admitted 1.0;
+      O.Meter.add rejected 1.0;
+      check_int "the series beyond the bound is counted" 1 (O.dropped exporter);
+      exporter_ok (O.flush exporter);
+      check_int "only the admitted series reaches the collector" 1
+        (List.length (metric_rows !received));
+      Alcotest.(check bool)
+        "the dropped series is never sent" true
+        (metric_row "rejected" !received = None);
+      exporter_ok (O.shutdown exporter))
+
+(* ^notel-8ixo: a refused metrics window is a typed failure on flush, never a false
+   drained success. *)
+let metrics_failure_reaches_flush () =
+  with_collector ~status:503 (fun env sw client endpoint _received ->
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ()
+        |> exporter_ok
+      in
+      let meter = O.meter exporter in
+      let counter = O.Meter.counter meter ~name:"refused" () in
+      O.Meter.add counter 1.0;
+      (match O.flush exporter with
+      | Error (`Status 503) -> ()
+      | _ -> Alcotest.fail "a refused metrics window must reach flush");
+      exporter_ok (O.shutdown exporter))
+
 let () =
   Alcotest.run "eta_otel"
     [
@@ -460,6 +882,29 @@ let () =
         [
           Alcotest.test_case "OTLP JSON envelope and scalars (^notel-z7dk)" `Quick
             wire_encoding;
+        ] );
+      ( "metrics",
+        [
+          Alcotest.test_case
+            "OTLP metric envelope, delta sums and buckets (^notel-bez2 ^notel-8ixo)"
+            `Quick metric_wire_encoding;
+          Alcotest.test_case "instruments stamp points and validate bounds (^notel-bez2)"
+            `Quick instruments_stamp_points;
+          Alcotest.test_case
+            "counter and histogram on the wire (^notel-bez2 ^notel-8ixo ^notel-jzdm)"
+            `Quick counter_and_histogram_on_the_wire;
+          Alcotest.test_case "metrics drain on release (^notel-8ixo ^notel-1stb)" `Quick
+            metrics_drain_on_release;
+          Alcotest.test_case "the interval posts the window (^notel-8ixo)" `Quick
+            metrics_exported_periodically;
+          Alcotest.test_case "a drained window is not reposted (^notel-8ixo)" `Quick
+            drained_window_is_not_reposted;
+          Alcotest.test_case "a busy worker still exports the window (^notel-8ixo)" `Quick
+            metrics_export_under_load;
+          Alcotest.test_case "the series bound drops and counts (^notel-8ixo)" `Quick
+            metric_series_bound;
+          Alcotest.test_case "a refused window reaches flush (^notel-8ixo)" `Quick
+            metrics_failure_reaches_flush;
         ] );
       ( "exporter",
         [

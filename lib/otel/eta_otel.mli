@@ -1,6 +1,15 @@
-(** Caller-scoped OTLP/HTTP JSON exporter for Logger logs and completed spans. Borrowed
-    [eta_http] client must outlive the exporter's ending — an explicit [shutdown] or the
-    switch that owns the exporter. No metrics or global SDK. *)
+(** Caller-scoped OTLP/HTTP JSON exporter for Logger logs, completed spans and metric
+    instruments. Borrowed [eta_http] client must outlive the exporter's ending — an
+    explicit [shutdown] or the switch that owns the exporter. No global SDK, no telemetry
+    of the exporter's own sends. *)
+
+module Meter : module type of Meter
+(** The instruments a program records through: a counter, an up-down counter and a
+    histogram, recorded in direct style from any fiber of the exporter's domain.
+    ^notel-bez2 *)
+
+module Metric_aggregation : module type of Metric_aggregation
+(** Pure aggregation of recorded points into the rows the metrics encoder writes. *)
 
 module Otlp_json : module type of Otlp_json
 
@@ -26,13 +35,15 @@ val create :
   ?headers:(string * string) list ->
   ?batch_size:int ->
   ?max_queue:int ->
+  ?metrics_interval:Eta.Duration.t ->
+  ?max_metric_series:int ->
   ?request_deadline:Eta.Duration.t ->
   ?on_error:(error -> unit) ->
   unit ->
   (t, error) result
 (** Creates a daemon worker under the caller's switch; an endpoint may include a path
-    prefix, to which [/v1/logs] and [/v1/traces] are appended. The supplied client remains
-    caller-owned, and must outlive the worker it feeds. ^notel-j9vc
+    prefix, to which [/v1/logs], [/v1/traces] and [/v1/metrics] are appended. The supplied
+    client remains caller-owned, and must outlive the worker it feeds. ^notel-j9vc
 
     The exporter also registers its own release hook on [sw], so pending records are
     exported when the switch ends even if nobody calls {!shutdown}: Eio cancels the
@@ -53,7 +64,28 @@ val create :
     the collector's API key, a tenant, an organization. Their values are never logged and
     never rendered in an error: this exporter writes no records and its {!error} values
     carry no request details, so a secret passed here reaches the collector and nothing
-    else. ^notel-6o5v *)
+    else. ^notel-6o5v
+
+    [metrics_interval] is how often the exporter posts the window the {!meter} instruments
+    have recorded, to [/v1/metrics] of the same endpoint with the same resource attributes
+    and headers — sixty seconds by default. The window is also posted by {!flush}, by
+    {!shutdown} and when the switch ends, in the releasing fiber, so the measurements
+    taken before a stop reach the collector. A worker the switch cancelled had its window
+    re-sent by that release rather than lost, at the cost of one duplicate window; a
+    window a collector refused is reported through [on_error] and {!flush}/{!shutdown} and
+    is not retried. ^notel-8ixo
+
+    [max_metric_series] bounds how many distinct series — a name, a kind and an attribute
+    set — the exporter aggregates between exports; a record that would begin one more is
+    dropped and counted by {!dropped}, because attribute cardinality a program does not
+    control must not grow memory without bound. ^notel-8ixo *)
+
+val meter : t -> Meter.t
+(** The exporter's meter. Instruments created from it record in direct style from any
+    fiber of the exporter's domain: each measurement is aggregated into its series as it
+    is recorded, so a full log or trace queue never costs a measurement, and the window is
+    posted on [metrics_interval], by {!flush}, by {!shutdown} and when the switch ends.
+    Recording never suspends and never blocks on collector I/O. ^notel-bez2 ^notel-8ixo *)
 
 val reporter : t -> Eta_observability.Logger.Reporter.t
 (** Accepts Logger records without JSON round-tripping. [span] start records are internal;
@@ -67,7 +99,8 @@ val span_ids : t -> unit -> string
     [Random.State.make_self_init] state: IDs are not secrets or credentials. *)
 
 val dropped : t -> int
-(** Number of records rejected when the bounded queue was full. *)
+(** Number of records rejected when the bounded queue was full, and metric records
+    rejected when the exporter already held [max_metric_series] series. *)
 
 val flush : t -> (unit, error) result
 (** Settles all earlier admitted records and returns the first send failure since the

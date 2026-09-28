@@ -7,6 +7,7 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Eta.Result.Syntax.( let* ), ( let+ )` | **Global**; although applied immediately, OxCaml binding-operator elaboration rejects a mode-qualified closure parameter in existing `let*` syntax. |
 | `Eta.Retry.retry, repeat` | **Local**; invoke in the calling fiber. Top-level tail-recursive helpers accept the local callback explicitly rather than capture it in an escaping recursive closure. |
 | `Eta.Resource.acquire_release ~acquire` | **Local**; acquisition runs before registering release with Eio. `~release` remains **global**: registered on the switch for later invocation. |
+| `Eta_otel.Meter.create ~now_ms ~record` | **Global**; both callbacks are retained: `now_ms` by the meter, `record` for every measurement the instruments ever make. |
 | `Eta.Observability.Logger.span ~f` | **Global**; optional OTLP span IDs bind through `Context.with_fields` into `Eio.Fiber.with_binding`, which requires a global callback (nmodes-8t8v, nmodes-8y46). `~pp_err` remains **global**: passed through formatting and retained by the inner logging callback. |
 | `Eta.Observability.Logger.Sink.writer` | **Global**; retains `write_line` in the resulting sink for later log records. |
 | `Eta.Timeout.timeout` | **Global**; forwarded to `Eio.Time.with_timeout`, whose signature does not accept `local`. |
@@ -34,7 +35,7 @@ The interfaces of `Duration`, `Schedule`, `Cause`, `Exit`, `Interrupt_id`, `Eta_
 
 ## Single-domain boundaries (nmodes-yp1i)
 
-Create `Logger`, `Context`, `Correlator`, `Supervised`, `Listener` and `Child` instances per domain. Their Eio handles, fiber-local bindings, mutable counters or unsynchronized lifecycle are not portable state. A future parallel package must own separate instances inside each worker domain rather than share these values across domains. Portable pure functions do not make an enclosing mutable handle portable. `Child.stop` and `Correlator.close` might eventually warrant `unique`/`once` contracts; this pass makes neither promise.
+Create `Logger`, `Context`, `Correlator`, `Supervised`, `Listener`, `Child` and `Eta_otel.Meter` instances per domain. Their Eio handles, fiber-local bindings, mutable counters or unsynchronized lifecycle are not portable state. A meter's instruments aggregate into one exporter-owned table with no lock, so two domains recording through one meter would race. A future parallel package must own separate instances inside each worker domain rather than share these values across domains. Portable pure functions do not make an enclosing mutable handle portable. `Child.stop` and `Correlator.close` might eventually warrant `unique`/`once` contracts; this pass makes neither promise.
 
 ## Allocation evidence (nmodes-78o3)
 

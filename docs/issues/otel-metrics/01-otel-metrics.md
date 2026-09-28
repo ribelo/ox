@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_otel
 consumer: inn (row 30: its Eta instrumentation guide showed a metrics example; inn ingests metrics but Eta apps cannot send them), nema (row 31, if its OTel use includes metrics — confirm at its migration)
 ---
@@ -27,6 +27,30 @@ Direct-style metric instruments on a meter, and an OTLP/HTTP JSON metrics export
 ## Testing Decisions
 
 - Local collector: counter/histogram values and resource attributes on the wire; drain on release.
+
+## Verification
+
+`Eta_otel.Meter` gives a program a counter, an up-down counter and a histogram, each
+carrying its name, unit, description and attributes; the exporter owns one aggregation
+table per exporter (single domain, no lock), posts the window on `metrics_interval`, on
+`flush`, on `shutdown` and from its release hook, and shares the logs/traces transport,
+resource attributes, headers, `request_deadline` and ending. `test/otel` runs 19 tests,
+9 of them metrics: the pure `resourceMetrics`/`scopeMetrics` envelope with delta sums,
+bucket counts of bounds+1, decimal-string integers and saturated timestamps copied from
+v1's assertions; the instruments' points and bound validation; counter, up-down counter
+and histogram values, attributes, resource attributes and collector headers on a local
+`POST /v1/metrics`; the window exported by the switch's release; the interval posting it;
+a worker busy with logs still posting it; a drained window not reposted by a second
+flush; the series bound dropping and counting; and a refused window reported as
+`` `Status 503 `` by `flush`.
+
+`dune build @install`, `dune test` (23 suites, 468 tests, 0 failures) and `dune build @fmt` are
+green on the whole tree. Disabling the worker's deadline check makes `a busy worker still
+exports the window` fail in 0.3 s, so the regression the check exists for is covered
+rather than assumed. Bounded admission for this row is a series ceiling
+(`max_metric_series`, counted by `dropped`) instead of one queue slot per measurement:
+measurements aggregate as they are recorded, so a full log or trace queue never costs
+one, and attribute cardinality a program does not control stays finite.
 
 ## Out of Scope
 
