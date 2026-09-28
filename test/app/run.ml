@@ -1,8 +1,9 @@
 (* Story IDs covered: ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
    ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-o6d6 ^napp-mbpr ^napp-433c
    ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps ^napp-idii and, after
-   ^nnoschema-ttb5 removed the schema DSL: ^nnoschema-5mdj (derived config,
-   environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
+   ^nnoschema-ttb5 removed the schema DSL, and ^notel-1stb (the Door's real SIGTERM
+   stop exports pending OTLP telemetry without a shutdown call): ^nnoschema-5mdj
+   (derived config, environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
    (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
    ^nnoschema-boxo (TOML-to-JSON stays here), ^nnoschema-p7fv (a two-Service
    program on a derived config type). ^napp-yplu's unknown-key refusal stands
@@ -864,6 +865,132 @@ let test_real_signal_telemetry () =
                 (index_of printed "\"msg\":\"signal stopped\""
                 < index_of printed "telemetry flushed"))))
 
+(* ^notel-1stb: the smallest OTLP collector: it records every POSTed body and answers
+   200, so a test can see what an exporter sent during a Door stop. *)
+let with_otlp_collector env sw f =
+  let listener =
+    Eio.Net.listen ~sw ~backlog:8 env#net (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr listener with
+    | `Tcp (_, port) -> port
+    | _ -> assert false
+  in
+  let received = ref [] in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      while true do
+        let flow, _ = Eio.Net.accept ~sw listener in
+        let input = Eio.Buf_read.of_flow ~max_size:262144 flow in
+        ignore (Eio.Buf_read.line input : string);
+        let rec headers length =
+          let line = Eio.Buf_read.line input in
+          if line = "" then length
+          else
+            let prefix = "content-length:" in
+            let lower = String.lowercase_ascii line in
+            let length =
+              if String.starts_with ~prefix lower then
+                int_of_string
+                  (String.trim
+                     (String.sub line (String.length prefix)
+                        (String.length line - String.length prefix)))
+              else length
+            in
+            headers length
+        in
+        received := Eio.Buf_read.take (headers 0) input :: !received;
+        Eio.Flow.copy_string "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" flow
+      done;
+      `Stop_daemon);
+  f port received
+
+let otlp_messages bodies =
+  List.concat_map
+    (fun body ->
+      let document = Yojson.Safe.from_string body in
+      let open Yojson.Safe.Util in
+      document |> member "resourceLogs" |> to_list
+      |> List.concat_map (fun resource ->
+          resource |> member "scopeLogs" |> to_list
+          |> List.concat_map (fun scope ->
+              scope |> member "logRecords" |> to_list
+              |> List.map (fun record ->
+                  record |> member "body" |> member "stringValue" |> to_string))))
+    bodies
+
+(* ^notel-1stb: run the fixture to a real SIGTERM stop with a configured OTLP exporter
+   and report its exit status, its stdout, and the messages the collector received. *)
+let signal_stop_otlp env sw ~shutdown =
+  let config_path = Filename.temp_file "eta-app-otlp-" ".toml" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    (fun () ->
+      with_otlp_collector env sw (fun port received ->
+          let output = open_out config_path in
+          output_string output
+            (Printf.sprintf
+               "port = 42\n\
+                telemetry = true\n\
+                otlp_shutdown = %b\n\
+                otlp_endpoint = \"http://127.0.0.1:%d/otlp\"\n"
+               shutdown port);
+          close_out output;
+          let fixture =
+            Filename.concat (Filename.dirname Sys.executable_name) "signal_fixture.exe"
+          in
+          let child =
+            match
+              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "--config"; config_path ]
+                ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+            with
+            | Ok child -> child
+            | Error _ -> Alcotest.fail "invalid OTLP fixture spawn"
+          in
+          let input =
+            Eio.Buf_read.of_flow ~max_size:65536
+              (Option.get (Eta_process.Child.stdout child))
+          in
+          let ready =
+            Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
+          in
+          check_string "Door ready" "ready" ready;
+          Eta_process.Child.signal child Sys.sigterm;
+          let status =
+            Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                Eta_process.Child.await child)
+          in
+          ( (match status with Eta_process.Child.Exited 0 -> true | _ -> false),
+            Eio.Buf_read.take_all input,
+            otlp_messages (List.rev !received) )))
+
+(* ^notel-1stb: the exporter the telemetry hook builds exports on the root switch's
+   release, so the record the program logs while SIGTERM stops it reaches the collector
+   even though nothing calls Eta_otel.shutdown. *)
+let test_real_signal_otlp () =
+  Eio_main.run (fun env ->
+      Eio.Switch.run (fun sw ->
+          let clean, printed, messages = signal_stop_otlp env sw ~shutdown:false in
+          Alcotest.(check bool) "signal maps to exit code zero" true clean;
+          expect_part printed "telemetry flushed";
+          Alcotest.(check (list string))
+            "^notel-1stb the exporter itself exported the last record"
+            [ "signal stopped" ] messages))
+
+(* ^notel-1stb: the pre-fix consumer pattern — [Eta_otel.shutdown] registered with
+   [Eio.Switch.on_release] — used to wait for the daemon the switch had already
+   cancelled and hang the stop; the record logged just before it still arrives. *)
+let test_real_signal_otlp_shutdown () =
+  Eio_main.run (fun env ->
+      Eio.Switch.run (fun sw ->
+          let clean, _, messages = signal_stop_otlp env sw ~shutdown:true in
+          Alcotest.(check bool)
+            "^notel-1stb shutdown in a release hook does not hang the stop" true clean;
+          Alcotest.(check (list string))
+            "^notel-1stb and the last record still reaches the collector"
+            [ "signal stopped" ] messages))
+
 let () =
   Alcotest.run "eta_app"
     [
@@ -910,6 +1037,10 @@ let () =
           Alcotest.test_case "^napp-57qi run runs the validator" `Quick test_run_validates;
           Alcotest.test_case "^napp-idii telemetry flush on SIGTERM" `Quick
             test_real_signal_telemetry;
+          Alcotest.test_case "^notel-1stb OTLP drain on SIGTERM" `Quick
+            test_real_signal_otlp;
+          Alcotest.test_case "^notel-1stb shutdown in a release hook on SIGTERM" `Quick
+            test_real_signal_otlp_shutdown;
           Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick
             (test_real_signal Sys.sigterm);
           Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick

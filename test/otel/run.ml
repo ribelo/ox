@@ -31,6 +31,15 @@ let string_attr attrs key =
   | Some attr -> attr |> member "value" |> member "stringValue" |> string
   | None -> "<absent>"
 
+let log_records received =
+  List.concat_map
+    (fun request ->
+      if contains request.target "/v1/logs" then
+        request.body |> first "resourceLogs" |> first "scopeLogs" |> member "logRecords"
+        |> list
+      else [])
+    received
+
 let wire_encoding () =
   (* ^notel-z7dk: v1 OTLP resource/scope/span envelope and decimal ns strings. *)
   let span : O.Otlp_json.span =
@@ -141,7 +150,10 @@ let with_collector ?(status = 200) f =
               `Stop_daemon);
           let client = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
           let endpoint = Printf.sprintf "http://127.0.0.1:%d/otlp" port in
-          f env sw client endpoint received))
+          (* ^notel-1stb: a lifecycle defect shows up as a hang; the bound fails the test
+             instead of blocking the suite. *)
+          Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+              f env sw client endpoint received)))
 
 let exporter_ok result =
   match result with
@@ -195,6 +207,79 @@ let log_and_spans () =
       check_string "nested parent"
         (outer |> member "spanId" |> string)
         (inner |> member "parentSpanId" |> string))
+
+(* ^notel-1stb: the switch that owns the exporter ends without a caller's shutdown, and
+   the record logged just before it still reaches the collector. *)
+let release_exports_pending () =
+  with_collector (fun env sw client endpoint received ->
+      Eio.Switch.run (fun owned ->
+          let exporter =
+            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
+            |> exporter_ok
+          in
+          let logger =
+            L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+              ~reporter:(O.reporter exporter) ()
+          in
+          L.info logger "last words");
+      let records = log_records !received in
+      check_int "the record logged before the release" 1 (List.length records);
+      check_string "the last message reached the collector" "last words"
+        (List.hd records |> member "body" |> member "stringValue" |> string))
+
+(* ^notel-1stb: the exporter registers its own release hook when it is created, so a
+   release hook registered later runs first (releases are LIFO) and the record it logs
+   while the switch is stopping is still exported — the shape of a Door SIGTERM stop. *)
+let release_hook_records () =
+  with_collector (fun env sw client endpoint received ->
+      Eio.Switch.run (fun owned ->
+          let exporter =
+            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
+            |> exporter_ok
+          in
+          let logger =
+            L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+              ~reporter:(O.reporter exporter) ()
+          in
+          Eio.Switch.on_release owned (fun () -> L.info logger "stopped"));
+      let records = log_records !received in
+      check_int "the record logged while stopping" 1 (List.length records);
+      check_string "it reached the collector" "stopped"
+        (List.hd records |> member "body" |> member "stringValue" |> string))
+
+(* ^notel-1stb: a consumer that registers shutdown with the switch's release no longer
+   waits for the cancelled worker, and the ending it reads is the one the release
+   recorded — a later shutdown returns the same result instead of blocking. *)
+let shutdown_in_release () =
+  with_collector (fun env sw client endpoint received ->
+      let opened = ref None and released = ref None in
+      Eio.Switch.run (fun owned ->
+          let exporter =
+            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
+            |> exporter_ok
+          in
+          opened := Some exporter;
+          Eio.Switch.on_release owned (fun () -> released := Some (O.shutdown exporter));
+          let logger =
+            L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+              ~reporter:(O.reporter exporter) ()
+          in
+          L.info logger "last words");
+      (match !released with
+      | Some (Ok ()) -> ()
+      | Some (Error error) ->
+          Alcotest.failf "shutdown in a release hook: %a" O.pp_error error
+      | None -> Alcotest.fail "the release hook never ran");
+      (match O.shutdown (Option.get !opened) with
+      | Ok () -> ()
+      | Error error -> Alcotest.failf "shutdown after the release: %a" O.pp_error error);
+      let requests = List.length !received in
+      check_int "the queue was exported exactly once" 1 requests;
+      check_int "and it carried the pending record" 1
+        (List.length (log_records !received)))
 
 let spans_without_ids_remain_logs () =
   (* ^notel-6m2q: enabling the exporter without ID generation must preserve
@@ -381,6 +466,12 @@ let () =
           Alcotest.test_case
             "logs, nested traces and shutdown (^notel-6m2q ^notel-j9vc ^notel-p4xe)"
             `Quick log_and_spans;
+          Alcotest.test_case "release exports the pending queue (^notel-1stb)" `Quick
+            release_exports_pending;
+          Alcotest.test_case "a release hook's last record is exported (^notel-1stb)"
+            `Quick release_hook_records;
+          Alcotest.test_case "shutdown inside a release hook returns (^notel-1stb)" `Quick
+            shutdown_in_release;
           Alcotest.test_case "legacy spans remain logs (^notel-6m2q)" `Quick
             spans_without_ids_remain_logs;
           Alcotest.test_case "bounded queue and typed status (^notel-p4xe ^notel-t8br)"

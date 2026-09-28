@@ -17,11 +17,16 @@ let pp_error ppf = function
   | `Drain_deadline -> Format.pp_print_string ppf "OTLP drain deadline reached"
 
 type item = Log of Logger.record | Span of Json.span
+type command = Item of item | Flush of (unit, error) result Eio.Promise.u | Stop
 
-type command =
-  | Item of item
-  | Flush of (unit, error) result Eio.Promise.u
-  | Stop of (unit, error) result Eio.Promise.u
+(* ^notel-1stb: one ending per exporter. The worker resolves it when it takes [Stop];
+   a release resolves the same one — Eio cancels a switch's fibers before it runs its
+   release hooks, so the worker is already gone by then and the exporter exports the
+   queue's remainder itself. Every [shutdown] reads that one result. *)
+type ending = {
+  stop : (unit, error) result Eio.Promise.t;
+  resolve : (unit, error) result Eio.Promise.u;
+}
 
 type t = {
   queue : command Eio.Stream.t;
@@ -39,7 +44,12 @@ type t = {
   ids : Random.State.t;
   mutable dropped : int;
   mutable closed : bool;
-  mutable stop : (unit, error) result Eio.Promise.t option;
+  mutable stopping : bool;
+  mutable worker_done : bool;
+  mutable first_failure : error option;
+  mutable ending : ending option;
+  mutable pending : command option;
+  mutable in_flight : item list;
 }
 
 let dropped t = t.dropped
@@ -144,33 +154,107 @@ let send t items =
 let same_signal a b =
   match (a, b) with Log _, Log _ | Span _, Span _ -> true | _ -> false
 
+let ending t =
+  match t.ending with
+  | Some ending -> ending
+  | None ->
+      let stop, resolve = Eio.Promise.create () in
+      let ending = { stop; resolve } in
+      t.ending <- Some ending;
+      ending
+
+(* ^notel-p4xe: the first failure since the previous flush is reported once, by the
+   flush or the shutdown that settles it. The worker and the release drain share it. *)
+let note t = function
+  | Ok () -> ()
+  | Error error -> (
+      if t.first_failure = None then t.first_failure <- Some error;
+      try t.on_error error with _ -> ())
+
+let settled t =
+  let result = match t.first_failure with None -> Ok () | Some error -> Error error in
+  t.first_failure <- None;
+  result
+
+(* ^notel-1stb: exports everything the queue still holds, in the same signal batches the
+   worker would have sent, and settles every flush waiting there. Eio cancels a switch's
+   fibers before it runs its release hooks, so this is the export of last resort; it runs
+   under [Cancel.protect] because a release happens on the cancellation path and these
+   records have nowhere else to go. Each request keeps the exporter's own bounded
+   [request_deadline]. *)
+let drain t =
+  Eio.Cancel.protect (fun () ->
+      let items = ref [] and flushes = ref [] and stopped = ref false in
+      let take_command = function
+        | Item item -> items := item :: !items
+        | Flush resolve -> flushes := resolve :: !flushes
+        | Stop -> stopped := true
+      in
+      (* The worker is gone, but it may have taken records out of the queue before it
+         was cancelled: the batch it was sending and the command it had set aside are
+         recovered here, in order, or they would be lost with the worker. *)
+      List.iter (fun item -> take_command (Item item)) t.in_flight;
+      Option.iter take_command t.pending;
+      t.in_flight <- [];
+      t.pending <- None;
+      let rec collect () =
+        match Eio.Stream.take_nonblocking t.queue with
+        | Some command ->
+            take_command command;
+            collect ()
+        | None -> ()
+      in
+      collect ();
+      let rec batches = function
+        | [] -> []
+        | first :: rest ->
+            let rec take count reversed rest =
+              match rest with
+              | next :: rest when count < t.batch_size && same_signal first next ->
+                  take (count + 1) (next :: reversed) rest
+              | rest -> (List.rev reversed, rest)
+            in
+            let batch, rest = take 1 [ first ] rest in
+            batch :: batches rest
+      in
+      List.iter (fun batch -> note t (send t batch)) (batches (List.rev !items));
+      let result = settled t in
+      List.iter (fun resolve -> Eio.Promise.resolve resolve result) !flushes;
+      if !stopped then
+        (* A queued [Stop] is a [shutdown] waiting for this ending. *)
+        ignore (Eio.Promise.try_resolve (ending t).resolve result : bool);
+      result)
+
+(* ^notel-1stb: the exporter's ending, whoever reaches it first: it seals admission,
+   exports what the queue still holds without the worker, and records the result every
+   later [shutdown] reads. *)
+let finish t =
+  let recorded = ending t in
+  match Eio.Promise.peek recorded.stop with
+  | Some result -> result
+  | None -> (
+      t.closed <- true;
+      let drained = drain t in
+      ignore (Eio.Promise.try_resolve recorded.resolve drained : bool);
+      (* [drain] resolves the ending itself when a queued [Stop] carried its resolver. *)
+      match Eio.Promise.peek recorded.stop with
+      | Some result -> result
+      | None -> drained)
+
 let worker t =
-  let pending = ref None in
-  let first_failure = ref None in
-  let note = function
-    | Ok () -> ()
-    | Error error -> (
-        if !first_failure = None then first_failure := Some error;
-        try t.on_error error with _ -> ())
-  in
-  let settled () =
-    let result = match !first_failure with None -> Ok () | Some error -> Error error in
-    first_failure := None;
-    result
-  in
   let rec loop () =
     let command =
-      match !pending with
+      match t.pending with
       | Some command ->
-          pending := None;
+          t.pending <- None;
           command
       | None -> Eio.Stream.take t.queue
     in
     match command with
     | Flush resolve ->
-        Eio.Promise.resolve resolve (settled ());
+        Eio.Promise.resolve resolve (settled t);
         loop ()
-    | Stop resolve -> Eio.Promise.resolve resolve (settled ())
+    | Stop -> Eio.Promise.resolve (ending t).resolve (settled t)
     | Item item ->
         let rec gather count reversed =
           if count = t.batch_size then List.rev reversed
@@ -179,11 +263,18 @@ let worker t =
             | Some (Item next) when same_signal item next ->
                 gather (count + 1) (next :: reversed)
             | Some next ->
-                pending := Some next;
+                t.pending <- Some next;
                 List.rev reversed
             | None -> List.rev reversed
         in
-        note (send t (gather 1 [ item ]));
+        (* ^notel-1stb: the batch is recorded before it is sent, so a cancellation in
+           the middle of the request leaves it to the release drain instead of losing
+           it. A batch that reached the collector while the response was being read is
+           exported twice: at-least-once beats dropping the last records before a
+           stop. *)
+        t.in_flight <- gather 1 [ item ];
+        note t (send t t.in_flight);
+        t.in_flight <- [];
         loop ()
   in
   loop ()
@@ -228,36 +319,51 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
             ids = Random.State.make_self_init ();
             dropped = 0;
             closed = false;
-            stop = None;
+            stopping = false;
+            worker_done = false;
+            first_failure = None;
+            ending = None;
+            pending = None;
+            in_flight = [];
           }
         in
         Eio.Fiber.fork_daemon ~sw (fun () ->
-            worker t;
+            Fun.protect ~finally:(fun () -> t.worker_done <- true) (fun () -> worker t);
             `Stop_daemon);
+        (* ^notel-1stb: Eio cancels a switch's fibers before it runs its release hooks,
+           so the daemon above is gone by the time this runs; the exporter exports the
+           queue's remainder here, in the releasing fiber, instead of leaving it to a
+           worker that cannot run. Registered during [create], so release hooks
+           registered later — a program's own, on a Door stop — run first and the last
+           records they log are still exported. *)
+        Eio.Switch.on_release sw (fun () -> ignore (finish t : (unit, error) result));
         Ok t
 
 let flush t =
   if t.closed then Error `Closed
+  else if t.worker_done then
+    (* ^notel-1stb: no worker is left to take the command — the switch cancelled it —
+       so the queue is settled here rather than waiting for one that cannot run. *)
+    drain t
   else
     let wait, resolve = Eio.Promise.create () in
     Eio.Stream.add t.queue (Flush resolve);
     Eio.Promise.await wait
 
 let shutdown ?timeout t =
-  let wait =
-    match t.stop with
-    | Some wait -> wait
-    | None ->
-        t.closed <- true;
-        let wait, resolve = Eio.Promise.create () in
-        t.stop <- Some wait;
-        Eio.Stream.add t.queue (Stop resolve);
-        wait
-  in
+  let recorded = ending t in
+  if (not (Eio.Promise.is_resolved recorded.stop)) && not t.stopping then begin
+    t.stopping <- true;
+    t.closed <- true;
+    (* ^notel-1stb: a worker the switch has already cancelled never takes another
+       command, so the queue is exported here, in the caller, instead. *)
+    if t.worker_done then ignore (finish t : (unit, error) result)
+    else Eio.Stream.add t.queue Stop
+  end;
   match timeout with
-  | None -> Eio.Promise.await wait
+  | None -> Eio.Promise.await recorded.stop
   | Some duration -> (
       try
         t.with_timeout (Eta.Duration.to_seconds_float duration) (fun () ->
-            Eio.Promise.await wait)
+            Eio.Promise.await recorded.stop)
       with Eio.Time.Timeout -> Error `Drain_deadline)

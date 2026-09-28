@@ -1,5 +1,6 @@
 (** Caller-scoped OTLP/HTTP JSON exporter for Logger logs and completed spans. Borrowed
-    [eta_http] client must outlive [shutdown]. No metrics or global SDK. *)
+    [eta_http] client must outlive the exporter's ending — an explicit [shutdown] or the
+    switch that owns the exporter. No metrics or global SDK. *)
 
 module Otlp_json : module type of Otlp_json
 
@@ -31,7 +32,16 @@ val create :
   (t, error) result
 (** Creates a daemon worker under the caller's switch; an endpoint may include a path
     prefix, to which [/v1/logs] and [/v1/traces] are appended. The supplied client remains
-    caller-owned. Explicitly [shutdown] before releasing it. ^notel-j9vc
+    caller-owned, and must outlive the worker it feeds. ^notel-j9vc
+
+    The exporter also registers its own release hook on [sw], so pending records are
+    exported when the switch ends even if nobody calls {!shutdown}: Eio cancels the
+    switch's fibers before it runs its release hooks, so the daemon is already gone and
+    the exporter exports what the queue still holds in the releasing fiber, under
+    [Eio.Cancel.protect], at the configured [request_deadline]. Release hooks registered
+    after [create] run first (releases are LIFO), so a program that logs while the switch
+    is stopping still gets its last records exported. A Door SIGTERM stop releases the
+    root switch this way. ^notel-1stb
 
     [resource] adds OTLP resource attributes to every export beside the exporter's own
     [service.name]: [service.version], [deployment.environment], a host or a build id, so
@@ -61,10 +71,15 @@ val dropped : t -> int
 
 val flush : t -> (unit, error) result
 (** Settles all earlier admitted records and returns the first send failure since the
-    previous flush. ^notel-p4xe ^notel-t8br *)
+    previous flush. It never waits for a worker the switch has already cancelled: with the
+    worker gone the remaining queue is settled in the calling fiber. ^notel-p4xe
+    ^notel-t8br ^notel-1stb *)
 
 val shutdown : ?timeout:Eta.Duration.t -> t -> (unit, error) result
-(** Seals admission and waits for the worker to finish. Repeated calls return the same
-    result. A timeout reports [Drain_deadline], not a successful drain; the worker remains
-    owned by the caller's switch until it finishes or is cancelled. ^notel-j9vc
-    ^notel-t8br *)
+(** Seals admission and ends the exporter, returning the ending's result: a live worker
+    drains the remaining queue and reports it, and a worker the switch has already
+    cancelled is replaced by the caller's own drain rather than waited for — so a
+    [shutdown] registered with [Eio.Switch.on_release] returns instead of blocking on a
+    fiber that cannot run, and one called after release returns the result the release
+    recorded. Repeated calls return the same result. A timeout reports [Drain_deadline],
+    not a successful drain. ^notel-j9vc ^notel-t8br ^notel-1stb *)

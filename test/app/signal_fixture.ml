@@ -6,8 +6,21 @@
    ^napp-idii: with `telemetry = true` it is also the only executable that proves the
    Door's telemetry hook on the real SIGTERM path: the reporter the config switches on
    sees the record the program logs when the signal stops it, and the hook's root-switch
-   resource flushes before the process exits. *)
-type config = { port : int; telemetry : bool [@json.default false] } [@@deriving yojson]
+   resource flushes before the process exits.
+   ^notel-1stb: with `otlp_endpoint` it is also the only executable that proves a real
+   eta_otel exporter on that path: the exporter's own release hook exports the record
+   logged while the signal stops it, and `otlp_shutdown` adds the pre-fix consumer
+   pattern — an explicit shutdown registered with the same switch's release — beside it. *)
+type config = {
+  port : int;
+  telemetry : bool; [@json.default false]
+  otlp_endpoint : string option;
+  (* ^notel-1stb: the pre-fix consumer pattern — the exporter's shutdown registered with
+     the root switch's release — which used to wait for the daemon the switch had
+     already cancelled and deadlock the stop. *)
+  otlp_shutdown : bool; [@json.default false]
+}
+[@@deriving yojson]
 
 let config : config Eta_app.Config.t =
   {
@@ -38,7 +51,34 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Eta_app.Env.t) (cfg : config) =
     in
     Eio.Switch.on_release sw (fun () ->
         Eio.Flow.copy_string "telemetry flushed\n" env.Eta_app.Env.base#stdout);
-    { Eta_app.reporters = [ reporter ]; span_ids = None }
+    match cfg.otlp_endpoint with
+    | None -> { Eta_app.reporters = [ reporter ]; span_ids = None }
+    | Some endpoint ->
+        (* ^notel-1stb: a real exporter. Unless [otlp_shutdown] asks for the pre-fix
+           consumer pattern, nothing calls [Eta_otel.shutdown]: the exporter's own
+           release hook on the root switch exports whatever the queue still holds when
+           the signal stops the Door. *)
+        let base = env.Eta_app.Env.base in
+        let client = Eta_http.Client.create ~sw ~net:base#net ~clock:base#clock () in
+        let exporter =
+          match
+            Eta_otel.create ~sw ~clock:base#clock ~http_client:client ~endpoint
+              ~service_name:"signal-fixture" ~request_deadline:(Eta.Duration.ms 2000) ()
+          with
+          | Ok exporter -> exporter
+          | Error error ->
+              failwith (Format.asprintf "otlp exporter: %a" Eta_otel.pp_error error)
+        in
+        if cfg.otlp_shutdown then
+          Eio.Switch.on_release sw (fun () ->
+              match Eta_otel.shutdown exporter with
+              | Ok () -> ()
+              | Error error ->
+                  failwith (Format.asprintf "otlp shutdown: %a" Eta_otel.pp_error error));
+        {
+          Eta_app.reporters = [ reporter; Eta_otel.reporter exporter ];
+          span_ids = Some (Eta_otel.span_ids exporter);
+        }
   end
 
 let () =

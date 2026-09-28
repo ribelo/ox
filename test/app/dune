@@ -1,7 +1,7 @@
 (executable
  (name signal_fixture)
  (modules signal_fixture)
- (libraries eta_app eta_observability eio eio.unix)
+ (libraries eta eta_app eta_http eta_observability eta_otel eio eio.unix)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
