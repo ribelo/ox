@@ -403,6 +403,36 @@ let test_race_cause () =
           | Error (Cause.Concurrent []) -> ()
           | _ -> Alcotest.fail "empty race"))
 
+(* ncore-a6g1: a combinator started on an outer switch must stop when its caller's fiber
+   is cancelled — workers blocked forever must not keep the caller alive. *)
+let test_caller_cancel () =
+  Eio_main.run (fun _ ->
+      Eio.Switch.run (fun outer ->
+          let forever () : (unit, string) result = Eio.Fiber.await_cancel () in
+          let check name start =
+            let started = ref false in
+            let outcome =
+              Eio.Fiber.first
+                (fun () ->
+                  started := true;
+                  ignore (start outer forever);
+                  `Finished)
+                (fun () ->
+                  while not !started do
+                    Eio.Fiber.yield ()
+                  done;
+                  Eio.Fiber.yield ();
+                  `Cancelled_caller)
+            in
+            Alcotest.(check bool)
+              (name ^ " returns when its caller is cancelled")
+              true (outcome = `Cancelled_caller)
+          in
+          check "par" (fun sw f -> Eta.Concurrent.par ~sw f f);
+          check "all" (fun sw f -> Eta.Concurrent.all ~sw [ f; f ]);
+          check "race" (fun sw f -> Eta.Concurrent.race ~sw [ f; f ]);
+          check "with_background" (fun sw f -> Eta.Concurrent.with_background ~sw f f)))
+
 let test_par_all () =
   Eio_main.run (fun _ ->
       Eio.Switch.run (fun sw ->
@@ -590,6 +620,9 @@ let () =
             Alcotest.test_case "ncore-7vo9 ncore-mvvi race" `Quick test_race;
             Alcotest.test_case "nfix-yrjy race cause shape" `Quick test_race_cause;
             Alcotest.test_case "ncore-a6g1 ncore-mvvi par all" `Quick test_par_all;
+            Alcotest.test_case
+              "ncore-a6g1 cancelling the caller cancels par/all/race workers" `Quick
+              test_caller_cancel;
             Alcotest.test_case "ncore-gpuq ncore-5caq background" `Quick test_background;
           ] );
         ( "Schedule loops ncore-zda1 ncore-2isd ncore-rzml ncore-acna",

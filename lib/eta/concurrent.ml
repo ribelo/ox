@@ -13,14 +13,14 @@ let stopped id = function
       | None -> false)
   | _ -> false
 
+(* The combinator's workers live on a child switch run in the CALLER's fiber, so they
+   share the caller's cancellation context: cancelling the caller cancels them, and the
+   child switch still awaits them before this returns. [sw] is checked, not forked on —
+   forking on a switch the caller doesn't run in left workers deaf to the caller's
+   cancellation (found by Pie's PTT loop, ncore-a6g1). *)
 let child_run ~sw fn =
   Eio.Switch.check sw;
-  let child = Eio.Fiber.fork_promise ~sw (fun () -> Eio.Switch.run fn) in
-  try Eio.Promise.await_exn child
-  with Eio.Cancel.Cancelled _ as cancelled ->
-    Eio.Cancel.protect (fun () ->
-        ignore (Eio.Promise.await_exn child);
-        raise cancelled)
+  Eio.Switch.run fn
 
 let stop_other id contexts except =
   Array.iteri
