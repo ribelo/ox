@@ -122,6 +122,9 @@ module Reporter = struct
 
   let records consume = { emit = consume }
 
+  let at_least level reporter =
+    { emit = (fun record -> if rank record.level >= rank level then reporter.emit record) }
+
   let writer write_line = { emit = (fun record -> write_line (to_string record ^ "\n")) }
 
   (* ^nobs-8i5y: every reporter sees the record, in the order given; one reporter's

@@ -77,6 +77,7 @@ val run_for_test_with_args :
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Eta_observability.Logger.level ->
+  ?journal_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -119,6 +120,10 @@ val run_for_test_with_args :
     validation rejections on both startup and config check (default 2); validator defects
     still exit 2. [log_level] sets the minimum level of both the pre-config journal logger
     and the program logger, filtering journal and telemetry alike (default [Info]).
+    [journal_level] optionally filters only the journal reporter, including the pre-config
+    logger; absent it, the journal has no additional filter. The program logger and
+    telemetry reporters retain [log_level]. ^napp-xb3q
+
     ^napp-fsxf ^napp-7hvu ^napp-k9in ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt
     Parsing/help do not enter a switch. ^napp-ytqk ^napp-x11e
 
@@ -135,6 +140,7 @@ val run_for_test :
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Eta_observability.Logger.level ->
+  ?journal_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -220,6 +226,7 @@ val run_with_args :
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Eta_observability.Logger.level ->
+  ?journal_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -257,6 +264,7 @@ val run :
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Eta_observability.Logger.level ->
+  ?journal_level:Eta_observability.Logger.level ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->

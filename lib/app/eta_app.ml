@@ -63,12 +63,17 @@ let validation_failure ~validation_exit ~validate ~pp_err ~stderr env settings =
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     ?commands_with_env ?commands_with_env_code ?(bare = `Service) ?(usage_exit = 2)
     ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130) ?(doc = "Run the service.")
-    ?(validation_exit = 2) ?(log_level = Eta_observability.Logger.Info)
+    ?(validation_exit = 2) ?(log_level = Eta_observability.Logger.Info) ?journal_level
     ?(service_command = "run") ?(config_file = "config.toml") ?(missing = `Defaults)
     ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry ?telemetry_result
     ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
     program =
   let open Cmdliner in
+  let journal =
+    match journal_level with
+    | None -> journal
+    | Some level -> Eta_observability.Logger.Reporter.at_least level journal
+  in
   let initial_logger =
     Eta_observability.Logger.create ~service:name ~clock:env#clock
       ~mono_clock:env#mono_clock ~level:log_level ~reporter:journal ()
@@ -236,19 +241,20 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   | Ok (`Ok f) -> f ()
 
 let run_for_test ?on_switch ?commands ?config_commands ?doc ?validation_exit ?log_level
-    ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
-    ?telemetry_result ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout
-    ~argv program =
+    ?journal_level ?service_command ?config_file ?missing ?validate ?validate_source
+    ?telemetry ?telemetry_result ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr
+    ~stdout ~argv program =
   run_for_test_with_args ?on_switch ?commands ?config_commands ?doc ?validation_exit
-    ?log_level ?service_command ?config_file ?missing ?validate ?validate_source
-    ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~env ~journal
-    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
+    ?log_level ?journal_level ?service_command ?config_file ?missing ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
+    ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
     (fun env _source settings () sw -> program env settings sw)
 
 let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_env_code
     ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc ?validation_exit ?log_level
-    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
-    ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err program =
+    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err
+    program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -294,18 +300,19 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_e
           in
           run_for_test_with_args ?commands ?config_commands ?commands_with_env
             ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc
-            ?validation_exit ?log_level ?service_command ?config_file ?missing ?validate
-            ?validate_source ?telemetry ?telemetry_result ~service_args ~on_switch ~env
+            ?validation_exit ?log_level ?journal_level ?service_command ?config_file
+            ?missing ?validate ?validate_source ?telemetry ?telemetry_result ~service_args
+            ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
             ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
             ~argv:Sys.argv program))
 
-let run ?commands ?config_commands ?doc ?validation_exit ?log_level ?service_command
-    ?config_file ?missing ?read_file ?validate ?validate_source ?telemetry
-    ?telemetry_result ~name ~config ~pp_err program =
-  run_with_args ?commands ?config_commands ?doc ?validation_exit ?log_level
+let run ?commands ?config_commands ?doc ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
+    ?telemetry ?telemetry_result ~name ~config ~pp_err program =
+  run_with_args ?commands ?config_commands ?doc ?validation_exit ?log_level ?journal_level
     ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
     ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~name ~config
     ~pp_err (fun env _source settings () sw -> program env settings sw)

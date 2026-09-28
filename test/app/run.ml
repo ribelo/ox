@@ -74,7 +74,7 @@ let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 (* ^napp-9x0s: [read] is the read outcome the Door sees; the default is a file that is
    there and holds [text], which is what every other case wants. *)
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
-    ?doc ?validation_exit ?log_level ?telemetry ?telemetry_result
+    ?doc ?validation_exit ?log_level ?journal_level ?telemetry ?telemetry_result
     ?(read_path = fun _ -> ()) ?read ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
@@ -87,8 +87,8 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ?validate ?doc ?validation_exit ?log_level ?telemetry
-          ?telemetry_result ~env ~name:"demo" ~config ~pp_err
+        run_for_test ?on_switch ?validate ?doc ?validation_exit ?log_level ?journal_level
+          ?telemetry ?telemetry_result ~env ~name:"demo" ~config ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -1754,6 +1754,53 @@ let test_door4_log_level () =
   Alcotest.(check (list string))
     "^napp-k9in telemetry suppresses info" [ "program warning" ] (messages telemetry_logs)
 
+(* ^napp-xb3q: a quiet journal must not starve the exporter of info spans. *)
+let test_door4_journal_level () =
+  let run_case ?journal_level () =
+    let telemetry_logs = Eta_observability.Logger.Memory.create () in
+    let telemetry ~sw:_ env _ =
+      Eta_observability.Logger.info env.Env.logger "hook info";
+      {
+        reporters = [ Eta_observability.Logger.Memory.reporter telemetry_logs ];
+        span_ids = None;
+      }
+    in
+    let code, _, err, journal =
+      run ?journal_level ~telemetry
+        ~program:(fun env _ _ ->
+          ignore
+            (Eta_observability.Logger.span env.Env.logger "info span" (fun () -> Ok ())
+              : (unit, string) result);
+          Eta_observability.Logger.error env.Env.logger "program error";
+          Ok ())
+        ()
+    in
+    check_int "^napp-xb3q service runs" 0 code;
+    check_string "no diagnostics" "" err;
+    let messages memory =
+      List.map
+        (fun (record : Eta_observability.Logger.record) -> record.msg)
+        (Eta_observability.Logger.Memory.records memory)
+    in
+    (messages journal, messages telemetry_logs)
+  in
+  let journal, telemetry = run_case ~journal_level:Eta_observability.Logger.Error () in
+  Alcotest.(check (list string))
+    "^napp-xb3q only the error reaches the journal" [ "program error" ] journal;
+  Alcotest.(check (list string))
+    "^napp-xb3q telemetry keeps both info-span records and the error"
+    [ "info span"; "info span"; "program error" ]
+    telemetry;
+  let journal, telemetry = run_case () in
+  Alcotest.(check (list string))
+    "^napp-xb3q default journal remains unfiltered"
+    [ "hook info"; "info span"; "info span"; "program error" ]
+    journal;
+  Alcotest.(check (list string))
+    "^napp-xb3q default telemetry remains unchanged"
+    [ "info span"; "info span"; "program error" ]
+    telemetry
+
 let () =
   Alcotest.run "eta_app"
     [
@@ -1764,6 +1811,8 @@ let () =
             test_door4_validation_exit;
           Alcotest.test_case "^napp-k9in journal and telemetry level" `Quick
             test_door4_log_level;
+          Alcotest.test_case "^napp-xb3q independent journal level" `Quick
+            test_door4_journal_level;
           Alcotest.test_case "^napp-k0x0 ^napp-1k5x bare help and usage" `Quick
             test_door3_bare_help_and_usage;
           Alcotest.test_case "^napp-j3qu ^napp-izjt exit codes" `Quick

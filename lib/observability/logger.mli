@@ -102,6 +102,10 @@ module Reporter : sig
       writes. The caller owns synchronization and the newline is included in the argument.
   *)
 
+  val at_least : level -> t -> t
+  (** [at_least level reporter] forwards only records at or above [level] to [reporter].
+      Other reporters and the logger's own minimum level are unaffected. ^napp-xb3q *)
+
   val tee : t list -> t
   (** [tee reporters] delivers each record to every reporter in [reporters], in the order
       given, so a journal and an exporter coexist: a reporter that raises is skipped and

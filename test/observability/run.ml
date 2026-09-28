@@ -592,6 +592,38 @@ let test_reporter_tee_cancellation () =
       check_bool "^nobs-8i5y the interruption propagates" true cancelled;
       Alcotest.(check (list string)) "and delivery stops there" [] (List.rev !seen))
 
+(* ^napp-xb3q: a reporter threshold wraps only the chosen destination. *)
+let test_reporter_at_least () =
+  Eta_test.run (fun env _sw ->
+      let journal = Logger.Memory.create () in
+      let telemetry = Logger.Memory.create () in
+      let logger =
+        Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~level:Logger.Debug
+          ~reporter:
+            (Logger.Reporter.tee
+               [
+                 Logger.Reporter.at_least Logger.Error (Logger.Memory.reporter journal);
+                 Logger.Memory.reporter telemetry;
+               ])
+          ()
+      in
+      Logger.debug logger "debug";
+      Logger.info logger "info";
+      Logger.warn logger "warning";
+      Logger.error logger "error";
+      let messages memory =
+        List.map
+          (fun (record : Logger.record) -> record.msg)
+          (Logger.Memory.records memory)
+      in
+      Alcotest.(check (list string))
+        "only error reaches wrapped reporter" [ "error" ] (messages journal);
+      Alcotest.(check (list string))
+        "unwrapped reporter sees every record"
+        [ "debug"; "info"; "warning"; "error" ]
+        (messages telemetry))
+
 let () =
   Alcotest.run "eta_observability"
     (V1_logger.tests
@@ -643,6 +675,8 @@ let () =
           ] );
         ( "Reporters",
           [
+            Alcotest.test_case "threshold filters only its reporter (^napp-xb3q)" `Quick
+              test_reporter_at_least;
             Alcotest.test_case
               "a tee delivers in order and isolates a failure (^nobs-8i5y)" `Quick
               test_reporter_tee;
