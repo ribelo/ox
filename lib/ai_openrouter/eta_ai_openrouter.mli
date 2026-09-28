@@ -5,7 +5,8 @@
 
 module Responses = Responses
 (** One non-streaming Responses call: model, prompt and WAV input, optional structured
-    text output and reasoning effort, and the reply's status and concatenated text. *)
+    text output and reasoning effort, and the reply's status, every output item with its
+    kind, and the {!Responses.deliverable} verdict a text caller obeys. *)
 
 module Embeddings = Embeddings
 (** One or many text embeddings with the caller's dimensions, returned in the order the

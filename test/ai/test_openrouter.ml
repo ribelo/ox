@@ -1,4 +1,4 @@
-(* ^air2-rsp1 ^air2-emb2 ^air2-aud3 ^air2-rtm4 ^air2-tst5 *)
+(* ^air2-rsp1 ^air2-emb2 ^air2-aud3 ^air2-rtm4 ^air2-tst5 ^nor-pn0b ^nor-474w *)
 module R = Eta_ai_openrouter.Responses
 module E = Eta_ai_openrouter.Embeddings
 module A = Eta_ai_openrouter.Audio
@@ -34,6 +34,45 @@ let setup ~sw env json =
 
 let ok = Test_helpers.expect_ok
 
+(* ^nor-pn0b: a decoded reply reports every output item's kind, and [deliverable] is the
+   verdict a text caller obeys. Both are rendered to one line, so a failure names the
+   shape that arrived. *)
+let render_option = function Some value -> value | None -> "<none>"
+
+let pp_output fmt = function
+  | R.Output_text text -> Format.fprintf fmt "text %S" text
+  | R.Function_call call ->
+      Format.fprintf fmt "function_call %s %s" (render_option call.R.name)
+        (render_option call.R.call_id)
+  | R.Refusal text -> Format.fprintf fmt "refusal %S" text
+  | R.Other kind -> Format.fprintf fmt "other %S" kind
+
+let pp_rejection fmt = function
+  | `Not_completed status -> Format.fprintf fmt "not completed %s" status
+  | `Tool_continuation call ->
+      Format.fprintf fmt "tool continuation %s %s" (render_option call.R.name)
+        (render_option call.R.call_id)
+  | `Refusal text -> Format.fprintf fmt "refusal %s" text
+  | `Other kind -> Format.fprintf fmt "other item %s" kind
+
+let rendered pp values = String.concat " | " (List.map (Format.asprintf "%a" pp) values)
+
+let check_outputs what expected (response : R.response) =
+  Alcotest.(check string)
+    what (rendered pp_output expected)
+    (rendered pp_output response.output)
+
+let check_delivered what expected = function
+  | Ok text -> Alcotest.(check string) what expected text
+  | Error rejection ->
+      Alcotest.failf "%s was refused: %s" what
+        (Format.asprintf "%a" pp_rejection rejection)
+
+let check_refused what expected = function
+  | Error rejection ->
+      Alcotest.(check string) what expected (Format.asprintf "%a" pp_rejection rejection)
+  | Ok text -> Alcotest.failf "%s was delivered: %S" what text
+
 let test_responses () =
   Test_helpers.run (fun ~sw env ->
       let server, http, logger =
@@ -48,6 +87,9 @@ let test_responses () =
       in
       Alcotest.(check string) "status" "completed" response.status;
       Alcotest.(check string) "text" {|{"text":"hello"}|} response.text;
+      check_outputs "text-only kind" [ R.Output_text {|{"text":"hello"}|} ] response;
+      check_delivered "text-only deliverable" {|{"text":"hello"}|}
+        (R.deliverable response);
       let sent = Test_helpers.jbody server in
       let contents =
         Test_helpers.(
@@ -201,6 +243,122 @@ let test_failures () =
       check_unavailable ~retryable:false "audio 500" (audio (server ~status:500 "boom"));
       check_invalid_response "embeddings malformed" (embeddings (server "not json")))
 
+(* ^nor-pn0b: Pie's fixture — a completed reply that carries a [function_call] beside
+   valid structured text — must be distinguishable from completed text-only, and its
+   message text alone must never be delivered. *)
+
+let pie_fixture =
+  {|{"id":"r2","model":"audio-model","status":"completed","output":[{"type":"function_call","name":"lookup","call_id":"call_1","arguments":"{}"},{"type":"message","content":[{"text":"{\"text\":\"hello\"}"}]}]}|}
+
+let refusal_fixture =
+  {|{"id":"r3","model":"audio-model","status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"I cannot transcribe that"}]}]}|}
+
+let test_response_kinds () =
+  Test_helpers.run (fun ~sw env ->
+      let create json =
+        let server, http, logger = setup ~sw env json in
+        ok
+          (R.create ~http ~clock:env#clock ~logger ~api_key:key
+             ~endpoint:(Fake_server.url server "/responses")
+             ~deadline request)
+      in
+      let tool = create pie_fixture in
+      check_outputs "Pie fixture kinds"
+        [
+          R.Function_call R.{ name = Some "lookup"; call_id = Some "call_1" };
+          R.Output_text {|{"text":"hello"}|};
+        ]
+        tool;
+      Alcotest.(check string) "Pie fixture text" {|{"text":"hello"}|} tool.R.text;
+      check_refused "Pie fixture refused" "tool continuation lookup call_1"
+        (R.deliverable tool);
+      let refusal = create refusal_fixture in
+      check_outputs "refusal kind" [ R.Refusal "I cannot transcribe that" ] refusal;
+      check_refused "refusal refused" "refusal I cannot transcribe that"
+        (R.deliverable refusal));
+  (* The kinds and statuses a caller must refuse as well, decoded without a server. *)
+  let decoded json =
+    match R.decode (Yojson.Safe.from_string json) with
+    | Ok response -> response
+    | Error error -> Alcotest.failf "decode failed: %s" (Eta_ai.Error.to_string error)
+  in
+  let reasoning =
+    decoded
+      {|{"status":"completed","output":[{"type":"reasoning","summary":[]},{"type":"message","content":[{"type":"output_text","text":"hi"}]}]}|}
+  in
+  check_outputs "unmodelled item reported"
+    [ R.Other "reasoning"; R.Output_text "hi" ]
+    reasoning;
+  check_refused "unmodelled item refused" "other item reasoning" (R.deliverable reasoning);
+  let incomplete =
+    decoded
+      {|{"status":"incomplete","output":[{"type":"message","content":[{"type":"output_text","text":"hi"}]}]}|}
+  in
+  check_outputs "incomplete text reported" [ R.Output_text "hi" ] incomplete;
+  check_refused "incomplete status refused" "not completed incomplete"
+    (R.deliverable incomplete)
+
+(* ^nor-474w: the caller's bound covers the whole encoded multipart body, and a body over
+   it is refused with a typed error before any network I/O. *)
+
+let audio_request : A.request =
+  A.
+    {
+      model = "audio-model";
+      filename = "sample.wav";
+      wav = Bytes.make 3000 'R';
+      language = Some "en";
+      prompt = Some "medical";
+      temperature = Some 0.;
+    }
+
+let check_over_bound what ~limit ~length = function
+  | Error (`Input_too_large actual) ->
+      Alcotest.(check int) (what ^ " limit") limit actual.Eta_json.limit;
+      Alcotest.(check int) (what ^ " length") length actual.Eta_json.length
+  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+  | Ok _ -> Alcotest.failf "%s accepted" what
+
+let test_audio_bound () =
+  Alcotest.(check int) "default unchanged" (8 * 1024 * 1024) A.max_request_bytes;
+  let encoded = ok (A.body audio_request) in
+  let length = Bytes.length encoded in
+  Alcotest.(check bool)
+    "the bound covers the multipart overhead" true
+    (length > Bytes.length audio_request.A.wav);
+  Alcotest.(check bool)
+    "below the bound" true
+    (Bytes.equal encoded (ok (A.body ~max_request_bytes:(length + 1) audio_request)));
+  Alcotest.(check bool)
+    "at the bound" true
+    (Bytes.equal encoded (ok (A.body ~max_request_bytes:length audio_request)));
+  check_over_bound "above the bound" ~limit:(length - 1) ~length
+    (A.body ~max_request_bytes:(length - 1) audio_request);
+  (match A.body ~max_request_bytes:0 audio_request with
+  | exception Invalid_argument _ -> ()
+  | _ -> Alcotest.fail "a non-positive bound must be a defect");
+  (match A.body ~max_request_bytes:(-1) audio_request with
+  | exception Invalid_argument _ -> ()
+  | _ -> Alcotest.fail "a negative bound must be a defect");
+  Test_helpers.run (fun ~sw env ->
+      let server, http, _ = setup ~sw env {|{"text":"hello"}|} in
+      let create ?max_request_bytes () =
+        A.create ~http ~api_key:key ?max_request_bytes
+          ~endpoint:(Fake_server.url server "/audio/transcriptions")
+          ~deadline audio_request
+      in
+      check_over_bound "create over the bound" ~limit:(length - 1) ~length
+        (create ~max_request_bytes:(length - 1) ());
+      Alcotest.(check int)
+        "refused before any connection" 0
+        (Fake_server.connections server);
+      Alcotest.(check string)
+        "at the bound" "hello"
+        (ok (create ~max_request_bytes:length ()));
+      Alcotest.(check int)
+        "the whole encoded body went over the wire" length
+        (String.length (Fake_server.body server)))
+
 (* One text frame as the client sends it, and one read back from the wire. *)
 let frame_of_text text =
   Eta_http.Ws_codec.encode
@@ -337,12 +495,16 @@ let () =
     ([
        ( "offline",
          [
-           Alcotest.test_case "Responses WAV wire ^air2-rsp1" `Quick test_responses;
+           Alcotest.test_case "Responses WAV wire ^air2-rsp1 ^nor-pn0b" `Quick
+             test_responses;
            Alcotest.test_case "embeddings index ^air2-emb2" `Quick test_embeddings;
            Alcotest.test_case "strict and Realtime events ^air2-rtm4" `Quick
              test_fail_closed;
            Alcotest.test_case "audio multipart ^air2-aud3" `Quick test_audio;
            Alcotest.test_case "failure matrix ^air2-tst5" `Quick test_failures;
+           Alcotest.test_case "Responses output kinds ^nor-pn0b" `Quick
+             test_response_kinds;
+           Alcotest.test_case "audio request bound ^nor-474w" `Quick test_audio_bound;
            Alcotest.test_case "Codex WS exchange ^air2-rtm4" `Quick test_realtime_session;
          ] );
      ]

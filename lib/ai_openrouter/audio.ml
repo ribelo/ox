@@ -10,12 +10,15 @@ type request = {
 type reply = { text : string option } [@@deriving yojson] [@@yojson.allow_extra_fields]
 
 let default_endpoint = "https://openrouter.ai/api/v1/audio/transcriptions"
-let max_request_bytes = 8 * 1024 * 1024
+let default_max_request_bytes = 8 * 1024 * 1024
+let max_request_bytes = default_max_request_bytes
 let boundary = "eta-ai-wav-boundary-59f3201f"
 let invalid message = Common.invalid message `Null
 
-let body request =
-  if
+let body ?(max_request_bytes = default_max_request_bytes) request =
+  if max_request_bytes <= 0 then
+    invalid_arg "Eta_ai_openrouter.Audio.body: max_request_bytes must be positive"
+  else if
     request.model = ""
     || Bytes.length request.wav = 0
     || String.contains request.filename '\r'
@@ -57,8 +60,10 @@ let decode json =
   | Ok { text = Some text } when String.trim text <> "" -> Ok (String.trim text)
   | Ok _ -> Common.invalid ~path:"text" "missing transcription text" json
 
-let create ~http ~api_key ?(endpoint = default_endpoint) ~deadline request =
-  match body request with
+let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~deadline
+    request =
+  let limit = Option.value ~default:default_max_request_bytes max_request_bytes in
+  match body ?max_request_bytes request with
   | Error _ as error -> error
   | Ok body -> (
       let headers =
@@ -79,9 +84,7 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ~deadline request =
       | Ok { status = 401; _ } ->
           Error (`Authentication "transcription authentication failed")
       | Ok { status = 413; _ } ->
-          Error
-            (`Input_too_large
-               { Eta_json.limit = max_request_bytes; length = Bytes.length body })
+          Error (`Input_too_large { Eta_json.limit; length = Bytes.length body })
       | Ok { status; _ } when status < 200 || status >= 300 ->
           Error
             (`Unavailable

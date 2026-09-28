@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_ai_openrouter
 consumer: Pie migration (pienext-93ym, pienext-osw0)
 ---
@@ -23,3 +23,30 @@ consumer: Pie migration (pienext-93ym, pienext-osw0)
 ## Testing Decisions
 
 - Local fake server: the Pie-shaped fixture, a refusal item, text-only; below/at/above a configured bound.
+
+## Verified
+
+Delivered: `Responses.response` keeps `id`, `model`, `status` and `text` and gains
+`output : output list` — `Output_text of string | Function_call of {name; call_id} |
+Refusal of string | Other of string`, every item of the reply's `output` array in order,
+none dropped — plus `deliverable : response -> (string, rejection) result` with
+`[ `Not_completed of string | `Tool_continuation of {name; call_id} | `Refusal of string |
+`Other of string ]`, which is `Ok text` only for `status="completed"` text-only replies.
+A function call's arguments are deliberately not decoded: refusal needs its identity, not
+its payload. `Audio.body` and `Audio.create` take `?max_request_bytes` (default 8 MiB,
+`Audio.max_request_bytes` unchanged) checked against the whole encoded multipart body
+before any I/O, and a non-positive bound raises `Invalid_argument`.
+
+Tests: `test/ai/test_openrouter.ml` `Responses output kinds ^nor-pn0b` (Pie's
+completed+function_call fixture beside valid text, a refusal item, an unmodelled
+`reasoning` item and an `incomplete` status — each distinguishable in `output` and
+refused by `deliverable`, while completed text-only is delivered) and `audio request
+bound ^nor-474w` (below/at/above one encoded bound, a non-positive bound raising, and a
+refused `create` opening no connection).
+
+Gates: scoped `lib/ai_openrouter` + `test/ai/test_openrouter.exe` green under
+`DUNE_BUILD_DIR=_build_nor2`, and `dune build @install`, `dune test --force` (23 suites)
+and `dune build @fmt` green on the tree. Consumers: Leash, grip and inn do not use
+`eta_ai_openrouter`, so nothing changes for them; Pie's U3 reads `deliverable`/`output`
+instead of trusting `status` and `text`, and passes its own capture bound to
+`Audio.create ~max_request_bytes`.

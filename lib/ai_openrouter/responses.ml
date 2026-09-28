@@ -26,12 +26,27 @@ type header = {
 }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
+type function_call = { name : string option; call_id : string option }
+
+type output =
+  | Output_text of string
+  | Function_call of function_call
+  | Refusal of string
+  | Other of string
+
 type response = {
   id : string option;
   model : string option;
   status : string;
   text : string;
+  output : output list;
 }
+
+type rejection =
+  [ `Not_completed of string
+  | `Tool_continuation of function_call
+  | `Refusal of string
+  | `Other of string ]
 
 let default_endpoint = "https://openrouter.ai/api/v1/responses"
 let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -97,54 +112,91 @@ let encode (request : request) =
       );
     ]
 
-(* v1:openai_codec/responses.ml output_text: only message content and output_text.
-   Dynamic output items use Of_json so malformed relevant content is not silently lost. *)
+(* v1:openai_codec/responses.ml reads only message text. This decoder reports every item
+   and every message content part with the kind the provider named, so a disqualifying
+   item — a tool continuation above all — cannot be silently dropped (^nor-pn0b).
+   Malformed relevant content stays an error rather than becoming empty text. *)
 let field name decoder json = Eta_json.Of_json.field name decoder json
 let invalid_issue result = Result.map_error (fun issue -> `Invalid_response issue) result
+let issue path message got = Error { Eta_json.path; message; got }
 
-let output_text item =
+let text_of part =
+  field "text" Eta_json.Of_json.string part |> Result.map (fun text -> Output_text text)
+
+let refusal_of item =
+  match (Eta_json.string_member "refusal" item, Eta_json.string_member "text" item) with
+  | Some text, _ | None, Some text -> Ok (Refusal text)
+  | None, None -> issue "refusal" "refusal without text" item
+
+(* One message content part: the documented [output_text] and [refusal] parts, and any
+   other part kind reported instead of dropped. A part without a [type] has always read
+   as text; keep that. *)
+let part_of part =
+  match Eta_json.string_member "type" part with
+  | Some "output_text" | None -> text_of part
+  | Some "refusal" -> refusal_of part
+  | Some kind -> Ok (Other kind)
+
+let outputs_of_item item =
   match Eta_json.string_member "type" item with
-  | Some "message" | None -> (
-      let open Eta_json.Of_json in
-      match
-        field "content"
-          (list (fun part ->
-               match Eta_json.string_member "type" part with
-               | Some "output_text" | None -> field "text" string part
-               | Some _ -> Ok ""))
-          item
-        |> invalid_issue
-      with
-      | Error _ as error -> error
-      | Ok texts -> Ok (List.filter (fun text -> text <> "") texts))
-  | Some "output_text" ->
-      field "text" Eta_json.Of_json.string item
-      |> invalid_issue
-      |> Result.map (fun text -> [ text ])
-  | Some _ -> Ok []
+  | Some "message" | None -> field "content" (Eta_json.Of_json.list part_of) item
+  | Some "output_text" -> text_of item |> Result.map (fun output -> [ output ])
+  | Some "refusal" -> refusal_of item |> Result.map (fun output -> [ output ])
+  | Some "function_call" ->
+      Ok
+        [
+          Function_call
+            {
+              name = Eta_json.string_member "name" item;
+              call_id = Eta_json.string_member "call_id" item;
+            };
+        ]
+  | Some kind -> Ok [ Other kind ]
+
+let text_of_output output =
+  output
+  |> List.filter_map (function
+    | Output_text text when text <> "" -> Some text
+    | _ -> None)
+  |> String.concat ""
 
 let decode json =
   match header_of_yojson json with
   | Error message -> Common.invalid message json
-  | Ok header ->
+  | Ok header -> (
       if header.status = "failed" then
         Common.invalid ~path:"status" "provider failed" json
       else
         let rec collect acc = function
-          | [] ->
-              Ok
-                {
-                  id = header.id;
-                  model = header.model;
-                  status = header.status;
-                  text = String.concat "" (List.rev acc);
-                }
+          | [] -> Ok (List.rev acc)
           | item :: rest -> (
-              match output_text item with
+              match invalid_issue (outputs_of_item item) with
               | Error _ as error -> error
-              | Ok texts -> collect (List.rev_append texts acc) rest)
+              | Ok outputs -> collect (List.rev_append outputs acc) rest)
         in
-        collect [] header.output
+        match collect [] header.output with
+        | Error _ as error -> error
+        | Ok output ->
+            Ok
+              {
+                id = header.id;
+                model = header.model;
+                status = header.status;
+                text = text_of_output output;
+                output;
+              })
+
+let deliverable response =
+  if response.status <> "completed" then Error (`Not_completed response.status)
+  else
+    let rec verdict = function
+      | [] -> Ok response.text
+      | Output_text _ :: rest -> verdict rest
+      | Function_call call :: _ -> Error (`Tool_continuation call)
+      | Refusal text :: _ -> Error (`Refusal text)
+      | Other kind :: _ -> Error (`Other kind)
+    in
+    verdict response.output
 
 let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ~deadline
     (request : request) =
