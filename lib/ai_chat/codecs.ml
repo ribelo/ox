@@ -1,8 +1,10 @@
 (* The value a caller gets and the step that extracts it from a reply.
 
    A completion is the first choice's message plus what the reply said about itself: the
-   model that answered, why generation stopped, the usage and the request id. A reply that
-   names no choice is refused here, so {!Chat.complete} never invents a content. *)
+   model that answered, why generation stopped, the usage and the request id. The usage
+   travels whole, so the provider's own cost — when the reply reports one — reaches the
+   caller as [completion.usage.cost] (^nchat-qu3j). A reply that names no choice is refused
+   here, so {!Chat.complete} never invents a content. *)
 
 type completion = {
   content : string;

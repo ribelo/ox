@@ -9,7 +9,9 @@ type completion = {
   content : string;  (** the first choice's message text *)
   model : string;  (** the model the reply named *)
   finish_reason : string option;  (** why generation stopped, when the reply says *)
-  usage : Types.usage;  (** the tokens the completion cost *)
+  usage : Types.usage;
+      (** the tokens the completion cost, and the provider's own cost when the reply
+          reports one (^nchat-qu3j) *)
   id : string option;  (** the provider's request id, when it sends one *)
 }
 (** What one {!Chat.complete} call returns. *)

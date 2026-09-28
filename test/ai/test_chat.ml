@@ -4,7 +4,8 @@
    reasoning control is written in the two forms OpenRouter documents and omitted when the
    caller says nothing. ^nchat-02vr: `~json_object:true` requires a JSON object.
    ^nchat-wtog: decoding, bounds, the two-attempt policy and the typed errors are the
-   System One client's, because both share {!Eta_ai}. ^nchat-96zw: usage at debug. *)
+   System One client's, because both share {!Eta_ai}. ^nchat-96zw: usage at debug.
+   ^nchat-qu3j: the provider's own cost is read beside the tokens when it reports one. *)
 
 open Chat_helpers
 module Codecs = Eta_ai_chat.Codecs
@@ -148,6 +149,71 @@ let test_request_round_trip () =
             "effort" (Some "low")
             (Option.bind request.Types.reasoning (fun reasoning -> reasoning.Types.effort)))
 
+(* ^nchat-qu3j: the reply shape the cost story is about — the same OpenAI-compatible reply
+   with the usage object spelled out, so a test says exactly which members the provider
+   sent. *)
+let usage_reply usage =
+  Printf.sprintf
+    {|{"id":"gen-chat-1","model":"inception/mercury-2.5","choices":[{"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}],"usage":%s}|}
+    usage
+
+let test_usage_cost () =
+  (* ^nchat-qu3j: the provider's own cost reaches the caller beside the tokens, as the
+     number the wire carries — OpenRouter writes a fraction for a paid completion and the
+     integer zero for a free one. *)
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw
+          [
+            usage_reply
+              {|{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14,"cost":0.00042}|};
+            usage_reply
+              {|{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14,"cost":0}|};
+          ]
+      in
+      let client = client ~sw env server () in
+      let paid = expect_ok (complete client ()) in
+      Alcotest.(check (option (float 0.)))
+        "the reported cost" (Some 0.00042) paid.Codecs.usage.cost;
+      Alcotest.(check int) "the tokens still read" 14 paid.Codecs.usage.total_tokens;
+      let free = expect_ok (complete client ()) in
+      Alcotest.(check (option (float 0.)))
+        "an integer cost is the same number" (Some 0.) free.Codecs.usage.cost)
+
+let test_usage_cost_absent () =
+  (* ^nchat-qu3j: a provider that reports no cost is not sending an invalid answer — a
+     chat endpoint is OpenAI-compatible and not OpenRouter — so the caller reads None,
+     never zero, and the reply's tokens still decode. *)
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw
+          [
+            usage_reply {|{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14}|};
+            usage_reply
+              {|{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14,"cost":null}|};
+          ]
+      in
+      let logger, memory = memory_logger env in
+      let client = client ~sw env server ~logger () in
+      let absent = expect_ok (complete client ()) in
+      Alcotest.(check (option (float 0.)))
+        "no reported cost" None absent.Codecs.usage.cost;
+      Alcotest.(check int) "the tokens still read" 14 absent.Codecs.usage.total_tokens;
+      let logged =
+        Eta_observability.Logger.Memory.find ~level:Eta_observability.Logger.Debug memory
+        |> List.filter (fun record ->
+            String.equal record.Eta_observability.Logger.msg "chat")
+      in
+      (match logged with
+      | record :: _ ->
+          Alcotest.(check bool)
+            "no cost field in the log" false
+            (List.mem_assoc "cost" record.Eta_observability.Logger.fields)
+      | [] -> Alcotest.fail "no chat usage record");
+      let null = expect_ok (complete client ()) in
+      Alcotest.(check (option (float 0.)))
+        "a null cost is no cost" None null.Codecs.usage.cost)
+
 (* Every refusal below is one broken reply served once: the client must refuse it, name
    the offending value, and not retry. *)
 let refusal where body =
@@ -183,6 +249,14 @@ let test_wrong_usage_type () =
   expect_message "prompt_tokens"
     (refusal "wrong usage type"
        {|{"model":"inception/mercury-2.5","choices":[{"message":{"role":"assistant","content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":"many","completion_tokens":3,"total_tokens":14}}|})
+
+let test_usage_cost_wrong_type () =
+  (* ^nchat-qu3j: the cost is read fail-closed like every other member the client acts on
+     — a cost that is not a number is refused with its path, not ignored (^nchat-wtog). *)
+  expect_message "usage.cost"
+    (refusal "a non-numeric cost"
+       (usage_reply
+          {|{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14,"cost":"free"}|}))
 
 let test_null_content () =
   (* ^nchat-wtog: a null content is not an empty string. *)
@@ -374,7 +448,8 @@ let test_fake_chat_server () =
         | _, headers, _ -> Option.value (List.assoc_opt "host" headers) ~default:""))
 
 let test_usage_logged () =
-  (* ^nchat-96zw: usage reaches the debug log with the request id and the model. *)
+  (* ^nchat-96zw ^nchat-qu3j: usage — and the provider's own cost, when it reports one —
+     reaches the debug log with the request id and the model. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve ~net:env#net ~clock:env#clock ~sw [ Chat_server.reply () ]
@@ -404,6 +479,13 @@ let test_usage_logged () =
       Alcotest.(check string) "prompt tokens" "11" (field "prompt_tokens");
       Alcotest.(check string) "completion tokens" "3" (field "completion_tokens");
       Alcotest.(check string) "total tokens" "14" (field "total_tokens");
+      let float_field name =
+        match List.assoc_opt name record.Eta_observability.Logger.fields with
+        | Some (Eta_observability.Logger.Float value) -> value
+        | Some _ -> Alcotest.failf "field %s has an unexpected shape" name
+        | None -> Alcotest.failf "no field %s" name
+      in
+      Alcotest.(check (float 0.)) "cost" 0.00002 (float_field "cost");
       Alcotest.(check string) "request id" "gen-chat-1" (field "request_id");
       Alcotest.(check string) "model" chat_model (field "model"))
 
@@ -442,12 +524,18 @@ let () =
             test_json_object_omitted;
           Alcotest.test_case "^nchat-6kd8 the request is the type's own" `Quick
             test_request_round_trip;
+          Alcotest.test_case "^nchat-qu3j the provider's cost is read" `Quick
+            test_usage_cost;
+          Alcotest.test_case "^nchat-qu3j no reported cost reads None" `Quick
+            test_usage_cost_absent;
         ] );
       ( "fail-closed",
         [
           Alcotest.test_case "^nchat-wtog empty choices" `Quick test_no_choices;
           Alcotest.test_case "^nchat-wtog missing usage" `Quick test_missing_usage;
           Alcotest.test_case "^nchat-wtog wrong usage type" `Quick test_wrong_usage_type;
+          Alcotest.test_case "^nchat-qu3j a non-numeric cost is refused" `Quick
+            test_usage_cost_wrong_type;
           Alcotest.test_case "^nchat-wtog null content" `Quick test_null_content;
           Alcotest.test_case "^nchat-wtog malformed JSON" `Quick test_malformed_json;
           Alcotest.test_case "^nchat-wtog status mapping" `Quick test_statuses;

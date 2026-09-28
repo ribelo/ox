@@ -20,9 +20,11 @@ let ok = Fake_server.ok
 let after = Fake_server.after
 
 (* The reply OpenRouter sends for a JSON-object completion, including the members this
-   client does not model (`object`, `created`, `logprobs`, `provider`, and the `cost`
-   OpenRouter adds to `usage`). A fake that sent only the modelled members would let a
-   decoder that refuses unknown members pass a test the real endpoint fails. *)
+   client does not model (`object`, `created`, `logprobs`, `provider`, and `cost_details`
+   inside `usage`). A fake that sent only the modelled members would let a decoder that
+   refuses unknown members pass a test the real endpoint fails. The reply carries
+   OpenRouter's `usage.cost` too (^nchat-qu3j), so the cost tests run against the shape the
+   real endpoint sends. *)
 let reply ?(model = "inception/mercury-2.5") ?(content = {|{"text":"ada"}|})
     ?(finish_reason = Some "stop") ?(prompt_tokens = 11) ?(completion_tokens = 3)
     ?(total_tokens = 14) () =
@@ -56,6 +58,9 @@ let reply ?(model = "inception/mercury-2.5") ?(content = {|{"text":"ada"}|})
                ("completion_tokens", `Int completion_tokens);
                ("total_tokens", `Int total_tokens);
                ("cost", `Float 0.00002);
+               (* The members beside `cost` OpenRouter adds: unmodelled, and a reply that
+                  carries them is not a corrupt answer. *)
+               ("cost_details", `Assoc [ ("upstream_inference_cost", `Float 0.00002) ]);
              ] );
          ("provider", `String "Inception");
        ])

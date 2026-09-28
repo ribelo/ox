@@ -59,23 +59,33 @@ let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_by
               | Error message ->
                   Error (`Invalid_response { path = "choices"; message; got = json })
               | Ok completion ->
+                  let usage = completion.Codecs.usage in
+                  (* The provider's own cost is logged when it reports one (^nchat-qu3j).
+                     A reply that reports no cost says nothing about spend, so the line
+                     carries no [cost] field rather than a zero, which would read as
+                     "free". *)
+                  let cost_fields =
+                    match usage.Types.cost with
+                    | Some cost -> [ ("cost", Eta_observability.Logger.Float cost) ]
+                    | None -> []
+                  in
                   Eta_observability.Logger.debug logger
                     ~fields:
-                      [
-                        ("model", Eta_observability.Logger.String completion.Codecs.model);
-                        ( "prompt_tokens",
-                          Eta_observability.Logger.Int
-                            completion.Codecs.usage.prompt_tokens );
-                        ( "completion_tokens",
-                          Eta_observability.Logger.Int
-                            completion.Codecs.usage.completion_tokens );
-                        ( "total_tokens",
-                          Eta_observability.Logger.Int
-                            completion.Codecs.usage.total_tokens );
-                        ( "request_id",
-                          Eta_observability.Logger.String
-                            (match completion.Codecs.id with Some id -> id | None -> "")
-                        );
-                      ]
+                      ([
+                         ("model", Eta_observability.Logger.String completion.Codecs.model);
+                         ( "prompt_tokens",
+                           Eta_observability.Logger.Int usage.prompt_tokens );
+                         ( "completion_tokens",
+                           Eta_observability.Logger.Int usage.completion_tokens );
+                         ("total_tokens", Eta_observability.Logger.Int usage.total_tokens);
+                       ]
+                      @ cost_fields
+                      @ [
+                          ( "request_id",
+                            Eta_observability.Logger.String
+                              (match completion.Codecs.id with
+                              | Some id -> id
+                              | None -> "") );
+                        ])
                     "chat";
                   Ok completion)))

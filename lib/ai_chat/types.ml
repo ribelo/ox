@@ -25,11 +25,21 @@ type message = { role : role; content : string }
     whose content is `null` or absent is an [`Invalid_response], never an empty string
     (^nchat-wtog). *)
 
-type usage = { prompt_tokens : int; completion_tokens : int; total_tokens : int }
+type usage = {
+  prompt_tokens : int;
+  completion_tokens : int;
+  total_tokens : int;
+  cost : float option;
+}
 [@@deriving yojson] [@@yojson.allow_extra_fields]
-(** What the completion cost, in tokens. All three are required, so a reply without them
-    is refused rather than read as zero; a provider's extra usage members (OpenRouter's
-    `cost`) are ignored. *)
+(** What the completion cost. The three token counts are required, so a reply without them
+    is refused rather than read as zero. [cost] is the provider's own accounting in USD,
+    when it reports one: OpenRouter sends it beside the token counts, and a chat endpoint
+    is OpenAI-compatible, not OpenRouter, so a server that reports only tokens is not
+    sending a broken reply — an absent member (or a `null`) reads [None], never [0.]
+    (^nchat-qu3j). A cost that is present and not a number is refused with its path, like
+    every other wrongly typed member (^nchat-wtog). OpenRouter's `cost_details` is a
+    member nobody reads and is ignored. *)
 
 (** The one response format this client asks for. ^nchat-02vr *)
 type response_format_kind = Json_object [@json.name "json_object"] [@@deriving yojson]

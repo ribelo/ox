@@ -79,4 +79,6 @@ val complete :
     caller that pins one.
 
     A successful call logs `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`
-    and `request_id` at debug under the message ["chat"] (^nchat-96zw). *)
+    and `request_id` at debug under the message ["chat"], and the provider's own `cost`
+    when the reply reports one (^nchat-96zw ^nchat-qu3j). A reply that reports no cost
+    logs no `cost` field: nothing is not zero. *)

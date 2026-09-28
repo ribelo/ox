@@ -19,8 +19,17 @@ type role = System | User | Assistant
 type message = { role : role; content : string }
 (** One message: its speaker and its text. `content` is required and a string. *)
 
-type usage = { prompt_tokens : int; completion_tokens : int; total_tokens : int }
-(** The tokens the completion cost, all three required. *)
+type usage = {
+  prompt_tokens : int;
+  completion_tokens : int;
+  total_tokens : int;
+  cost : float option;
+}
+(** What the completion cost: the three token counts, all required, and the provider's own
+    cost in USD when it reports one (^nchat-qu3j). `cost` is never required — a server
+    that reports only tokens is not sending a broken reply, so an absent member (or a
+    `null`) reads `None`, never `0.` — while a cost that is present and not a number is
+    refused with its path, like every other wrongly typed member (^nchat-wtog). *)
 
 (** The one response format this client asks for. *)
 type response_format_kind = Json_object
