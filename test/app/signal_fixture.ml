@@ -104,6 +104,18 @@ let () =
                   Eta_app.serve ~sw ()))
         in
         [ Cmdliner.Cmd.v (Cmdliner.Cmd.info "long") long ])
+      ~commands_with_env_code:(fun env _run_owned run_owned_code ->
+        let long =
+          Cmdliner.Term.const (fun () ->
+              run_owned_code (fun sw ->
+                  Eio.Switch.on_release sw (fun () ->
+                      Eio.Flow.copy_string "code command released\n"
+                        env.Eta_app.Env.base#stdout);
+                  Eio.Flow.copy_string "ready\n" env.Eta_app.Env.base#stdout;
+                  ignore (Eta_app.serve ~sw ());
+                  19))
+        in
+        [ Cmdliner.Cmd.v (Cmdliner.Cmd.info "long-code") long ])
       ~service_command:"serve"
       (fun env _source _cfg () sw ->
         Eio.Switch.on_release sw (fun () ->

@@ -32,14 +32,14 @@ module type SERVICE = sig
   val status : t -> Status.t
 end
 
-let render ~stop_ids stderr pp_err = function
-  | Exit.Success () -> 0
+let render ~stop_ids ~interrupt_exit ~exit_code ~success stderr pp_err = function
+  | Exit.Success value -> success value
   | Exit.Failure (Cause.Interrupt (Some id))
     when List.exists (Interrupt_id.equal id) !stop_ids ->
-      0
+      interrupt_exit
   | Exit.Failure (Cause.Fail err) ->
       stderr (Format.asprintf "%a\n" pp_err err);
-      1
+      exit_code err
   | Exit.Failure cause ->
       stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
       2
@@ -61,10 +61,11 @@ let validation_failure ~validate ~pp_err ~stderr env settings =
          2)
 
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
-    ?commands_with_env ?(service_command = "run") ?(config_file = "config.toml")
-    ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry
-    ?telemetry_result ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read
-    ~stderr ~stdout ~argv program =
+    ?commands_with_env ?commands_with_env_code ?(bare = `Service) ?(usage_exit = 2)
+    ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130) ?(service_command = "run")
+    ?(config_file = "config.toml") ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ())
+    ?validate_source ?telemetry ?telemetry_result ~service_args ~env ~journal ~name
+    ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let initial_logger =
     Eta_observability.Logger.create ~service:name ~clock:env#clock
@@ -79,7 +80,20 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
               Option.iter (fun f -> f sw) on_switch;
               task sw))
     in
-    render ~stop_ids:requested stderr pp_err outcome
+    render ~stop_ids:requested ~interrupt_exit:0 ~exit_code
+      ~success:(fun () -> 0)
+      stderr pp_err outcome
+  in
+  let run_owned_code task =
+    let requested = ref [] in
+    let outcome =
+      Scope.run (fun sw ->
+          Eio.Fiber.with_binding stop_ids requested (fun () ->
+              Option.iter (fun f -> f sw) on_switch;
+              Ok (task sw)))
+    in
+    render ~stop_ids:requested ~interrupt_exit ~exit_code ~success:Fun.id stderr pp_err
+      outcome
   in
   let config_arg =
     Arg.(
@@ -152,7 +166,9 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
                       Option.iter (fun f -> f sw) on_switch;
                       program program_env source settings args sw))
         in
-        render ~stop_ids:requested stderr pp_err outcome
+        render ~stop_ids:requested ~interrupt_exit:0 ~exit_code
+          ~success:(fun () -> 0)
+          stderr pp_err outcome
   in
   let run_term = Term.(const execute $ config_arg $ service_args) in
   let check file () =
@@ -180,23 +196,39 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
       (Cmd.info "config" ~doc:"Inspect configuration.")
       (check_cmd :: config_commands)
   in
+  let owned_commands =
+    match commands_with_env with None -> [] | Some build -> build door_env run_owned
+  in
+  let owned_code_commands =
+    match commands_with_env_code with
+    | None -> []
+    | Some build -> build door_env run_owned run_owned_code
+  in
+  let default = match bare with `Service -> Some run_term | `Help -> None in
   let cmd =
-    Cmd.group ~default:run_term
+    Cmd.group ?default
       (Cmd.info name ~doc:"Run the service.")
-      ((run_cmd :: config_cmd :: commands)
-      @ match commands_with_env with None -> [] | Some build -> build door_env run_owned)
+      ((run_cmd :: config_cmd :: commands) @ owned_commands @ owned_code_commands)
   in
   let out_buffer = Buffer.create 256 and err_buffer = Buffer.create 256 in
   let out_fmt = Format.formatter_of_buffer out_buffer
   and err_fmt = Format.formatter_of_buffer err_buffer in
+  (* Cmdliner reports a group with no default as a usage error. For the bare-help
+     contract, ask it to render its own top-level help instead. *)
+  let eval_argv =
+    if bare = `Help && Array.length argv = 1 then [| argv.(0); "--help" |] else argv
+  in
   let parsed =
-    Cmd.eval_value ~catch:false ~env:getenv ~argv ~help:out_fmt ~err:err_fmt cmd
+    Cmd.eval_value ~catch:false ~env:getenv ~argv:eval_argv ~help:out_fmt ~err:err_fmt cmd
   in
   Format.pp_print_flush out_fmt ();
   Format.pp_print_flush err_fmt ();
   if Buffer.length out_buffer > 0 then stdout (Buffer.contents out_buffer);
   if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
-  match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
+  match parsed with
+  | Ok `Help | Ok `Version -> 0
+  | Error _ -> usage_exit
+  | Ok (`Ok f) -> f ()
 
 let run_for_test ?on_switch ?commands ?config_commands ?service_command ?config_file
     ?missing ?validate ?validate_source ?telemetry ?telemetry_result ~env ~journal ~name
@@ -207,9 +239,10 @@ let run_for_test ?on_switch ?commands ?config_commands ?service_command ?config_
     ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
       program env settings sw)
 
-let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
-    ?config_file ?missing ?read_file ?validate ?validate_source ?telemetry
-    ?telemetry_result ~service_args ~name ~config ~pp_err program =
+let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_env_code
+    ?bare ?usage_exit ?exit_code ?interrupt_exit ?service_command ?config_file ?missing
+    ?read_file ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name
+    ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -254,6 +287,7 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
                 | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn)))
           in
           run_for_test_with_args ?commands ?config_commands ?commands_with_env
+            ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit
             ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
             ?telemetry_result ~service_args ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)

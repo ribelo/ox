@@ -65,6 +65,15 @@ val run_for_test_with_args :
     ('base Env.t ->
     ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
     (unit -> int) Cmdliner.Cmd.t list) ->
+  ?commands_with_env_code:
+    ('base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    ((Eio.Switch.t -> int) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?bare:[ `Service | `Help ] ->
+  ?usage_exit:int ->
+  ?exit_code:('err -> int) ->
+  ?interrupt_exit:int ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -93,7 +102,17 @@ val run_for_test_with_args :
     monitor, classify its result, and wait for finalizers. These extra commands do not
     load config automatically: commands that need it own that choice. The Env given to the
     builder has the journal-only logger; telemetry belongs only to the service.
-    Parsing/help do not enter a switch. ^napp-ytqk ^napp-x11e
+    [commands_with_env_code] preserves that builder unchanged while also supplying
+    [run_owned_code : (Eio.Switch.t -> int) -> int]. Its task runs in a fresh
+    signal-monitored switch and returns its integer only after finalizers finish. Both
+    command builders may be supplied; their commands are concatenated. A requested stop
+    exits [interrupt_exit] (default 130) for [run_owned_code], while the existing
+    [run_owned] and the service retain their clean-stop exit 0. Foreign stops and defects
+    exit 2. [bare = `Help] makes the group print help (exit 0) with no service or config
+    load; the default is [`Service]. [usage_exit] defaults to 2 for Cmdliner parse errors;
+    [exit_code] defaults to [(fun _ -> 1)] for typed errors of both the service and
+    [run_owned]. ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt Parsing/help do not enter a
+    switch. ^napp-ytqk ^napp-x11e
 
     [config_file] names the default XDG file (default [config.toml]); [missing] decides
     whether an absent default is decoded from an empty document or rejected. Explicit
@@ -178,6 +197,15 @@ val run_with_args :
     (Eio_unix.Stdenv.base Env.t ->
     ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
     (unit -> int) Cmdliner.Cmd.t list) ->
+  ?commands_with_env_code:
+    (Eio_unix.Stdenv.base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    ((Eio.Switch.t -> int) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?bare:[ `Service | `Help ] ->
+  ?usage_exit:int ->
+  ?exit_code:('err -> int) ->
+  ?interrupt_exit:int ->
   ?service_command:string ->
   ?config_file:string ->
   ?missing:Config.missing ->
@@ -206,7 +234,8 @@ val run_with_args :
     Eio filesystem reader in the service and [config check], allowing a consumer to
     enforce regular-file and byte limits using {!Config.read_regular}. Reader failures
     must distinguish [`Missing] from [`Unreadable]. The application still owns live
-    reload. ^napp-ytqk ^napp-x11e ^napp-ersz *)
+    reload. Its CLI options and owned-code builder match {!run_for_test_with_args}.
+    ^napp-ytqk ^napp-x11e ^napp-ersz ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt *)
 
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->

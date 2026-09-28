@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_app
 consumer: nema row 31 (U4: nema's CLI contract — help on bare invocation, usage exit 124, its own exit codes 64/65/69/70/75, 130 on interrupt for client verbs)
 ---
@@ -24,3 +24,6 @@ nema's CLI prints help when run with no subcommand, exits 124 on a usage error, 
 ## Testing Decisions
 
 - test/app: bare `Help` prints help and never starts the program; a bad flag exits `usage_exit`; `exit_code` maps typed errors (a defect stays 2); an owned command's int is the exit; a real SIGTERM during an owned command exits 130 (reuse the signal fixture).
+
+Verified: test/app covers ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt, including real SIGTERM and switch release.
+The isolated `@install`, full `dune test`, and `@fmt` gates passed with `DUNE_BUILD_DIR=_build_door3`.

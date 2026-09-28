@@ -1562,11 +1562,133 @@ let test_door2_bounded_reader () =
             | Ok "12345" -> true
             | _ -> false)))
 
+(* ^napp-k0x0 ^napp-1k5x: no default command means group help, not config
+   loading or service execution; a parse error uses the consumer's usage code. *)
+let test_door3_bare_help_and_usage () =
+  Eta_test.run (fun env _ ->
+      let output = Buffer.create 256 and errors = Buffer.create 80 in
+      let starts = ref 0 in
+      let invoke argv =
+        run_for_test_with_args ~bare:`Help ~usage_exit:124
+          ~service_args:(Cmdliner.Term.const ()) ~env ~name:"demo" ~config ~pp_err ~getenv
+          ~read:(fun _ -> Alcotest.fail "help must not load config")
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~stdout:(fun text -> Buffer.add_string output text)
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~argv
+          (fun _ _ _ () _ ->
+            incr starts;
+            Ok ())
+      in
+      check_int "^napp-k0x0 bare help exits zero" 0 (invoke [| "demo" |]);
+      expect_part (Buffer.contents output) "config";
+      expect_part (Buffer.contents output) "run";
+      check_int "^napp-k0x0 program never starts" 0 !starts;
+      check_int "^napp-1k5x bad flag uses usage exit" 124
+        (invoke [| "demo"; "--not-an-option" |]);
+      check_int "^napp-1k5x bad named flag uses usage exit" 124
+        (invoke [| "demo"; "run"; "--not-an-option" |]);
+      check_int "usage did not start program" 0 !starts;
+      expect_part (Buffer.contents errors) "not-an-option")
+
+(* ^napp-j3qu ^napp-izjt: typed service/owned failures are mapped by the
+   consumer, defects remain 2, and owned-code tasks return their own integer. *)
+let test_door3_exit_codes () =
+  let open Cmdliner in
+  Eta_test.run (fun env _ ->
+      let errors = Buffer.create 128 and released = ref 0 in
+      let invoke ?(interrupt_exit = 130) ?(defect = false) argv =
+        run_for_test_with_args ~service_args:(Term.const ()) ~env ~name:"demo" ~config
+          ~pp_err ~getenv
+          ~read:(fun _ -> Ok good)
+          ~exit_code:(function `Problem _ -> 65)
+          ~interrupt_exit
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~stdout:ignore
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~argv
+          ~commands_with_env_code:(fun _ run_owned run_owned_code ->
+            [
+              Cmd.v (Cmd.info "owned")
+                (Term.const (fun () -> run_owned (fun _ -> Error (`Problem "owned"))));
+              Cmd.v (Cmd.info "code")
+                (Term.const (fun () ->
+                     run_owned_code (fun sw ->
+                         Eio.Switch.on_release sw (fun () -> incr released);
+                         75)));
+              Cmd.v (Cmd.info "code-stop")
+                (Term.const (fun () ->
+                     run_owned_code (fun sw ->
+                         let id = Eta.Interrupt_id.create () in
+                         request_stop ~sw id;
+                         Eio.Fiber.await_cancel ())));
+            ])
+          (fun _ _ _ () _ ->
+            if defect then failwith "service defect" else Error (`Problem "service"))
+      in
+      check_int "^napp-j3qu service typed error" 65 (invoke [| "demo"; "run" |]);
+      check_int "^napp-j3qu owned typed error" 65 (invoke [| "demo"; "owned" |]);
+      check_int "^napp-j3qu defect remains 2" 2 (invoke ~defect:true [| "demo"; "run" |]);
+      check_int "^napp-izjt owned code returned" 75 (invoke [| "demo"; "code" |]);
+      check_int "^napp-izjt finalizer ran" 1 !released;
+      check_int "^napp-izjt owned default stop code" 130
+        (invoke [| "demo"; "code-stop" |]);
+      check_int "^napp-izjt owned custom stop code" 143
+        (invoke ~interrupt_exit:143 [| "demo"; "code-stop" |]);
+      expect_part (Buffer.contents errors) "service";
+      expect_part (Buffer.contents errors) "owned";
+      expect_part (Buffer.contents errors) "service defect")
+
+(* ^napp-izjt: production SIGTERM cancellation of the int runner waits for its
+   switch release before the process exits and returns 130, unlike legacy runner. *)
+let test_door3_real_signal_owned_code () =
+  Eio_main.run (fun env ->
+      Eio.Switch.run (fun sw ->
+          let fixture =
+            Filename.concat (Filename.dirname Sys.executable_name) "signal_fixture.exe"
+          in
+          let child =
+            match
+              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long-code" ] ~grace:(Eta.Duration.ms 50)
+                ~stdout:Eta_process.Child.Pipe ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+            with
+            | Ok child -> child
+            | Error _ -> Alcotest.fail "invalid owned-code fixture spawn"
+          in
+          let output =
+            Eio.Buf_read.of_flow ~max_size:1024
+              (Option.get (Eta_process.Child.stdout child))
+          in
+          check_string "^napp-izjt owned code ready" "ready"
+            (Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output));
+          Eta_process.Child.signal child Sys.sigterm;
+          let status =
+            Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                Eta_process.Child.await child)
+          in
+          Alcotest.(check bool)
+            "^napp-izjt SIGTERM exits 130" true
+            (match status with Eta_process.Child.Exited 130 -> true | _ -> false);
+          check_string "^napp-izjt release before exit" "code command released"
+            (Eio.Buf_read.line output);
+          ignore (Eta_process.Child.stop child)))
+
 let () =
   Alcotest.run "eta_app"
     [
       ( "door",
         [
+          Alcotest.test_case "^napp-k0x0 ^napp-1k5x bare help and usage" `Quick
+            test_door3_bare_help_and_usage;
+          Alcotest.test_case "^napp-j3qu ^napp-izjt exit codes" `Quick
+            test_door3_exit_codes;
+          Alcotest.test_case "^napp-izjt real SIGTERM owned code" `Quick
+            test_door3_real_signal_owned_code;
           Alcotest.test_case "^napp-ytqk typed service args" `Quick
             test_door2_service_args;
           Alcotest.test_case "^napp-x11e Eio commands" `Quick test_door2_commands;
