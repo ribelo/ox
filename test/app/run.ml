@@ -1,4 +1,4 @@
-(* Story IDs covered: ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
+(* Story IDs covered: ^napp-ytqk ^napp-x11e ^napp-ersz ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
    ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-o6d6 ^napp-mbpr ^napp-433c
    ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps ^napp-idii and, after
    ^nnoschema-ttb5 removed the schema DSL, and ^notel-1stb (the Door's real SIGTERM
@@ -1279,11 +1279,269 @@ let test_real_signal_otlp_shutdown () =
             "^notel-1stb and the last record still reaches the collector"
             [ "signal stopped" ] messages))
 
+(* ^napp-ytqk: default and named invocation parse exactly one typed term. *)
+(* ^napp-x11e: an extra long-lived verb uses production signal handling and
+   completes its owned switch's finalizers before its process exits. *)
+let test_door2_real_signal_extra () =
+  Eio_main.run (fun env ->
+      Eio.Switch.run (fun sw ->
+          let fixture =
+            Filename.concat (Filename.dirname Sys.executable_name) "signal_fixture.exe"
+          in
+          let child =
+            match
+              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long" ] ~grace:(Eta.Duration.ms 50)
+                ~stdout:Eta_process.Child.Pipe ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+            with
+            | Ok child -> child
+            | Error _ -> Alcotest.fail "invalid extra command fixture spawn"
+          in
+          let output =
+            Eio.Buf_read.of_flow ~max_size:1024
+              (Option.get (Eta_process.Child.stdout child))
+          in
+          let ready =
+            Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output)
+          in
+          check_string "^napp-x11e extra command ready" "ready" ready;
+          Eta_process.Child.signal child Sys.sigterm;
+          let status =
+            Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                Eta_process.Child.await child)
+          in
+          Alcotest.(check bool)
+            "SIGTERM clean exit" true
+            (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
+          check_string "^napp-x11e release before exit" "command released"
+            (Eio.Buf_read.line output);
+          ignore (Eta_process.Child.stop child)))
+
+(* ^napp-ersz: the production reader policy is actually wired to both startup
+   and config check, not merely available as an isolated helper. *)
+let test_door2_production_reader () =
+  let file = Filename.temp_file "eta-door2-reader-" ".toml" in
+  Fun.protect
+    ~finally:(fun () -> Sys.remove file)
+    (fun () ->
+      let out = open_out file in
+      output_string out (String.make 2048 'x');
+      close_out out;
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let fixture =
+                Filename.concat
+                  (Filename.dirname Sys.executable_name)
+                  "signal_fixture.exe"
+              in
+              List.iter
+                (fun command ->
+                  let child =
+                    match
+                      Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                        ~argv:((fixture :: command) @ [ "--config"; file ])
+                        ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                        ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                    with
+                    | Ok child -> child
+                    | Error _ -> Alcotest.fail "invalid fixture spawn"
+                  in
+                  let status =
+                    Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                        Eta_process.Child.await child)
+                  in
+                  Alcotest.(check bool)
+                    "reader rejects oversized file" true
+                    (match status with Eta_process.Child.Exited 2 -> true | _ -> false);
+                  let errors =
+                    Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+                  in
+                  expect_part errors "file exceeds byte limit";
+                  ignore (Eta_process.Child.stop child))
+                [ []; [ "config"; "check" ] ])))
+
+let test_door2_service_args () =
+  let open Cmdliner in
+  let flag name = Arg.(value & opt string "unset" & info [ name ]) in
+  let service_args =
+    Term.(
+      const (fun transcribe translate -> (transcribe, translate))
+      $ flag "ptt-transcribe-keysym" $ flag "ptt-translate-keysym")
+  in
+  Eta_test.run (fun base _ ->
+      let seen = ref [] in
+      let output = Buffer.create 80 and errors = Buffer.create 80 in
+      let invoke argv =
+        run_for_test_with_args ~service_args ~env:base ~name:"demo" ~config ~pp_err
+          ~getenv
+          ~read:(fun _ -> Ok good)
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~stdout:(fun text -> Buffer.add_string output text)
+          ~argv
+          (fun env source settings (transcribe, translate) _sw ->
+            ignore env.Env.base#clock;
+            seen := (source, settings.port, transcribe, translate) :: !seen;
+            Ok ())
+      in
+      check_int "^napp-ytqk bare overrides" 0
+        (invoke
+           [| "demo"; "--ptt-transcribe-keysym"; "F10"; "--ptt-translate-keysym"; "F11" |]);
+      check_int "^napp-ytqk named service" 0
+        (invoke [| "demo"; "run"; "--ptt-transcribe-keysym"; "F12" |]);
+      Alcotest.(check (list (pair int (pair string string))))
+        "both invocations receive typed values"
+        [ (42, ("F12", "unset")); (42, ("F10", "F11")) ]
+        (List.map (fun (_source, port, a, b) -> (port, (a, b))) !seen);
+      check_string "no diagnostics" "" (Buffer.contents errors))
+
+(* ^napp-x11e: one Env builds terms, each execution receives a fresh owned switch. *)
+let test_door2_commands () =
+  let open Cmdliner in
+  Eta_test.run (fun base _ ->
+      let seen = ref [] and releases = ref 0 in
+      let errors = Buffer.create 80 in
+      let code argv =
+        run_for_test_with_args ~service_args:(Term.const ()) ~env:base ~name:"demo"
+          ~config ~pp_err ~getenv
+          ~read:(fun _ -> Alcotest.fail "an extra command must not read service config")
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~stdout:ignore ~argv
+          ~commands_with_env:(fun door_env run_owned ->
+            let term =
+              Term.(
+                const (fun value () ->
+                    run_owned (fun sw ->
+                        Eio.Switch.on_release sw (fun () -> incr releases);
+                        ignore door_env.Env.base#clock;
+                        seen := value :: !seen;
+                        if value = "fail" then Error (`Problem "verb failed") else Ok ()))
+                $ Arg.(required & pos 0 (some string) None & info []))
+            in
+            [ Cmd.v (Cmd.info "echo") term ])
+          (fun _ _ _ _ _ -> Alcotest.fail "extra command must not serve")
+      in
+      check_int "^napp-x11e success" 0 (code [| "demo"; "echo"; "yes" |]);
+      check_int "^napp-x11e typed error" 1 (code [| "demo"; "echo"; "fail" |]);
+      check_int "^napp-x11e malformed args" 2 (code [| "demo"; "echo" |]);
+      Alcotest.(check (list string)) "only valid terms execute" [ "fail"; "yes" ] !seen;
+      check_int "owned switch releases on both outcomes" 2 !releases;
+      expect_part (Buffer.contents errors) "verb failed")
+
+(* ^napp-ersz: file selection, strict missing, explicit override and source reach
+   both run and config check through the same reader seam. *)
+let test_door2_source_policy () =
+  Eta_test.run (fun base _ ->
+      let seen = ref [] and validated = ref [] and prompt_paths = ref [] in
+      let out = Buffer.create 80 and err = Buffer.create 80 in
+      let read path =
+        seen := path :: !seen;
+        if Filename.basename path = "stt.toml" then Ok good
+        else if path = "/somewhere/app/override.toml" then Ok good
+        else Error `Missing
+      in
+      let invoke ?(missing = `Required) argv =
+        run_for_test_with_args ~service_args:(Cmdliner.Term.const ()) ~env:base
+          ~name:"demo" ~config ~pp_err ~getenv ~read ~missing ~config_file:"stt.toml"
+          ~validate_source:(fun _ source _ ->
+            validated := source :: !validated;
+            let path = match source with `Default p | `Explicit p -> p in
+            prompt_paths :=
+              Filename.concat (Filename.dirname path) "prompts/foo.md" :: !prompt_paths;
+            Ok ())
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~stdout:(fun text -> Buffer.add_string out text)
+          ~stderr:(fun text -> Buffer.add_string err text)
+          ~argv
+          (fun _ source _ () _ ->
+            validated := source :: !validated;
+            Ok ())
+      in
+      check_int "^napp-ersz default" 0 (invoke [| "demo" |]);
+      expect_part (List.hd !seen) "/demo/stt.toml";
+      check_int "^napp-ersz explicit" 0
+        (invoke [| "demo"; "--config"; "/somewhere/app/override.toml" |]);
+      Alcotest.(check bool)
+        "explicit source reaches program" true
+        (List.mem (`Explicit "/somewhere/app/override.toml") !validated);
+      Alcotest.(check bool)
+        "source anchors relative prompt paths" true
+        (List.mem "/somewhere/app/prompts/foo.md" !prompt_paths);
+      check_int "^napp-ersz check uses same reader" 0
+        (invoke [| "demo"; "config"; "check" |]);
+      check_int "^napp-ersz required missing" 2
+        (invoke [| "demo"; "--config"; "/missing.toml" |]);
+      expect_part (Buffer.contents err) "/missing.toml: no such file";
+      check_int "^napp-ersz required default missing" 2
+        (run_for_test_with_args ~service_args:(Cmdliner.Term.const ()) ~env:base
+           ~name:"demo" ~config ~pp_err ~getenv
+           ~read:(fun _ -> Error `Missing)
+           ~missing:`Required ~config_file:"stt.toml"
+           ~journal:
+             (Eta_observability.Logger.Memory.reporter
+                (Eta_observability.Logger.Memory.create ()))
+           ~stdout:ignore
+           ~stderr:(fun text -> Buffer.add_string err text)
+           ~argv:[| "demo" |]
+           (fun _ _ _ () _ -> Alcotest.fail "missing file must not run"));
+      expect_part (Buffer.contents err) "/demo/stt.toml: no such file")
+
+let test_door2_bounded_reader () =
+  let file = Filename.temp_file "eta-door2-" ".toml" in
+  let fifo = file ^ "-fifo" in
+  Unix.mkfifo fifo 0o600;
+  Fun.protect
+    ~finally:(fun () ->
+      Sys.remove fifo;
+      Sys.remove file)
+    (fun () ->
+      let out = open_out file in
+      output_string out "12345";
+      close_out out;
+      Eio_main.run (fun env ->
+          let read path = Config.read_regular ~max_bytes:4 Eio.Path.(env#fs / path) in
+          Alcotest.(check bool)
+            "^napp-ersz oversized regular file" true
+            (match read file with Error (`Unreadable _) -> true | _ -> false);
+          Alcotest.(check bool)
+            "^napp-ersz reject directory" true
+            (match read (Filename.dirname file) with
+            | Error (`Unreadable _) -> true
+            | _ -> false);
+          Alcotest.(check bool)
+            "^napp-ersz reject FIFO without opening" true
+            (match read fifo with Error (`Unreadable _) -> true | _ -> false);
+          Alcotest.(check bool)
+            "^napp-ersz missing" true
+            (match read (file ^ "-absent") with Error `Missing -> true | _ -> false);
+          Alcotest.(check bool)
+            "^napp-ersz exact boundary" true
+            (match Config.read_regular ~max_bytes:5 Eio.Path.(env#fs / file) with
+            | Ok "12345" -> true
+            | _ -> false)))
+
 let () =
   Alcotest.run "eta_app"
     [
       ( "door",
         [
+          Alcotest.test_case "^napp-ytqk typed service args" `Quick
+            test_door2_service_args;
+          Alcotest.test_case "^napp-x11e Eio commands" `Quick test_door2_commands;
+          Alcotest.test_case "^napp-x11e real SIGTERM extra command" `Quick
+            test_door2_real_signal_extra;
+          Alcotest.test_case "^napp-ersz source policy" `Quick test_door2_source_policy;
+          Alcotest.test_case "^napp-ersz production reader" `Quick
+            test_door2_production_reader;
+          Alcotest.test_case "^napp-ersz bounded regular reader" `Quick
+            test_door2_bounded_reader;
           Alcotest.test_case "^napp-3j07 ^napp-o6d6 ^napp-mbpr clean door" `Quick
             test_clean;
           Alcotest.test_case "^nnoschema-5mdj ^nnoschema-ifg0 derived config" `Quick

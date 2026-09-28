@@ -36,6 +36,9 @@ type read_error = [ `Missing | `Unreadable of string ]
     on the difference, so a reader that cannot tell them apart cannot supply it.
     ^napp-9x0s *)
 
+type missing = [ `Defaults | `Required ]
+(** Whether the default source may be absent. An explicit path is always required. *)
+
 type source = [ `Default of string | `Explicit of string ]
 (** Where the config text comes from: [`Explicit] is a path the operator passed with
     --config, [`Default] the path {!path} resolves for the service's name. Only the latter
@@ -43,10 +46,24 @@ type source = [ `Default of string | `Explicit of string ]
 
 val path :
   name:string -> config:string option -> getenv:(string -> string option) -> string
+
+val path_with :
+  file_name:string ->
+  name:string ->
+  config:string option ->
+  getenv:(string -> string option) ->
+  string
 (** Resolve --config or XDG_CONFIG_HOME, falling back to HOME/.config. *)
 
 val resolve :
   name:string -> config:string option -> getenv:(string -> string option) -> source
+
+val resolve_with :
+  file_name:string ->
+  name:string ->
+  config:string option ->
+  getenv:(string -> string option) ->
+  source
 (** [resolve] is {!path} with its origin kept, which is what {!load} needs to decide
     whether an absent file is allowed. ^napp-9x0s *)
 
@@ -56,7 +73,8 @@ val decode :
     [spec.env]. TOML dates and non-finite floats are refused with the JSON pointer of the
     value; a decode failure is the deriver's message unchanged. *)
 
-val load :
+val load_with :
+  missing:missing ->
   spec:'cfg t ->
   getenv:(string -> string option) ->
   read:(string -> (string, read_error) result) ->
@@ -66,4 +84,19 @@ val load :
     [`Default] source that is [`Missing] decodes the empty document — so a config type
     whose fields all carry defaults starts a fresh install with no file — while an
     [`Explicit] source that is [`Missing] is an error naming the path, and an
-    [`Unreadable] file is an error naming the path either way. ^napp-9x0s *)
+    [`Unreadable] file is an error naming the path either way. ^napp-9x0s ^napp-ersz:
+    [missing = `Required] rejects an absent default as well. *)
+
+val read_regular : max_bytes:int -> _ Eio.Path.t -> (string, read_error) result
+(** Read a regular file only, inspecting its opened descriptor and bounding the bytes
+    buffered even when the file grows. Missing paths remain [`Missing]; non-regular and
+    oversized paths are [`Unreadable]. Reading may suspend or be cancelled. Use as the
+    production [read_file] policy when a consumer has a byte limit. ^napp-ersz *)
+
+val load :
+  spec:'cfg t ->
+  getenv:(string -> string option) ->
+  read:(string -> (string, read_error) result) ->
+  source:source ->
+  ('cfg, error) result
+(** Original defaults-on-missing behavior; reading may suspend or be cancelled. *)

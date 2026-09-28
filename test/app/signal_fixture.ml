@@ -89,8 +89,23 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Eta_app.Env.t) (cfg : config) =
 
 let () =
   let code =
-    Eta_app.run ~name:"signal-fixture" ~config ~validate ~pp_err ~telemetry
-      ~service_command:"serve" (fun env _ sw ->
+    Eta_app.run_with_args ~name:"signal-fixture" ~config ~validate ~pp_err ~telemetry
+      ~service_args:(Cmdliner.Term.const ())
+      ~read_file:(fun env path ->
+        Eta_app.Config.read_regular ~max_bytes:1024 Eio.Path.(env#fs / path))
+      ~commands_with_env:(fun env run_owned ->
+        let long =
+          Cmdliner.Term.const (fun () ->
+              run_owned (fun sw ->
+                  Eio.Switch.on_release sw (fun () ->
+                      Eio.Flow.copy_string "command released\n"
+                        env.Eta_app.Env.base#stdout);
+                  Eio.Flow.copy_string "ready\n" env.Eta_app.Env.base#stdout;
+                  Eta_app.serve ~sw ()))
+        in
+        [ Cmdliner.Cmd.v (Cmdliner.Cmd.info "long") long ])
+      ~service_command:"serve"
+      (fun env _source _cfg () sw ->
         Eio.Switch.on_release sw (fun () ->
             Eta_observability.Logger.info env.Eta_app.Env.logger "signal stopped");
         (* ^napp-78pf: a live service fiber must propagate cancellation, not only

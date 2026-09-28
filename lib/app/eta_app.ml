@@ -60,70 +60,96 @@ let validation_failure ~validate ~pp_err ~stderr env settings =
         (stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
          2)
 
-let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
-    ?(service_command = "run") ?(validate = fun _ _ -> Ok ()) ?telemetry ~env ~journal
-    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
+let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
+    ?commands_with_env ?(service_command = "run") ?(config_file = "config.toml")
+    ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry
+    ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
+    program =
   let open Cmdliner in
+  let initial_logger =
+    Eta_observability.Logger.create ~service:name ~clock:env#clock
+      ~mono_clock:env#mono_clock ~reporter:journal ()
+  in
+  let door_env = { Env.base = env; logger = initial_logger } in
+  let run_owned task =
+    let requested = ref [] in
+    let outcome =
+      Scope.run (fun sw ->
+          Eio.Fiber.with_binding stop_ids requested (fun () ->
+              Option.iter (fun f -> f sw) on_switch;
+              task sw))
+    in
+    render ~stop_ids:requested stderr pp_err outcome
+  in
   let config_arg =
     Arg.(
       value
       & opt (some string) None
       & info [ "config" ] ~docv:"FILE" ~doc:"TOML configuration file.")
   in
-  let execute check file () =
-    let source = Config.resolve ~name ~config:file ~getenv in
-    match Config.load ~spec:config ~getenv ~read ~source with
+  let prepare file =
+    let source = Config.resolve_with ~file_name:config_file ~name ~config:file ~getenv in
+    match Config.load_with ~missing ~spec:config ~getenv ~read ~source with
     | Error (`Config message) ->
         stderr (message ^ "\n");
-        2
+        Error 2
     | Ok settings -> (
-        let logger =
-          Eta_observability.Logger.create ~service:name ~clock:env#clock
-            ~mono_clock:env#mono_clock ~reporter:journal ()
+        let failure =
+          match validation_failure ~validate ~pp_err ~stderr door_env settings with
+          | Some _ as failure -> failure
+          | None -> (
+              match validate_source with
+              | None -> None
+              | Some validate ->
+                  validation_failure
+                    ~validate:(fun env cfg -> validate env source cfg)
+                    ~pp_err ~stderr door_env settings)
         in
-        let door_env = { Env.base = env; logger } in
-        match validation_failure ~validate ~pp_err ~stderr door_env settings with
-        | Some code -> code
-        | None ->
-            if check then (
-              (* ^nnoschema-36cj: the effective config after environment overrides,
-                 rendered by the type's derived encoder; secrets are Redact.t and
-                 encode as "<redacted>". *)
-              stdout (Yojson.Safe.to_string (config.yojson_of_t settings) ^ "\n");
-              0)
-            else
-              let requested = ref [] in
-              let outcome =
-                Scope.run (fun sw ->
-                    Eio.Fiber.with_binding stop_ids requested (fun () ->
-                        (* ^napp-idii: the hook's reporters and ID generator build the
+        match failure with Some code -> Error code | None -> Ok (source, settings))
+  in
+  let execute file args () =
+    match prepare file with
+    | Error code -> code
+    | Ok (source, settings) ->
+        let requested = ref [] in
+        let outcome =
+          Scope.run (fun sw ->
+              Eio.Fiber.with_binding stop_ids requested (fun () ->
+                  (* ^napp-idii: the hook's reporters and ID generator build the
                            program's logger; the hook itself sees the validator's Env,
                            whose logger writes to the journal alone. Its resources are
                            acquired against this root switch, so they are released after
                            the program stops and before the Door returns. *)
-                        let program_env, program =
-                          match telemetry with
-                          | None -> (door_env, program)
-                          | Some hook ->
-                              let configured = hook ~sw door_env settings in
-                              let logger =
-                                Eta_observability.Logger.create
-                                  ?span_ids:configured.span_ids ~service:name
-                                  ~clock:env#clock ~mono_clock:env#mono_clock
-                                  ~reporter:
-                                    (Eta_observability.Logger.Reporter.tee
-                                       (journal :: configured.reporters))
-                                  ()
-                              in
-                              ({ Env.base = env; logger }, program)
+                  let program_env, program =
+                    match telemetry with
+                    | None -> (door_env, program)
+                    | Some hook ->
+                        let configured = hook ~sw door_env settings in
+                        let logger =
+                          Eta_observability.Logger.create ?span_ids:configured.span_ids
+                            ~service:name ~clock:env#clock ~mono_clock:env#mono_clock
+                            ~reporter:
+                              (Eta_observability.Logger.Reporter.tee
+                                 (journal :: configured.reporters))
+                            ()
                         in
-                        Option.iter (fun f -> f sw) on_switch;
-                        program program_env settings sw))
-              in
-              render ~stop_ids:requested stderr pp_err outcome)
+                        ({ Env.base = env; logger }, program)
+                  in
+                  Option.iter (fun f -> f sw) on_switch;
+                  program program_env source settings args sw))
+        in
+        render ~stop_ids:requested stderr pp_err outcome
   in
-  let run_term = Term.(const (execute false) $ config_arg) in
-  let check_term = Term.(const (execute true) $ config_arg) in
+  let run_term = Term.(const execute $ config_arg $ service_args) in
+  let check file () =
+    match prepare file with
+    | Error code -> code
+    | Ok (_source, settings) ->
+        (* ^nnoschema-36cj: only the validated, redacted effective config. *)
+        stdout (Yojson.Safe.to_string (config.yojson_of_t settings) ^ "\n");
+        0
+  in
+  let check_term = Term.(const check $ config_arg) in
   (* ^napp-d5e4: the command that starts the program carries the service author's name,
      so a consumer can use `run` for a verb of its own. The group's default term is the
      same term, so a bare invocation starts the program whatever that command is called. *)
@@ -143,7 +169,8 @@ let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
   let cmd =
     Cmd.group ~default:run_term
       (Cmd.info name ~doc:"Run the service.")
-      (run_cmd :: config_cmd :: commands)
+      ((run_cmd :: config_cmd :: commands)
+      @ match commands_with_env with None -> [] | Some build -> build door_env run_owned)
   in
   let out_buffer = Buffer.create 256 and err_buffer = Buffer.create 256 in
   let out_fmt = Format.formatter_of_buffer out_buffer
@@ -157,8 +184,18 @@ let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
   if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
   match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
 
-let run ?commands ?config_commands ?service_command ?validate ?telemetry ~name ~config
-    ~pp_err program =
+let run_for_test ?on_switch ?commands ?config_commands ?service_command ?config_file
+    ?missing ?validate ?validate_source ?telemetry ~env ~journal ~name ~config ~pp_err
+    ~getenv ~read ~stderr ~stdout ~argv program =
+  run_for_test_with_args ?on_switch ?commands ?config_commands ?service_command
+    ?config_file ?missing ?validate ?validate_source ?telemetry
+    ~service_args:(Cmdliner.Term.const ()) ~env ~journal ~name ~config ~pp_err ~getenv
+    ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
+      program env settings sw)
+
+let run_with_args ?commands ?config_commands ?commands_with_env ?service_command
+    ?config_file ?missing ?read_file ?validate ?validate_source ?telemetry ~service_args
+    ~name ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -195,14 +232,25 @@ let run ?commands ?config_commands ?service_command ?validate ?telemetry ~name ~
              document — while a file that is there and cannot be read is an error at
              either path. *)
           let read path =
-            try Ok (Eio.Path.load Eio.Path.(env#fs / path)) with
-            | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
-            | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn))
+            match read_file with
+            | Some reader -> reader env path
+            | None -> (
+                try Ok (Eio.Path.load Eio.Path.(env#fs / path)) with
+                | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
+                | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn)))
           in
-          run_for_test ?commands ?config_commands ?service_command ?validate ?telemetry
-            ~on_switch ~env
+          run_for_test_with_args ?commands ?config_commands ?commands_with_env
+            ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
+            ~service_args ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
             ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
             ~argv:Sys.argv program))
+
+let run ?commands ?config_commands ?service_command ?config_file ?missing ?read_file
+    ?validate ?validate_source ?telemetry ~name ~config ~pp_err program =
+  run_with_args ?commands ?config_commands ?service_command ?config_file ?missing
+    ?read_file ?validate ?validate_source ?telemetry
+    ~service_args:(Cmdliner.Term.const ()) ~name ~config ~pp_err
+    (fun env _source settings () sw -> program env settings sw)

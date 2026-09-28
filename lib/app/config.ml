@@ -49,9 +49,10 @@ type read_error = [ `Missing | `Unreadable of string ]
 
 (* ^napp-9x0s: where the text comes from. Only the Door's own default path for [name] may
    be absent; a path the operator named with --config must exist. *)
+type missing = [ `Defaults | `Required ]
 type source = [ `Default of string | `Explicit of string ]
 
-let default_path ~name ~getenv =
+let default_path ~name ~file_name ~getenv =
   let base =
     match getenv "XDG_CONFIG_HOME" with
     | Some value when value <> "" -> value
@@ -60,15 +61,20 @@ let default_path ~name ~getenv =
         | Some home -> Filename.concat home ".config"
         | None -> ".config")
   in
-  Filename.concat (Filename.concat base name) "config.toml"
+  Filename.concat (Filename.concat base name) file_name
 
-let path ~name ~config ~getenv =
-  match config with Some file -> file | None -> default_path ~name ~getenv
+let path_with ~file_name ~name ~config ~getenv =
+  match config with Some file -> file | None -> default_path ~name ~file_name ~getenv
 
-let resolve ~name ~config ~getenv =
+let resolve_with ~file_name ~name ~config ~getenv =
   match config with
   | Some file -> `Explicit file
-  | None -> `Default (default_path ~name ~getenv)
+  | None -> `Default (default_path ~name ~file_name ~getenv)
+
+let path ~name ~config ~getenv = path_with ~file_name:"config.toml" ~name ~config ~getenv
+
+let resolve ~name ~config ~getenv =
+  resolve_with ~file_name:"config.toml" ~name ~config ~getenv
 
 (* Story ^nnoschema-boxo: the config file format is unchanged. TOML is parsed and
    converted to Yojson.Safe.t here; the consumer's derived decoder takes over from
@@ -134,12 +140,39 @@ let decode ~spec ~getenv text =
    A config type whose fields all carry defaults then starts a fresh install with no file;
    an absent --config path, and a file that is there and cannot be read at either path,
    stay errors naming the path. *)
-let load ~spec ~getenv ~read ~(source : source) =
+let load_with ~missing ~spec ~getenv ~read ~(source : source) =
   let path = match source with `Explicit path | `Default path -> path in
   match read path with
   | Ok text -> decode ~spec ~getenv text
   | Error (`Unreadable message) -> Error (`Config (Printf.sprintf "%s: %s" path message))
   | Error `Missing -> (
       match source with
-      | `Default _ -> decode ~spec ~getenv ""
+      | `Default _ when missing = `Defaults -> decode ~spec ~getenv ""
+      | `Default _ -> Error (`Config (Printf.sprintf "%s: no such file" path))
       | `Explicit _ -> Error (`Config (Printf.sprintf "%s: no such file" path)))
+
+(* ^napp-ersz: reject non-regular paths before opening (FIFO opens can block),
+   then verify the opened descriptor as well. Buf_read caps allocation even when
+   a regular file grows after opening. *)
+let read_regular ~max_bytes path =
+  if max_bytes < 0 || max_bytes = max_int then
+    invalid_arg "Config.read_regular: max_bytes";
+  try
+    if (Eio.Path.stat ~follow:true path).kind <> `Regular_file then
+      Error (`Unreadable "not a regular file")
+    else
+      Eio.Path.with_open_in path (fun flow ->
+          if (Eio.File.stat flow).kind <> `Regular_file then
+            Error (`Unreadable "not a regular file")
+          else
+            match
+              Eio.Buf_read.parse ~max_size:(max_bytes + 1) Eio.Buf_read.take_all flow
+            with
+            | Ok text when String.length text <= max_bytes -> Ok text
+            | Ok _ | Error _ -> Error (`Unreadable "file exceeds byte limit"))
+  with
+  | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
+  | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn))
+
+let load ~spec ~getenv ~read ~source =
+  load_with ~missing:`Defaults ~spec ~getenv ~read ~source

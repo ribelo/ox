@@ -57,12 +57,59 @@ val request_stop : sw:Eio.Switch.t -> Eta.Interrupt_id.t -> unit
     exit; foreign or anonymous root cancellation exits 2. The switch runs all finalizers
     before the Door returns. *)
 
+val run_for_test_with_args :
+  ?on_switch:(Eio.Switch.t -> unit) ->
+  ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?commands_with_env:
+    ('base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
+  ?validate:('base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    ('base Env.t -> Config.source -> 'cfg -> (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
+  service_args:'args Cmdliner.Term.t ->
+  env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
+  journal:Eta_observability.Logger.Reporter.t ->
+  name:string ->
+  config:'cfg Config.t ->
+  pp_err:(Format.formatter -> 'err -> unit) ->
+  getenv:(string -> string option) ->
+  read:(string -> (string, Config.read_error) result) ->
+  stderr:(string -> unit) ->
+  stdout:(string -> unit) ->
+  argv:string array ->
+  ('base Env.t -> Config.source -> 'cfg -> 'args -> Eio.Switch.t -> (unit, 'err) result) ->
+  int
+(** Typed Door: [service_args] is parsed once, for the bare/default invocation and the
+    named service command. [commands_with_env] constructs Cmdliner commands with the
+    Door's pre-config Env and a [run_owned] callback. A command's parsed term may call
+    [run_owned (fun sw -> ...)] to enter its own root switch, install the same signal
+    monitor, classify its result, and wait for finalizers. These extra commands do not
+    load config automatically: commands that need it own that choice. The Env given to the
+    builder has the journal-only logger; telemetry belongs only to the service.
+    Parsing/help do not enter a switch. ^napp-ytqk ^napp-x11e
+
+    [config_file] names the default XDG file (default [config.toml]); [missing] decides
+    whether an absent default is decoded from an empty document or rejected. Explicit
+    --config is always required. [validate_source] receives the resolved source before the
+    program and on config check, so relative references can use its directory. [read] is
+    the sole read seam, including config check. ^napp-ersz *)
+
 val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
   ?validate:('base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    ('base Env.t -> Config.source -> 'cfg -> (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
@@ -117,11 +164,54 @@ val run_for_test :
     hook that raises is a defect: it is rendered with `Cause.pp` and exits 2. ^napp-idii
 *)
 
+val run_with_args :
+  ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?commands_with_env:
+    (Eio_unix.Stdenv.base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
+  ?read_file:(Eio_unix.Stdenv.base -> string -> (string, Config.read_error) result) ->
+  ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    (Eio_unix.Stdenv.base Env.t ->
+    Config.source ->
+    'cfg ->
+    (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
+  service_args:'args Cmdliner.Term.t ->
+  name:string ->
+  config:'cfg Config.t ->
+  pp_err:(Format.formatter -> 'err -> unit) ->
+  (Eio_unix.Stdenv.base Env.t ->
+  Config.source ->
+  'cfg ->
+  'args ->
+  Eio.Switch.t ->
+  (unit, 'err) result) ->
+  int
+(** Production counterpart of {!run_for_test_with_args}. [read_file] replaces the default
+    Eio filesystem reader in the service and [config check], allowing a consumer to
+    enforce regular-file and byte limits using {!Config.read_regular}. Reader failures
+    must distinguish [`Missing] from [`Unreadable]. The application still owns live
+    reload. ^napp-ytqk ^napp-x11e ^napp-ersz *)
+
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
+  ?read_file:(Eio_unix.Stdenv.base -> string -> (string, Config.read_error) result) ->
   ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    (Eio_unix.Stdenv.base Env.t ->
+    Config.source ->
+    'cfg ->
+    (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
   name:string ->
   config:'cfg Config.t ->

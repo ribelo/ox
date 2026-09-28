@@ -23,7 +23,7 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Eta_test.run, fork_run, with_census` | **Global**; Eio runtime, switch/fork and fiber-local census APIs respectively receive callbacks with no local parameter. |
 | `Supervised.start ~spawn` | **Global**; stored for supervised respawns in Eio fibers. |
 | `Correlator.create ~read/~write/~id/~set_id/~session` | **Global**; stored in correlator state. Reader runs in another Eio fiber; writer and matchers are invoked for future requests. |
-| `Listener.run ~decode/~encode/~handler` | **Global**; forwarded to accepting fibers; handler can outlive the call that spawned it. |
+| `Listener.run ~decode/~encode/~handler/~error_response` | **Global**; forwarded to accepting fibers; handler can outlive the call that spawned it. |
 
 ## Portable functions and values (nmodes-6pqn)
 

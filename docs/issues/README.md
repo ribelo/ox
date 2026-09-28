@@ -41,9 +41,9 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 32 | **Pie migrates** (ticket in Pie). WebSocket client + Codex Realtime, Responses/audio, the audio pipeline on Seq/Eio per row 27's probes, `Eta_app` door, control socket via `eta_ipc` (replacing Pie's own server). | Pie | 22, 25, 27, 31 | most specialised consumer, last active | [ ] |
 | 33 | `door-telemetry/01-door-telemetry.md` | `eta_app`, `eta_observability`, `eta_otel` | 14, 26 | Leash L25 OTLP by config | [x] |
 | 34 | `otel-metrics/01-otel-metrics.md` | `eta_otel` | 26 | inn's instrumentation guide (row 30), nema | [x] |
-| 35 | `openrouter-2/01-openrouter-2.md` | `eta_ai_openrouter` | 25 | Pie (row 32) | [ ] |
-| 36 | `door-2/01-door-2.md` | `eta_app` | 14, 33 | Pie (row 32) | [ ] |
-| 37 | `ipc-peer-reply/01-ipc-peer-reply.md` | `eta_ipc` | 7 | Pie (row 32) | [ ] |
+| 35 | `openrouter-2/01-openrouter-2.md` | `eta_ai_openrouter` | 25 | Pie (row 32) | [x] |
+| 36 | `door-2/01-door-2.md` | `eta_app` | 14, 33 | Pie (row 32) | [x] |
+| 37 | `ipc-peer-reply/01-ipc-peer-reply.md` | `eta_ipc` | 7 | Pie (row 32) | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).
