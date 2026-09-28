@@ -19,6 +19,18 @@ let cause_exit () =
    ^ "); Die(Failure(\"bad\"))]")
     (render combined);
   check_bool "mixed cause not pure interruption" false (Cause.is_interrupt_only combined);
+  (* ncore-k6az, pulled by Pie pienext: every typed failure, depth first *)
+  check_bool "failures in order" true
+    (Cause.failures
+       (Cause.Concurrent
+          [
+            Cause.Suppressed
+              { primary = Cause.Fail 1; finalizer = Cause.Finalizer (Cause.Fail 2) };
+            Cause.Die (Exit, Printexc.get_callstack 1);
+            Cause.Interrupt None;
+            Cause.Fail 3;
+          ])
+    = [ 1; 2; 3 ]);
   check_bool "interrupt-only concurrent" true
     (Cause.is_interrupt_only (Cause.Concurrent [ interrupt; Cause.Interrupt None ]));
   check_bool "empty concurrent is not an interrupt" false

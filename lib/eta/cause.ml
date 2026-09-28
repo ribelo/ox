@@ -54,3 +54,13 @@ let rec is_interrupt_only = function
   | Interrupt _ -> true
   | Concurrent cs -> cs <> [] && List.for_all is_interrupt_only cs
   | _ -> false
+
+let failures cause =
+  let rec go acc = function
+    | Fail e -> e :: acc
+    | Die _ | Interrupt _ -> acc
+    | Finalizer c -> go acc c
+    | Suppressed { primary; finalizer } -> go (go acc primary) finalizer
+    | Concurrent cs -> List.fold_left go acc cs
+  in
+  List.rev (go [] cause)

@@ -16,3 +16,8 @@ val pp_compact : (Format.formatter -> 'e -> unit) -> Format.formatter -> 'e t ->
 (** One-line rendering; typed payloads use the supplied printer. *)
 
 val is_interrupt_only : 'e t -> bool
+
+val failures : 'e t -> 'e list
+(** Every typed failure in the tree, depth first in construction order: a
+    [Suppressed]'s primary before its finalizer, [Concurrent] causes in order. Defects
+    and interruptions contribute nothing. Pure. *)
