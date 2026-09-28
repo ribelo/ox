@@ -357,8 +357,15 @@ let with_collector ?(status = 200) f =
                 let body = Eio.Buf_read.take length input in
                 received := { target; headers; body = json body } :: !received;
                 Eio.Flow.copy_string
-                  (Printf.sprintf "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n\r\n" status
-                     (if status = 200 then "OK" else "Unavailable"))
+                  (* Real collectors (inn, the OTel collector) answer 200 with a JSON body
+                     — {} or a partialSuccess — so the stub does too (^notel-6o5v). *)
+                  (if status = 200 then
+                     "HTTP/1.1 200 OK\r\n\
+                      Content-Type: application/json\r\n\
+                      Content-Length: 2\r\n\
+                      \r\n\
+                      {}"
+                   else "HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n")
                   flow
               done;
               `Stop_daemon);

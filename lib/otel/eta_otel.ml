@@ -133,13 +133,14 @@ let reporter t =
       | _ -> submit t (Log record))
 
 (* The one place a signal leaves the exporter: content type first, the caller's headers
-   beside it, the configured deadline, and never a response body. Metrics, logs and traces
-   share it, so a collector that accepts one accepts the others. *)
+   beside it, the configured deadline. A collector answers with a small JSON body ({} or an
+   OTLP partialSuccess); it is read within a small bound and ignored. Metrics, logs and
+   traces share it, so a collector that accepts one accepts the others. *)
 let post t ~url body =
   match
     Eta_http.Client.request t.http_client ~method_:"POST" ~url
       ~headers:(("content-type", "application/json") :: t.headers)
-      ~body:(Bytes.of_string body) ?deadline:t.request_deadline ~max_body_bytes:0 ()
+      ~body:(Bytes.of_string body) ?deadline:t.request_deadline ~max_body_bytes:65536 ()
   with
   | Ok { status; _ } when status >= 200 && status < 300 -> Ok ()
   | Ok { status; _ } -> Error (`Status status)
