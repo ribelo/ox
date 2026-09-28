@@ -117,35 +117,50 @@ let try_reserve pool =
       Error Shutting_down)
     else Ok ())
 
-let execute pool ?name ?on_cancel fn =
+let execute pool ?name ?on_cancel ?on_settled fn =
   let label = Option.value name ~default:pool.Pool.name in
   (* 0 = pending; 1 = running; 2 = caller abandoned; 3 = physically done.
      Only the winner of 0 -> 1 starts work. If cancellation wins 0 -> 2,
      it releases the reservation; a late worker performs no callback. *)
   let state = Atomic.make 0 in
+  (* nblk-2h3g: the worker fiber lives on the pool owner's switch, so [on_settled] runs in
+     the owner's Eio context once the callback has physically finished (state 3), whether
+     or not the caller is still waiting. A call abandoned before a worker claimed it never
+     ran, so it never settles. *)
+  (* The slot is released here, after [on_settled], not on the system thread: a [Drain]
+     shutdown waits for every slot, so when it returns every lease has been released. *)
+  let settle outcome =
+    if Atomic.get state = 3 then
+      Fun.protect
+        ~finally:(fun () -> Eio.Semaphore.release pool.slots)
+        (fun () -> Option.iter (fun hook -> hook outcome) on_settled)
+  in
   let worker =
     Eio.Fiber.fork_promise ~sw:pool.Pool.sw (fun () ->
-        try
-          Ok
-            (Eio_unix.run_in_systhread ~label (fun () ->
-                 if Atomic.compare_and_set state 0 1 then (
-                   inc pool.Pool.active;
-                   Fun.protect
-                     ~finally:(fun () ->
-                       dec pool.active;
-                       inc pool.completed;
-                       Atomic.set state 3;
-                       Eio.Semaphore.release pool.slots)
-                     fn)
-                 else (
-                   assert (Atomic.get state = 2);
-                   raise Exit)))
-        with ex ->
-          let bt = Printexc.get_raw_backtrace () in
-          if Atomic.compare_and_set state 0 2 then (
-            inc pool.cancelled_before_start;
-            Eio.Semaphore.release pool.slots);
-          Error (ex, bt))
+        match
+          Eio_unix.run_in_systhread ~label (fun () ->
+              if Atomic.compare_and_set state 0 1 then (
+                inc pool.Pool.active;
+                Fun.protect
+                  ~finally:(fun () ->
+                    dec pool.active;
+                    inc pool.completed;
+                    Atomic.set state 3)
+                  fn)
+              else (
+                assert (Atomic.get state = 2);
+                raise Exit))
+        with
+        | value ->
+            settle (Ok value);
+            Ok value
+        | exception ex ->
+            let bt = Printexc.get_raw_backtrace () in
+            settle (Error ex);
+            if Atomic.compare_and_set state 0 2 then (
+              inc pool.cancelled_before_start;
+              Eio.Semaphore.release pool.slots);
+            Error (ex, bt))
   in
   try
     match Eio.Promise.await_exn worker with
@@ -159,41 +174,44 @@ let execute pool ?name ?on_cancel fn =
       Option.iter (fun hook -> hook ()) on_cancel;
     raise ex
 
-let run ~pool ?name ?on_cancel fn =
-  match reserve pool with Error _ as e -> e | Ok () -> execute pool ?name ?on_cancel fn
+let run ~pool ?name ?on_cancel ?on_settled fn =
+  match reserve pool with
+  | Error _ as e -> e
+  | Ok () -> execute pool ?name ?on_cancel ?on_settled fn
 
-let try_run ~pool ?name ?on_cancel fn =
+let try_run ~pool ?name ?on_cancel ?on_settled fn =
   match try_reserve pool with
   | Error e -> Not_run e
   | Ok () -> (
-      match execute pool ?name ?on_cancel fn with
+      match execute pool ?name ?on_cancel ?on_settled fn with
       | Ok v -> Completed v
       | Error _ -> assert false)
 
 let lift = function Ok x -> Ok x | Error e -> Error (`Callback e)
 
-let run_result ~pool ?name ?on_cancel fn =
-  match run ~pool ?name ?on_cancel fn with
+let run_result ~pool ?name ?on_cancel ?on_settled fn =
+  match run ~pool ?name ?on_cancel ?on_settled fn with
   | Ok result -> lift result
   | Error `Shutting_down -> Error `Shutting_down
 
-let try_run_result ~pool ?name ?on_cancel fn =
-  match try_run ~pool ?name ?on_cancel fn with
+let try_run_result ~pool ?name ?on_cancel ?on_settled fn =
+  match try_run ~pool ?name ?on_cancel ?on_settled fn with
   | Not_run e -> Ok (Not_run e)
   | Completed result -> Result.map (fun x -> Completed x) (lift result)
 
-let run_result_timeout ~pool ~clock ~timeout ~on_timeout ?name ?on_cancel fn =
+let run_result_timeout ~pool ~clock ~timeout ~on_timeout ?name ?on_cancel ?on_settled fn =
   match
     Eio.Time.with_timeout clock (Eta.Duration.to_seconds_float timeout) (fun () ->
-        run_result ~pool ?name ?on_cancel fn)
+        run_result ~pool ?name ?on_cancel ?on_settled fn)
   with
   | Error `Timeout -> Error (`Timed_out on_timeout)
   | (Ok _ | Error (`Callback _ | `Shutting_down)) as result -> result
 
-let try_run_result_timeout ~pool ~clock ~timeout ~on_timeout ?name ?on_cancel fn =
+let try_run_result_timeout ~pool ~clock ~timeout ~on_timeout ?name ?on_cancel ?on_settled
+    fn =
   match
     Eio.Time.with_timeout clock (Eta.Duration.to_seconds_float timeout) (fun () ->
-        try_run_result ~pool ?name ?on_cancel fn)
+        try_run_result ~pool ?name ?on_cancel ?on_settled fn)
   with
   | Error `Timeout -> Error (`Timed_out on_timeout)
   | (Ok _ | Error (`Callback _)) as result -> result

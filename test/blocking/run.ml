@@ -176,6 +176,105 @@ let defects_and_detach () =
       | Ok (Not_run Shutting_down) -> ()
       | _ -> Alcotest.fail "detached pool should close")
 
+(* nblk-2h3g: [on_settled] fires once, in the owner's context, after physical completion. *)
+let settled_after_completion () =
+  within (fun _env sw ->
+      let p = pool ~sw () in
+      let seen = ref [] in
+      let on_settled = function
+        | Ok v -> seen := `Value v :: !seen
+        | Error _ -> seen := `Exn :: !seen
+      in
+      (match run ~pool:p ~on_settled (fun () -> 5) with
+      | Ok 5 -> ()
+      | _ -> Alcotest.fail "value");
+      Alcotest.(check int) "settled once" 1 (List.length !seen);
+      (try ignore (run ~pool:p ~on_settled (fun () -> raise Exit)) with Exit -> ());
+      Alcotest.(check bool) "exception settles" true (List.hd !seen = `Exn);
+      Pool.shutdown p)
+
+(* nblk-2h3g: a caller that gave up is released at once; the lease is released only when
+   the callback physically finishes. *)
+let settled_after_cancellation () =
+  within (fun env sw ->
+      let p = pool ~sw () in
+      let started = Eio.Semaphore.make 0 in
+      let permit = gate () in
+      let settled = Atomic.make 0 in
+      let domain = (Domain.self () :> int) in
+      let same_domain = Atomic.make true in
+      let cancel = ref None in
+      let caller =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore
+                    (run ~pool:p
+                       ~on_settled:(fun _ ->
+                         if (Domain.self () :> int) <> domain then
+                           Atomic.set same_domain false;
+                         inc settled)
+                       (fun () ->
+                         Eio.Semaphore.release started;
+                         wait permit;
+                         1));
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      Eio.Semaphore.acquire started;
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
+      Alcotest.(check int) "not settled while running" 0 (Atomic.get settled);
+      release permit;
+      wait_until env#clock (fun () -> Atomic.get settled = 1);
+      Alcotest.(check bool) "owner's domain" true (Atomic.get same_domain);
+      Pool.shutdown p;
+      Alcotest.(check int) "settled exactly once" 1 (Atomic.get settled))
+
+(* nblk-2h3g: after run_result_timeout's timeout, and never for a pre-claim cancel. *)
+let settled_after_timeout_not_before_claim () =
+  within (fun env sw ->
+      let p = pool ~sw () in
+      let permit = gate () in
+      let started = Eio.Semaphore.make 0 in
+      let settled = ref [] in
+      (match
+         run_result_timeout ~pool:p ~clock:env#clock ~timeout:(Eta.Duration.ms 50)
+           ~on_timeout:()
+           ~on_settled:(fun o -> settled := `First o :: !settled)
+           (fun () ->
+             Eio.Semaphore.release started;
+             wait permit;
+             Ok 3)
+       with
+      | Error (`Timed_out ()) -> ()
+      | _ -> Alcotest.fail "expected timeout");
+      Eio.Semaphore.acquire started;
+      let cancel = ref None in
+      let queued_ran = Atomic.make false in
+      let queued =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore
+                    (run ~pool:p
+                       ~on_settled:(fun _ -> settled := `Second :: !settled)
+                       (fun () -> Atomic.set queued_ran true))
+                with Eio.Cancel.Cancelled _ -> ()))
+      in
+      wait_until env#clock (fun () -> (Pool.stats p).queued = 1 && !cancel <> None);
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "pre-claim");
+      Eio.Promise.await_exn queued;
+      Alcotest.(check int) "timed-out call not settled yet" 0 (List.length !settled);
+      release permit;
+      Pool.shutdown p;
+      (match !settled with
+      | [ `First (Ok (Ok 3)) ] -> ()
+      | _ -> Alcotest.fail "expected exactly the timed-out call to settle, with its value");
+      Alcotest.(check bool) "pre-claim callback never ran" false (Atomic.get queued_ran))
+
 let () =
   Alcotest.run "eta_blocking"
     [
@@ -189,5 +288,11 @@ let () =
           Alcotest.test_case "nblock-v8ze nblock-p5dm running cancellation" `Quick
             running_cancellation;
           Alcotest.test_case "nblock-p5dm exception detach" `Quick defects_and_detach;
+          Alcotest.test_case "nblk-2h3g settled after completion" `Quick
+            settled_after_completion;
+          Alcotest.test_case "nblk-2h3g settled after caller cancellation" `Quick
+            settled_after_cancellation;
+          Alcotest.test_case "nblk-2h3g settled after timeout, never before claim" `Quick
+            settled_after_timeout_not_before_claim;
         ] );
     ]

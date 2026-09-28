@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_blocking
 consumer: nema row 31 (nemanext-mtpq)
 ---
@@ -17,3 +17,7 @@ A caller that times out or is cancelled is released at once, but its native call
 ## Testing Decisions
 
 - Settled after normal completion; after caller cancellation with the callback still running (hook fires once, after it finishes); after `run_result_timeout`'s timeout; never for a pre-claim cancel; ordering with `Pool.shutdown` Drain.
+
+## Verified
+
+- `test/blocking/run.ml`: settled after completion (value and exception); after caller cancellation (not while running, exactly once, in the owner's domain); after `run_result_timeout`'s timeout; never for a pre-claim cancel; a `Drain` shutdown returns only after the hook ran (the slot is released after `on_settled`, in the worker fiber).
