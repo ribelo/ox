@@ -70,6 +70,7 @@
   (ocaml (>= 5.4.0))
   (conf-eta-oxcaml (= :version))
   eta
+  eta_json
   eio
   cstruct
   base-unix
@@ -193,6 +194,7 @@
  (depends
   (ocaml (>= 5.4.0))
   (conf-eta-oxcaml (= :version))
+  ppx_yojson_minimal
   eta
   eta_ai
   eta_json
@@ -231,6 +233,7 @@
  (depends
   (ocaml (>= 5.4.0))
   (conf-eta-oxcaml (= :version))
+  ppx_yojson_minimal
   eta eta_ai eta_json eta_http eta_observability eio
   (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
 
@@ -240,6 +243,7 @@
  (depends
   (ocaml (>= 5.4.0))
   (conf-eta-oxcaml (= :version))
+  ppx_yojson_minimal
   eta eta_ai eta_json eta_http eta_observability eio
   (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
 
@@ -249,6 +253,7 @@
  (depends
   (ocaml (>= 5.4.0))
   (conf-eta-oxcaml (= :version))
+  ppx_yojson_minimal
   eta
   eta_ai
   eta_json
@@ -258,4 +263,3 @@
   (yojson (>= 2.0))
   (eio_main :with-test)
   (alcotest :with-test)))
-

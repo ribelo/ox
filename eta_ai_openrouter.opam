@@ -9,6 +9,7 @@ depends: [
   "dune" {>= "3.21"}
   "ocaml" {>= "5.4.0"}
   "conf-eta-oxcaml" {= version}
+  "ppx_yojson_minimal"
   "eta"
   "eta_ai"
   "eta_json"

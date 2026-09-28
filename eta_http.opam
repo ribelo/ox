@@ -10,6 +10,7 @@ depends: [
   "ocaml" {>= "5.4.0"}
   "conf-eta-oxcaml" {= version}
   "eta"
+  "eta_json"
   "eio"
   "cstruct"
   "base-unix"
