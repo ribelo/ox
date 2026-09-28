@@ -21,6 +21,8 @@ val create :
   endpoint:string ->
   service_name:string ->
   ?scope_name:string ->
+  ?resource:(string * string) list ->
+  ?headers:(string * string) list ->
   ?batch_size:int ->
   ?max_queue:int ->
   ?request_deadline:Eta.Duration.t ->
@@ -29,7 +31,19 @@ val create :
   (t, error) result
 (** Creates a daemon worker under the caller's switch; an endpoint may include a path
     prefix, to which [/v1/logs] and [/v1/traces] are appended. The supplied client remains
-    caller-owned. Explicitly [shutdown] before releasing it. ^notel-j9vc *)
+    caller-owned. Explicitly [shutdown] before releasing it. ^notel-j9vc
+
+    [resource] adds OTLP resource attributes to every export beside the exporter's own
+    [service.name]: [service.version], [deployment.environment], a host or a build id, so
+    telemetry from different builds is distinguishable. An attribute named [service.name]
+    in [resource] is ignored — the exporter's [service_name] is the resource's identity.
+    ^notel-jzdm
+
+    [headers] accompany every export request, after the exporter's own [content-type] —
+    the collector's API key, a tenant, an organization. Their values are never logged and
+    never rendered in an error: this exporter writes no records and its {!error} values
+    carry no request details, so a secret passed here reaches the collector and nothing
+    else. ^notel-6o5v *)
 
 val reporter : t -> Eta_observability.Logger.Reporter.t
 (** Accepts Logger records without JSON round-tripping. [span] start records are internal;

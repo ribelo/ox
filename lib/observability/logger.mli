@@ -101,6 +101,14 @@ module Reporter : sig
   (** [writer write_line] calls [write_line] once per record with the same text {!journal}
       writes. The caller owns synchronization and the newline is included in the argument.
   *)
+
+  val tee : t list -> t
+  (** [tee reporters] delivers each record to every reporter in [reporters], in the order
+      given, so a journal and an exporter coexist: a reporter that raises is skipped and
+      the later ones still receive the record. [Eio.Cancel.Cancelled] propagates — an
+      interruption is the logging fiber's, not a reporter failure — and a reporter's
+      exception is otherwise contained, so a broken exporter cannot break logging. Pure:
+      it captures the list and registers no finalizer. ^nobs-8i5y *)
 end
 
 (** An in-memory reporter for tests. *)

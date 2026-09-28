@@ -5,6 +5,11 @@ module Config = Config
 
 type validation_error = Config.validation_error
 
+type telemetry = {
+  reporters : Eta_observability.Logger.Reporter.t list;
+  span_ids : (unit -> string) option;
+}
+
 let status_query statuses () = List.map (fun status -> status ()) statuses
 
 let serve ~sw () =
@@ -55,8 +60,9 @@ let validation_failure ~validate ~pp_err ~stderr env settings =
         (stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
          2)
 
-let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env ~journal
-    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
+let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
+    ?(validate = fun _ _ -> Ok ()) ?telemetry ~env ~journal ~name ~config ~pp_err ~getenv
+    ~read ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let config_arg =
     Arg.(
@@ -90,8 +96,29 @@ let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env
               let outcome =
                 Scope.run (fun sw ->
                     Eio.Fiber.with_binding stop_ids requested (fun () ->
+                        (* ^napp-idii: the hook's reporters and ID generator build the
+                           program's logger; the hook itself sees the validator's Env,
+                           whose logger writes to the journal alone. Its resources are
+                           acquired against this root switch, so they are released after
+                           the program stops and before the Door returns. *)
+                        let program_env, program =
+                          match telemetry with
+                          | None -> (door_env, program)
+                          | Some hook ->
+                              let configured = hook ~sw door_env settings in
+                              let logger =
+                                Eta_observability.Logger.create
+                                  ?span_ids:configured.span_ids ~service:name
+                                  ~clock:env#clock ~mono_clock:env#mono_clock
+                                  ~reporter:
+                                    (Eta_observability.Logger.Reporter.tee
+                                       (journal :: configured.reporters))
+                                  ()
+                              in
+                              ({ Env.base = env; logger }, program)
+                        in
                         Option.iter (fun f -> f sw) on_switch;
-                        program door_env settings sw))
+                        program program_env settings sw))
               in
               render ~stop_ids:requested stderr pp_err outcome)
   in
@@ -103,8 +130,12 @@ let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env
       (Cmd.info "check" ~doc:"Validate and print redacted effective configuration.")
       check_term
   in
+  (* ^napp-wf22: the group is the Door's, so a consumer's `config init` is added to it
+     here rather than built as a second group Cmdliner would refuse. *)
   let config_cmd =
-    Cmd.group (Cmd.info "config" ~doc:"Inspect configuration.") [ check_cmd ]
+    Cmd.group
+      (Cmd.info "config" ~doc:"Inspect configuration.")
+      (check_cmd :: config_commands)
   in
   let cmd =
     Cmd.group ~default:run_term
@@ -123,7 +154,7 @@ let run_for_test ?on_switch ?(commands = []) ?(validate = fun _ _ -> Ok ()) ~env
   if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
   match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
 
-let run ?commands ?validate ~name ~config ~pp_err program =
+let run ?commands ?config_commands ?validate ?telemetry ~name ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -159,7 +190,7 @@ let run ?commands ?validate ~name ~config ~pp_err program =
             try Ok (Eio.Path.load Eio.Path.(env#fs / path))
             with Eio.Io _ as e -> Error (Printexc.to_string e)
           in
-          run_for_test ?commands ?validate ~on_switch ~env
+          run_for_test ?commands ?config_commands ?validate ?telemetry ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)

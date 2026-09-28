@@ -123,6 +123,21 @@ module Reporter = struct
   let records consume = { emit = consume }
 
   let writer write_line = { emit = (fun record -> write_line (to_string record ^ "\n")) }
+
+  (* ^nobs-8i5y: every reporter sees the record, in the order given; one reporter's
+     failure is contained so the later ones still see it. Cancellation is the logging
+     fiber's own interruption, not a reporter failure, so it propagates. *)
+  let tee reporters =
+    {
+      emit =
+        (fun record ->
+          List.iter
+            (fun reporter ->
+              try reporter.emit record with
+              | Eio.Cancel.Cancelled _ as exn -> raise exn
+              | _ -> ())
+            reporters);
+    }
 end
 
 module Memory = struct

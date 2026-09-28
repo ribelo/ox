@@ -33,6 +33,7 @@ type t = {
   batch_size : int;
   max_queue : int;
   request_deadline : Eta.Duration.t option;
+  headers : (string * string) list;
   on_error : error -> unit;
   with_timeout : float -> (unit -> (unit, error) result) -> (unit, error) result;
   ids : Random.State.t;
@@ -133,7 +134,7 @@ let send t items =
       in
       match
         Eta_http.Client.request t.http_client ~method_:"POST" ~url
-          ~headers:[ ("content-type", "application/json") ]
+          ~headers:(("content-type", "application/json") :: t.headers)
           ~body:(Bytes.of_string body) ?deadline:t.request_deadline ~max_body_bytes:0 ()
       with
       | Ok { status; _ } when status >= 200 && status < 300 -> Ok ()
@@ -188,8 +189,8 @@ let worker t =
   loop ()
 
 let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_otel")
-    ?(batch_size = 64) ?(max_queue = 1024) ?request_deadline ?(on_error = fun _ -> ()) ()
-    =
+    ?(resource = []) ?(headers = []) ?(batch_size = 64) ?(max_queue = 1024)
+    ?request_deadline ?(on_error = fun _ -> ()) () =
   if batch_size < 1 || max_queue < 1 then
     Error (`Invalid_config "batch_size and max_queue must be positive")
   else if String.trim service_name = "" then
@@ -212,11 +213,16 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
             http_client;
             logs_url = base ^ "/v1/logs";
             traces_url = base ^ "/v1/traces";
-            resource_attrs = [ ("service.name", service_name) ];
+            (* ^notel-jzdm: the exporter's own identity stays first; a caller's duplicate
+               [service.name] would be a second, contradictory resource identity. *)
+            resource_attrs =
+              ("service.name", service_name)
+              :: List.filter (fun (name, _) -> name <> "service.name") resource;
             scope_name;
             batch_size;
             max_queue;
             request_deadline;
+            headers;
             on_error;
             with_timeout = (fun seconds f -> Eio.Time.with_timeout_exn clock seconds f);
             ids = Random.State.make_self_init ();

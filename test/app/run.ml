@@ -1,6 +1,6 @@
 (* Story IDs covered: ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
    ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-o6d6 ^napp-mbpr ^napp-433c
-   ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps and, after
+   ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps ^napp-idii and, after
    ^nnoschema-ttb5 removed the schema DSL: ^nnoschema-5mdj (derived config,
    environment function), ^nnoschema-zi2m (decode failure), ^nnoschema-ifg0
    (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
@@ -17,6 +17,14 @@ let contains hay needle =
   let rec go i =
     i + String.length needle <= String.length hay
     && (String.sub hay i (String.length needle) = needle || go (i + 1))
+  in
+  go 0
+
+let index_of hay needle =
+  let rec go i =
+    if i + String.length needle > String.length hay then -1
+    else if String.sub hay i (String.length needle) = needle then i
+    else go (i + 1)
   in
   go 0
 
@@ -60,7 +68,7 @@ let getenv = function "HOME" -> Some "/home/demo" | _ -> None
 let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
-    ?(read_path = fun _ -> ()) ?(program = fun _ _ _ -> Ok ()) () =
+    ?telemetry ?(read_path = fun _ -> ()) ?(program = fun _ _ _ -> Ok ()) () =
   Eta_test.run (fun base _ ->
       let env =
         object
@@ -72,7 +80,7 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let memory = Eta_observability.Logger.Memory.create () in
       let code =
-        run_for_test ?on_switch ?validate ~env ~name:"demo" ~config ~pp_err
+        run_for_test ?on_switch ?validate ?telemetry ~env ~name:"demo" ~config ~pp_err
           ~journal:(Eta_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
@@ -505,6 +513,84 @@ let test_check_validates () =
   expect_part err "/port";
   expect_part err "port out of range"
 
+(* ^napp-idii: the telemetry hook runs after decoding and validation, its reporters
+   receive every record the program's logger writes alongside the journal, its span ID
+   generator is the program logger's, and its root-switch resource is released before
+   the Door returns. *)
+let test_telemetry_hook () =
+  let seen = ref [] and released = ref false in
+  let hook ~sw env (cfg : settings) =
+    check_int "^napp-idii the hook gets the validated config" 42 cfg.port;
+    Alcotest.(check bool)
+      "^napp-idii and the Door's own logger" true
+      (Eta_observability.Logger.enabled env.Env.logger Eta_observability.Logger.Info);
+    Eio.Switch.on_release sw (fun () -> released := true);
+    {
+      reporters =
+        [
+          Eta_observability.Logger.Reporter.records (fun record ->
+              seen := record :: !seen);
+        ];
+      span_ids = Some (fun () -> String.make 32 'a');
+    }
+  in
+  let code, _, err, journal =
+    run ~telemetry:hook
+      ~program:(fun env _ _ ->
+        ignore
+          (Eta_observability.Logger.span env.Env.logger "unit" (fun () -> Ok ())
+            : (unit, string) result);
+        Ok ())
+      ()
+  in
+  check_int "^napp-idii the Door still exits clean" 0 code;
+  check_string "no diagnostics" "" err;
+  let seen = List.rev !seen in
+  check_int "^napp-idii the telemetry reporter receives every record" 2 (List.length seen);
+  check_int "the journal receives them too" 2
+    (List.length (Eta_observability.Logger.Memory.records journal));
+  Alcotest.(check bool)
+    "^napp-idii the hook's span IDs are the program logger's" true
+    (List.for_all
+       (fun record -> List.mem_assoc "trace_id" record.Eta_observability.Logger.context)
+       seen);
+  Alcotest.(check bool)
+    "^napp-idii the root switch released the hook's resource before the Door returned"
+    true !released
+
+(* ^napp-idii: a hook that raises is a defect on the run path, rendered and exiting 2
+   without entering the program. *)
+let test_telemetry_defect () =
+  let started = ref false in
+  let code, _, err, _ =
+    run
+      ~telemetry:(fun ~sw:_ _ _ -> failwith "exporter exploded")
+      ~program:(fun _ _ _ ->
+        started := true;
+        Ok ())
+      ()
+  in
+  check_int "^napp-idii a raising hook exits 2" 2 code;
+  expect_part err "exporter exploded";
+  Alcotest.(check bool) "^napp-idii the program never ran" false !started
+
+(* ^napp-idii: config check configures nothing, so the hook is not called there. *)
+let test_telemetry_check_path () =
+  let calls = ref 0 in
+  let code, out, err, _ =
+    run
+      ~argv:[| "demo"; "config"; "check" |]
+      ~telemetry:(fun ~sw:_ _ _ ->
+        incr calls;
+        { reporters = []; span_ids = None })
+      ~program:(fun _ _ _ -> failwith "must not start")
+      ()
+  in
+  check_int "^napp-idii check exits zero" 0 code;
+  check_int "^napp-idii config check does not configure telemetry" 0 !calls;
+  check_string "no error" "" err;
+  expect_part out "\"port\":42"
+
 let test_cli_hook () =
   Eta_test.run (fun base _ ->
       let env =
@@ -533,6 +619,47 @@ let test_cli_hook () =
       in
       check_int "^napp-3j07 consumer subcommand" 7 code;
       check_int "hook invoked" 1 !calls)
+
+(* ^napp-wf22: the Door's own config group takes a consumer subcommand beside check, so
+   `<name> config init` exists, runs, and is listed in the group's help. *)
+let test_config_commands () =
+  Eta_test.run (fun base _ ->
+      let env =
+        object
+          method clock = base#clock
+          method mono_clock = base#mono_clock
+        end
+      in
+      let calls = ref 0 in
+      let init =
+        Cmdliner.Cmd.v (Cmdliner.Cmd.info "init")
+          Cmdliner.Term.(
+            const (fun () ->
+                incr calls;
+                5))
+      in
+      let door ~argv ~stdout =
+        run_for_test ~config_commands:[ init ] ~env ~name:"demo" ~config ~pp_err
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~getenv
+          ~read:(fun _ -> failwith "a config subcommand must not load the config")
+          ~stderr:ignore ~stdout ~argv
+          (fun _ _ _ -> failwith "a config subcommand must not start the program")
+      in
+      let code = door ~argv:[| "demo"; "config"; "init" |] ~stdout:ignore in
+      check_int "^napp-wf22 the consumer subcommand runs" 5 code;
+      check_int "and is invoked once" 1 !calls;
+      let output = Buffer.create 256 in
+      let code =
+        door ~argv:[| "demo"; "config"; "--help" |] ~stdout:(fun text ->
+            Buffer.add_string output text)
+      in
+      check_int "^napp-wf22 config help exits zero" 0 code;
+      expect_part (Buffer.contents output) "init";
+      expect_part (Buffer.contents output) "check";
+      check_int "help ran nothing" 1 !calls)
 
 let test_foreign_interruption () =
   let foreign = Eta.Interrupt_id.create () in
@@ -684,6 +811,59 @@ let test_real_signal signo () =
               in
               expect_part journal "\"msg\":\"signal stopped\"")))
 
+(* ^napp-idii: the telemetry the program's config switches on receives the program's
+   record on the real SIGTERM path, and its root-switch resource flushes before the
+   process exits. *)
+let test_real_signal_telemetry () =
+  let config_path = Filename.temp_file "eta-app-telemetry-" ".toml" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    (fun () ->
+      let output = open_out config_path in
+      output_string output "port = 42\ntelemetry = true\n";
+      close_out output;
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let fixture =
+                Filename.concat
+                  (Filename.dirname Sys.executable_name)
+                  "signal_fixture.exe"
+              in
+              let child =
+                match
+                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                    ~argv:[ fixture; "--config"; config_path ]
+                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
+                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                with
+                | Ok child -> child
+                | Error _ -> Alcotest.fail "invalid telemetry fixture spawn"
+              in
+              let input =
+                Eio.Buf_read.of_flow ~max_size:65536
+                  (Option.get (Eta_process.Child.stdout child))
+              in
+              let ready =
+                Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
+              in
+              check_string "Door ready" "ready" ready;
+              Eta_process.Child.signal child Sys.sigterm;
+              let status =
+                Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+                    Eta_process.Child.await child)
+              in
+              Alcotest.(check bool)
+                "signal maps to exit code zero" true
+                (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
+              let printed = Eio.Buf_read.take_all input in
+              expect_part printed "\"msg\":\"signal stopped\"";
+              expect_part printed "telemetry flushed";
+              Alcotest.(check bool)
+                "^napp-idii the reporter saw the record before the root switch flushed"
+                true
+                (index_of printed "\"msg\":\"signal stopped\""
+                < index_of printed "telemetry flushed"))))
+
 let () =
   Alcotest.run "eta_app"
     [
@@ -718,9 +898,18 @@ let () =
             test_check_validates;
           Alcotest.test_case "^napp-3j07 command hook ^napp-deps deps" `Quick
             test_cli_hook;
+          Alcotest.test_case "^napp-wf22 config group subcommand" `Quick
+            test_config_commands;
+          Alcotest.test_case "^napp-idii telemetry hook" `Quick test_telemetry_hook;
+          Alcotest.test_case "^napp-idii raising telemetry hook" `Quick
+            test_telemetry_defect;
+          Alcotest.test_case "^napp-idii config check runs no hook" `Quick
+            test_telemetry_check_path;
           Alcotest.test_case "^napp-2aa6 ^nnoschema-boxo CLI and IO errors" `Quick
             test_cli_and_io_errors;
           Alcotest.test_case "^napp-57qi run runs the validator" `Quick test_run_validates;
+          Alcotest.test_case "^napp-idii telemetry flush on SIGTERM" `Quick
+            test_real_signal_telemetry;
           Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick
             (test_real_signal Sys.sigterm);
           Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick

@@ -11,6 +11,8 @@
    ^nobs-iedi  Redact.t prints <redacted> through every path
    ^nobs-262i  a per-logger minimum level and a rate limit for one message
    ^nobs-xovg  span logs start and end with elapsed time and an outcome
+   ^nobs-8i5y  Reporter.tee delivers every record to each reporter in order, a
+               failing reporter never preventing the others
    ^nobs-6x58  the package depends on eta, eio and eta_json only (row 16 adds
                yojson for Redact.t's codecs, ^nnoschema-ifg0)
 
@@ -549,6 +551,47 @@ let test_span_ids_and_records () =
       check_bool "nested span differs" true (get outer "span_id" <> get inner "span_id");
       check_int "all start/end/log records delivered" 5 (List.length records))
 
+(* ^nobs-8i5y: a tee delivers every record to each reporter in the order given, and a
+   reporter that raises never prevents the later ones from receiving it. *)
+let test_reporter_tee () =
+  Eta_test.run (fun env _sw ->
+      let seen = ref [] in
+      let note name = Logger.Reporter.records (fun _ -> seen := name :: !seen) in
+      let explode = Logger.Reporter.records (fun _ -> failwith "exporter exploded") in
+      let logger =
+        Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~reporter:(Logger.Reporter.tee [ note "journal"; explode; note "exporter" ])
+          ()
+      in
+      Logger.info logger "hello";
+      Alcotest.(check (list string))
+        "^nobs-8i5y every reporter in order, the failing one skipped"
+        [ "journal"; "exporter" ] (List.rev !seen))
+
+(* ^nobs-8i5y: cancellation is the logging fiber's own interruption, not a reporter
+   failure, so a tee does not contain it. *)
+let test_reporter_tee_cancellation () =
+  Eta_test.run (fun env _sw ->
+      let seen = ref [] in
+      let logger =
+        Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~reporter:
+            (Logger.Reporter.tee
+               [
+                 Logger.Reporter.records (fun _ ->
+                     raise (Eio.Cancel.Cancelled (Failure "stop")));
+                 Logger.Reporter.records (fun _ -> seen := "after" :: !seen);
+               ])
+          ()
+      in
+      let cancelled =
+        match Logger.info logger "hello" with
+        | () -> false
+        | exception Eio.Cancel.Cancelled _ -> true
+      in
+      check_bool "^nobs-8i5y the interruption propagates" true cancelled;
+      Alcotest.(check (list string)) "and delivery stops there" [] (List.rev !seen))
+
 let () =
   Alcotest.run "eta_observability"
     (V1_logger.tests
@@ -597,6 +640,14 @@ let () =
           [
             Alcotest.test_case "queries by level and by field (^nobs-rayu)" `Quick
               test_memory_find;
+          ] );
+        ( "Reporters",
+          [
+            Alcotest.test_case
+              "a tee delivers in order and isolates a failure (^nobs-8i5y)" `Quick
+              test_reporter_tee;
+            Alcotest.test_case "a tee does not contain cancellation (^nobs-8i5y)" `Quick
+              test_reporter_tee_cancellation;
           ] );
         ( "Span",
           [

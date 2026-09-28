@@ -10,6 +10,21 @@ type validation_error = Config.validation_error
 (** The Door's name for {!Config.validation_error}: one failure {!run}'s validator
     returns, rendered like a decode issue. *)
 
+type telemetry = {
+  reporters : Eta_observability.Logger.Reporter.t list;
+      (** Where the program's records go besides the journal, in order. *)
+  span_ids : (unit -> string) option;
+      (** The program logger's {!Eta_observability.Logger.create} ID generator: exactly 32
+          lowercase hexadecimal digits per call, as {!Eta_observability.Logger.span}
+          requires. [None] keeps today's behavior — spans stay start/end records without
+          trace context — and [Some] is what an exporter needs to turn them into OTLP
+          spans. *)
+}
+(** What a telemetry hook returns to {!run} and {!run_for_test} (^napp-idii). A record
+    rather than a reporter list because the span ID generator belongs to the same result:
+    {!Eta_observability.Logger.create} takes both when the program's logger is built, and
+    the Door must not need a second hook to supply the second half. *)
+
 module type SERVICE = sig
   type t
   type config
@@ -45,7 +60,9 @@ val request_stop : sw:Eio.Switch.t -> Eta.Interrupt_id.t -> unit
 val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?validate:('base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
   journal:Eta_observability.Logger.Reporter.t ->
   name:string ->
@@ -63,6 +80,11 @@ val run_for_test :
     {!request_stop}. Cmdliner help is sent to [stdout], diagnostics to [stderr]. All
     switch finalizers finish before return.
 
+    [commands] are added to the top-level group; [config_commands] are added to the Door's
+    own `config` group beside `check`, so a service author writes `config init` without
+    rebuilding the group Cmdliner would refuse as a duplicate. A consumer subcommand
+    returns its own exit code and loads no configuration. ^napp-wf22
+
     [config] is the Door's three functions over the consumer's config type: the derived
     [of_yojson], the derived [yojson_of_t] `config check` prints, and [env], which applies
     environment overrides to the decoded value. [validate] runs after decoding and after
@@ -70,11 +92,26 @@ val run_for_test :
     [Error] list is rendered to [stderr] and returned as exit 2 without entering the
     program; a validator that raises is a defect, rendered with `Cause.pp` and also
     exiting 2. The `config check` path runs it too, and prints the redacted config only
-    when it accepts. *)
+    when it accepts.
+
+    [telemetry] runs on the run path alone — `config check` never calls it — after
+    [validate] accepts, inside the root switch and before the program. It receives that
+    switch, the {!Env} the validator saw, and the validated config, and returns the
+    reporters and the ID generator of {!telemetry}. Its reporters are combined with
+    [journal] by [Eta_observability.Logger.Reporter.tee], journal first, into the logger
+    the program's {!Env} carries, and its [span_ids] is that logger's generator: the
+    program's logger is the one that exports, and the hook's own {!Env} is the
+    journal-only logger that exists before the hook's result does. Everything the hook
+    acquires against [sw] — an exporter, a socket — is released when the program stops and
+    before this function returns, so a flush registered on the switch completes first. A
+    hook that raises is a defect: it is rendered with `Cause.pp` and exits 2. ^napp-idii
+*)
 
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
   name:string ->
   config:'cfg Config.t ->
   pp_err:(Format.formatter -> 'err -> unit) ->
@@ -84,4 +121,6 @@ val run :
     handlers. Signal handlers only set an atomic flag and broadcast an Eio condition; a
     monitor fiber requests the interruption. Handlers are restored after all finalizers.
     [validate] is forwarded to {!run_for_test} unchanged, so it runs on both the run and
-    `config check` paths before the program's switch. *)
+    `config check` paths before the program's switch. [telemetry] is forwarded too, so the
+    reporters and the ID generator it returns reach the program's logger, and its
+    resources live on the root switch a signal interrupts. ^napp-idii *)
