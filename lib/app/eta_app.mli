@@ -61,6 +61,7 @@ val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?service_command:string ->
   ?validate:('base Env.t -> 'cfg -> (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> 'base Env.t -> 'cfg -> telemetry) ->
   env:(< clock : _ Eio.Time.clock ; mono_clock : _ Eio.Time.Mono.t ; .. > as 'base) ->
@@ -87,6 +88,13 @@ val run_for_test :
     rebuilding the group Cmdliner would refuse as a duplicate. A consumer subcommand
     returns its own exit code and loads no configuration. ^napp-wf22
 
+    [service_command] is the name of the Door's own command that starts the program. It
+    defaults to ["run"] and it is also the term the group evaluates when no subcommand is
+    given, so a bare `<name>` starts the program under either name. A service that wants
+    `run` for a verb of its own names the Door's command something else and adds that verb
+    through [commands]; the name must then be free in [commands], since Cmdliner refuses
+    two subcommands with one name. ^napp-d5e4
+
     [config] is the Door's three functions over the consumer's config type: the derived
     [of_yojson], the derived [yojson_of_t] `config check` prints, and [env], which applies
     environment overrides to the decoded value. [validate] runs after decoding and after
@@ -112,6 +120,7 @@ val run_for_test :
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?service_command:string ->
   ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
   ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
   name:string ->
@@ -129,4 +138,8 @@ val run :
     {!run_for_test} unchanged, so it runs on both the run and `config check` paths before
     the program's switch. [telemetry] is forwarded too, so the reporters and the ID
     generator it returns reach the program's logger, and its resources live on the root
-    switch a signal interrupts. ^napp-idii *)
+    switch a signal interrupts. ^napp-idii
+
+    [service_command] is forwarded as well: the Door's start command carries the name the
+    service author gives it, so a program can use `run` for a verb of its own. ^napp-d5e4
+*)

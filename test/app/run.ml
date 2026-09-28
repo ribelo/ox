@@ -7,7 +7,9 @@
    (redaction by type), ^nnoschema-36cj (config check prints yojson_of_t),
    ^nnoschema-boxo (TOML-to-JSON stays here), ^nnoschema-p7fv (a two-Service
    program on a derived config type), ^napp-9x0s (an absent file at the default path is
-   the empty document). ^napp-yplu's unknown-key refusal stands
+   the empty document) and ^napp-d5e4 (the Door's start command is named by the service
+   author, so a program can use `run` for a verb of its own). ^napp-yplu's unknown-key
+   refusal stands
    (^nnoschema-zi2m carries it into the derived decoder); ^napp-tuvw's
    schema-declared overrides are superseded. *)
 open Eta_app
@@ -484,6 +486,20 @@ let test_default_path_absent () =
           Eta_process.Child.signal child Sys.sigterm;
           check_int "^napp-9x0s the real Door starts with no config file" 0
             (code_of (await child));
+          (* ^napp-d5e4: the fixture asks the Door to call its start command `serve`, so
+             this spawn proves Eta_app.run forwards the name; the spawn above started the
+             same program through the group's default term. *)
+          let child = spawn [ fixture; "serve" ] in
+          let ready =
+            Eio.Time.with_timeout_exn base#clock 5. (fun () ->
+                Eio.Buf_read.line
+                  (Eio.Buf_read.of_flow ~max_size:1024
+                     (Option.get (Eta_process.Child.stdout child))))
+          in
+          check_string "Door ready" "ready" ready;
+          Eta_process.Child.signal child Sys.sigterm;
+          check_int "^napp-d5e4 the real Door starts under the name its author gave" 0
+            (code_of (await child));
           (* config check sees the same defaults. *)
           let child = spawn [ fixture; "config"; "check" ] in
           let status = await child in
@@ -851,6 +867,88 @@ let test_config_commands () =
       expect_part (Buffer.contents output) "init";
       expect_part (Buffer.contents output) "check";
       check_int "help ran nothing" 1 !calls)
+
+(* ^napp-d5e4: the Door's start command carries the name the service author gives it, so a
+   program can use `run` for a verb of its own. The group's default term is that same
+   term, so a bare invocation starts the program under either name, and a service that
+   never asks still gets `run`. *)
+let test_service_command () =
+  Eta_test.run (fun base _ ->
+      let env =
+        object
+          method clock = base#clock
+          method mono_clock = base#mono_clock
+        end
+      in
+      let started = ref 0 in
+      let door ?service_command argv =
+        run_for_test ?service_command ~env ~name:"demo" ~config ~pp_err
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~getenv
+          ~read:(fun _ -> Ok good)
+          ~stderr:ignore ~stdout:ignore ~argv
+          (fun _ _ _ ->
+            incr started;
+            Ok ())
+      in
+      check_int "^napp-d5e4 the default command is still run" 0 (door [| "demo"; "run" |]);
+      check_int "and it starts the program" 1 !started;
+      check_int "a bare invocation starts the program" 0 (door [| "demo" |]);
+      check_int "through the default term" 2 !started;
+      check_int "^napp-d5e4 a custom name starts the program" 0
+        (door ~service_command:"serve" [| "demo"; "serve" |]);
+      check_int "and it started the program" 3 !started;
+      check_int "^napp-d5e4 a bare invocation under a custom name starts the program" 0
+        (door ~service_command:"serve" [| "demo" |]);
+      check_int "through the default term again" 4 !started;
+      (* The name a renamed Door no longer uses is no command at all: Cmdliner refuses it
+         and the program is never entered. *)
+      check_int "^napp-d5e4 the name it no longer uses is not a command" 2
+        (door ~service_command:"serve" [| "demo"; "run" |]);
+      check_int "and the program stayed down" 4 !started)
+
+(* ^napp-d5e4 (Leash L31 run-9ypy): the shape the story exists for — a consumer command
+   named `run` beside a Door whose start command is `serve`: `run` is the consumer's
+   verb, `serve` starts the program, and neither shadows the other. *)
+let test_service_command_coexists () =
+  Eta_test.run (fun base _ ->
+      let env =
+        object
+          method clock = base#clock
+          method mono_clock = base#mono_clock
+        end
+      in
+      let started = ref 0 and verbs = ref 0 in
+      let run_verb =
+        Cmdliner.Cmd.v (Cmdliner.Cmd.info "run")
+          Cmdliner.Term.(
+            const (fun () ->
+                incr verbs;
+                3))
+      in
+      let door argv =
+        run_for_test ~service_command:"serve" ~commands:[ run_verb ] ~env ~name:"demo"
+          ~config ~pp_err
+          ~journal:
+            (Eta_observability.Logger.Memory.reporter
+               (Eta_observability.Logger.Memory.create ()))
+          ~getenv
+          ~read:(fun _ -> Ok good)
+          ~stderr:ignore ~stdout:ignore ~argv
+          (fun _ _ _ ->
+            incr started;
+            Ok ())
+      in
+      check_int "^napp-d5e4 the consumer's run command is dispatched" 3
+        (door [| "demo"; "run" |]);
+      check_int "and it is the consumer's own" 1 !verbs;
+      check_int "^napp-d5e4 while the program did not start" 0 !started;
+      check_int "the Door's renamed start command starts the program" 0
+        (door [| "demo"; "serve" |]);
+      check_int "the program started" 1 !started;
+      check_int "and the consumer's verb still ran once" 1 !verbs)
 
 let test_foreign_interruption () =
   let foreign = Eta.Interrupt_id.create () in
@@ -1220,6 +1318,9 @@ let () =
             test_cli_hook;
           Alcotest.test_case "^napp-wf22 config group subcommand" `Quick
             test_config_commands;
+          Alcotest.test_case "^napp-d5e4 service command name" `Quick test_service_command;
+          Alcotest.test_case "^napp-d5e4 consumer run beside serve" `Quick
+            test_service_command_coexists;
           Alcotest.test_case "^napp-idii telemetry hook" `Quick test_telemetry_hook;
           Alcotest.test_case "^napp-idii raising telemetry hook" `Quick
             test_telemetry_defect;

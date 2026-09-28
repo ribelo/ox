@@ -61,8 +61,8 @@ let validation_failure ~validate ~pp_err ~stderr env settings =
          2)
 
 let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
-    ?(validate = fun _ _ -> Ok ()) ?telemetry ~env ~journal ~name ~config ~pp_err ~getenv
-    ~read ~stderr ~stdout ~argv program =
+    ?(service_command = "run") ?(validate = fun _ _ -> Ok ()) ?telemetry ~env ~journal
+    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let config_arg =
     Arg.(
@@ -124,7 +124,10 @@ let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
   in
   let run_term = Term.(const (execute false) $ config_arg) in
   let check_term = Term.(const (execute true) $ config_arg) in
-  let run_cmd = Cmd.v (Cmd.info "run" ~doc:"Start the program.") run_term in
+  (* ^napp-d5e4: the command that starts the program carries the service author's name,
+     so a consumer can use `run` for a verb of its own. The group's default term is the
+     same term, so a bare invocation starts the program whatever that command is called. *)
+  let run_cmd = Cmd.v (Cmd.info service_command ~doc:"Start the program.") run_term in
   let check_cmd =
     Cmd.v
       (Cmd.info "check" ~doc:"Validate and print redacted effective configuration.")
@@ -154,7 +157,8 @@ let run_for_test ?on_switch ?(commands = []) ?(config_commands = [])
   if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
   match parsed with Ok `Help | Ok `Version -> 0 | Error _ -> 2 | Ok (`Ok f) -> f ()
 
-let run ?commands ?config_commands ?validate ?telemetry ~name ~config ~pp_err program =
+let run ?commands ?config_commands ?service_command ?validate ?telemetry ~name ~config
+    ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -195,7 +199,8 @@ let run ?commands ?config_commands ?validate ?telemetry ~name ~config ~pp_err pr
             | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
             | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn))
           in
-          run_for_test ?commands ?config_commands ?validate ?telemetry ~on_switch ~env
+          run_for_test ?commands ?config_commands ?service_command ?validate ?telemetry
+            ~on_switch ~env
             ~journal:(Eta_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)

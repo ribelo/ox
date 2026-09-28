@@ -13,7 +13,10 @@
    pattern — an explicit shutdown registered with the same switch's release — beside it.
    ^napp-9x0s: the port carries a default too, so the same executable proves the real Door
    starts with no config file at the default path; the tests that write a port still
-   override it. *)
+   override it.
+   ^napp-d5e4: the Door's start command is called `serve` here, so a test that asks for it
+   by name proves Eta_app.run forwards ?service_command; the bare spawns prove the group's
+   default term starts the program whatever that command is called. *)
 type config = {
   port : int; [@json.default 4242]
   telemetry : bool; [@json.default false]
@@ -87,7 +90,7 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Eta_app.Env.t) (cfg : config) =
 let () =
   let code =
     Eta_app.run ~name:"signal-fixture" ~config ~validate ~pp_err ~telemetry
-      (fun env _ sw ->
+      ~service_command:"serve" (fun env _ sw ->
         Eio.Switch.on_release sw (fun () ->
             Eta_observability.Logger.info env.Eta_app.Env.logger "signal stopped");
         (* ^napp-78pf: a live service fiber must propagate cancellation, not only
