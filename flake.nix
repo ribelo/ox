@@ -442,6 +442,39 @@
                 exit 0
               fi
 
+              # 3a. Installing a new eta commit makes opam rebuild every installed
+              #     package that depends on it (Pie, grip, inn, ...), replacing the
+              #     executables a running service will exec on its next start.
+              #     Keep the executables exactly as they were: snapshot them here,
+              #     put them back after the install, and leave each rebuilt one
+              #     beside it as <file>.eta-<commit> for an explicit, tested
+              #     cut-over (found 2026-09-28: an eta install rebuilt Pie's
+              #     production binary).
+              keep_dir="$preserved_dir/before-$eta_commit"
+              declared_csv=""
+              for package in $declared; do
+                declared_csv="''${declared_csv:+$declared_csv,}$package"
+              done
+              kept=()
+              for package in $(opam list --installed --short --recursive --depends-on "$declared_csv" 2>/dev/null); do
+                case "$package" in
+                  eta* | ppx_eta* | conf-eta*) continue ;;
+                esac
+                changes="$switch_prefix/.opam-switch/install/$package.changes"
+                [ -f "$changes" ] || continue
+                while IFS= read -r line; do
+                  IFS='"' read -r _ relative _ <<< "$line"
+                  case "$relative" in
+                    bin/* | sbin/*) ;;
+                    *) continue ;;
+                  esac
+                  [ -f "$switch_prefix/$relative" ] || continue
+                  mkdir -p "$keep_dir/$(dirname "$relative")"
+                  cp -p "$switch_prefix/$relative" "$keep_dir/$relative"
+                  kept+=("$relative")
+                done < "$changes"
+              done
+
               # 3. Pin every declared package to this commit and install the
               #    requested set.
               for package in $declared; do
@@ -462,6 +495,20 @@
               # drive suites, memtrace is an allocation-trace hook.
               opam install alcotest qcheck memtrace --yes
               opam install "''${requested[@]}" --assume-depexts --yes
+
+              for relative in "''${kept[@]}"; do
+                current="$switch_prefix/$relative"
+                if [ -f "$current" ] && cmp -s "$current" "$keep_dir/$relative"; then
+                  continue
+                fi
+                if [ -f "$current" ]; then
+                  mv -f "$current" "$current.eta-''${eta_commit:0:8}"
+                  echo "Rebuilt $relative kept beside the original as $relative.eta-''${eta_commit:0:8}"
+                fi
+                cp -p "$keep_dir/$relative" "$current.eta-keep"
+                mv -f "$current.eta-keep" "$current"
+                echo "Kept $relative unchanged"
+              done
 
               echo "Eta packages installed into OPAM switch: $switch_name"
               echo "Source: $repo_root at $eta_commit"
