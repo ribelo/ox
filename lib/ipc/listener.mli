@@ -51,6 +51,7 @@ val run :
   encode:('response -> string) ->
   budget:('request -> Eta.Duration.t option) ->
   handler:('request -> ('response, 'handler) result) ->
+  ?on_budget_exceeded:('request -> Eta.Duration.t -> 'response) ->
   ?on_peer_error:(('decode, 'handler) peer_error -> unit) ->
   unit ->
   (unit, error) result
@@ -60,4 +61,12 @@ val run :
     switch exit daemon fibers are cancelled and joined before the socket is
     identity-checked and removed; the persistent lockfile is never removed.
     Callback/finalizer defects propagate through Eio's switch. Typed peer errors are
-    reported through [on_peer_error] if supplied, not raised as listener failures. *)
+    reported through [on_peer_error] if supplied, not raised as listener failures.
+
+    When [on_budget_exceeded] is supplied, a handler cancelled at its budget answers that
+    peer with the response the callback derives from the decoded request and the elapsed
+    budget: it is encoded and written through the same egress path as a handler's own
+    reply — byte bound, then egress deadline — and the connection closes as after any
+    reply. [on_peer_error] still reports `Handler_budget_exceeded. Without the callback
+    the request is answered with nothing, as before. The callback runs in that peer's
+    fiber with no listener-imposed deadline of its own, so it must be quick. *)

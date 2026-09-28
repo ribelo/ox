@@ -188,7 +188,26 @@ let read_line flow max_bytes =
 
 type ('reply, 'error) outcome = Disconnected | Reply of 'reply | Failed of 'error
 
-let peer ~clock ~policy ~decode ~encode ~budget ~handler ~on_peer_error flow =
+(* One egress path for every reply the listener writes, a handler's own or the one a
+   budget-cut request is answered with: byte bound, then the egress deadline. *)
+let respond ~clock ~policy ~encode ~on_peer_error flow reply =
+  let bytes = encode reply in
+  if String.length bytes > policy.max_reply_bytes || String.contains bytes '\n' then
+    on_peer_error `Egress_too_large
+  else
+    match
+      Eta.Timeout.timeout ~clock policy.egress (fun () ->
+          try
+            Eio.Flow.copy_string (bytes ^ "\n") flow;
+            Ok ()
+          with e when disconnected e -> Error `Egress_closed)
+    with
+    | Ok () -> ()
+    | Error `Timeout -> on_peer_error `Egress_timeout
+    | Error `Egress_closed -> on_peer_error `Egress_closed
+
+let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~handler
+    ~on_peer_error flow =
   let ingress =
     Eta.Timeout.timeout ~clock policy.ingress (fun () ->
         read_line flow policy.max_line_bytes)
@@ -213,8 +232,8 @@ let peer ~clock ~policy ~decode ~encode ~budget ~handler ~on_peer_error flow =
                       | Error e -> Error (`Handler e))
                 with
                 | Ok x -> Ok x
-                | Error `Timeout -> Error `Handler_budget_exceeded
-                | Error (`Handler e) -> Error (`Handler e))
+                | Error (`Handler e) -> Error (`Handler e)
+                | Error `Timeout -> Error (`Budget d))
           in
           let monitor () =
             let buf = Cstruct.create 1024 in
@@ -232,26 +251,17 @@ let peer ~clock ~policy ~decode ~encode ~budget ~handler ~on_peer_error flow =
           in
           match outcome with
           | Disconnected -> on_peer_error `Disconnected
-          | Failed e -> on_peer_error e
-          | Reply reply -> (
-              let bytes = encode reply in
-              if
-                String.length bytes > policy.max_reply_bytes || String.contains bytes '\n'
-              then on_peer_error `Egress_too_large
-              else
-                match
-                  Eta.Timeout.timeout ~clock policy.egress (fun () ->
-                      try
-                        Eio.Flow.copy_string (bytes ^ "\n") flow;
-                        Ok ()
-                      with e when disconnected e -> Error `Egress_closed)
-                with
-                | Ok () -> ()
-                | Error `Timeout -> on_peer_error `Egress_timeout
-                | Error `Egress_closed -> on_peer_error `Egress_closed)))
+          | Reply reply -> respond ~clock ~policy ~encode ~on_peer_error flow reply
+          | Failed (`Handler e) -> on_peer_error (`Handler e)
+          | Failed (`Budget d) -> (
+              on_peer_error `Handler_budget_exceeded;
+              match on_budget_exceeded with
+              | None -> ()
+              | Some reply ->
+                  respond ~clock ~policy ~encode ~on_peer_error flow (reply request d))))
 
 let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock ~path
-    ?(policy = default_policy) ~decode ~encode ~budget ~handler
+    ?(policy = default_policy) ~decode ~encode ~budget ~handler ?on_budget_exceeded
     ?(on_peer_error = fun _ -> ()) () =
   try
     validate policy;
@@ -321,8 +331,8 @@ let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
                               ~finally:(fun () -> Eio.Semaphore.release slots)
                               (fun () -> Eio.Flow.close flow)))
                       (fun () ->
-                        peer ~clock ~policy ~decode ~encode ~budget ~handler
-                          ~on_peer_error flow);
+                        peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded
+                          ~handler ~on_peer_error flow);
                     `Stop_daemon)
               done;
               `Stop_daemon

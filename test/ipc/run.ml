@@ -23,11 +23,11 @@ let with_dir f =
       clean dir)
     (fun () -> f dir (dir ^ "/s"))
 
-let start ?policy ?on_peer_error ?(budget = fun _ -> None) ?(handler = fun x -> Ok x) env
-    sw path =
+let start ?policy ?on_peer_error ?on_budget_exceeded ?(budget = fun _ -> None)
+    ?(handler = fun x -> Ok x) env sw path =
   L.run ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy
     ~decode:(fun s -> Ok s)
-    ~encode:Fun.id ~budget ~handler ?on_peer_error ()
+    ~encode:Fun.id ~budget ~handler ?on_budget_exceeded ?on_peer_error ()
 
 let client env sw path = Eio.Net.connect ~sw env#net (`Unix path)
 
@@ -365,6 +365,156 @@ let unbounded_budget () =
                 "None budget permits long work" "eventual"
                 (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 flow)))))
 
+let budget_reply () =
+  (* nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let started, signal_started = Eio.Promise.create () in
+          let cut, signal_cut = Eio.Promise.create () in
+          let handled = ref false in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~on_budget_exceeded:(fun request d ->
+                     Printf.sprintf "timeout %s %d" request (Eta.Duration.to_ms d))
+                   ~handler:(fun _ ->
+                     Eio.Promise.resolve signal_started ();
+                     Fun.protect
+                       ~finally:(fun () -> handled := true)
+                       (fun () ->
+                         Eio.Time.sleep env#clock 100.;
+                         Ok "late"))
+                   ~on_peer_error:(function
+                     | `Handler_budget_exceeded -> Eio.Promise.resolve signal_cut ()
+                     | _ -> ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "slow\n" flow;
+              Eio.Promise.await started;
+              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Eio.Promise.await cut;
+              Alcotest.(check bool) "handler cancelled at its budget" true !handled;
+              let reader = Eio.Buf_read.of_flow ~max_size:64 flow in
+              Alcotest.(check string)
+                "chosen reply names the request and the budget" "timeout slow 2000"
+                (Eio.Buf_read.line reader);
+              Alcotest.(check bool)
+                "one reply then close" true
+                (match Eio.Buf_read.line reader with
+                | _ -> false
+                | exception End_of_file -> true))))
+
+let budget_reply_byte_bound () =
+  (* nipc-i5ni nipc-eiy8 *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let errors = ref [] in
+          let started, signal_started = Eio.Promise.create () in
+          let cut, signal_cut = Eio.Promise.create () in
+          let rejected, signal_rejected = Eio.Promise.create () in
+          let policy = { L.default_policy with max_reply_bytes = 4 } in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start ~policy
+                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~on_budget_exceeded:(fun _ _ -> "oversize")
+                   ~handler:(fun _ ->
+                     Eio.Promise.resolve signal_started ();
+                     Eio.Time.sleep env#clock 100.;
+                     Ok "late")
+                   ~on_peer_error:(fun e ->
+                     errors := e :: !errors;
+                     if e = `Handler_budget_exceeded then
+                       Eio.Promise.resolve signal_cut ();
+                     if e = `Egress_too_large then Eio.Promise.resolve signal_rejected ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "big\n" flow;
+              Eio.Promise.await started;
+              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Eio.Promise.await cut;
+              Eio.Promise.await rejected;
+              Alcotest.(check bool)
+                "both the cut and the refused reply are typed" true
+                (List.mem `Handler_budget_exceeded !errors
+                && List.mem `Egress_too_large !errors);
+              Alcotest.(check bool)
+                "no reply, connection closed" true
+                (match Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow) with
+                | _ -> false
+                | exception End_of_file -> true))))
+
+let budget_reply_egress_deadline () =
+  (* nipc-i5ni nipc-eiy8 *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let started, signal_started = Eio.Promise.create () in
+          let cut, signal_cut = Eio.Promise.create () in
+          let timed_out, signal_timed_out = Eio.Promise.create () in
+          let payload = String.make 8_000_000 'x' in
+          let policy =
+            { L.default_policy with max_reply_bytes = String.length payload }
+          in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start ~policy
+                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~on_budget_exceeded:(fun _ _ -> payload)
+                   ~handler:(fun _ ->
+                     Eio.Promise.resolve signal_started ();
+                     Eio.Time.sleep env#clock 100.;
+                     Ok "late")
+                   ~on_peer_error:(function
+                     | `Handler_budget_exceeded -> Eio.Promise.resolve signal_cut ()
+                     | `Egress_timeout -> Eio.Promise.resolve signal_timed_out ()
+                     | _ -> ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "flood\n" flow;
+              Eio.Promise.await started;
+              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Eio.Promise.await cut;
+              (* The client never reads, so the write blocks; each advance moves the mock
+                 clock past the egress deadline measured from wherever that write began. *)
+              let rec settle left =
+                if (not (Eio.Promise.is_resolved timed_out)) && left > 0 then (
+                  Eta_test.advance env#clock (Eta.Duration.seconds 2);
+                  Eio.Fiber.yield ();
+                  settle (left - 1))
+              in
+              settle 5;
+              Eio.Promise.await timed_out)))
+
+let budget_reply_absent () =
+  (* nipc-i5ni nipc-6i86 nipc-ajmi *)
+  with_dir (fun _ path ->
+      Eta_test.run (fun env _ ->
+          let started, signal_started = Eio.Promise.create () in
+          let cut, signal_cut = Eio.Promise.create () in
+          Eio.Switch.run (fun sw ->
+              check_ok
+                (start
+                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~handler:(fun _ ->
+                     Eio.Promise.resolve signal_started ();
+                     Eio.Time.sleep env#clock 100.;
+                     Ok "late")
+                   ~on_peer_error:(function
+                     | `Handler_budget_exceeded -> Eio.Promise.resolve signal_cut ()
+                     | _ -> ())
+                   env sw path);
+              let flow = client env sw path in
+              Eio.Flow.copy_string "silent\n" flow;
+              Eio.Promise.await started;
+              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Eio.Promise.await cut;
+              Alcotest.(check bool)
+                "no reply, connection closed" true
+                (match Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow) with
+                | _ -> false
+                | exception End_of_file -> true))))
+
 let () =
   if Array.length Sys.argv = 3 && Sys.argv.(1) = "--check-lock" then (
     let fd = Unix.openfile (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0 in
@@ -405,5 +555,14 @@ let () =
       ( "nipc-6i86 nipc-01bn",
         [
           Alcotest.test_case "None does not impose handler budget" `Quick unbounded_budget;
+        ] );
+      ( "nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi",
+        [
+          Alcotest.test_case "chosen budget reply reaches the peer" `Quick budget_reply;
+          Alcotest.test_case "chosen budget reply obeys the byte bound" `Quick
+            budget_reply_byte_bound;
+          Alcotest.test_case "chosen budget reply obeys the egress deadline" `Quick
+            budget_reply_egress_deadline;
+          Alcotest.test_case "absent callback still closes" `Quick budget_reply_absent;
         ] );
     ]
