@@ -7,11 +7,11 @@ let decode raw =
   | Error (`Malformed message) -> invalid ("malformed JSON: " ^ message) (`String raw)
   | Error (`Too_large bound) -> Error (`Input_too_large bound)
 
-let post ~http ~clock ~logger ~api_key ~endpoint ?max_response_bytes ?max_attempts
-    ~deadline body =
+let post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_response_bytes
+    ?max_attempts ~deadline body =
   let body = Eta_ai.Transport.bytes_of_json body in
   match
-    Eta_ai.Transport.post_json ~http ~clock ~logger ~endpoint ?max_response_bytes
+    Eta_ai.Transport.post_json ~http ~clock ~logger ~endpoint ?timeout ?max_response_bytes
       ?max_attempts
       ~authorization:(Eta_ai.Bearer.header ~api_key)
       ~body ~deadline ()

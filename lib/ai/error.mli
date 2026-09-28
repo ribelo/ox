@@ -16,6 +16,7 @@ type unavailable = {
   message : string;
   retryable : bool;
   retry_after : Eta.Duration.t option;
+  status : int option;
 }
 (** Why no reply came, and whether another attempt is worth making: [true] for a transport
     failure or a 429/529 that ran out of attempts, [false] for an error the endpoint
@@ -36,7 +37,9 @@ type t =
       the client cannot use as an answer; [failure.message] says which,
       [failure.retryable] whether another attempt is reasonable, and [failure.retry_after]
       the delay the provider asked for in [Retry-After], so a caller that schedules its
-      own retries waits as told. ^nai-rjkq
+      own retries waits as told, and [failure.status] the HTTP status when the endpoint
+      answered one ([None] for a transport failure), so a caller can classify statuses
+      itself. ^nai-rjkq ^nai-8s4k
     - [`Timeout] — the caller's deadline passed, or an attempt's own transport slice did.
     - [`Authentication why] — the endpoint refused the key (HTTP 401).
     - [`Invalid_response issue] — bytes arrived that are not the documented reply; the

@@ -239,7 +239,8 @@ let test_transport_controls () =
       in
       let server = throttled [ ("Retry-After", "7") ] in
       (match embed ~max_attempts:1 server with
-      | Error (`Unavailable { retry_after; retryable; _ }) ->
+      | Error (`Unavailable { retry_after; retryable; status; _ }) ->
+          Alcotest.(check (option int)) "^nai-8s4k typed status" (Some 429) status;
           Alcotest.(check bool) "^nai-rjkq retryable" true retryable;
           Alcotest.(check (option int))
             "^nai-rjkq delta-seconds" (Some 7000)
@@ -265,6 +266,24 @@ let test_transport_controls () =
       (match embed ~max_attempts:1 (throttled [ ("Retry-After", "soon") ]) with
       | Error (`Unavailable { retry_after = None; _ }) -> ()
       | _ -> Alcotest.fail "an invalid Retry-After must be None");
+      (* ^nai-8s4k: the per-attempt timeout is the caller's, not a hidden 10 s. *)
+      let slow =
+        Fake_server.serve ~net:env#net ~clock:env#clock ~sw
+          (Fake_server.after (Eta.Duration.seconds 2)
+             (Fake_server.Response (Fake_server.http_response "{}")))
+      in
+      let started = Eio.Time.now env#clock in
+      (match
+         E.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
+           ~endpoint:(Fake_server.url slow "/embeddings")
+           ~timeout:(Eta.Duration.ms 200) ~max_attempts:1 ~deadline
+           E.{ model = "embedding-model"; input = Text "one"; dimensions = None }
+       with
+      | Error `Timeout ->
+          Alcotest.(check bool)
+            "^nai-8s4k attempt cut at the caller's timeout" true
+            (Eio.Time.now env#clock -. started < 1.5)
+      | _ -> Alcotest.fail "expected the attempt timeout");
       match embed ~max_attempts:1 (throttled []) with
       | Error (`Unavailable { retry_after = None; _ }) -> ()
       | _ -> Alcotest.fail "no header, no retry_after")

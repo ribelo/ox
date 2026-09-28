@@ -59,7 +59,7 @@ let retry_after ~now headers =
    [`Invalid_response] — the reference adapter's verdict, because the bytes that arrived
    are not the documented reply. *)
 let transport_failure message =
-  `Unavailable { Error.message; retryable = true; retry_after = None }
+  `Unavailable { Error.message; retryable = true; retry_after = None; status = None }
 
 let map_error ~max_response_bytes : Eta_http.Client.error -> Error.t = function
   | `Timeout | `Idle_timeout -> `Timeout
@@ -106,7 +106,12 @@ let status_error ~max_request_bytes ~length ~retry_after status =
       }
   else
     `Unavailable
-      { Error.message = Printf.sprintf "HTTP %d" status; retryable = false; retry_after }
+      {
+        Error.message = Printf.sprintf "HTTP %d" status;
+        retryable = false;
+        retry_after;
+        status = Some status;
+      }
 
 let attempt ~http ~url ~authorization ~body ~deadline ~max_response_bytes =
   match
@@ -155,6 +160,7 @@ let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeo
                  Error.message = Printf.sprintf "HTTP %d" status;
                  retryable = true;
                  retry_after;
+                 status = Some status;
                })
         else Final (status_error ~max_request_bytes ~length ~retry_after status)
     | Error error -> if retryable_error error then Retry error else Final error
