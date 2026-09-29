@@ -456,9 +456,9 @@ let test_default_path_absent () =
           in
           let spawn argv =
             match
-              Ox_process.Child.spawn ~sw ~clock:base#clock ~mgr:base#process_mgr ~argv
-                ~env ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
-                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:base#clock
+                ~mgr:base#process_mgr ~argv ~env ~grace:(Ox.Duration.ms 50)
+                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid absent-config fixture spawn"
@@ -1062,7 +1062,8 @@ let test_run_validates () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                    ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1105,7 +1106,8 @@ let test_real_signal signo () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                    ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1154,7 +1156,8 @@ let test_real_signal_telemetry () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                    ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1262,7 +1265,8 @@ let signal_stop_otlp env sw ~shutdown =
           in
           let child =
             match
-              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                ~mgr:env#process_mgr
                 ~argv:[ fixture; "--config"; config_path ]
                 ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                 ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1324,8 +1328,8 @@ let test_door2_real_signal_extra () =
           in
           let child =
             match
-              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
-                ~argv:[ fixture; "long" ] ~grace:(Ox.Duration.ms 50)
+              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                ~mgr:env#process_mgr ~argv:[ fixture; "long" ] ~grace:(Ox.Duration.ms 50)
                 ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
@@ -1372,7 +1376,8 @@ let test_door2_production_reader () =
                 (fun command ->
                   let child =
                     match
-                      Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                      Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw
+                        ~clock:env#clock ~mgr:env#process_mgr
                         ~argv:((fixture :: command) @ [ "--config"; file ])
                         ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                         ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1652,9 +1657,10 @@ let test_door3_real_signal_owned_code () =
           in
           let child =
             match
-              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
-                ~argv:[ fixture; "long-code" ] ~grace:(Ox.Duration.ms 50)
-                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                ~mgr:env#process_mgr ~argv:[ fixture; "long-code" ]
+                ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid owned-code fixture spawn"

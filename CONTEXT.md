@@ -35,8 +35,16 @@ Anything acquired against a Switch and released when that Switch ends: a process
 _Avoid_: managed value, activation
 
 **Env**:
-Eio's standard environment plus the observability handles the Door creates. Programs and Services receive the specific Env values they use, never the whole Env.
-_Avoid_: capability, runtime, environment (unqualified)
+Eio's standard environment plus the observability handles and the Powerbox the Door creates. Programs and Services receive the specific Env values they use, never the whole Env.
+_Avoid_: runtime, environment (unqualified)
+
+**Capability**:
+A value whose type names one thing outside Eio a function may touch — fork, exec, exit, chdir, the process environment, signals, the system clock, system randomness, a standard stream, files outside Eio's `fs`, temporary files, raw sockets — written in the function's signature as an object row (`~caps:< Cap.fork; Cap.exec; .. >`). Eio's own values (`net`, `fs`, `process_mgr`, `clock`) are capabilities of the same kind and stay Eio values. `docs/caps.md`.
+_Avoid_: permission, privilege, effect
+
+**Powerbox**:
+The object holding every Capability of a process, minted once by the Door and handed to the Program in its Env; the Program narrows it by type ascription for each Service.
+_Avoid_: context, token bag
 
 **Config**:
 The decoded, validated configuration a Program receives from the Door: a plain type with `[@@deriving yojson]` (ADR-0008) whose derived decoder and encoder plus an environment function of its own make up the `Ox_app.Config.t` bundle the Door is handed.
@@ -106,3 +114,5 @@ A length of time at millisecond precision.
 ### Retired words
 
 These named v1 concepts and must not be reused: effect (as a noun for Ox's type), blueprint, interpreter, runtime, SPI, capability, component, coeffect, capsule, settlement fence, dormant provider, desired state, activation, eta (the library's name before the rename of 2026-09-29; it named an effect type that no longer exists).
+
+*Capability* is retired in v1's sense only (a runtime service a program was handed); row 48 reuses the word for the typed value defined above.

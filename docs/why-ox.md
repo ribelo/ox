@@ -35,7 +35,7 @@ A **kernel**, not a framework: the packages Rafal's services are built from, wri
 5. OxCaml-first with a strict dependency policy: stdlib, Eio, Jane Street packages when installable on our compiler, unavoidable C bindings, and an ADR for anything else (ADR-0005).
 6. Ox is the floor (ADR-0009): the table of contents of Scala's Ox (https://ox.softwaremill.com) is the checklist of the core, every item present in direct style or recorded with a reason in `docs/design/ox-floor.md`; what Ox adds above it is the Cause tree and the handler discipline of ADR-0006.
 
-Vocabulary is in `CONTEXT.md`. The words *effect*, *blueprint*, *runtime*, *interpreter*, *capability*, *component* and *coeffect* are retired.
+Vocabulary is in `CONTEXT.md`. The words *effect*, *blueprint*, *runtime*, *interpreter*, *component* and *coeffect* are retired, and so is *capability* in v1's sense of a runtime service; row 48 reuses the word for a typed value in a signature (`docs/caps.md`).
 
 ## 4. How to write direct style here
 
@@ -134,7 +134,7 @@ The thing to run is a thunk. That is the entire ergonomic cost of losing program
 
 ### Capabilities
 
-Eio hands the operating system to a program as values — `clock`, `net`, `process_mgr`, `fs`, `domain_mgr` — and `Eio_mock` provides fakes. A function takes the specific values it uses (`~clock`, `~net`), never a whole environment, so its signature says what it can touch. Ox adds no capability layer, no ambient effects, and no `Runtime.t`.
+Eio hands the operating system to a program as values — `clock`, `net`, `process_mgr`, `fs`, `domain_mgr` — and `Eio_mock` provides fakes. A function takes the specific values it uses (`~clock`, `~net`), never a whole environment, so its signature says what it can touch. The standard library's dangerous calls sit outside that discipline, so `ox_caps` (row 48, `docs/caps.md`) extends it to them: fork, exec, exit, the environment, the standard streams, files outside Eio's `fs` and the rest are typed capabilities (`~caps:< Cap.fork; Cap.exec; .. >`), the Door mints the one powerbox of a process, the program narrows it by ascription, and a Semgrep gate refuses the raw calls. These are values in signatures, like Eio's; Ox still has no ambient effects and no `Runtime.t`.
 
 ### The application model
 

@@ -18,6 +18,7 @@ Nothing enters this tree without a consumer. A change is justified by a user sto
 - Pure protocol code is copied from `v1` when pulled; anything that mentioned `Effect.t` is rewritten.
 - Stdlib-first; dependencies per ADR-0005; OxCaml features wherever they earn a guarantee or speed.
 - Every package: `lib/<name>/`, a `.mli` per module, tests under `test/<name>/` citing the story IDs they cover.
+- Dangerous calls go through `Ox_caps.Cap_*` and require a capability in the signature (`docs/caps.md`); `scripts/caps-gate` refuses the raw ones.
 
 ## Gates (before any commit)
 
@@ -25,4 +26,5 @@ Nothing enters this tree without a consumer. A change is justified by a user sto
 nix develop -c dune build @install
 nix develop -c dune test
 nix develop -c dune build @fmt
+nix develop -c scripts/caps-gate
 ```

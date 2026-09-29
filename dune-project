@@ -26,6 +26,17 @@
   (eio_main :with-test)
   (alcotest :with-test)))
 
+; ^ncaps-sojd ^ncaps-4btv ^ncaps-n6r0: capability types, the wrappers of the dangerous
+; standard-library calls, and the Semgrep rules and gate script (installed under
+; share/ox_caps). No dependency beyond the standard library and unix; docs/caps.md.
+(package
+ (name ox_caps)
+ (synopsis "Capabilities in signatures: typed wrappers of dangerous stdlib calls and their Semgrep gate")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-ox-oxcaml (= :version))
+  base-unix))
+
 (package
  (name ox_test)
  (synopsis "Eio mock test helpers and Ox Exit assertions")
@@ -33,6 +44,7 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
+  ox_caps
   eio
   eio_main
   alcotest))
@@ -99,6 +111,7 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
+  ox_caps
   eio
   base-unix
   (ox_test :with-test)
@@ -166,6 +179,7 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
+  ox_caps
   ox_observability
   eio
   eio_main

@@ -1,0 +1,340 @@
+# ox_caps: the raw calls a capability stands for (^ncaps-n6r0).
+#
+# Each rule forbids the raw standard-library calls of one capability; each has a wrapper
+# in Ox_caps.Cap_unix, Cap_sys or Cap_stdlib that requires the capability. The gate
+# (caps-gate, ^ncaps-w6n2) runs these rules with --error and --disable-nosem, so an
+# inline "nosemgrep" does not silence them: the only allow-list is the one each
+# repository passes to caps-gate with --allow, each entry with its reason (docs/caps.md).
+# Tests are outside the gate: caps-gate scans lib/, packages/ and bin/, and always
+# excludes test/ and tests/.
+#
+# Semgrep does not resolve OCaml's implicit Stdlib, so a Stdlib value is listed both
+# bare and qualified; a local binding that shadows one of those function names is
+# reported too: rename it. The channel values themselves are matched only qualified
+# (Stdlib.stdout, Out_channel.stderr, ...): a bare stdout cannot be told from a
+# record field or a local of that name, so "output_string stdout" is not caught.
+rules:
+  - id: ox-caps-fork
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Unix.fork starts a process. Take the capability in the signature (Cap.fork) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.fork
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Unix.fork
+
+  - id: ox-caps-exec
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Running another program (Unix.exec*, create_process*, open_process*, system, Sys.command). Take the capability in the signature (Cap.exec) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.exec
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Unix.execv
+      - pattern: Unix.execve
+      - pattern: Unix.execvp
+      - pattern: Unix.execvpe
+      - pattern: Unix.create_process
+      - pattern: Unix.create_process_env
+      - pattern: Unix.open_process_in
+      - pattern: Unix.open_process_out
+      - pattern: Unix.open_process
+      - pattern: Unix.open_process_full
+      - pattern: Unix.open_process_args_in
+      - pattern: Unix.open_process_args_out
+      - pattern: Unix.open_process_args
+      - pattern: Unix.open_process_args_full
+      - pattern: Unix.system
+      - pattern: Sys.command
+
+  - id: ox-caps-exit
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Ending the process (exit, Unix._exit). The one raw form allowed is an
+      executable entry passing the Door's exit code on, exit (Ox_app.run ...).
+      Take the capability in the signature (Cap.exit) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.exit
+      story: ncaps-n6r0
+    patterns:
+      - pattern-either:
+          - pattern: exit $CODE
+          - pattern: Stdlib.exit
+          - pattern: Unix._exit
+      - pattern-not: exit (Ox_app.$DOOR ...)
+      - pattern-not: Stdlib.exit (Ox_app.$DOOR ...)
+
+  - id: ox-caps-chdir
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Changing the working directory. Take the capability in the signature (Cap.chdir) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.chdir
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Sys.chdir
+      - pattern: Unix.chdir
+      - pattern: Unix.chroot
+
+  - id: ox-caps-env
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Reading or changing the process environment. Take the capability in the signature (Cap.env) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.env
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Sys.getenv
+      - pattern: Sys.getenv_opt
+      - pattern: Unix.getenv
+      - pattern: Unix.environment
+      - pattern: Unix.unsafe_environment
+      - pattern: Unix.putenv
+
+  - id: ox-caps-signal
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Sending signals or installing handlers. Take the capability in the signature (Cap.signal) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.signal
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Unix.kill
+      - pattern: Unix.sigprocmask
+      - pattern: Sys.signal
+      - pattern: Sys.set_signal
+
+  - id: ox-caps-time
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Reading the system clock (take an Eio clock instead where you can). Take the capability in the signature (Cap.time) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.time
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Unix.time
+      - pattern: Unix.gettimeofday
+      - pattern: Sys.time
+
+  - id: ox-caps-random
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Seeding randomness from the system. Take the capability in the signature (Cap.random) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.random
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Random.self_init
+      - pattern: Random.State.make_self_init
+
+  - id: ox-caps-stdin
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Reading standard input. Take the capability in the signature (Cap.stdin) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.stdin
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Stdlib.stdin
+      - pattern: In_channel.stdin
+      - pattern: read_line ()
+      - pattern: Stdlib.read_line
+      - pattern: read_int ()
+      - pattern: read_int_opt ()
+      - pattern: Scanf.scanf
+
+  - id: ox-caps-stdout
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Writing to standard output. Take the capability in the signature (Cap.stdout) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.stdout
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: print_string
+      - pattern: Stdlib.print_string
+      - pattern: print_bytes
+      - pattern: Stdlib.print_bytes
+      - pattern: print_char
+      - pattern: Stdlib.print_char
+      - pattern: print_int
+      - pattern: Stdlib.print_int
+      - pattern: print_float
+      - pattern: Stdlib.print_float
+      - pattern: print_endline
+      - pattern: Stdlib.print_endline
+      - pattern: print_newline
+      - pattern: Stdlib.print_newline
+      - pattern: Stdlib.stdout
+      - pattern: Out_channel.stdout
+      - pattern: Printf.printf
+      - pattern: Format.printf
+      - pattern: Format.std_formatter
+
+  - id: ox-caps-stderr
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Writing to standard error. Take the capability in the signature (Cap.stderr) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.stderr
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: prerr_string
+      - pattern: Stdlib.prerr_string
+      - pattern: prerr_bytes
+      - pattern: Stdlib.prerr_bytes
+      - pattern: prerr_char
+      - pattern: Stdlib.prerr_char
+      - pattern: prerr_int
+      - pattern: Stdlib.prerr_int
+      - pattern: prerr_float
+      - pattern: Stdlib.prerr_float
+      - pattern: prerr_endline
+      - pattern: Stdlib.prerr_endline
+      - pattern: prerr_newline
+      - pattern: Stdlib.prerr_newline
+      - pattern: Stdlib.stderr
+      - pattern: Out_channel.stderr
+      - pattern: Printf.eprintf
+      - pattern: Format.eprintf
+      - pattern: Format.err_formatter
+
+  - id: ox-caps-fs-read
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Opening or listing files outside Eio's fs. Take the capability in the signature (Cap.fs_read) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.fs_read
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: open_in
+      - pattern: Stdlib.open_in
+      - pattern: open_in_bin
+      - pattern: Stdlib.open_in_bin
+      - pattern: open_in_gen
+      - pattern: Stdlib.open_in_gen
+      - pattern: In_channel.open_bin
+      - pattern: In_channel.open_text
+      - pattern: In_channel.open_gen
+      - pattern: In_channel.with_open_bin
+      - pattern: In_channel.with_open_text
+      - pattern: In_channel.with_open_gen
+      - pattern: Sys.readdir
+      - pattern: Unix.opendir
+
+  - id: ox-caps-fs-write
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Creating, writing, moving or deleting files outside Eio's fs (Unix.openfile needs fs_read and fs_write). Take the capability in the signature (Cap.fs_write) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.fs_write
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: open_out
+      - pattern: Stdlib.open_out
+      - pattern: open_out_bin
+      - pattern: Stdlib.open_out_bin
+      - pattern: open_out_gen
+      - pattern: Stdlib.open_out_gen
+      - pattern: Out_channel.open_bin
+      - pattern: Out_channel.open_text
+      - pattern: Out_channel.open_gen
+      - pattern: Out_channel.with_open_bin
+      - pattern: Out_channel.with_open_text
+      - pattern: Out_channel.with_open_gen
+      - pattern: Unix.openfile
+      - pattern: Sys.remove
+      - pattern: Sys.rename
+      - pattern: Sys.mkdir
+      - pattern: Sys.rmdir
+      - pattern: Unix.unlink
+      - pattern: Unix.rename
+      - pattern: Unix.mkdir
+      - pattern: Unix.rmdir
+      - pattern: Unix.chmod
+      - pattern: Unix.truncate
+      - pattern: Unix.symlink
+      - pattern: Unix.link
+
+  - id: ox-caps-tmp
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Creating temporary files or directories. Take the capability in the signature (Cap.tmp) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.tmp
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Filename.temp_file
+      - pattern: Filename.open_temp_file
+      - pattern: Filename.temp_dir
+
+  - id: ox-caps-network
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Opening raw sockets (take Eio's net instead where you can). Take the capability in the signature (Cap.network) and call the Ox_caps wrapper
+      instead; see docs/caps.md in ox.
+    metadata:
+      capability: Cap.network
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Unix.socket
+      - pattern: Unix.socketpair
+      - pattern: Unix.open_connection
+      - pattern: Unix.establish_server
+
+  - id: ox-caps-mint
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Only the Door (Ox_app) and tests mint a powerbox; a service receives its
+      capabilities as arguments. See docs/caps.md in ox.
+    metadata:
+      capability: the Door
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Ox_caps.Cap.powerbox
+      - pattern: Cap.powerbox
+      - pattern: Ox_test.powerbox
+
+  - id: ox-caps-forge
+    languages: [ocaml]
+    severity: ERROR
+    message: >-
+      Obj.magic can forge a capability token; it is not allowed where the gate
+      runs. See docs/caps.md in ox.
+    metadata:
+      capability: the Door
+      story: ncaps-n6r0
+    pattern-either:
+      - pattern: Obj.magic

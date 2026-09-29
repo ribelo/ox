@@ -183,7 +183,7 @@ let err ?(after = Ox.Duration.zero) data = { Fake.stream = Fake.Stderr; data; af
    the fake manager still has to be handed, and the argv Leash would run. *)
 let fake_child (env : Ox_test.env) ~sw fake =
   match
-    Child.spawn ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
+    Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
       ~argv:[ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
       ~stdout:Child.Pipe ~stderr:Child.Pipe ~grace:Ox.Duration.zero ~fds:[] ()
   with

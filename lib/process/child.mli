@@ -11,6 +11,7 @@ type output = Pipe | Discard
 type t
 
 val spawn :
+  caps:< Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; .. > ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
   mgr:_ Eio_unix.Process.mgr ->
@@ -27,7 +28,12 @@ val spawn :
     and duplicates are rejected before any resource is created. Missing argv and OS launch
     failures are defects, classified at a scope. [Pipe] exposes a source until owner
     switch release; [Discard] routes to /dev/null. Spawn registers switch-owned
-    cancellation and finalization; both retire. *)
+    cancellation and finalization; both retire.
+
+    [caps] is what spawning a child may touch (^ncaps-x7z8): it forks and execs another
+    program. Eio's [mgr] does the work; the capability is what makes the signature say so,
+    so a service that launches a program shows [< Cap.fork; Cap.exec; .. >] in its own
+    type. It is only looked at, never kept. *)
 
 val stdout : t -> Eio.Flow.source_ty Eio.Resource.t option
 

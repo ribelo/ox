@@ -1,7 +1,13 @@
 (** Caller-scoped OTLP/HTTP JSON exporter for Logger logs, completed spans and metric
     instruments. Borrowed [ox_http] client must outlive the exporter's ending — an
     explicit [shutdown] or the switch that owns the exporter. No global SDK, no telemetry
-    of the exporter's own sends. *)
+    of the exporter's own sends.
+
+    Capabilities (^ncaps-x7z8): beyond Eio's [net] (through the borrowed client) and
+    clock, trace and span IDs are drawn from a [Random.State] seeded from the system,
+    which is [Ox_caps.Cap.random]. [create] does not take it yet: Pie, grip and inn call
+    it and have not migrated, so this module is on ox's gate allow-list until their caps
+    rows. *)
 
 module Meter : module type of Meter
 (** The instruments a program records through: a counter, an up-down counter and a

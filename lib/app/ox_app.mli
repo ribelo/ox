@@ -61,6 +61,7 @@ val run_for_test_with_args :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands_with_env:('base Env.t -> (unit -> int) Cmdliner.Cmd.t list) ->
   ?commands_with_env:
     ('base Env.t ->
     ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
@@ -131,7 +132,13 @@ val run_for_test_with_args :
     whether an absent default is decoded from an empty document or rejected. Explicit
     --config is always required. [validate_source] receives the resolved source before the
     program and on config check, so relative references can use its directory. [read] is
-    the sole read seam, including config check. ^napp-ersz *)
+    the sole read seam, including config check. ^napp-ersz
+
+    [config_commands_with_env] is [config_commands] for commands that need the Door's
+    pre-config {!Env} — above all its powerbox, [env.caps], the only source of
+    capabilities a command has (^ncaps-0mvw). [commands_with_env] gives the top-level
+    commands the same Env. The Door mints one powerbox per call and every {!Env} it builds
+    carries it. *)
 
 val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
@@ -211,6 +218,8 @@ val run_for_test :
 val run_with_args :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands_with_env:
+    (Eio_unix.Stdenv.base Env.t -> (unit -> int) Cmdliner.Cmd.t list) ->
   ?commands_with_env:
     (Eio_unix.Stdenv.base Env.t ->
     ((Eio.Switch.t -> (unit, 'err) result) -> int) ->

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# caps-gate: the capability gate (^ncaps-w6n2). Runs the ox_caps Semgrep rules
+# (caps.yaml, beside this script, or $OX_CAPS_RULES) over a repository's library and
+# application code and exits non-zero on any raw call a capability stands for.
+#
+#   caps-gate [--allow GLOB]... [PATH]...
+#
+# PATH defaults to whichever of lib/, packages/ and bin/ exist in the current
+# directory. test/ and tests/ are always excluded: tests mint their own powerbox.
+# --allow GLOB excludes matching files (gitignore syntax, as semgrep --exclude, paths
+# from the repository root; run the gate from inside a git repository); every
+# allow-list entry belongs in the calling repository's gate script with its reason.
+# Inline "nosemgrep" comments are ignored (--disable-nosem). Semgrep's OCaml parser does
+# not know OxCaml's mode syntax (@ local, global_, ...): it skips the regions it cannot
+# parse and says so in its summary ("Partially analyzed"); calls inside those regions are
+# not checked (docs/caps.md, "What the gate cannot see").
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+rules="${OX_CAPS_RULES:-$here/caps.yaml}"
+if [ ! -f "$rules" ]; then
+  echo "caps-gate: no rule file at $rules" >&2
+  exit 2
+fi
+if ! command -v semgrep >/dev/null 2>&1; then
+  echo "caps-gate: semgrep is not on PATH (it is in the ox and Leash dev shells)" >&2
+  exit 2
+fi
+
+excludes=(--exclude test --exclude tests)
+paths=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --allow)
+      excludes+=(--exclude "$2")
+      shift 2
+      ;;
+    --allow=*)
+      excludes+=(--exclude "${1#--allow=}")
+      shift
+      ;;
+    -h | --help)
+      sed -n '2,17p' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *)
+      paths+=("$1")
+      shift
+      ;;
+  esac
+done
+if [ "${#paths[@]}" -eq 0 ]; then
+  for dir in lib packages bin; do
+    if [ -d "$dir" ]; then paths+=("$dir"); fi
+  done
+fi
+if [ "${#paths[@]}" -eq 0 ]; then
+  echo "caps-gate: nothing to scan (no lib/, packages/ or bin/ here)" >&2
+  exit 2
+fi
+
+exec semgrep scan --config "$rules" --error --disable-nosem --no-git-ignore --metrics=off \
+  --disable-version-check "${excludes[@]}" "${paths[@]}"

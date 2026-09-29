@@ -3,6 +3,7 @@
  (public_name ox_test)
  (libraries
   ox
+  ox_caps
   eio
   eio_main
   eio.mock

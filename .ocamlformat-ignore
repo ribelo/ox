@@ -16,6 +16,8 @@ lib/json/ox_json.mli
 lib/observability/logger.ml
 lib/observability/logger.mli
 test/modes/portability.ml
+test/caps/compile_fail/portable.ml
+test/caps/compile_fail/portable_control.ml
 
 # SQL prepared statements borrow local SQLite handles; the copied DSL also
 # carries OxCaml callback modes that ocamlformat 0.29 cannot parse.

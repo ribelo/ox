@@ -126,7 +126,13 @@ type ('input, 'output) driver
 val start : ?random:Random.State.t -> ('input, 'output) t -> ('input, 'output) driver
 (** Start a stateful schedule driver. [Jittered] draws from the optional Stdlib random
     state; without one, a fresh state is created. No sleeps, cancellation, or finalizers
-    are involved. *)
+    are involved.
+
+    Capabilities (^ncaps-x7z8): the fresh state is seeded from the system, which is
+    [Ox_caps.Cap.random]; pass [~random] (from [Ox_caps.Cap_stdlib.Random.make_self_init])
+    to make that visible in the caller's signature. The default stays, and this module
+    stays on ox's gate allow-list, until every consumer passes one ([ox] itself does not
+    depend on [ox_caps]). *)
 
 val step :
   now_ms:int ->

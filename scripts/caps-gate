@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# ox's capability gate (^ncaps-w6n2): the fourth gate beside build, test and fmt.
+#   nix develop -c scripts/caps-gate
+# Runs lib/caps/caps-gate over lib/ (and bin/ when it exists). The allow-list below is
+# the whole of it; each entry says why the file may make raw calls (docs/caps.md).
+set -euo pipefail
+cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+
+allow=(
+  # The wrappers themselves: the one place the raw calls live (^ncaps-4btv).
+  --allow lib/caps
+  # The Door: it mints the powerbox, reads the environment and installs the SIGINT /
+  # SIGTERM handlers of the process it owns (^ncaps-0mvw).
+  --allow lib/app/ox_app.ml
+  # A build-time preprocessor executable, not a Door program: it reads its input file,
+  # prints to stdout and exits with its status.
+  --allow lib/ppx_yojson_minimal/main.ml
+  # Pending the consumer's caps row (docs/issues/README.md rows 50-53): these declare
+  # their capabilities in their interface (^ncaps-x7z8) but do not take them yet,
+  # because requiring one would break a consumer that has not migrated.
+  --allow lib/ipc/listener.ml # fs_write + network; Pie's row
+  --allow lib/otel/ox_otel.ml # random (trace IDs); Pie, grip, inn rows
+  --allow lib/ox/schedule.ml # random (default jitter source); every consumer
+  --allow lib/sql/connection.ml # time; inn's row
+  --allow lib/sql/migrate.ml # fs_read + time; inn's row
+  --allow lib/sql/sqlite.ml # tmp + fs_write (temporary database); inn's row
+)
+
+exec lib/caps/caps-gate "${allow[@]}" "$@"

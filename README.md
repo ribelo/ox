@@ -22,6 +22,7 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `ox_rpc` — scoped request/reply correlation over message streams
 - `ox_ipc` — private Unix control listeners with scoped socket ownership and bounded peers
 - `ox_process` — scoped Unix children with graceful termination and scheduled supervision
+- `ox_caps` — capabilities in signatures: typed wrappers of the dangerous `Unix`/`Sys`/`Stdlib` calls, a powerbox the Door mints, and the Semgrep gate that refuses the raw calls (`docs/caps.md`)
 - `ox_blocking` — bounded native worker calls over Eio system threads, with explicit cancellation and drain policies
 - `ox_observability` — structured logs with fiber-local fields, redacted secrets, spans, and one JSON object per line for the journal
 - `ox_app` — one Door for Eio services: TOML configuration decoded by the config type's derived codecs, status, a journal logger and the telemetry hook that adds reporters and span IDs to it

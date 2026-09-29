@@ -766,6 +766,8 @@
               pkgs.opam
               pkgs.patch
               pkgs.pkg-config
+              # The capability gate (scripts/caps-gate, test/caps/gate; ^ncaps-w6n2).
+              pkgs.semgrep
               pkgs.sqlite
               pkgs.unzip
               pkgs.which

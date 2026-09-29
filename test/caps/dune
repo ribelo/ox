@@ -1,0 +1,51 @@
+; Row 48 (docs/issues/caps/01-caps.md). Three seams: the public modules in process
+; (caps_tests), the type checker on files that must not compile (compile_fail/, after
+; test/modes), and the Semgrep gate on fixture files with and without violations (gate/).
+
+(test
+ (name caps_tests)
+ (libraries
+  ox_caps
+  ox
+  ox_app
+  ox_process
+  ox_test
+  ox_observability
+  eio
+  eio_main
+  cmdliner
+  unix
+  alcotest))
+
+; ^ncaps-aw5n ^ncaps-vlwm: compiled against the installed interface of ox_caps.
+
+(rule
+ (alias runtest)
+ (deps
+  (package ox_caps)
+  (glob_files compile_fail/*.ml)
+  compile_fail/check.sh)
+ (action
+  (chdir
+   compile_fail
+   (run
+    bash
+    check.sh
+    %{ocamlc}
+    %{workspace_root}/../install/default/lib/ox_caps))))
+
+; ^ncaps-n6r0 ^ncaps-w6n2: the installed gate script and rules over fixtures.
+
+(rule
+ (alias runtest)
+ (deps
+  (package ox_caps)
+  (source_tree gate)
+  %{bin:semgrep})
+ (action
+  (chdir
+   gate
+   (run
+    bash
+    check.sh
+    %{workspace_root}/../install/default/share/ox_caps/caps-gate))))

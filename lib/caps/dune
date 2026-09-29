@@ -1,0 +1,16 @@
+; ^ncaps-4btv ^ncaps-n6r0: the capability types, the wrappers of the dangerous
+; standard-library calls, and the Semgrep rules with the gate script that forbid those
+; calls everywhere else. The rules and the script are installed under share/ox_caps so a
+; consumer runs the same gate against the version it builds with (^ncaps-w6n2).
+
+(library
+ (name ox_caps)
+ (public_name ox_caps)
+ (libraries unix))
+
+(install
+ (package ox_caps)
+ (section share)
+ (files
+  caps.yaml
+  (caps-gate as caps-gate)))

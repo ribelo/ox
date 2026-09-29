@@ -2,7 +2,12 @@
     private namespace without hostile mutation by another process of the same UID; OCaml's
     Unix.open_flag has no O_NOFOLLOW. Same-user processes are trusted: ownership and
     identity checks protect against stale state, accidental changes and other users, not
-    against a hostile same-user process. *)
+    against a hostile same-user process.
+
+    Capabilities (^ncaps-x7z8): creating the socket needs [Ox_caps.Cap.fs_write] (the
+    runtime directory, the lock file, the socket path) and [Ox_caps.Cap.network] (a raw
+    Unix socket). [run] does not take them yet: Pie calls it and has not migrated, so the
+    listener is on ox's gate allow-list until Pie's caps row makes them a parameter. *)
 
 type policy = {
   peers : int;

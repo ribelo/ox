@@ -25,8 +25,8 @@ let spawn_simple ?(after_ready = fun _ -> ()) mode =
           in
           let child =
             match
-              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
-                ~argv:[ fixture ]
+              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                ~mgr:env#process_mgr ~argv:[ fixture ]
                 ~env:(Array.append (Unix.environment ()) [| "SIMPLE_MODE=" ^ mode |])
                 ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                 ~stderr:Ox_process.Child.Pipe ~fds:[] ()

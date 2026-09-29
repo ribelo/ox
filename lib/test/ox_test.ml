@@ -161,6 +161,8 @@ let exit value error =
       | Ox.Exit.Failure a, Ox.Exit.Failure b -> cause_equal (Alcotest.equal error) a b
       | _ -> false)
 
+let powerbox () = (Ox_caps.Cap.powerbox [@alert "-mint"]) ()
+
 let flow_pair ?(label = "scripted") chunks =
   let source = Eio_mock.Flow.make (label ^ ":source") in
   Eio_mock.Flow.on_read source

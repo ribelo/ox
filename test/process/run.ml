@@ -36,8 +36,9 @@ let test_invalid () =
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [] in
       let spawn fds =
-        C.spawn ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
-          ~argv:[ "/bin/never" ] ~grace:Ox.Duration.zero ~fds ()
+        C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+          ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/never" ] ~grace:Ox.Duration.zero
+          ~fds ()
       in
       Alcotest.(check bool)
         "negative rejected" true
@@ -62,8 +63,9 @@ let test_fake_retirement () =
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let child =
         ok
-          (C.spawn ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
-             ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
+          (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+             ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
+             ~fds:[] ())
       in
       check_exit (C.Signaled Sys.sigterm) (C.stop child);
       check_exit (C.Signaled Sys.sigterm) (C.stop child);
@@ -86,8 +88,9 @@ let test_supervision () =
       in
       let supervisor =
         S.start ~sw ~clock:env#clock ~schedule ~spawn:(fun ~sw ->
-            C.spawn ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
-              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
+            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
+              ~fds:[] ())
       in
       let events = S.events supervisor in
       (match Eio.Stream.take events with
@@ -127,8 +130,9 @@ let test_stop () =
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let s =
         S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever ~spawn:(fun ~sw ->
-            C.spawn ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
-              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
+            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
+              ~fds:[] ())
       in
       (match Eio.Stream.take (S.events s) with
       | S.Started 1 -> ()
@@ -173,8 +177,9 @@ let test_overflow () =
       in
       let s =
         S.start ~sw ~clock:env#clock ~schedule:(Ox.Schedule.recurs 32) ~spawn:(fun ~sw ->
-            C.spawn ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
-              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
+            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
+              ~fds:[] ())
       in
       let rec settle attempts =
         if S.generation s < 33 && attempts > 0 then (
@@ -198,8 +203,9 @@ let test_fd_and_output () =
               let read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr ~argv:[ script ]
-                     ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe ~stderr:C.Pipe
+                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 40)
+                     ~stdout:C.Pipe ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
                      ())
               in
@@ -229,8 +235,9 @@ let test_mapped_fds_blocking () =
               let _read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr ~argv:[ script ]
-                     ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe ~stderr:C.Pipe
+                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 40)
+                     ~stdout:C.Pipe ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
                      ())
               in
@@ -254,8 +261,9 @@ let test_retired_output_eof () =
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr ~argv:[ script ]
-                     ~grace:(Ox.Duration.ms 30) ~stdout:C.Pipe ~stderr:C.Pipe ~fds:[] ())
+                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 30)
+                     ~stdout:C.Pipe ~stderr:C.Pipe ~fds:[] ())
               in
               check_exit (C.Exited 0) (C.await child);
               check_exit (C.Exited 0) (C.stop child);
@@ -284,7 +292,8 @@ let test_escalation grace () =
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                     ~mgr:env#process_mgr
                      ~argv:[ script; script ^ ".ready" ]
                      ~grace ~fds:[] ())
               in
@@ -302,7 +311,8 @@ let test_supervisor_real_stop () =
                 S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever
                   ~spawn:(fun ~sw ->
                     let result =
-                      C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                      C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                        ~mgr:env#process_mgr
                         ~argv:[ script; script ^ ".ready" ]
                         ~grace:(Ox.Duration.ms 20) ~fds:[] ()
                     in
@@ -333,7 +343,8 @@ let test_cancel () =
                     Ox.Scope.run (fun sw ->
                         let child =
                           ok
-                            (C.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                            (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
+                               ~mgr:env#process_mgr
                                ~argv:[ script; script ^ ".ready" ]
                                ~grace:(Ox.Duration.ms 40) ~fds:[] ())
                         in

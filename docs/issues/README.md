@@ -56,7 +56,11 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 45 | `supervised-error/01-supervised-error.md` | `eta` | 1 | typed errors across forks; Concurrent over Eio; consumers move | [x] |
 | 46 | `ox-floor/01-ox-floor.md` | `ox`, `ox_app`, docs | 45 | rate limiter, select, resources, OxApp parity, Flow design | [x] |
 | 47 | `actor/01-actor.md` | `ox`, Leash | 45 | typed mailbox with state fold, Supervisor, Agent; Leash registry, Chrome supervision and ledger move | [x] |
-| 48 | `caps/01-caps.md` | `eta_caps`, `eta_app`, Leash | 45 | capabilities in signatures; Semgrep gate; Leash first | [ ] |
+| 48 | `caps/01-caps.md` | `ox_caps`, `ox_app`, `ox_process`, Leash | 45 | capabilities in signatures; Semgrep gate; Leash first | [x] |
+| 50 | `caps/01-caps.md` story 9 (^ncaps-21nk): Pie's caps row, its own spec in Pie | Pie; `ox_ipc` (`Listener.run` takes `fs_write` + `network`), `ox_otel` (`random`) | 48 | Pie's raw calls typed; 87 gate findings in 20 files today (Leash's were 40 in 6: 17 interface annotations, ~150 threading sites) | [ ] |
+| 51 | `caps/01-caps.md` story 9: nema's caps row | nema | 48 | 58 findings in 14 files today | [ ] |
+| 52 | `caps/01-caps.md` story 9: inn's caps row | inn; `ox_sql` (`time`, `fs_read`, `tmp`, `fs_write`), `ox_otel` | 48 | 52 findings in 5 files today | [ ] |
+| 53 | `caps/01-caps.md` story 9: grip's caps row | grip; `ox_otel` | 48, 50, 52 | 39 findings in 8 files today; last user of `ox_otel` without `random`, so `Ox_otel` and `Schedule`'s default leave ox's allow-list here | [ ] |
 | 49 | `ox-rename/01-ox-rename.md` | everything | 45 | the library is ox in a fresh private repository; consumers and nixos-config follow; Leash gets a remote | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 

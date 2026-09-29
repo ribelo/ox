@@ -61,13 +61,13 @@ let validation_failure ~validation_exit ~validate ~pp_err ~stderr env settings =
          2)
 
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
-    ?commands_with_env ?commands_with_env_code ?(bare = `Service) ?(usage_exit = 2)
-    ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130) ?(doc = "Run the service.")
-    ?(validation_exit = 2) ?(log_level = Ox_observability.Logger.Info) ?journal_level
-    ?(service_command = "run") ?(config_file = "config.toml") ?(missing = `Defaults)
-    ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry ?telemetry_result
-    ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
-    program =
+    ?config_commands_with_env ?commands_with_env ?commands_with_env_code
+    ?(bare = `Service) ?(usage_exit = 2) ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130)
+    ?(doc = "Run the service.") ?(validation_exit = 2)
+    ?(log_level = Ox_observability.Logger.Info) ?journal_level ?(service_command = "run")
+    ?(config_file = "config.toml") ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ())
+    ?validate_source ?telemetry ?telemetry_result ~service_args ~env ~journal ~name
+    ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
   let open Cmdliner in
   let journal =
     match journal_level with
@@ -78,7 +78,10 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     Ox_observability.Logger.create ~service:name ~clock:env#clock
       ~mono_clock:env#mono_clock ~level:log_level ~reporter:journal ()
   in
-  let door_env = { Env.base = env; logger = initial_logger } in
+  (* ^ncaps-0mvw: the one powerbox of this process, minted here and nowhere else in
+     library code; every Env the Door builds carries it. *)
+  let caps = (Ox_caps.Cap.powerbox [@alert "-mint"]) () in
+  let door_env = { Env.base = env; logger = initial_logger; caps } in
   let run_owned task =
     let requested = ref [] in
     let outcome =
@@ -154,7 +157,7 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
                              (journal :: configured.reporters))
                         ()
                     in
-                    { Env.base = env; logger }
+                    { Env.base = env; logger; caps }
                   in
                   (* ^napp-scz2: a hook that can fail returns its error as the program
                      would, so it is rendered through [pp_err] (exit 1) before the program
@@ -203,9 +206,12 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   (* ^napp-wf22: the group is the Door's, so a consumer's `config init` is added to it
      here rather than built as a second group Cmdliner would refuse. *)
   let config_cmd =
+    let with_env =
+      match config_commands_with_env with None -> [] | Some build -> build door_env
+    in
     Cmd.group
       (Cmd.info "config" ~doc:"Inspect configuration.")
-      (check_cmd :: config_commands)
+      ((check_cmd :: config_commands) @ with_env)
   in
   let owned_commands =
     match commands_with_env with None -> [] | Some build -> build door_env run_owned
@@ -251,11 +257,11 @@ let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?doc ?validati
     ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
       program env settings sw)
 
-let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_env_code
-    ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc ?validation_exit ?log_level
-    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
-    ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err
-    program =
+let run_with_args ?commands ?config_commands ?config_commands_with_env ?commands_with_env
+    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc
+    ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
+    ?read_file ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name
+    ~config ~pp_err program =
   Eio_main.run (fun env ->
       let signal = Atomic.make 0 in
       let signal_changed = Eio.Condition.create () in
@@ -299,11 +305,11 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_e
                 | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
                 | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn)))
           in
-          run_for_test_with_args ?commands ?config_commands ?commands_with_env
-            ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc
-            ?validation_exit ?log_level ?journal_level ?service_command ?config_file
-            ?missing ?validate ?validate_source ?telemetry ?telemetry_result ~service_args
-            ~on_switch ~env
+          run_for_test_with_args ?commands ?config_commands ?config_commands_with_env
+            ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
+            ?interrupt_exit ?doc ?validation_exit ?log_level ?journal_level
+            ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
+            ?telemetry_result ~service_args ~on_switch ~env
             ~journal:(Ox_observability.Logger.Reporter.journal env#stderr)
             ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
             ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)

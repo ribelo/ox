@@ -1,7 +1,13 @@
 (** Internal SQLite connection API used by [Ox_sql.Pool] and migrations.
 
     Raw operations in this module bypass the typed SQL DSL. Callers using this escape
-    hatch own SQL validity, parameter ordering, and result decoding. *)
+    hatch own SQL validity, parameter ordering, and result decoding.
+
+    Capabilities (^ncaps-x7z8): [ox_sql] reads the system clock for timings
+    ([Ox_caps.Cap.time]), reads migration files ([Ox_caps.Cap.fs_read]), and creates and
+    removes temporary databases ([Ox_caps.Cap.tmp], [Ox_caps.Cap.fs_write]) besides the
+    SQLite files it is given. Its functions do not take them yet: inn calls them and has
+    not migrated, so these modules are on ox's gate allow-list until inn's caps row. *)
 
 type t
 

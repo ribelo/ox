@@ -1,6 +1,6 @@
 ---
-status: ready-for-agent
-package: eta_caps (new), eta_app (Door mints the powerbox), every consumer
+status: completed
+package: ox_caps (new; eta_caps before the rename), ox_app (Door mints the powerbox), ox_process, ox_test, every consumer
 consumer: Leash first, then Pie, nema, inn, grip
 ---
 
@@ -49,3 +49,36 @@ Capabilities for Eio's own values (already values); runtime capability checks; c
 ## Further Notes
 
 Whether to depend on ocaml-caps or own a copy: the operator leans to owning it given its size; story 14 records the decision when made. The Semgrep OCaml support must be verified on this tree before story 5 (semgrep is installed on the machine).
+
+## Delivered
+
+The guide is `docs/caps.md`; the API, the rules and what the gate cannot see are there. Decisions taken where the spec left room:
+
+- Names follow the rename: `ox_caps` with `Ox_caps.Cap`, `Cap_unix`, `Cap_sys`, `Cap_stdlib`; the rules and the gate script are `lib/caps/caps.yaml` and `lib/caps/caps-gate`, installed under `share/ox_caps` so a consumer runs the version it builds against. Wrappers take `~caps` (labelled, like `~sw` and `~clock`), as an ordinary global argument: a `@ local` parameter made every partial application local (`docs/modes.md`).
+- The Door mints in `run_for_test_with_args`, which every Door entry goes through, and `Ox_app.Env.t` gained the field `caps`. Commands get it through `commands_with_env` and the new `config_commands_with_env`; `Ox_test.powerbox` is the test entry. `Cap.powerbox` carries a `mint` alert; the `ox-caps-mint` rule is what refuses it.
+- The gate is `scripts/caps-gate` in each repository, with `--disable-nosem` and `--no-git-ignore`, and its allow-list is only the `--allow` entries in that script. The one raw exit it allows is `exit (Ox_app.run ...)` — an entry passing the Door's code on.
+- Story 7: `Ox_process.Child.spawn` takes `~caps:< Cap.fork; Cap.exec; .. >` now — Leash is its only user. `ox_ipc` (Pie), `ox_otel` (Pie, grip, inn, Leash), `ox_sql` (inn) and `Schedule.start`'s default random state declare their capabilities in their interfaces and are on ox's allow-list until the consumer rows 50–53: requiring them now would break consumers that are rebuilt whenever ox is installed into the shared switch.
+- Story 8: Chrome receives `< Cap.fork; Cap.exec >` and Control none, as the spec says. Tabs does not receive none: it creates handles from system randomness, writes screenshots, `run --out` files and proposals, reads uploads and playbooks, and looks up the XDG directories, so `Tabs.caps = < Cap.env; Cap.fs_read; Cap.fs_write; Cap.random >`. Desktop (the handoff's focus and notify commands) receives `< Cap.fork; Cap.exec >`. Leash's gate runs with no allow-list.
+- Semgrep 1.164.0 from nixpkgs is in the dev shells of ox and Leash.
+
+## Story → test
+
+| Story | Test |
+| --- | --- |
+| ^ncaps-sojd | `test/caps/caps_tests.ml` "ncaps-sojd rows compose and narrow" |
+| ^ncaps-0mvw | `caps_tests.ml` "ncaps-0mvw the Door hands the powerbox" (program and a config command get `env.caps`); `compile_fail/forged.ml`; gate rule `ox-caps-mint` in `test/caps/gate` |
+| ^ncaps-4btv | `caps_tests.ml` "wrappers are the raw calls" and "capabilities in local closures" (with `Rate_limiter.run` and `Resource.use_in_scope`) |
+| ^ncaps-n6r0 | `test/caps/gate/check.sh`: every rule fires on `violating/`, `nosemgrep` is ignored, `test/` is outside, `clean/` passes |
+| ^ncaps-w6n2 | the same, through the installed `caps-gate`, and `--allow` excludes exactly its file; `scripts/caps-gate` green in ox and Leash |
+| ^ncaps-jkku ^ncaps-x7z8 | `caps_tests.ml` "spawn takes fork, exec and Eio's mgr"; the declarations in `Listener`, `Ox_otel`, `Connection`, `Schedule` interfaces and `docs/caps.md` |
+| ^ncaps-4tjy | Leash's suites unchanged in what they assert, with `Ox_test.powerbox ()` where a signature now asks; Leash's `scripts/caps-gate` green with no allow-list |
+| ^ncaps-21nk | counts in `docs/caps.md` and rows 50–53 of `docs/issues/README.md` |
+| ^ncaps-vlwm | `compile_fail/portable.ml` (a capability cannot enter a `portable` closure) with `portable_control.ml`; `docs/caps.md` |
+| ^ncaps-xzx5 | `docs/caps.md` |
+| ^ncaps-2ydl | `AGENTS.md` of ox and Leash |
+| ^ncaps-aw5n | `compile_fail/excluded.ml` refused ("has no method exec"), `included.ml` compiles |
+| ^ncaps-iirv | `docs/adr/0007-named-third-party-dependencies.md` |
+
+## Verification
+
+Verified 2026-09-29 on 5.4.0+ox: in ox `dune build @install`, `dune test` (`test/caps`: 5 cases, 5 compile checks, 5 gate checks), `dune build @fmt` and `scripts/caps-gate` pass; Leash builds and passes `dune build @install`, `dune test`, `dune build @fmt` and its `scripts/caps-gate` against a private install of this tree (`dune install --prefix` + `OCAMLPATH`); live acceptance not run.

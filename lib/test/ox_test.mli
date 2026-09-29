@@ -57,6 +57,12 @@ val exit :
 (** Structural comparison ignores backtraces in defects; pure, with no cancellation or
     finalizer effects. *)
 
+val powerbox : unit -> Ox_caps.Cap.all_caps
+(** The test entry's powerbox (^ncaps-0mvw): what a test hands a function whose signature
+    requires capabilities, the way the Door hands [Ox_app.Env.caps] to a program. Tests
+    are outside the capability gate; library code that calls this is refused by the
+    [ox-caps-mint] rule. Pure; no resource. *)
+
 val flow_pair : ?label:string -> string list -> Eio_mock.Flow.t * Eio_mock.Flow.t
 (** A scripted readable flow (one read per chunk, then EOF) and writable sink. Neither
     registers a finalizer; callers can inspect writes with Eio tracing or configure the

@@ -1,4 +1,4 @@
 (library
  (name ox_process)
  (public_name ox_process)
- (libraries ox eio eio.unix))
+ (libraries ox ox_caps eio eio.unix))
