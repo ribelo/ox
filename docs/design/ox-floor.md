@@ -69,7 +69,7 @@ The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable
 | Resources: `resourceScope` | have (`Eio.Switch.run`) |
 | Control flow methods (`forever`, `never`, `repeatWhile`…) | have (stdlib recursion; `Eio.Fiber.await_cancel` for never) |
 | CPU-intensive operations: `computeIntensive`, the compute pool | rejected (single-domain caveat of ADR-0009; no consumer crosses domains; `Ox_blocking` covers blocking calls) |
-| Actors: ask, tell, close | spec (row 47) |
+| Actors: ask, tell, close | have (`Actor`: `ask`, `tell`, `try_tell`, `state`, `changes`, stop with the switch; `Agent` for serialized closures; `Supervisor` for restartable child scopes) |
 | Circuit Breaker | rejected (not on ADR-0009's list; no consumer) |
 | Utilities (`pipe`, `tap`, `timed`, `unsupervised`…) | have (the stdlib's `Fun` and pipe operator; `Eio.Time`) |
 | **Integrations** | |

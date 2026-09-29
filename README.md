@@ -9,7 +9,7 @@ Nothing enters this tree without a consumer. The first consumer is Leash (`/home
 - `CONTEXT.md` — vocabulary
 - `docs/why-ox.md` — why v1 was abandoned, how direct style works here, where effect handlers fit
 - `docs/adr/` — the decisions that are hard to reverse
-- `ox` — core typed failures, scoped resources, schedules, Eio concurrency, and the rest of Ox's floor: `Rate_limiter` (use it for per-site or per-model limits instead of a sleep), `Channel` and `Select`, `Resource` (`docs/design/ox-floor.md`; `Flow` is designed in `docs/design/flow.md`)
+- `ox` — core typed failures, scoped resources, schedules, Eio concurrency, and the rest of Ox's floor: `Rate_limiter` (use it for per-site or per-model limits instead of a sleep), `Channel` and `Select`, `Resource`, `Actor`, `Agent` and `Supervisor` (a state-owning fiber with a typed mailbox, serialized closures over a state, and restartable child scopes — `docs/issues/actor/01-actor.md`) (`docs/design/ox-floor.md`; `Flow` is designed in `docs/design/flow.md`)
 - `ox_test` — Eio mock clocks, scripted I/O and processes, and Exit assertions
 - `ox_json` — unchecked Yojson accessors: bounded parse, builders, member reads (shapes we do not own, like CDP)
 - `ox_http` — bounded HTTP/1.1 client with verified OpenSSL TLS over Eio

@@ -90,6 +90,20 @@ let test_census () =
       Eio.Promise.await done_;
       Ox_test.assert_no_fibers_left ())
 
+let test_lost_events_stay_in_their_run () =
+  (* nactor-8z1n: the registry moving onto an Actor made one Leash test heavy enough to
+     overrun the event ring; the loss must fail only a census taken in that run. *)
+  Ox_test.run (fun _ _ ->
+      Eio.Switch.run (fun sw ->
+          for _ = 1 to 40_000 do
+            Eio.Fiber.fork ~sw (fun () -> ())
+          done));
+  Ox_test.run (fun _ _ ->
+      Alcotest.(check int)
+        "a later run counts from its own start" 0
+        (Ox_test.with_census (fun () -> ()));
+      Ox_test.assert_no_fibers_left ())
+
 let test_census_ring () =
   (* nlimit-gmur *)
   Ox_test.run (fun _ _ ->
@@ -275,6 +289,8 @@ let () =
         [
           Alcotest.test_case "detect actual leaked fiber" `Quick test_census;
           Alcotest.test_case "census ring outside the cwd" `Quick test_census_ring;
+          Alcotest.test_case "nactor-8z1n lost events stay in their run" `Quick
+            test_lost_events_stay_in_their_run;
         ] );
       ("ntest-knpg", [ Alcotest.test_case "scripted source sink" `Quick test_flow ]);
       ( "ntest-0b6v",

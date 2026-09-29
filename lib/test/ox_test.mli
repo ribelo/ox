@@ -45,8 +45,10 @@ val with_census : (unit -> 'a) -> int
 val assert_no_fibers_left : unit -> unit
 (** Fails when any Eio fiber created since the current [run] began is still alive.
     Includes forks outside [fork_run]; excludes the calling root fiber. A lost trace event
-    fails closed. Does not cancel fibers or run their finalizers. The ring placement that
-    {!with_census} documents applies to the whole census. *)
+    fails closed, but only one lost since the current [run] began: a heavy earlier test
+    that never took a census cannot fail a later one. Does not cancel fibers or run their
+    finalizers. The ring placement that {!with_census} documents applies to the whole
+    census. *)
 
 val cause : 'e Alcotest.testable -> 'e Ox.Cause.t Alcotest.testable
 

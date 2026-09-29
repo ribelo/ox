@@ -590,6 +590,9 @@ let test_package_contract () =
       "select";
       "channel";
       "resource";
+      "actor";
+      "agent";
+      "supervisor";
     ]
   in
   List.iter
@@ -610,7 +613,7 @@ let test_package_contract () =
 let () =
   Alcotest.run "ox core"
     (Pure.tests @ V1_port.tests @ V1_more.tests @ V1_completion.tests @ Supervised.tests
-   @ Floor_tests.tests
+   @ Actor_tests.tests @ Agent_tests.tests @ Supervisor_tests.tests @ Floor_tests.tests
     @ [
         ( "Core causes ncore-e8jg ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg \
            ncore-p30f",

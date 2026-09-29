@@ -66,10 +66,13 @@ let remove_ring_dir dir =
 let () =
   match ring_dir with None -> () | Some dir -> at_exit (fun () -> remove_ring_dir dir)
 
-let drain () =
+let poll () =
   while Runtime_events.read_poll cursor callbacks None > 0 do
     ()
-  done;
+  done
+
+let drain () =
+  poll ();
   if !lost then Alcotest.fail "fiber census lost runtime events"
 
 let baseline = ref 0
@@ -99,7 +102,10 @@ let run fn =
     end
   in
   Eio.Switch.run (fun sw ->
-      drain ();
+      (* Events lost before this run belong to an earlier test, one that never asked for a
+         census: they must not fail this one, whose census starts here. *)
+      poll ();
+      lost := false;
       baseline := !serial;
       fn env sw)
 

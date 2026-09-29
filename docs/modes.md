@@ -30,6 +30,9 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Supervised.start ~spawn` | **Global**; stored for supervised respawns in Eio fibers. |
 | `Correlator.create ~read/~write/~id/~set_id/~session` | **Global**; stored in correlator state. Reader runs in another Eio fiber; writer and matchers are invoked for future requests. |
 | `Listener.run ~decode/~encode/~handler/~error_response` | **Global**; forwarded to accepting fibers; handler can outlive the call that spawned it. |
+| `Ox.Actor.create ~handle ~on_stop` | **Global**; the actor's fiber keeps both for every message and for the stop. `ask`'s `?timeout` is a value, not a callback (nactor-agcr, nactor-oxao). |
+| `Ox.Agent.create ~init; get, update, get_and_update, cast, update_result, get_and_update_result ~fn` | **Global**; `init` is stored until the owner fiber runs it, and every `fn` is stored in a mailbox request until the owner runs it, possibly after the caller was cancelled (nactor-75ef). |
+| `Ox.Supervisor.child, template ~start; Supervisor.start ~on_event` | **Global**; the start function is retained for every restart and `on_event` for the supervisor's lifetime; the child runs on its own Eio fiber (nactor-d120). |
 
 ## Typed errors across a fork (nsup-hje5)
 

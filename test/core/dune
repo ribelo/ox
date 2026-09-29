@@ -8,6 +8,9 @@
   v1_completion
   support
   supervised
+  actor_tests
+  agent_tests
+  supervisor_tests
   floor_tests)
  (deps
   ../../lib/ox/dune

@@ -1,7 +1,7 @@
 ---
-status: ready-for-agent
-package: ox (Actor, Supervisor, Agent)
-consumer: Leash (tab registry, expiry sweep, run loop state), Pie (recording coordinator), nema (watcher)
+status: completed
+package: ox (Actor, Supervisor, Agent), Ox_test (census)
+consumer: Leash (tab registry, Chrome relaunch loop, Chrome connection view), Pie (recording coordinator), nema (watcher)
 ---
 
 # Actor: a typed mailbox with a state fold, supervised in a scope
@@ -97,10 +97,55 @@ Tim Smart's effect-genserver was read for its handler shape (`state -> payload -
 
 Riot reference: [Supervisor interface](<https://github.com/leostera/riot/blob/2ec367e7a3024ac9ebc2958debb0b7369c3d093f/packages/std/src/supervisor.mli>), [Supervisor implementation](<https://github.com/leostera/riot/blob/2ec367e7a3024ac9ebc2958debb0b7369c3d093f/packages/std/src/supervisor.ml>), [Agent interface](<https://github.com/leostera/riot/blob/2ec367e7a3024ac9ebc2958debb0b7369c3d093f/packages/std/src/agent.mli>) and [Agent implementation](<https://github.com/leostera/riot/blob/2ec367e7a3024ac9ebc2958debb0b7369c3d093f/packages/std/src/agent.ml>), inspected at revision `2ec367e7a3024ac9ebc2958debb0b7369c3d093f`. This is a semantic reference, not a dependency or code transplant. Its static Supervisor currently sends EXIT for shutdown with TODOs instead of enforcing Timeout/Infinity, dispatches SimpleOneForOne to OneForOne, uses spawn for both start and start_link, and turns any significant-child exit into a Failure. No auto_shutdown selector exists in the inspected std. The mapping above specifies the desired behavior explicitly rather than treating those gaps as guarantees.
 
-### Open design questions for the lead
+### Decisions taken by the lead (2026-09-29), and what was built
 
-- Which first consumer proves each new module in row 47? The existing story 12 Actor migration remains unchanged; it alone does not demonstrate restart policy or Agent ownership.
-- Finalize Supervisor construction/run/await signatures and the child start readiness handshake: how does a dependent child obtain the new typed Actor/Agent handle on restart without adding a named registry? The lifetime and cancellation contract above must not depend on a fire-and-forget start function.
-- Confirm the specified recovery-batch intensity accounting and half-open window, rather than Riot's per-successful-child count and inclusive cutoff. These are deliberate, testable choices; changing them changes the tests, not just names.
-- Confirm Never/AnySignificant/AllSignificant as this row's auto_shutdown surface (Riot only has the significant flag), including the static-only significance restriction and whether explicit removal should affect AllSignificant membership.
-- Does a consumer require result-returning Agent update callbacks or per-request timeouts in this row? The current contract takes Riot's plain closures and adds only typed lifecycle failure; do not silently grow it into a second Actor protocol.
+These answer the open questions the spec was written with; each is tested (the test names are in the map below).
+
+- **First consumers (Leash).** Story 12 stays: the tab registry moved onto `Actor` (a ledger folded by one actor; `Actor.state` serves `list`, `status` and event routing). Chrome's relaunch loop is one `Permanent` `Supervisor` child (an incarnation is one generation; a failed launch is not retried). Chrome's per-generation stderr-tail table (written by the launching fiber, taken by the observer when the generation is lost) is owned by an `Agent`. Two spots were tried and rejected for `Agent`: Leash's per-run cost meter (its wrappers read the counters synchronously, `!calls = before`, and its loop also runs without an Eio scheduler) and a republished `Chrome.connection` view (an `Agent` read yields, so a reader can observe a later lifecycle change than the event it just took — a real race with a browser that exits at once; `connection` and `status` stay synchronous reads of the observer's fields).
+- **Supervisor construction and readiness.** `Supervisor.start ~scope ~clock ~intensity ?auto_shutdown ?on_event ~strategy children` returns once every static child has called `context.ready` (or completed normally first), in specification order; recovery uses the same handshake, so a dependent starts only after what it needs is ready. A child that fails before ready ends the start with `` `Start_failed `` after the started children were stopped in reverse order. The supervisor is a daemon fork of `scope` (`Scope.fork_error_daemon`); its terminal typed failure `` `Restart_intensity_exceeded `` ends `scope`, and `Supervisor.stop` / `await` return a typed `outcome` (`Stopped | Auto_shutdown | Cancelled | Intensity_exceeded`) for a graceful end.
+- **Replacement handles.** There is no registry. A child creates its `Actor`/`Agent` on its own switch and republishes the handle through an `Agent` made on the *outer* switch (`Agent.update registry (fun _ -> Some actor)` before `ready ()`); a dependent reads the agent at the point of use. Tested with a `Rest_for_one` service/client pair, and with a fresh `Agent` per incarnation.
+- **Intensity.** Each restart attempt is timestamped on the supplied clock and counted in a half-open rolling window (an attempt at or before `now - window` is forgotten); a recovery batch under `One_for_all` / `Rest_for_one` is one attempt; a restarted incarnation that fails before ready needs another recovery and is another attempt; initial starts and explicit stops do not count; the check is before the attempt that would exceed the budget.
+- **auto_shutdown** is `Never | Any_significant | All_significant` with the static-only significance the spec wrote (no significance on the dynamic template; `Permanent` significant is refused). Explicit removal (`terminate_child`) removes a child from the significant set and is not a completion; an emptied set never auto-stops.
+- **Agent.** Callbacks may return results: beside `get`, `update`, `get_and_update`, `cast` (plain closures, `` `Agent_stopped `` for a closed owner) there are `update_result` and `get_and_update_result`, whose closure's `Error e` goes to the caller and leaves the state unchanged. There are no request timeouts: a caller uses an Eio timeout (`Timeout.timeout`); a timed-out or cancelled caller does not retract an accepted operation.
+
+### API (`lib/ox`)
+
+```ocaml
+(* Actor: ^nactor-agcr .. ^nactor-oxao *)
+val Actor.create : ?capacity:int -> ?on_stop:('s -> unit) -> sw:Switch.t -> init:'s
+  -> handle:('s -> 'm -> ('s * 'r, ([> `Actor_stopped | `Timeout ] as 'e)) result) -> unit -> ('s, 'm, 'r, 'e) Actor.t
+val Actor.ask : ?timeout:(clock * Duration.t) -> t -> 'm -> ('r, 'e) result   (* tell, try_tell, state, changes *)
+
+(* Agent: ^nactor-75ef *)
+val Agent.create : ?capacity:int -> sw:Switch.t -> init:(unit -> 's) -> unit -> 's Agent.t
+val Agent.get / update / get_and_update / cast : 's Agent.t -> fn:... -> (_, [> `Agent_stopped ]) result
+val Agent.update_result / get_and_update_result : fn returning (_, 'e) result
+
+(* Supervisor: ^nactor-d120 *)
+type strategy = One_for_one | One_for_all | Rest_for_one     (* plus start_simple: SimpleOneForOne *)
+type restart = Permanent | Temporary | Transient
+type shutdown = Brutal_kill | Timeout of Duration.t | Infinity
+type auto_shutdown = Never | Any_significant | All_significant
+val Supervisor.child : id:string -> ?restart -> ?shutdown -> ?significant -> ('e context -> (unit, 'e) result) -> 'e child
+val Supervisor.start : scope:'e Scope.t -> clock -> intensity:{ max_restarts; window } -> ?auto_shutdown -> ?on_event -> strategy:_ -> 'e child list
+  -> ('e t, [> `Invalid_supervisor of string | `Start_failed of _ ]) result
+val Supervisor.stop / await : 'e t -> 'e outcome ;  children ; terminate_child
+val Supervisor.start_simple / start_child / supervisor          (* one template, dynamic instances *)
+```
+
+A child's `context` is `{ scope; stop_requested; incarnation; ready }`. `Scope.exit_on_error`'s raiser appears in none of these signatures.
+
+### Story → test
+
+| Story | Tests (`test/core`, unless noted) |
+| --- | --- |
+| ^nactor-agcr ^nactor-jhl2 ^nactor-mb6v ^nactor-7qi7 ^nactor-pxfz ^nactor-6z3i ^nactor-l87k ^nactor-512k ^nactor-tc19 ^nactor-e0l5 ^nactor-oxao | `actor_tests.ml` (15 cases, each citing its IDs) |
+| ^nactor-8z1n | Leash's registry suites unchanged and green (`test/ownership_test.ml` incl. the 108-cell table, control, expiry, handoff, hardening); `test/test/run.ml` "lost events stay in their run" (the census fix the heavier registry needed) |
+| ^nactor-d120 | `supervisor_tests.ml`: strategy × restart type × outcome table (27 cells, each with mixed-policy siblings), defect reporting, cleanup failures, external cancellation identity, intensity budget / window / batch / failed restart, invalid configuration, shutdown modes, timeout-is-not-a-kill, parent cancellation in every mode, simultaneous exits, dynamic template, auto_shutdown (all modes, restarting Transient, induced stops, removal, intensity exhaustion), nested supervisors, republished handles. Leash `test/chrome_test.ml`: the relaunch loop under the supervisor, "a failed launch is not retried". |
+| ^nactor-75ef | `agent_tests.ml` (16 cases) and `supervisor_tests.ml` "a fresh Agent per incarnation" |
+
+## Verification
+
+Verified 2026-09-29 on 5.4.0+ox: `dune build @install`, `dune test` and `dune build @fmt` pass in ox; Leash builds and passes its three gates against a private install of this tree (`dune install --prefix` + `OCAMLPATH`; live acceptance not run).
+
+Decisions taken where the spec left room: `Actor` and `Agent` mailboxes are `Channel`s (closing one stops admission and wakes blocked producers); `Actor.create` takes `~init`/`~handle` and a trailing `()` for its optional arguments; the handle type has four parameters (`state` is one because `state` and `changes` return it). The supervisor's typed terminal failure is `` `Restart_intensity_exceeded of 'e intensity_error `` and the child error type of the owning scope must admit it. A cleanup defect during a *requested* stop is raised unchanged after every child is joined, so it ends the owning scope as a defect. Under `Scope.supervised_error`'s rule a defect in the child scope wins over the body's typed failure, so a child that fails and then has a failing finalizer reports the defect as its Cause.

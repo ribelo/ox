@@ -24,7 +24,7 @@ _Avoid_: effect, blueprint, app
 
 **Service**:
 A module of one fixed shape: a type, a config, the Deps it needs, a typed error, `create` against a Switch, and `status`. Every long-lived part of an application is a Service.
-_Avoid_: component, layer, provider, subsystem, actor
+_Avoid_: component, layer, provider, subsystem
 
 **Deps**:
 The record of Services and Env values a Service needs, passed to `create`. Wiring is ordinary code; there is no registry.
@@ -74,6 +74,18 @@ _Avoid_: pipeline, observable, reactive stream
 **Channel**:
 A bounded queue between fibers that can be closed with `Done` or a typed error, the thing `Eio.Stream` lacks and `Select` needs.
 _Avoid_: mailbox, queue
+
+**Actor**:
+One fiber that owns a state and folds a bounded mailbox of typed messages over it, one at a time: `ask` waits for the reply, `tell` does not, and a typed refusal leaves the state as it was. It lives exactly as long as its Switch. A Service that keeps shared mutable state is usually one Actor.
+_Avoid_: agent (that is the message-free module below), process, GenServer
+
+**Agent**:
+An Actor without a message type: one fiber owns a state and runs the closures callers submit (`get`, `update`, `get_and_update`, `cast`) serialized. The small shared counter, cache or handle holder.
+_Avoid_: actor (when no message protocol is involved), ref, atom
+
+**Supervisor**:
+An opt-in restart boundary under a Scope: it runs child incarnations in their own nested scopes and restarts them by an OTP-style strategy, restart type and restart intensity, or ends its owning Scope with a typed failure. It is not a process runtime and creates no links.
+_Avoid_: process tree, watchdog, monitor
 
 **Select**:
 Waiting on several channels at once and acting on whichever clause is ready first, with default and timeout clauses; a closed channel is a typed outcome, not an exception.
