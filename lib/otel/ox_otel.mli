@@ -5,8 +5,8 @@
 
     Capabilities (^ncaps-x7z8): beyond Eio's [net] (through the borrowed client) and
     clock, trace and span IDs are drawn from a [Random.State] seeded from the system,
-    which is [Ox_caps.Cap.random]. [create] accepts [caps] for Pie while preserving the
-    old call for grip and inn until their caps rows; the uncapped fallback remains on ox's
+    which is [Ox_caps.Cap.random]. [create] accepts [caps] for Pie and inn while
+    preserving the old call for grip until row 53; the uncapped fallback remains on ox's
     gate allow-list. ^ncaps-21nk *)
 
 module Meter : module type of Meter

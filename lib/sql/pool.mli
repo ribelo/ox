@@ -5,7 +5,15 @@ type tx
 type 'kind runner
 type t = pool runner
 
-val create : sw:Eio.Switch.t -> ?clock:[`Clock of float] Eio.Time.clock -> ?default_timeout:Ox.Duration.t -> ?max_size:int -> Sqlite.config -> (t, error) result
+(** [caps] is the clock authority each new handle captures (^inncap-b8ts). *)
+val create :
+  caps:< Ox_caps.Cap.time ; .. > ->
+  sw:Eio.Switch.t ->
+  ?clock:[`Clock of float] Eio.Time.clock ->
+  ?default_timeout:Ox.Duration.t ->
+  ?max_size:int ->
+  Sqlite.config ->
+  (t, error) result
 val shutdown : t -> (unit, error) result
 
 module Typed : sig

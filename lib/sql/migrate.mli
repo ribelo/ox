@@ -100,15 +100,40 @@ module Source : sig
 
   val from_directory : string -> t
   val from_migrations : Migration.t list -> t
-  val resolve : ?config:resolve_config -> t -> (Migration.t list, error) result
+
+  val resolve :
+    caps:< Ox_caps.Cap.fs_read ; .. > ->
+    ?config:resolve_config ->
+    t ->
+    (Migration.t list, error) result
+  (** Reads a directory source. An in-memory source does not touch the filesystem, but the
+      same function may, so it always takes [Ox_caps.Cap.fs_read]. ^inncap-b8ts *)
 end
 
 val error_to_string : error -> string
 val list_applied : ?config:Config.t -> Pool.t -> (Applied_migration.t list, error) result
-val run : ?config:Config.t -> Pool.t -> Source.t -> (run_report, error) result
+
+val run :
+  caps:< Ox_caps.Cap.fs_read ; Ox_caps.Cap.time ; .. > ->
+  ?config:Config.t ->
+  Pool.t ->
+  Source.t ->
+  (run_report, error) result
+(** Resolves the source and times each applied migration. ^inncap-b8ts *)
 
 val run_to :
-  ?config:Config.t -> Pool.t -> Source.t -> target:Version.t -> (run_report, error) result
+  caps:< Ox_caps.Cap.fs_read ; Ox_caps.Cap.time ; .. > ->
+  ?config:Config.t ->
+  Pool.t ->
+  Source.t ->
+  target:Version.t ->
+  (run_report, error) result
 
 val undo :
-  ?config:Config.t -> Pool.t -> Source.t -> target:Version.t -> (run_report, error) result
+  caps:< Ox_caps.Cap.fs_read ; .. > ->
+  ?config:Config.t ->
+  Pool.t ->
+  Source.t ->
+  target:Version.t ->
+  (run_report, error) result
+(** Resolves the source. A downgrade does not read the clock. ^inncap-b8ts *)

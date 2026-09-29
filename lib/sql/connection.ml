@@ -8,6 +8,7 @@ type t = {
   mutable last_used : float;
   mutable closed : bool;
   mutable in_transaction : bool;
+  now : unit -> float;
 }
 
 let next_id = Atomic.make 0
@@ -16,9 +17,8 @@ let fresh_id () =
   let value = Atomic.fetch_and_add next_id 1 + 1 in
   "ox-sql-" ^ string_of_int value
 
-let now = Unix.gettimeofday
-
-let create ?timeout_ms config =
+let create ~caps ?timeout_ms config =
+  let now = Ox_caps.Cap_unix.gettimeofday ~caps in
   let busy_timeout_ms = Option.value config.Sqlite.busy_timeout_ms ~default:0 in
   let opening_config =
     match timeout_ms with
@@ -39,6 +39,7 @@ let create ?timeout_ms config =
           last_used = created_at;
           closed = false;
           in_transaction = false;
+          now;
         }
   | exception Sqlite.Error err -> Result.Error (Types.Sqlite err)
   | exception exn ->
@@ -46,7 +47,7 @@ let create ?timeout_ms config =
         (Types.Invalid_query ("open connection failed: " ^ Printexc.to_string exn))
 
 let sqlite t = t.db
-let touch t = t.last_used <- now ()
+let touch t = t.last_used <- t.now ()
 
 let with_busy_timeout t ~timeout_ms f =
   if t.closed || Sqlite.is_closed t.db then f ()

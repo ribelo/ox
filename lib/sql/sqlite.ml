@@ -697,7 +697,7 @@ module Error = struct
 end
 
 module Testing = struct
-  let temp_path_for config =
+  let temp_path_for ~caps config =
     if String.equal config.Config.path ":memory:" then
       (config, fun () -> ())
     else
@@ -706,11 +706,12 @@ module Testing = struct
         | "" -> ".db"
         | suffix -> suffix
       in
-      let path = Filename.temp_file "ox-sqlite-" suffix in
-      ({ config with path }, fun () -> if Sys.file_exists path then Sys.remove path)
+      let path = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-" suffix in
+      ( { config with path },
+        fun () -> if Sys.file_exists path then Ox_caps.Cap_sys.remove ~caps path )
 
-  let with_db config f =
-    let config, cleanup = temp_path_for config in
+  let with_db ~caps config f =
+    let config, cleanup = temp_path_for ~caps config in
     Fun.protect ~finally:cleanup @@ fun () ->
     match open_with_config config with
     | db ->

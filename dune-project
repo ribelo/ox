@@ -236,10 +236,12 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
+  ox_caps
   ox_sql_dsl
   eio
   conf-pkg-config
   conf-sqlite3
+  (ox_test :with-test)
   (eio_main :with-test)
   (alcotest :with-test)))
 

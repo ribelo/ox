@@ -11,7 +11,7 @@
  (c_library_flags
   :standard
   (:include sqlite_c_library_flags.sexp))
- (libraries ox ox_sql_dsl eio unix))
+ (libraries ox ox_caps ox_sql_dsl eio unix))
 
 (rule
  (targets sqlite_c_flags.sexp sqlite_c_library_flags.sexp)

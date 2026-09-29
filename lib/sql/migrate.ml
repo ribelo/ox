@@ -274,8 +274,8 @@ module Source = struct
           done;
           Buffer.contents buf
 
-  let read_file path =
-    match open_in_bin path with
+  let read_file ~caps path =
+    match Ox_caps.Cap_stdlib.open_in_bin ~caps path with
     | input ->
         Fun.protect
           ~finally:(fun () -> close_in_noerr input)
@@ -314,11 +314,11 @@ module Source = struct
               in
               Ok (Some (version, description, migration_type)))
 
-  let resolve ?(config = default_resolve_config) = function
+  let resolve ~caps ?(config = default_resolve_config) = function
     | Migrations migrations -> resolve_migrations migrations
     | Directory dir -> (
         let entries =
-          match Sys.readdir dir with
+          match Ox_caps.Cap_sys.readdir ~caps dir with
           | entries -> Array.to_list entries
           | exception Sys_error reason -> raise (Sys_error reason)
         in
@@ -337,7 +337,7 @@ module Source = struct
                   | Ok None -> loop acc rest
                   | Ok (Some (version, description, migration_type)) ->
                       let sql =
-                        match read_file path with
+                        match read_file ~caps path with
                         | sql -> sql
                         | exception Sys_error reason ->
                             raise (Read_file_failed (path, reason))
@@ -479,9 +479,9 @@ let validate config migrations states =
   in
   loop [] states
 
-let apply_migration pool table migration =
+let apply_migration ~caps pool table migration =
   let version = migration.Migration.version in
-  let start = Unix.gettimeofday () in
+  let start = Ox_caps.Cap_unix.gettimeofday ~caps () in
   let* _ =
     execute pool
       ("INSERT INTO " ^ table ^ " (version,description,checksum,success) VALUES (?,?,?,0)")
@@ -494,7 +494,9 @@ let apply_migration pool table migration =
       |> Result.map_error pool_error
   in
   let* () = action in
-  let elapsed_ms = int_of_float ((Unix.gettimeofday () -. start) *. 1000.) in
+  let elapsed_ms =
+    int_of_float ((Ox_caps.Cap_unix.gettimeofday ~caps () -. start) *. 1000.)
+  in
   let* _ =
     execute pool
       ("UPDATE " ^ table ^ " SET checksum=?,success=1,execution_time_ms=? WHERE version=?")
@@ -502,7 +504,7 @@ let apply_migration pool table migration =
   in
   Ok { migration; elapsed_ms }
 
-let run_migrations config pool migrations =
+let run_migrations ~caps config pool migrations =
   let table = table_name config in
   let* states = read_states pool table in
   let up = up_migrations migrations in
@@ -513,17 +515,17 @@ let run_migrations config pool migrations =
         if List.exists (fun (v, _, _) -> Version.equal v m.Migration.version) states then
           loop acc rest
         else
-          let* applied = apply_migration pool table m in
+          let* applied = apply_migration ~caps pool table m in
           loop (applied :: acc) rest
   in
   loop [] up
 
-let run ?(config = Config.default) pool source =
-  let* migrations = Source.resolve source in
-  run_migrations config pool migrations
+let run ~caps ?(config = Config.default) pool source =
+  let* migrations = Source.resolve ~caps source in
+  run_migrations ~caps config pool migrations
 
-let run_to ?(config = Config.default) pool source ~target =
-  let* migrations = Source.resolve source in
+let run_to ~caps ?(config = Config.default) pool source ~target =
+  let* migrations = Source.resolve ~caps source in
   if
     not
       (List.exists
@@ -532,11 +534,11 @@ let run_to ?(config = Config.default) pool source ~target =
          migrations)
   then Error (Version_not_present target)
   else
-    run_migrations config pool
+    run_migrations ~caps config pool
       (List.filter (fun m -> Version.compare m.Migration.version target <= 0) migrations)
 
-let undo ?(config = Config.default) pool source ~target =
-  let* migrations = Source.resolve source in
+let undo ~caps ?(config = Config.default) pool source ~target =
+  let* migrations = Source.resolve ~caps source in
   let table = table_name config in
   let* states = read_states pool table in
   let* _ = validate config (up_migrations migrations) states in

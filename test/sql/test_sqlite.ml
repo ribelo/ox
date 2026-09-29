@@ -312,7 +312,11 @@ let test_sqlite_load_extension_toggle () =
 
 let test_sqlite_config_error_and_testing_helpers () =
   let result =
-    S.Testing.with_db (S.Config.in_memory ()) @@ fun db ->
+    (* ^inncap-b8ts: tmp and fs_write, even for an in-memory helper. *)
+    S.Testing.with_db
+      ~caps:(Ox_test.powerbox () :> < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write >)
+      (S.Config.in_memory ())
+    @@ fun db ->
     S.exec db "CREATE TABLE items (id INTEGER PRIMARY KEY)";
     S.exec db "INSERT INTO items (id) VALUES (1)";
     Ok (S.query_one_int db "SELECT COUNT(*) FROM items")

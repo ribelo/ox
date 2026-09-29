@@ -3,15 +3,18 @@
     Raw operations in this module bypass the typed SQL DSL. Callers using this escape
     hatch own SQL validity, parameter ordering, and result decoding.
 
-    Capabilities (^ncaps-x7z8): [ox_sql] reads the system clock for timings
-    ([Ox_caps.Cap.time]), reads migration files ([Ox_caps.Cap.fs_read]), and creates and
-    removes temporary databases ([Ox_caps.Cap.tmp], [Ox_caps.Cap.fs_write]) besides the
-    SQLite files it is given. Its functions do not take them yet: inn calls them and has
-    not migrated, so these modules are on ox's gate allow-list until inn's caps row. *)
+    Capabilities (^ncaps-x7z8 ^inncap-b8ts): [create] takes [Ox_caps.Cap.time] and
+    captures that clock read on the handle. Later queries use the capture, so they do not
+    take [time] again. *)
 
 type t
 
-val create : ?timeout_ms:int -> Sqlite.config -> (t, Types.sql_error) result
+val create :
+  caps:< Ox_caps.Cap.time ; .. > ->
+  ?timeout_ms:int ->
+  Sqlite.config ->
+  (t, Types.sql_error) result
+
 val sqlite : t -> Sqlite.db
 val touch : t -> unit
 val with_busy_timeout : t -> timeout_ms:int -> (unit -> 'a) -> 'a

@@ -15,13 +15,9 @@ allow=(
   # A build-time preprocessor executable, not a Door program: it reads its input file,
   # prints to stdout and exits with its status.
   --allow lib/ppx_yojson_minimal/main.ml
-  # Pending other consumer caps rows (docs/issues/README.md rows 52-53): these
-  # are still needed by consumers that have not migrated.
-  --allow lib/otel/ox_otel.ml # uncapped fallback for grip and inn until rows 52-53
+  # Pending grip's caps row (docs/issues/README.md row 53).
+  --allow lib/otel/ox_otel.ml # uncapped fallback for grip until row 53
   --allow lib/ox/schedule.ml # random (default jitter source); every consumer
-  --allow lib/sql/connection.ml # time; inn's row
-  --allow lib/sql/migrate.ml # fs_read + time; inn's row
-  --allow lib/sql/sqlite.ml # tmp + fs_write (temporary database); inn's row
 )
 
 exec lib/caps/caps-gate "${allow[@]}" "$@"

@@ -63,7 +63,7 @@ let validation_failure ~validation_exit ~validate ~pp_err ~stderr env settings =
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     ?config_commands_with_env ?commands_with_env ?commands_with_env_code
     ?(bare = `Service) ?(usage_exit = 2) ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130)
-    ?(doc = "Run the service.") ?(validation_exit = 2)
+    ?(doc = "Run the service.") ?version ?(validation_exit = 2)
     ?(log_level = Ox_observability.Logger.Info) ?journal_level ?(service_command = "run")
     ?(config_file = "config.toml") ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ())
     ?validate_source ?telemetry ?telemetry_result ~service_args ~env ~journal ~name
@@ -223,7 +223,7 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   in
   let default = match bare with `Service -> Some run_term | `Help -> None in
   let cmd =
-    Cmd.group ?default (Cmd.info name ~doc)
+    Cmd.group ?default (Cmd.info name ~doc ?version)
       ((run_cmd :: config_cmd :: commands) @ owned_commands @ owned_code_commands)
   in
   let out_buffer = Buffer.create 256 and err_buffer = Buffer.create 256 in
@@ -258,7 +258,7 @@ let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?doc ?validati
       program env settings sw)
 
 let run_with_args ?commands ?config_commands ?config_commands_with_env ?commands_with_env
-    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc
+    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc ?version
     ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
     ?read_file ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name
     ~config ~pp_err program =
@@ -307,7 +307,7 @@ let run_with_args ?commands ?config_commands ?config_commands_with_env ?commands
           in
           run_for_test_with_args ?commands ?config_commands ?config_commands_with_env
             ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
-            ?interrupt_exit ?doc ?validation_exit ?log_level ?journal_level
+            ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
             ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
             ?telemetry_result ~service_args ~on_switch ~env
             ~journal:(Ox_observability.Logger.Reporter.journal env#stderr)

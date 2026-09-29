@@ -29,10 +29,10 @@ let shutdown_state s =
       s.handles := []);
   Ok ()
 
-let create ~sw ?clock ?default_timeout ?(max_size = 4) config =
+let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
   if max_size < 1 then Error (`Ox_sql (Types.Pool_error "max_size must be positive"))
   else
-    match Connection.create config with
+    match Connection.create ~caps config with
     | Error err -> Error (`Ox_sql err)
     | Ok initial ->
         let mutex = Eio.Mutex.create () in
@@ -44,7 +44,7 @@ let create ~sw ?clock ?default_timeout ?(max_size = 4) config =
               first := None;
               c
           | None -> (
-              match Connection.create config with
+              match Connection.create ~caps config with
               | Ok c ->
                   Eio.Mutex.use_rw ~protect:true mutex (fun () ->
                       handles := c :: !handles);

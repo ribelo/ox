@@ -12,12 +12,17 @@ let migration = function
   | Ok value -> value
   | Error err -> Alcotest.fail (M.error_to_string err)
 
+(* ^inncap-b8ts: a closed time row is enough to open a pool. *)
+let time_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.time >)
+let migrate_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.fs_read ; Ox_caps.Cap.time >)
+let read_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.fs_read >)
+
 let with_pool f =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let pool =
             get
-              (P.create ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
+              (P.create ~caps:(time_caps ()) ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
                  (Q.Sqlite.memory_config ()))
           in
           Fun.protect ~finally:(fun () -> ignore (P.shutdown pool)) (fun () -> f pool)))
@@ -105,28 +110,34 @@ let test_migrations () =
           ~migration_type:M.Reversible_down ~sql:"DROP TABLE demo" ()
       in
       let source = M.Source.from_migrations [ down; up ] in
-      let report = migration (M.run pool source) in
+      let report = migration (M.run ~caps:(migrate_caps ()) pool source) in
       Alcotest.(check int) "applied" 1 (List.length report.applied);
       Alcotest.(check int)
         "already applied" 1
-        (List.length (migration (M.run pool source)).already_applied);
+        (List.length
+           (migration (M.run ~caps:(migrate_caps ()) pool source)).already_applied);
       let drifted =
         M.Migration.make ~version ~description:"changed" ~migration_type:M.Reversible_up
           ~sql:"CREATE TABLE demo (name TEXT)" ()
       in
-      (match M.run pool (M.Source.from_migrations [ drifted ]) with
+      (match
+         M.run ~caps:(migrate_caps ()) pool (M.Source.from_migrations [ drifted ])
+       with
       | Error (M.Version_mismatch _) -> ()
       | _ -> Alcotest.fail "checksum change was accepted");
-      ignore (migration (M.undo pool source ~target:(M.Version.from_int64_unchecked 0L)));
+      ignore
+        (migration
+           (M.undo ~caps:(read_caps ()) pool source
+              ~target:(M.Version.from_int64_unchecked 0L)));
       let broken =
         M.Migration.make ~version ~description:"broken" ~migration_type:M.Simple
           ~sql:"CREATE TABLE bad (" ()
       in
       let broken_source = M.Source.from_migrations [ broken ] in
-      (match M.run pool broken_source with
+      (match M.run ~caps:(migrate_caps ()) pool broken_source with
       | Error (M.Sql_error _) -> ()
       | _ -> Alcotest.fail "invalid migration unexpectedly succeeded");
-      match M.run pool broken_source with
+      match M.run ~caps:(migrate_caps ()) pool broken_source with
       | Error (M.Dirty version2) when M.Version.equal version version2 -> ()
       | _ -> Alcotest.fail "failed migration did not leave a dirty marker")
 
@@ -169,7 +180,7 @@ let () =
           case "commit rollback raise"
             Test_sql_dsl_transaction.test_commit_raised_rollback_raised_once;
         ] );
-      ( "Eio pool and migration",
+      ( "Eio pool and migration ^inncap-b8ts",
         [
           case "typed CRUD and pragma" test_typed;
           case "transaction rollback" test_rollback;

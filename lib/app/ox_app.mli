@@ -76,6 +76,7 @@ val run_for_test_with_args :
   ?exit_code:('err -> int) ->
   ?interrupt_exit:int ->
   ?doc:string ->
+  ?version:string ->
   ?validation_exit:int ->
   ?log_level:Ox_observability.Logger.level ->
   ?journal_level:Ox_observability.Logger.level ->
@@ -234,6 +235,7 @@ val run_with_args :
   ?exit_code:('err -> int) ->
   ?interrupt_exit:int ->
   ?doc:string ->
+  ?version:string ->
   ?validation_exit:int ->
   ?log_level:Ox_observability.Logger.level ->
   ?journal_level:Ox_observability.Logger.level ->

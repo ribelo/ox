@@ -105,14 +105,14 @@ The rule id names the capability. Fix it by giving the enclosing function `~caps
 | --- | --- | --- |
 | `ox_process` | `fork`, `exec` | `Child.spawn ~caps` |
 | `ox_ipc` | `fs_write`, `network` (the socket, its directory and lock) | `Listener.run ~caps` |
-| `ox_otel` | `random` (trace IDs), beside Eio’s `net` and clock | optional `create ?caps` for Pie; uncapped fallback until grip and inn migrate |
+| `ox_otel` | `random` (trace IDs), beside Eio’s `net` and clock | optional `create ?caps`; inn passes it, grip’s uncapped fallback remains until row 53 |
 | `ox` | `random` only for `Schedule.start` without `~random` | declared; pass `~random` |
-| `ox_sql` | `time`, `fs_read` (migrations), `tmp` + `fs_write` (temporary databases) | declared in `Connection`; taken when inn migrates |
+| `ox_sql` | `time`, `fs_read` (migrations), `tmp` + `fs_write` (temporary databases) | `Pool.create` and `Connection.create` take `time`; `Migrate.run` and `run_to` take `fs_read` + `time`; `Source.resolve` and `undo` take `fs_read`; `Sqlite.Testing.with_db` takes `tmp` + `fs_write` |
 | `ox_app` | mints them all | the Door |
 | `ox_test` | mints them all | the test entry |
 | `ox_http`, `ox_ai*`, `ox_rpc`, `ox_json`, `ox_observability`, `ox_blocking`, `ox_sql_dsl` | nothing beyond the Eio values they take | — |
 
-The remaining "declared" rows and `ox_otel`’s uncapped fallback are ox’s gate allow-list (`scripts/caps-gate`) and follow-up rows 52–53 of `docs/issues/README.md`: requiring a capability now would break a consumer that has not migrated, and the shared opam switch rebuilds every consumer when ox is installed.
+`ox_sql` takes its capabilities (row 52, ^inncap-b8ts). What remains on the allow-list is `ox_otel`’s uncapped fallback and `Schedule`’s default random state, both still required until grip’s row 53. Requiring them now would break a consumer that has not migrated, and the shared opam switch rebuilds every consumer when ox is installed.
 
 ## Cost (^ncaps-21nk)
 

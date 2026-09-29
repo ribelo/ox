@@ -250,5 +250,11 @@ module Error : sig
 end
 
 module Testing : sig
-  val with_db : Config.t -> (db -> ('a, string) result) -> ('a, string) result
+  (** A non-memory path creates and removes a temporary database file. The same function
+      serves [:memory:], so the capabilities are required either way. ^inncap-b8ts *)
+  val with_db :
+    caps:< Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. > ->
+    Config.t ->
+    (db -> ('a, string) result) ->
+    ('a, string) result
 end
