@@ -11,6 +11,8 @@ type error =
   | `Closed
   | `Drain_deadline ]
 
+type signal = Logs | Traces | Metrics
+
 let pp_error ppf = function
   | `Invalid_config reason -> Format.fprintf ppf "invalid OTLP configuration: %s" reason
   | `Http _ -> Format.pp_print_string ppf "OTLP HTTP transport failed"
@@ -43,6 +45,7 @@ type t = {
   request_deadline : Eta.Duration.t option;
   headers : (string * string) list;
   on_error : error -> unit;
+  on_signal_error : signal -> error -> unit;
   with_timeout : float -> (unit -> (unit, error) result) -> (unit, error) result;
   (* ^notel-8ixo: the worker blocks here at most [seconds]: a command when one arrives,
      [None] when that wait expires. Built in [create] because the exporter's clock is
@@ -180,11 +183,13 @@ let ending t =
 
 (* ^notel-p4xe: the first failure since the previous flush is reported once, by the
    flush or the shutdown that settles it. The worker and the release drain share it. *)
-let note t = function
+let note t signal = function
   | Ok () -> ()
   | Error error -> (
       if t.first_failure = None then t.first_failure <- Some error;
-      try t.on_error error with _ -> ())
+      (try t.on_error error with _ -> ());
+      (* ^notel-na2w: a legacy callback defect must not hide the signal hook. *)
+      try t.on_signal_error signal error with _ -> ())
 
 let settled t =
   let result = match t.first_failure with None -> Ok () | Some error -> Error error in
@@ -207,7 +212,7 @@ let export_metrics t =
   let send_window rows =
     if rows <> [] then begin
       t.pending_metric_rows <- Some rows;
-      note t (send_metrics t rows);
+      note t Metrics (send_metrics t rows);
       t.pending_metric_rows <- None
     end
   in
@@ -259,7 +264,13 @@ let drain t =
             let batch, rest = take 1 [ first ] rest in
             batch :: batches rest
       in
-      List.iter (fun batch -> note t (send t batch)) (batches (List.rev !items));
+      List.iter
+        (function
+          | [] -> ()
+          | first :: _ as batch ->
+              let signal = match first with Log _ -> Logs | Span _ -> Traces in
+              note t signal (send t batch))
+        (batches (List.rev !items));
       export_metrics t;
       let result = settled t in
       List.iter (fun resolve -> Eio.Promise.resolve resolve result) !flushes;
@@ -329,7 +340,7 @@ let worker t =
            exported twice: at-least-once beats dropping the last records before a
            stop. *)
         t.in_flight <- gather 1 [ item ];
-        note t (send t t.in_flight);
+        note t (match item with Log _ -> Logs | Span _ -> Traces) (send t t.in_flight);
         t.in_flight <- [];
         ());
     if t.now_ms () >= !due then flush_window ();
@@ -340,7 +351,7 @@ let worker t =
 let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_otel")
     ?(resource = []) ?(headers = []) ?(batch_size = 64) ?(max_queue = 1024)
     ?(metrics_interval = Eta.Duration.seconds 60) ?(max_metric_series = 1024)
-    ?request_deadline ?(on_error = fun _ -> ()) () =
+    ?request_deadline ?(on_error = fun _ -> ()) ?(on_signal_error = fun _ _ -> ()) () =
   if batch_size < 1 || max_queue < 1 || max_metric_series < 1 then
     Error (`Invalid_config "batch_size, max_queue and max_metric_series must be positive")
   else if Eta.Duration.compare metrics_interval Eta.Duration.zero <= 0 then
@@ -378,6 +389,7 @@ let create ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "eta_o
             request_deadline;
             headers;
             on_error;
+            on_signal_error;
             with_timeout = (fun seconds f -> Eio.Time.with_timeout_exn clock seconds f);
             wait =
               (fun seconds ->

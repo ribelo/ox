@@ -311,7 +311,7 @@ let instruments_stamp_points () =
   | exception Invalid_argument _ -> ()
   | () -> Alcotest.fail "a counter adds increments, not records"
 
-let with_collector ?(status = 200) f =
+let with_collector ?(status = 200) ?(refuse_traces = false) f =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let listener =
@@ -359,7 +359,10 @@ let with_collector ?(status = 200) f =
                 Eio.Flow.copy_string
                   (* Real collectors (inn, the OTel collector) answer 200 with a JSON body
                      — {} or a partialSuccess — so the stub does too (^notel-6o5v). *)
-                  (if status = 200 then
+                  (if
+                     status = 200
+                     && not (refuse_traces && contains target "POST /otlp/v1/traces ")
+                   then
                      "HTTP/1.1 200 OK\r\n\
                       Content-Type: application/json\r\n\
                       Content-Length: 2\r\n\
@@ -525,6 +528,39 @@ let spans_without_ids_remain_logs () =
           !received
       in
       check_int "start and end remain logs" 2 (List.length records))
+
+(* ^notel-na2w: the collector refuses only traces; a log from the same span
+   still succeeds, while both failure callbacks keep their respective contracts. *)
+let trace_failure_names_signal () =
+  with_collector ~refuse_traces:true (fun env sw client endpoint received ->
+      let errors = ref [] and signal_errors = ref [] in
+      let exporter =
+        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+          ~on_error:(fun error -> errors := error :: !errors)
+          ~on_signal_error:(fun signal error ->
+            signal_errors := (signal, error) :: !signal_errors)
+          ()
+        |> exporter_ok
+      in
+      let logger =
+        L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
+      in
+      ignore
+        (L.span logger "refused trace" (fun () ->
+             L.info logger "accepted log";
+             Ok ())
+          : (unit, string) result);
+      (match O.flush exporter with
+      | Error (`Status 503) -> ()
+      | _ -> Alcotest.fail "trace refusal must reach flush");
+      check_int "log exported" 1 (List.length (log_records !received));
+      check_int "one legacy error" 1 (List.length !errors);
+      check_int "one signal error" 1 (List.length !signal_errors);
+      (match !signal_errors with
+      | [ (O.Traces, `Status 503) ] -> ()
+      | _ -> Alcotest.fail "only the trace failure should be named Traces");
+      exporter_ok (O.shutdown exporter))
 
 let bounded_and_failure () =
   (* ^notel-p4xe ^notel-t8br: full queue rejects newest; failure reported on
@@ -926,6 +962,8 @@ let () =
             shutdown_in_release;
           Alcotest.test_case "legacy spans remain logs (^notel-6m2q)" `Quick
             spans_without_ids_remain_logs;
+          Alcotest.test_case "trace refusal names signal (^notel-na2w)" `Quick
+            trace_failure_names_signal;
           Alcotest.test_case "bounded queue and typed status (^notel-p4xe ^notel-t8br)"
             `Quick bounded_and_failure;
           Alcotest.test_case

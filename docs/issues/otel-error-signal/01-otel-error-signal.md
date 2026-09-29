@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta_otel
 consumer: nema row 31 (export diagnostics used to name the OTLP signal)
 ---
@@ -21,3 +21,6 @@ consumer: nema row 31 (export diagnostics used to name the OTLP signal)
 ## Testing Decisions
 
 - Local collector refusing only /v1/traces: the hook names Traces; logs still export.
+
+Verified: the selective trace-refusal test names `Traces` and preserves `on_error`.
+Verified: `@install`, `dune test`, and `@fmt` pass with `_build_sig`.

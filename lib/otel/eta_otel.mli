@@ -24,6 +24,9 @@ type error =
 
 val pp_error : Format.formatter -> error -> unit
 
+(** The OTLP pipeline whose export request failed. ^notel-na2w *)
+type signal = Logs | Traces | Metrics
+
 val create :
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
@@ -39,6 +42,7 @@ val create :
   ?max_metric_series:int ->
   ?request_deadline:Eta.Duration.t ->
   ?on_error:(error -> unit) ->
+  ?on_signal_error:(signal -> error -> unit) ->
   unit ->
   (t, error) result
 (** Creates a daemon worker under the caller's switch; an endpoint may include a path
@@ -72,8 +76,12 @@ val create :
     {!shutdown} and when the switch ends, in the releasing fiber, so the measurements
     taken before a stop reach the collector. A worker the switch cancelled had its window
     re-sent by that release rather than lost, at the cost of one duplicate window; a
-    window a collector refused is reported through [on_error] and {!flush}/{!shutdown} and
-    is not retried. ^notel-8ixo
+    window a collector refused is reported through [on_error], [on_signal_error] and
+    {!flush}/{!shutdown} and is not retried. ^notel-8ixo
+
+    [on_signal_error] names the failed OTLP pipeline for each failed export batch;
+    [on_error] retains its existing error-only contract. Both callbacks are invoked
+    independently when supplied, including during a release drain. ^notel-na2w
 
     [max_metric_series] bounds how many distinct series — a name, a kind and an attribute
     set — the exporter aggregates between exports; a record that would begin one more is
