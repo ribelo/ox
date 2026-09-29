@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 type parse_error =
   | Partial
@@ -74,7 +74,7 @@ type raw_response = {
 }
 
 let create_raw_headers capacity =
-  if capacity <= 0 then invalid_arg "Eta_http_h1.Parse.create_raw_headers";
+  if capacity <= 0 then invalid_arg "Ox_http_h1.Parse.create_raw_headers";
   {
     name_offs = Array.make capacity 0;
     name_lens = Array.make capacity 0;
@@ -384,7 +384,7 @@ let[@zero_alloc] rec parse_raw_headers buf len max_header_bytes headers raw coun
         parse_raw_headers buf len max_header_bytes headers raw (count + 1) (line_end + 2)
 
 let[@zero_alloc] parse_raw buf ~len ~max_header_bytes ~headers raw =
-  if len > Bytes.length buf then invalid_arg "Eta_http_h1.Parse.parse_raw";
+  if len > Bytes.length buf then invalid_arg "Ox_http_h1.Parse.parse_raw";
   reset_raw raw;
   let status_line_end = raw_find_crlf buf 0 len in
   if status_line_end < 0 then raw_partial

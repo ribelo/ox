@@ -1,8 +1,8 @@
 (** RFC 3986 client-subset URLs.
 
     The parser accepts absolute [http] and [https] URLs with authority, optional port,
-    path, query, and fragment. It rejects userinfo and unsupported schemes because
-    eta-http v1 does not own authentication policy. *)
+    path, query, and fragment. It rejects userinfo and unsupported schemes because ox-http
+    v1 does not own authentication policy. *)
 
 type t
 type scheme = Http | Https

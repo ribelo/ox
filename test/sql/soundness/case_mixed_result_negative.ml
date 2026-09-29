@@ -1,4 +1,4 @@
-module Q = Eta_sql
+module Q = Ox_sql
 
 module Students = struct
   module T = Q.Table.Make (struct

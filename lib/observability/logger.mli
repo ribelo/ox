@@ -51,7 +51,7 @@ type value =
   | Int of int
   | Float of float
   | Bool of bool
-  | Json of Eta_json.t
+  | Json of Ox_json.t
   | Redacted of Redact.t
       (** A field's value. [Redacted] renders as ["<redacted>"] on every path, so a secret
           is logged as a value of this type or not at all. *)
@@ -62,7 +62,7 @@ val pp_value : Format.formatter -> value -> unit
     and ["<redacted>"] for {!Redacted}. This is the text {!Memory.find}'s [field] query
     matches, not the JSON encoding. *)
 
-val value_to_json : value -> Eta_json.t
+val value_to_json : value -> Ox_json.t
 (** [value_to_json value] is the JSON encoding of a field value. A non-finite {!Float}
     becomes a JSON string, because JSON has no NaN or infinity. *)
 
@@ -76,7 +76,7 @@ type record = {
 }
 (** One log record: what a line is made of, and what a test queries. *)
 
-val to_json : record -> Eta_json.t
+val to_json : record -> Ox_json.t
 (** [to_json record] is the object {!to_string} writes. *)
 
 val to_string : record -> string
@@ -140,7 +140,7 @@ end
 type limit
 (** A ceiling on how often one message may be written. *)
 
-val limit : max:int -> window:Eta.Duration.t -> limit
+val limit : max:int -> window:Ox.Duration.t -> limit
 (** [limit ~max ~window] admits at most [max] records carrying one message text per
     [window], measured on the logger's monotonic clock. The window starts at the first
     admitted record and resets [window] after it; a dropped record is counted nowhere and

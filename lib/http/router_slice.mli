@@ -1,5 +1,5 @@
 (* Copied from v1:lib/router/slice.mli (story ^hserv-e3q9); module paths adapted only.
-   Internal to {!Eta_http.Router}. *)
+   Internal to {!Ox_http.Router}. *)
 
 (** Zero-copy string slice used for route and path matching.
 

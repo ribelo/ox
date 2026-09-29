@@ -9,8 +9,8 @@ type policy = {
   backlog : int;
   max_line_bytes : int;
   max_reply_bytes : int;
-  ingress : Eta.Duration.t;
-  egress : Eta.Duration.t;
+  ingress : Ox.Duration.t;
+  egress : Ox.Duration.t;
 }
 
 val default_policy : policy
@@ -49,9 +49,9 @@ val run :
   ?policy:policy ->
   decode:(string -> ('request, 'decode) result) ->
   encode:('response -> string) ->
-  budget:('request -> Eta.Duration.t option) ->
+  budget:('request -> Ox.Duration.t option) ->
   handler:('request -> ('response, 'handler) result) ->
-  ?on_budget_exceeded:('request -> Eta.Duration.t -> 'response) ->
+  ?on_budget_exceeded:('request -> Ox.Duration.t -> 'response) ->
   ?error_response:(('decode, 'handler) peer_error -> 'response option) ->
   ?on_peer_error:(('decode, 'handler) peer_error -> unit) ->
   unit ->

@@ -1,4 +1,0 @@
-(library
- (name eta)
- (public_name eta)
- (libraries eio))

@@ -388,7 +388,7 @@ let test_unknown_fields () =
 (* ^nnoschema-ifg0: a field whose type lives in another module is written with its
    own converters. A qualified name may be several modules deep, which is how a
    config record names its secret's type without opening the package that owns
-   it. The [Mark] module stands in for [Eta_observability.Redact]. *)
+   it. The [Mark] module stands in for [Ox_observability.Redact]. *)
 module Mark = struct
   type t = string
 

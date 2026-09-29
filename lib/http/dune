@@ -1,7 +1,7 @@
 (library
- (name eta_http)
- (public_name eta_http)
- (libraries eta eta_json eio eio.unix cstruct unix)
+ (name ox_http)
+ (public_name ox_http)
+ (libraries ox ox_json eio eio.unix cstruct unix)
  (foreign_stubs
   (language c)
   (names tls_openssl_stubs tls_openssl_alloc)

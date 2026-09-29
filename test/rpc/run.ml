@@ -1,4 +1,4 @@
-open Eta_rpc
+open Ox_rpc
 
 type message = { id : int option; session : string option; value : int }
 
@@ -66,7 +66,7 @@ let check_reply expected = function
 
 (* nrpc-wkrp nrpc-pqed nrpc-3ikx nrpc-acml nrpc-d96a *)
 let routing () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let c = make ~sw ~clock:env#clock f in
       let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
@@ -94,7 +94,7 @@ let routing () =
 
 (* nrpc-acml nrpc-d96a: slow consumers lose oldest, counted *)
 let overflow () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let c = make ~sw ~clock:env#clock ~max_notifications:2 f in
       List.iter (fun n -> push f (msg n)) [ 1; 2; 3; 4 ];
@@ -114,15 +114,15 @@ let overflow () =
 
 (* nrpc-amni nrpc-d96a: mock time and late reply *)
 let deadline () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let c = make ~sw ~clock:env#clock f in
       let call =
         Eio.Fiber.fork_promise ~sw (fun () ->
-            Correlator.call c ~deadline:(Eta.Duration.ms 10) (msg 1))
+            Correlator.call c ~deadline:(Ox.Duration.ms 10) (msg 1))
       in
       wait_until (fun () -> List.length f.writes = 1);
-      Eta_test.advance env#clock (Eta.Duration.ms 10);
+      Ox_test.advance env#clock (Ox.Duration.ms 10);
       (match Eio.Promise.await_exn call with
       | Error `Timeout -> ()
       | _ -> Alcotest.fail "expected timeout");
@@ -135,7 +135,7 @@ let deadline () =
 
 (* nrpc-1glx nrpc-d96a: interruption, no fabricated response *)
 let cancellation () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let c = make ~sw ~clock:env#clock f in
       let cancel = ref None in
@@ -161,7 +161,7 @@ let cancellation () =
 (* nrpc-1glx nrpc-vnce: cancelling a call while its frame is being written waits for the
    whole frame; a half-written frame would corrupt every later message *)
 let cancellation_mid_write () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let started = ref false and finished = ref false in
       f.on_write <-
@@ -192,7 +192,7 @@ let cancellation_mid_write () =
 let closures () =
   List.iter
     (fun terminate ->
-      Eta_test.run (fun env sw ->
+      Ox_test.run (fun env sw ->
           let f = fixture () in
           let c = make ~sw ~clock:env#clock f in
           let a = Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg 1)) in
@@ -239,7 +239,7 @@ let closures () =
 
 (* nrpc-vnce nrpc-pqed: write failure is local and never retried *)
 let write_failure () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let f = fixture () in
       let c = make ~sw ~clock:env#clock f in
       f.on_write <- (fun _ -> failwith "rejected");
@@ -257,7 +257,7 @@ let write_failure () =
       Correlator.close c)
 
 let () =
-  Alcotest.run "eta_rpc"
+  Alcotest.run "ox_rpc"
     [
       ( "correlator",
         [

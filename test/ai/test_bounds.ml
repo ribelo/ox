@@ -1,5 +1,5 @@
 (* ^nso-pflg: both bounds hold. The request bound is checked before a socket exists; the
-   response bound is enforced while reading, by {!Eta_http.Client}. ^nso-zmfp: a body too
+   response bound is enforced while reading, by {!Ox_http.Client}. ^nso-zmfp: a body too
    large to read is the one refusal that repeats. *)
 
 open Test_helpers
@@ -16,7 +16,7 @@ let test_request_bound () =
           [ ("page", `Assoc [ ("text", `String (String.make (4 * 1024 * 1024) 'x')) ]) ]
       in
       match
-        Eta_ai_systemone.Client.evaluate client ~deadline ~state
+        Ox_ai_systemone.Client.evaluate client ~deadline ~state
           ~questions:choice_questions
       with
       | Ok _ -> Alcotest.fail "an oversized request was sent"
@@ -25,7 +25,7 @@ let test_request_bound () =
           Alcotest.(check bool) "the length is over it" true (length > limit);
           Alcotest.(check int) "nothing was sent" 0 (Fake_server.connections server)
       | Error error ->
-          Alcotest.failf "not Input_too_large: %s" (Eta_ai.Error.to_string error))
+          Alcotest.failf "not Input_too_large: %s" (Ox_ai.Error.to_string error))
 
 let test_request_under_bound () =
   (* The bound is a ceiling, not a target: a large request still goes. *)
@@ -40,7 +40,7 @@ let test_request_under_bound () =
       in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
               ~questions:choice_questions));
       Alcotest.(check int) "sent once" 1 (Fake_server.connections server);
       Alcotest.(check bool)
@@ -53,15 +53,15 @@ let test_configured_request_bound () =
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw (Fake_server.ok response_body)
       in
-      let http = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+      let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
       let logger, _ = memory_logger env in
       let client =
-        Eta_ai_systemone.Client.create ~http ~clock:env#clock ~logger
+        Ox_ai_systemone.Client.create ~http ~clock:env#clock ~logger
           ~endpoint:(Fake_server.url server "/v1/systemone")
           ~api_key:key ~model ~max_request_bytes:64 ()
       in
       match
-        Eta_ai_systemone.Client.evaluate client ~deadline ~state
+        Ox_ai_systemone.Client.evaluate client ~deadline ~state
           ~questions:choice_questions
       with
       | Error (`Input_too_large { limit; _ }) ->
@@ -69,7 +69,7 @@ let test_configured_request_bound () =
           Alcotest.(check int) "nothing was sent" 0 (Fake_server.connections server)
       | Ok _ -> Alcotest.fail "an oversized request was sent"
       | Error error ->
-          Alcotest.failf "not Input_too_large: %s" (Eta_ai.Error.to_string error))
+          Alcotest.failf "not Input_too_large: %s" (Ox_ai.Error.to_string error))
 
 let test_response_bound () =
   (* ^nso-pflg: over 1 MiB is rejected after one attempt — the reference adapter's
@@ -81,12 +81,12 @@ let test_response_bound () =
       in
       let client = client ~sw env server () in
       match
-        Eta_ai_systemone.Client.evaluate client ~deadline ~state
+        Ox_ai_systemone.Client.evaluate client ~deadline ~state
           ~questions:choice_questions
       with
       | Ok _ -> Alcotest.fail "an oversized response was accepted"
       | Error error ->
-          let text = Eta_ai.Error.to_string error in
+          let text = Ox_ai.Error.to_string error in
           Alcotest.(check bool)
             ("^nso-pflg refused: " ^ text)
             true
@@ -104,11 +104,11 @@ let test_expired_deadline () =
       in
       let client = client ~sw env server () in
       match
-        Eta_ai_systemone.Client.evaluate client ~deadline:Eta.Duration.zero ~state
+        Ox_ai_systemone.Client.evaluate client ~deadline:Ox.Duration.zero ~state
           ~questions:choice_questions
       with
       | Error `Timeout -> ()
-      | Error error -> Alcotest.failf "not Timeout: %s" (Eta_ai.Error.to_string error)
+      | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "an expired deadline was ignored")
 
 let () =

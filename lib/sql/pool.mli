@@ -1,5 +1,5 @@
 (** Direct-style SQLite runner. A switch owns all opened handles. *)
-type error = [ `Eta_sql of Types.sql_error | `Pool_shutdown | `Timeout ]
+type error = [ `Ox_sql of Types.sql_error | `Pool_shutdown | `Timeout ]
 type pool
 type tx
 type 'kind runner

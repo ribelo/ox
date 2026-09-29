@@ -1,6 +1,6 @@
 (library
- (name eta_sql)
- (public_name eta_sql)
+ (name ox_sql)
+ (public_name ox_sql)
  (synopsis "Direct-style SQLite client with typed SQL DSL")
  (foreign_stubs
   (language c)
@@ -11,7 +11,7 @@
  (c_library_flags
   :standard
   (:include sqlite_c_library_flags.sexp))
- (libraries eta eta_sql_dsl eio unix))
+ (libraries ox ox_sql_dsl eio unix))
 
 (rule
  (targets sqlite_c_flags.sexp sqlite_c_library_flags.sexp)

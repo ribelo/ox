@@ -27,8 +27,8 @@ val request :
   url:string ->
   ?headers:(string * string) list ->
   ?body:bytes ->
-  ?deadline:Eta.Duration.t ->
-  ?response_idle:Eta.Duration.t ->
+  ?deadline:Ox.Duration.t ->
+  ?response_idle:Ox.Duration.t ->
   ?max_body_bytes:int ->
   unit ->
   (response, error) result

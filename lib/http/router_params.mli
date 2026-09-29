@@ -1,5 +1,5 @@
 (* Copied from v1:lib/router/params.mli (story ^hserv-e3q9); module paths adapted only.
-   Internal to {!Eta_http.Router}. *)
+   Internal to {!Ox_http.Router}. *)
 
 (** Matched route parameters.
 

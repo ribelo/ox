@@ -1,10 +1,10 @@
-module Q = Eta_sql
+module Q = Ox_sql
 module P = Q.Pool
 module M = Q.Migrate
 
 let get = function
   | Ok value -> value
-  | Error (`Eta_sql err) -> Alcotest.failf "SQL error: %a" Q.pp_error err
+  | Error (`Ox_sql err) -> Alcotest.failf "SQL error: %a" Q.pp_error err
   | Error `Pool_shutdown -> Alcotest.fail "pool closed"
   | Error `Timeout -> Alcotest.fail "SQL timeout"
 
@@ -37,7 +37,7 @@ end
 let test_typed () =
   with_pool (fun pool ->
       let schema =
-        Q.Eta_schema.(
+        Q.Ox_schema.(
           compile (create_table T.table [ column ~primary_key:true T.id; column T.name ]))
       in
       get (P.Typed.run_schema pool schema);
@@ -65,7 +65,7 @@ let test_rollback () =
       (match
          P.with_transaction pool (fun tx ->
              ignore (get (P.Raw.execute tx "INSERT INTO tx VALUES ('x')" []));
-             Error (`Eta_sql (Q.Pool_error "stop")))
+             Error (`Ox_sql (Q.Pool_error "stop")))
        with
       | Error _ -> ()
       | Ok _ -> Alcotest.fail "rollback unexpectedly committed");
@@ -133,7 +133,7 @@ let test_migrations () =
 let case name f = Alcotest.test_case name `Quick f
 
 let () =
-  Alcotest.run "eta_sql"
+  Alcotest.run "ox_sql"
     [
       ( "sqlite ^nsql-7x9b ^nsql-c2jw",
         [

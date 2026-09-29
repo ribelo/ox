@@ -12,7 +12,7 @@ type 'msg slot = {
 }
 
 type 'msg t = {
-  timeout : Eta.Duration.t -> (unit -> ('msg, error) result) -> ('msg, error) result;
+  timeout : Ox.Duration.t -> (unit -> ('msg, error) result) -> ('msg, error) result;
   write : 'msg -> unit;
   id : 'msg -> int option;
   set_id : 'msg -> int -> 'msg;
@@ -77,17 +77,17 @@ let close t =
   settle t `Closed;
   if not (Eio.Promise.is_resolved t.reader_done) then
     Option.iter
-      (fun ctx -> Eio.Cancel.cancel ctx (Failure "eta_rpc: closed"))
+      (fun ctx -> Eio.Cancel.cancel ctx (Failure "ox_rpc: closed"))
       t.reader_cancel;
   Eio.Promise.await t.reader_done
 
 let create ~sw ~clock ?(max_notifications = 1024) ~read ~write ~id ~set_id
     ?(session = fun _ -> None) () =
-  if max_notifications <= 0 then invalid_arg "eta_rpc: max_notifications must be positive";
+  if max_notifications <= 0 then invalid_arg "ox_rpc: max_notifications must be positive";
   let reader_done, reader_finished = Eio.Promise.create () in
   let t =
     {
-      timeout = Eta.Timeout.timeout ~clock;
+      timeout = Ox.Timeout.timeout ~clock;
       write;
       id;
       set_id;

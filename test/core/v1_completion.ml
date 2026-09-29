@@ -1,4 +1,4 @@
-open Eta
+open Ox
 
 let check_int = Alcotest.(check int)
 let check_bool = Alcotest.(check bool)

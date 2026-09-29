@@ -1,12 +1,12 @@
 (test
  (name run)
  (modules run v1_logger)
- (deps ../../eta_observability.opam)
+ (deps ../../ox_observability.opam)
  (libraries
-  eta_observability
-  eta
-  eta_test
-  eta_json
+  ox_observability
+  ox
+  ox_test
+  ox_json
   yojson
   eio
   eio.mock

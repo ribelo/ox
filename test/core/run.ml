@@ -1,4 +1,4 @@
-open Eta
+open Ox
 
 let expect_success = function
   | Exit.Success _ -> ()
@@ -440,10 +440,10 @@ let test_caller_cancel () =
               (name ^ " returns when its caller is cancelled")
               true (outcome = `Cancelled_caller)
           in
-          check "par" (fun sw f -> Eta.Concurrent.par ~sw f f);
-          check "all" (fun sw f -> Eta.Concurrent.all ~sw [ f; f ]);
-          check "race" (fun sw f -> Eta.Concurrent.race ~sw [ f; f ]);
-          check "with_background" (fun sw f -> Eta.Concurrent.with_background ~sw f f)))
+          check "par" (fun sw f -> Ox.Concurrent.par ~sw f f);
+          check "all" (fun sw f -> Ox.Concurrent.all ~sw [ f; f ]);
+          check "race" (fun sw f -> Ox.Concurrent.race ~sw [ f; f ]);
+          check "with_background" (fun sw f -> Ox.Concurrent.with_background ~sw f f)))
 
 let test_par_all () =
   Eio_main.run (fun _ ->
@@ -554,7 +554,7 @@ let test_contract () =
       Alcotest.(check bool) "closed switch never started work" false !never)
 
 let test_package_contract () =
-  let lib = if Sys.file_exists "lib/eta/dune" then "lib/eta" else "../../lib/eta" in
+  let lib = if Sys.file_exists "lib/ox/dune" then "lib/ox" else "../../lib/ox" in
   let read_file path =
     let channel = open_in path in
     Fun.protect
@@ -572,7 +572,7 @@ let test_package_contract () =
   in
   let dune = read_file (Filename.concat lib "dune") in
   Alcotest.(check bool)
-    "ncore-kyk3 eta only depends on eio" true
+    "ncore-kyk3 ox only depends on eio" true
     (contains dune "(libraries eio)" && not (contains dune "effect"));
   let modules =
     [
@@ -604,7 +604,7 @@ let test_package_contract () =
     modules
 
 let () =
-  Alcotest.run "eta core"
+  Alcotest.run "ox core"
     (Pure.tests @ V1_port.tests @ V1_more.tests @ V1_completion.tests @ Supervised.tests
     @ [
         ( "Core causes ncore-e8jg ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg \

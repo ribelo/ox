@@ -106,10 +106,10 @@ let spawn ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard
                      Eio.Cancel.protect (fun () ->
                          Eio.Process.signal process Sys.sigterm;
                          let prior =
-                           if Eta.Duration.is_zero grace then None
+                           if Ox.Duration.is_zero grace then None
                            else
                              match
-                               Eta.Timeout.timeout ~clock grace (fun () ->
+                               Ox.Timeout.timeout ~clock grace (fun () ->
                                    Ok (Eio.Process.await process))
                              with
                              | Ok x -> Some x

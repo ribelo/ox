@@ -1,5 +1,5 @@
 type t
-(** Direct-style RFC 6455 client over Eta's TCP and verified OpenSSL TLS. *)
+(** Direct-style RFC 6455 client over Ox's TCP and verified OpenSSL TLS. *)
 
 type message = [ `Text of string | `Binary of bytes ]
 
@@ -20,7 +20,7 @@ val connect :
   ?ca_file:string ->
   ?headers:(string * string) list ->
   ?protocols:string list ->
-  ?establishment_timeout:Eta.Duration.t ->
+  ?establishment_timeout:Ox.Duration.t ->
   ?max_message_bytes:int ->
   string ->
   (t, error) result

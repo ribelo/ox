@@ -1,5 +1,5 @@
 {
-  description = "Eta OCaml development environment";
+  description = "Ox OCaml development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.opam-nix = {
@@ -48,8 +48,8 @@
 
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      # Eta's packages are whatever dune-project declares; nothing here names one
-      # by hand. `packages` and ETA_OPAM_PACKAGES are both derived from this
+      # Ox's packages are whatever dune-project declares; nothing here names one
+      # by hand. `packages` and OX_OPAM_PACKAGES are both derived from this
       # list, so a package a worker declares appears in both without an edit and
       # a v1 package name cannot linger. Dune keeps package metadata in
       # dune-project (generate_opam_files true), so the stanzas are the source of
@@ -64,7 +64,7 @@
       );
       # The (name X) dune requires inside each (package ...) form. Splitting on
       # the marker drops everything before the first form, which is where the
-      # project's own (name eta) lives.
+      # project's own (name ox) lives.
       packageStanzaName =
         stanza:
         let
@@ -75,7 +75,7 @@
           );
         in
         if found == [ ] then null else builtins.head (builtins.head found);
-      etaPackageNames = builtins.filter (name: name != null) (
+      oxPackageNames = builtins.filter (name: name != null) (
         builtins.map packageStanzaName (
           builtins.tail (nixpkgs.lib.splitString "(package" duneProjectCode)
         )
@@ -110,7 +110,7 @@
                   || base == "node_modules"
                 );
           };
-          etaSrc = cleanLocalSource ./.;
+          oxSrc = cleanLocalSource ./.;
           patchedOxcaml = pkgs.runCommand "oxcaml-source-patched" { } ''
             cp -R ${oxcaml} "$out"
             chmod -R u+w "$out"
@@ -200,7 +200,7 @@
             })
             [ "eio" "eio_linux" "eio_main" "eio_posix" ]);
           buildOpamProjectPrime = builtins.getAttr "buildOpamProject'" opam-nix.lib.${system};
-          etaScope = buildOpamProjectPrime
+          oxScope = buildOpamProjectPrime
             {
               inherit pkgs;
               overlays = [ oxcamlSystemOverlay ];
@@ -210,29 +210,29 @@
               ];
               resolveArgs.env.sys-ocaml-version = "5.4.0";
             }
-            etaSrc
+            oxSrc
             {
               ocaml-system = "*";
               # Yojson 3.0.0 does not compile with this OxCaml release.
               yojson = "2.2.2+ox";
             };
-          etaPackages = builtins.listToAttrs (
+          oxPackages = builtins.listToAttrs (
             map (name: {
               inherit name;
-              value = etaScope.${name};
-            }) etaPackageNames
+              value = oxScope.${name};
+            }) oxPackageNames
           );
           # `nix build` with no attribute: the kernel package once dune-project
           # declares it, otherwise the first package declared there.
           defaultPackage =
-            if etaPackages ? eta then
-              etaPackages.eta
-            else if etaPackageNames == [ ] then
+            if oxPackages ? ox then
+              oxPackages.ox
+            else if oxPackageNames == [ ] then
               throw "dune-project declares no (package ...) stanza, so there is no default package"
             else
-              etaPackages.${builtins.head etaPackageNames};
+              oxPackages.${builtins.head oxPackageNames};
         in
-        etaPackages // { default = defaultPackage; }
+        oxPackages // { default = defaultPackage; }
       );
 
       devShells = forAllSystems (
@@ -259,8 +259,8 @@
           });
           ladybugLibraryPath =
             "${ladybugdb.lib}/lib/liblbug${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
-          etaOpamInstall = pkgs.writeShellApplication {
-            name = "eta-opam-install";
+          oxOpamInstallCore = pkgs.writeShellApplication {
+            name = "ox-opam-install-core";
             runtimeInputs = [
               pkgs.autoconf
               pkgs.coreutils
@@ -281,10 +281,10 @@
               pkgs.zlib
             ];
             text = ''
-              switch_name="''${ETA_OPAM_SWITCH:-${oxCamlSwitch}}"
+              switch_name="''${OX_OPAM_SWITCH:-${oxCamlSwitch}}"
               # The tree this shell is in, not the v1 checkout the flake was
               # copied from.
-              repo_root="''${ETA_REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+              repo_root="''${OX_REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
               cd "$repo_root"
 
               export OPAMROOT="''${OPAMROOT:-${oxCamlOpamRoot}}"
@@ -302,11 +302,11 @@
               # Where opam installed this switch, and where the removal step
               # parks the files a dependent's executable needs to keep running.
               switch_prefix="$(opam var prefix --switch "$switch_name")"
-              preserved_dir="$switch_prefix/.opam-switch/preserved-by-eta-opam-install"
+              preserved_dir="$switch_prefix/.opam-switch/preserved-by-ox-opam-install"
 
               # The packages dune-project declares, expanded by the flake when
               # it evaluates: a stale generated *.opam file cannot be pinned.
-              declared="${builtins.concatStringsSep " " etaPackageNames}"
+              declared="${builtins.concatStringsSep " " oxPackageNames}"
               if [ -z "$declared" ]; then
                 echo "dune-project declares no package; refusing to touch the shared switch." >&2
                 exit 1
@@ -315,27 +315,31 @@
               # so only committed sources are installed and the pin cannot move
               # under a consumer's feet. Every pin carries the commit as its
               # version, so one opam list call answers "which commit is in this
-              # switch", and the {= version} constraint eta's opam files put on
-              # conf-eta-oxcaml resolves for all pins alike.
-              eta_commit="$(git -C "$repo_root" rev-parse HEAD)"
-              eta_url="git+file://$repo_root#$eta_commit"
+              # switch", and the {= version} constraint ox's opam files put on
+              # conf-ox-oxcaml resolves for all pins alike.
+              ox_commit="$(git -C "$repo_root" rev-parse HEAD)"
+              ox_url="git+file://$repo_root#$ox_commit"
               # Derived from dune-project: every declared package, nothing else.
-              packages="''${ETA_OPAM_PACKAGES:-$declared}"
+              packages="''${OX_OPAM_PACKAGES:-$declared}"
               if [ "$#" -gt 0 ]; then
                 packages="$*"
               fi
 
-              # 1. Remove every installed eta* / ppx_eta* package this tree does
-              #    not declare: v1's Eta, including the preprocessors that came
-              #    from the same repository. opam takes their reverse
-              #    dependencies with them, so a compiled v1 consumer loses its
-              #    files; the executables of those dependents are preserved
-              #    across the removal below, and are not rebuilt
+              # 1. Remove every installed package of this family this tree does
+              #    not declare: the legacy eta* / ppx_eta* names installed by
+              #    v1 and by the eta-next line (conf-eta-oxcaml included), and
+              #    any ox / ox_* / ppx_ox* package a previous revision of this
+              #    tree installed. opam takes their reverse dependencies with
+              #    them, so a compiled consumer loses its files; the executables
+              #    of those dependents are preserved across the removal below,
+              #    and are not rebuilt
               #    (docs/issues/shared-switch/01-shared-switch.md, 2026-09-26).
+              #    The patterns are exact: oxcaml-* guard packages are the
+              #    toolchain, not this family, and must never be removed here.
               removed=()
               for package in $(opam list --installed --short); do
                 case "$package" in
-                  eta* | ppx_eta*) ;;
+                  eta | eta_* | ppx_eta* | conf-eta-oxcaml | ox | ox_* | ppx_ox*) ;;
                   *) continue ;;
                 esac
                 case " $declared " in
@@ -344,7 +348,7 @@
                 removed+=("$package")
               done
               if [ "''${#removed[@]}" -gt 0 ]; then
-                echo "Removing v1 Eta packages from OPAM switch $switch_name (opam removes their reverse dependencies too): ''${removed[*]}"
+                echo "Removing legacy Eta and stale ox packages from OPAM switch $switch_name (opam removes their reverse dependencies too): ''${removed[*]}"
 
                 # Removing a package deletes every file its dependents
                 # installed, executables included, and a consumer that is
@@ -362,7 +366,7 @@
                 dependents=()
                 for package in $(opam list --installed --short --recursive --depends-on "$removed_csv"); do
                   case "$package" in
-                    eta* | ppx_eta*) continue ;;
+                    eta | eta_* | ppx_eta* | conf-eta-oxcaml | ox | ox_* | ppx_ox*) continue ;;
                   esac
                   dependents+=("$package")
                 done
@@ -421,7 +425,7 @@
               #     Declared packages are re-pinned below.
               for pin in $(opam pin list --short); do
                 case "$pin" in
-                  eta* | ppx_eta*) ;;
+                  eta | eta_* | ppx_eta* | conf-eta-oxcaml | ox | ox_* | ppx_ox*) ;;
                   *) continue ;;
                 esac
                 case " $declared " in
@@ -436,21 +440,21 @@
               for package in $packages; do
                 requested+=("$package")
               done
-              have="$(opam list --installed --short --columns=name,version "''${requested[@]}" 2>/dev/null | grep -c " $eta_commit$" || true)"
+              have="$(opam list --installed --short --columns=name,version "''${requested[@]}" 2>/dev/null | grep -c " $ox_commit$" || true)"
               if [ "$have" = "''${#requested[@]}" ]; then
-                echo "Eta packages already installed from $repo_root at $eta_commit in OPAM switch $switch_name; nothing to do."
+                echo "Ox packages already installed from $repo_root at $ox_commit in OPAM switch $switch_name; nothing to do."
                 exit 0
               fi
 
-              # 3a. Installing a new eta commit makes opam rebuild every installed
+              # 3a. Installing a new ox commit makes opam rebuild every installed
               #     package that depends on it (Pie, grip, inn, ...), replacing the
               #     executables a running service will exec on its next start.
               #     Keep the executables exactly as they were: snapshot them here,
               #     put them back after the install, and leave each rebuilt one
-              #     beside it as <file>.eta-<commit> for an explicit, tested
-              #     cut-over (found 2026-09-28: an eta install rebuilt Pie's
+              #     beside it as <file>.ox-<commit> for an explicit, tested
+              #     cut-over (found 2026-09-28: an ox install rebuilt Pie's
               #     production binary).
-              keep_dir="$preserved_dir/before-$eta_commit"
+              keep_dir="$preserved_dir/before-$ox_commit"
               declared_csv=""
               for package in $declared; do
                 declared_csv="''${declared_csv:+$declared_csv,}$package"
@@ -458,7 +462,7 @@
               kept=()
               for package in $(opam list --installed --short --recursive --depends-on "$declared_csv" 2>/dev/null); do
                 case "$package" in
-                  eta* | ppx_eta* | conf-eta*) continue ;;
+                  eta | eta_* | ppx_eta* | conf-eta-oxcaml | ox | ox_* | ppx_ox* | conf-ox-oxcaml) continue ;;
                 esac
                 # This repository's own packages (ppx_yojson_minimal, ...) are
                 # what is being installed, not dependents to keep.
@@ -483,8 +487,8 @@
               # 3. Pin every declared package to this commit and install the
               #    requested set.
               for package in $declared; do
-                opam pin add --kind=git --no-action --with-version "$eta_commit" \
-                  --yes "$package" "$eta_url"
+                opam pin add --kind=git --no-action --with-version "$ox_commit" \
+                  --yes "$package" "$ox_url"
               done
 
               # The OxCaml metadata variants currently over-constrain portability
@@ -496,7 +500,7 @@
                 https://github.com/inhabitedtype/faraday/archive/0.8.2.tar.gz \
                 --no-action --yes
 
-              # Test tooling no Eta package depends on: alcotest and qcheck
+              # Test tooling no Ox package depends on: alcotest and qcheck
               # drive suites, memtrace is an allocation-trace hook.
               opam install alcotest qcheck memtrace --yes
               opam install "''${requested[@]}" --assume-depexts --yes
@@ -507,38 +511,41 @@
                   continue
                 fi
                 if [ -f "$current" ]; then
-                  mv -f "$current" "$current.eta-''${eta_commit:0:8}"
-                  echo "Rebuilt $relative kept beside the original as $relative.eta-''${eta_commit:0:8}"
+                  mv -f "$current" "$current.ox-''${ox_commit:0:8}"
+                  echo "Rebuilt $relative kept beside the original as $relative.ox-''${ox_commit:0:8}"
                 fi
-                cp -p "$keep_dir/$relative" "$current.eta-keep"
-                mv -f "$current.eta-keep" "$current"
+                cp -p "$keep_dir/$relative" "$current.ox-keep"
+                mv -f "$current.ox-keep" "$current"
                 echo "Kept $relative unchanged"
               done
 
-              echo "Eta packages installed into OPAM switch: $switch_name"
-              echo "Source: $repo_root at $eta_commit"
+              echo "Ox packages installed into OPAM switch: $switch_name"
+              echo "Source: $repo_root at $ox_commit"
               echo "$packages"
             '';
           };
-          etaOpamInstallOx = pkgs.writeShellApplication {
-            name = "eta-opam-install-ox";
-            runtimeInputs = [ etaOpamInstall ];
+          # The name consumers call: it forces the shared OxCaml switch and
+          # then runs the core installer, so a consumer's shell needs no
+          # OX_OPAM_SWITCH of its own.
+          oxOpamInstall = pkgs.writeShellApplication {
+            name = "ox-opam-install";
+            runtimeInputs = [ oxOpamInstallCore ];
             text = ''
-              export ETA_OPAM_SWITCH="${oxCamlSwitch}"
-              exec eta-opam-install "$@"
+              export OX_OPAM_SWITCH="${oxCamlSwitch}"
+              exec ox-opam-install-core "$@"
             '';
           };
           oxCamlSetup = pkgs.writeShellApplication {
-            name = "eta-oxcaml-init";
+            name = "ox-oxcaml-init";
             runtimeInputs = [
-              etaOpamInstall
+              oxOpamInstallCore
             ];
             text = ''
               if [ "$#" -gt 0 ]; then
-                export ETA_OPAM_SWITCH="$1"
+                export OX_OPAM_SWITCH="$1"
                 shift
               fi
-              exec eta-opam-install "$@"
+              exec ox-opam-install-core "$@"
             '';
           };
           editorOcamlBase = pkgs.ocaml-ng.ocamlPackages_5_4;
@@ -682,14 +689,14 @@
             postInstall = ''wrapProgram $out/bin/ocamllsp --prefix PATH : ${oxCamlMerlin}/bin'';
           };
           oxCamlEditorTools = pkgs.buildEnv {
-            name = "eta-oxcaml-editor-tools";
+            name = "ox-oxcaml-editor-tools";
             paths = [
               oxCamlMerlin
               oxCamlLsp
             ];
           };
           oxCamlToolchainCheck = pkgs.writeShellApplication {
-            name = "eta-oxcaml-check-toolchain";
+            name = "ox-oxcaml-check-toolchain";
             runtimeInputs = [
               pkgs.git
               pkgs.opam
@@ -722,7 +729,7 @@
             '';
           };
           oxCamlShippedTests = pkgs.writeShellApplication {
-            name = "eta-oxcaml-test-shipped";
+            name = "ox-oxcaml-test-shipped";
             runtimeInputs = [ pkgs.opam ];
             text = ''
               switch_name="''${1:-${oxCamlSwitch}}"
@@ -732,7 +739,7 @@
               export OPAMROOT="''${OPAMROOT:-${oxCamlOpamRoot}}"
               export OPAMSWITCH="$switch_name"
               export PKG_CONFIG_PATH="${nativePkgConfigPath}:''${PKG_CONFIG_PATH:-}"
-              export ETA_LADYBUG_LIBRARY="${ladybugLibraryPath}"
+              export OX_LADYBUG_LIBRARY="${ladybugLibraryPath}"
               eval "$(opam env --switch "$switch_name" --set-switch)"
 
               # v1's supported-native manifest, compiler-contract scripts and
@@ -762,8 +769,8 @@
               pkgs.sqlite
               pkgs.unzip
               pkgs.which
-              etaOpamInstall
-              etaOpamInstallOx
+              oxOpamInstall
+              oxOpamInstallCore
               oxCamlSetup
               oxCamlShippedTests
               oxCamlToolchainCheck
@@ -792,7 +799,7 @@
             shellHook = ''
               export OPAMROOT="''${OPAMROOT:-${oxCamlOpamRoot}}"
               export PKG_CONFIG_PATH="${nativePkgConfigPath}:''${PKG_CONFIG_PATH:-}"
-              export ETA_LADYBUG_LIBRARY="${ladybugLibraryPath}"
+              export OX_LADYBUG_LIBRARY="${ladybugLibraryPath}"
               if [ -d "$OPAMROOT/${oxCamlSwitch}" ]; then
                 export OPAMSWITCH="${oxCamlSwitch}"
                 eval "$(opam env --switch "${oxCamlSwitch}" --set-switch)"
@@ -806,10 +813,10 @@
               # docs/issues/devshell-stub-shadowing/01-use-build-tree-stubs.md.
               export PATH="${oxCamlEditorTools}/bin:$PATH"
               if [ -t 1 ]; then
-                echo "Eta OxCaml shell (${oxCamlSwitch})"
+                echo "Ox OxCaml shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
-                echo "Run 'eta-opam-install-ox' to pin this checkout's packages into ${oxCamlSwitch} (it removes v1 Eta packages)."
-                echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
+                echo "Run 'ox-opam-install' to pin this checkout's packages into ${oxCamlSwitch} (it removes legacy Eta and stale ox packages)."
+                echo "Run 'ox-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
           };
@@ -820,7 +827,7 @@
             shellHook = ''
               export OPAMROOT="''${OPAMROOT:-${oxCamlOpamRoot}}"
               export PKG_CONFIG_PATH="${nativePkgConfigPath}:''${PKG_CONFIG_PATH:-}"
-              export ETA_LADYBUG_LIBRARY="${ladybugLibraryPath}"
+              export OX_LADYBUG_LIBRARY="${ladybugLibraryPath}"
               if [ -d "$OPAMROOT/${oxCamlSwitch}" ]; then
                 export OPAMSWITCH="${oxCamlSwitch}"
                 eval "$(opam env --switch "${oxCamlSwitch}" --set-switch)"
@@ -834,10 +841,10 @@
               # docs/issues/devshell-stub-shadowing/01-use-build-tree-stubs.md.
               export PATH="${oxCamlEditorTools}/bin:$PATH"
               if [ -t 1 ]; then
-                echo "Eta OxCaml research shell (${oxCamlSwitch})"
+                echo "Ox OxCaml research shell (${oxCamlSwitch})"
                 echo "Run 'shared-ocaml-switch-init' to create shared OPAM switches."
-                echo "Run 'eta-opam-install-ox' to pin this checkout's packages into ${oxCamlSwitch} (it removes v1 Eta packages)."
-                echo "Run 'eta-oxcaml-test-shipped' after setup to run the build and test gates."
+                echo "Run 'ox-opam-install' to pin this checkout's packages into ${oxCamlSwitch} (it removes legacy Eta and stale ox packages)."
+                echo "Run 'ox-oxcaml-test-shipped' after setup to run the build and test gates."
               fi
             '';
           };

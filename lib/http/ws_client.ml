@@ -1,5 +1,5 @@
 module C = Ws_codec
-module Ssl = Eta_http_tls_openssl
+module Ssl = Ox_http_tls_openssl
 
 type message = [ `Text of string | `Binary of bytes ]
 
@@ -156,7 +156,7 @@ let create_tls raw host ca_file =
   Tls_flow.create ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t) ~ssl
 
 let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
-    ?(establishment_timeout = Eta.Duration.seconds 10) ?(max_message_bytes = 1_048_576)
+    ?(establishment_timeout = Ox.Duration.seconds 10) ?(max_message_bytes = 1_048_576)
     input =
   if max_message_bytes < 0 then invalid_arg "Ws_client.connect: negative message limit";
   let perform () =
@@ -270,7 +270,7 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
               | `Upgrade -> `Connect (Printexc.to_string exn))
         | End_of_file -> Error (`Closed (1006, "unexpected EOF")))
   in
-  Eta.Timeout.timeout ~clock establishment_timeout perform
+  Ox.Timeout.timeout ~clock establishment_timeout perform
 
 let writing t fn =
   try

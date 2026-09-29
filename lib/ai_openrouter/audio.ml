@@ -12,12 +12,12 @@ type reply = { text : string option } [@@deriving yojson] [@@yojson.allow_extra_
 let default_endpoint = "https://openrouter.ai/api/v1/audio/transcriptions"
 let default_max_request_bytes = 8 * 1024 * 1024
 let max_request_bytes = default_max_request_bytes
-let boundary = "eta-ai-wav-boundary-59f3201f"
+let boundary = "ox-ai-wav-boundary-59f3201f"
 let invalid message = Common.invalid message `Null
 
 let body ?(max_request_bytes = default_max_request_bytes) request =
   if max_request_bytes <= 0 then
-    invalid_arg "Eta_ai_openrouter.Audio.body: max_request_bytes must be positive"
+    invalid_arg "Ox_ai_openrouter.Audio.body: max_request_bytes must be positive"
   else if
     request.model = ""
     || Bytes.length request.wav = 0
@@ -51,7 +51,7 @@ let body ?(max_request_bytes = default_max_request_bytes) request =
     if String.length value > max_request_bytes then
       Error
         (`Input_too_large
-           { Eta_json.limit = max_request_bytes; length = String.length value })
+           { Ox_json.limit = max_request_bytes; length = String.length value })
     else Ok (Bytes.of_string value)
 
 let decode json =
@@ -67,12 +67,12 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~dea
   | Error _ as error -> error
   | Ok body -> (
       let headers =
-        Eta_ai.Bearer.header ~api_key
+        Ox_ai.Bearer.header ~api_key
         @ [ ("Content-Type", "multipart/form-data; boundary=" ^ boundary) ]
       in
       match
-        Eta_http.Client.request http ~method_:"POST" ~url:endpoint ~headers ~body
-          ~deadline ~max_body_bytes:Eta_ai.Transport.default_max_response_bytes ()
+        Ox_http.Client.request http ~method_:"POST" ~url:endpoint ~headers ~body ~deadline
+          ~max_body_bytes:Ox_ai.Transport.default_max_response_bytes ()
       with
       | Error (`Timeout | `Idle_timeout) -> Error `Timeout
       | Error `Body_too_large ->
@@ -89,7 +89,7 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~dea
       | Ok { status = 401; _ } ->
           Error (`Authentication "transcription authentication failed")
       | Ok { status = 413; _ } ->
-          Error (`Input_too_large { Eta_json.limit; length = Bytes.length body })
+          Error (`Input_too_large { Ox_json.limit; length = Bytes.length body })
       | Ok { status; _ } when status < 200 || status >= 300 ->
           Error
             (`Unavailable

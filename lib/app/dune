@@ -1,4 +1,4 @@
 (library
- (name eta_app)
- (public_name eta_app)
- (libraries eta eta_observability eio eio_main cmdliner toml yojson))
+ (name ox_app)
+ (public_name ox_app)
+ (libraries ox ox_observability eio eio_main cmdliner toml yojson))

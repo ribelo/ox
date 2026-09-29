@@ -1,4 +1,4 @@
-(* Executable migration recipes, not an eta_stream compatibility library.
+(* Executable migration recipes, not an ox_stream compatibility library.
    The concrete PCM admission state belongs beside Pie's byte/capture budgets. *)
 
 let ( let* ) = Result.bind

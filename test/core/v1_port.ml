@@ -1,7 +1,7 @@
 (* v1 behavioural ports: ^nport-v4oy ^nport-bo4a ^nport-rry6
    ^nport-ivyn ^nport-kaym ^nport-ozuw. Scenarios from the v1
    core_common suites, rewritten over Eio switches and direct-style results. *)
-open Eta
+open Ox
 
 let check_int label expected actual = Alcotest.(check int) label expected actual
 let check_bool label expected actual = Alcotest.(check bool) label expected actual
@@ -360,7 +360,7 @@ let stress_laws () =
       done)
 
 (* The v1 corpus cases are separate assertions, not copies of the old grammar:
-   eta-next renders a smaller Cause tree without captured typed finalizer payloads. *)
+   ox renders a smaller Cause tree without captured typed finalizer payloads. *)
 let cause_render_corpus () =
   let fail text = Cause.Fail text in
   let die = Cause.Die (Failure "boom", backtrace ()) in

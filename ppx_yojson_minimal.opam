@@ -4,11 +4,11 @@ synopsis: "Minimal [@@deriving yojson] preprocessor for OxCaml"
 maintainer: ["Rafal Krzywaznia <r.krzywaznia@gmail.com>"]
 authors: ["Rafal Krzywaznia"]
 license: "MIT"
-homepage: "https://github.com/ribelo/eta"
+homepage: "https://github.com/ribelo/ox"
 depends: [
   "dune" {>= "3.21"}
   "ocaml" {>= "5.4.0"}
-  "conf-eta-oxcaml" {= version}
+  "conf-ox-oxcaml" {= version}
   "ocaml-compiler-libs"
   "yojson" {with-test}
   "alcotest" {with-test}

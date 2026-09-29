@@ -18,12 +18,12 @@ module Backend = struct
   let text = Types.text
   let nullable = Types.nullable
   let invalid_query message = Types.Invalid_query message
-  let module_name = "Eta_sql"
+  let module_name = "Ox_sql"
   let value_to_string = Value.to_string
 
-  let quote_text = Eta_sql_dsl.quote_text
-  let quote_blob = Eta_sql_dsl.quote_blob
-  let quote_float = Eta_sql_dsl.quote_float
+  let quote_text = Ox_sql_dsl.quote_text
+  let quote_blob = Ox_sql_dsl.quote_blob
+  let quote_float = Ox_sql_dsl.quote_float
 
   let value_to_sql_literal = function
     | Value.Null -> "NULL"
@@ -36,4 +36,4 @@ module Backend = struct
     | Value.Bytes value -> quote_blob value
 end
 
-include Eta_sql_dsl.Make (Backend)
+include Ox_sql_dsl.Make (Backend)

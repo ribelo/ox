@@ -1,18 +1,18 @@
-val invalid : ?path:string -> string -> Eta_json.t -> ('a, Eta_ai.Error.t) result
+val invalid : ?path:string -> string -> Ox_json.t -> ('a, Ox_ai.Error.t) result
 (** Shared JSON request/response boundary. Each call closes its own HTTP socket on
     success, failure or cancellation; no finalizer is registered here. *)
 
-val decode : string -> (Eta_json.t, Eta_ai.Error.t) result
+val decode : string -> (Ox_json.t, Ox_ai.Error.t) result
 
 val post :
-  http:Eta_http.Client.t ->
+  http:Ox_http.Client.t ->
   clock:_ Eio.Time.clock ->
-  logger:Eta_observability.Logger.t ->
-  api_key:Eta_observability.Redact.t ->
+  logger:Ox_observability.Logger.t ->
+  api_key:Ox_observability.Redact.t ->
   endpoint:string ->
-  ?timeout:Eta.Duration.t ->
+  ?timeout:Ox.Duration.t ->
   ?max_response_bytes:int ->
   ?max_attempts:int ->
-  deadline:Eta.Duration.t ->
-  Eta_json.t ->
-  (Eta_json.t, Eta_ai.Error.t) result
+  deadline:Ox.Duration.t ->
+  Ox_json.t ->
+  (Ox_json.t, Ox_ai.Error.t) result

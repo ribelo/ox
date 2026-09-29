@@ -1,6 +1,6 @@
-(* nhttp-6c3d: these tests compile with eta_http, Eio, and its public
-   Cstruct buffer API; the native OpenSSL binding is linked by eta_http. *)
-module H = Eta_http
+(* nhttp-6c3d: these tests compile with ox_http, Eio, and its public
+   Cstruct buffer API; the native OpenSSL binding is linked by ox_http. *)
+module H = Ox_http
 
 let local = Eio.Net.Ipaddr.V4.loopback
 
@@ -31,14 +31,14 @@ let with_server ?(tls = false) serve test =
                     let flow : Eio.Flow.two_way_ty Eio.Resource.t =
                       if tls then
                         let ctx =
-                          H.Eta_http_tls_openssl.create_server_ctx
+                          H.Ox_http_tls_openssl.create_server_ctx
                             ~certificate_chain_file:"localhost.crt"
                             ~private_key_file:"localhost.key"
                             ~alpn_protocols:[ "http/1.1" ] ()
                         in
                         H.Tls_flow.create
                           ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t)
-                          ~ssl:(H.Eta_http_tls_openssl.create_server_ssl ctx)
+                          ~ssl:(H.Ox_http_tls_openssl.create_server_ssl ctx)
                       else (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
                     in
                     serve env flow
@@ -124,7 +124,7 @@ let idle_timeout () =
       Eio.Flow.copy_string good_response flow)
     (fun _ client url ->
       match
-        H.Client.request client ~method_:"GET" ~url ~response_idle:(Eta.Duration.ms 30) ()
+        H.Client.request client ~method_:"GET" ~url ~response_idle:(Ox.Duration.ms 30) ()
       with
       | Error `Idle_timeout -> ()
       | _ -> Alcotest.fail "idle timeout not returned")
@@ -137,7 +137,7 @@ let deadline () =
       Eio.Flow.copy_string good_response flow)
     (fun _ client url ->
       match
-        H.Client.request client ~method_:"GET" ~url ~deadline:(Eta.Duration.ms 30) ()
+        H.Client.request client ~method_:"GET" ~url ~deadline:(Ox.Duration.ms 30) ()
       with
       | Error `Timeout -> ()
       | _ -> Alcotest.fail "request deadline not returned")
@@ -194,7 +194,7 @@ let slow_progress () =
         good_response)
     (fun _ client url ->
       let response =
-        H.Client.request client ~method_:"GET" ~url ~response_idle:(Eta.Duration.ms 35) ()
+        H.Client.request client ~method_:"GET" ~url ~response_idle:(Ox.Duration.ms 35) ()
         |> expect_ok
       in
       Alcotest.(check string)
@@ -258,7 +258,7 @@ let tls_handshake_deadline () =
     (fun _ client url ->
       let secure = "https" ^ String.sub url 4 (String.length url - 4) in
       match
-        H.Client.request client ~method_:"GET" ~url:secure ~deadline:(Eta.Duration.ms 30)
+        H.Client.request client ~method_:"GET" ~url:secure ~deadline:(Ox.Duration.ms 30)
           ()
       with
       | Error `Timeout -> ()
@@ -278,13 +278,13 @@ let chunked_overflow () =
       | _ -> Alcotest.fail "chunked oversized body was not rejected")
 
 let smoke () =
-  if Sys.getenv_opt "ETA_HTTP_LIVE_SMOKE" = Some "1" then
+  if Sys.getenv_opt "OX_HTTP_LIVE_SMOKE" = Some "1" then
     Eio_main.run (fun env ->
         Eio.Switch.run (fun sw ->
             let client = H.Client.create ~sw ~net:env#net ~clock:env#clock () in
             match
               H.Client.request client ~method_:"GET" ~url:"https://example.com/"
-                ~deadline:(Eta.Duration.seconds 10) ()
+                ~deadline:(Ox.Duration.seconds 10) ()
             with
             | Ok response ->
                 Alcotest.(check bool) "remote status" true (response.status >= 200)

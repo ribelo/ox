@@ -1,4 +1,4 @@
 (library
- (name eta_rpc)
- (public_name eta_rpc)
- (libraries eta eio))
+ (name ox_rpc)
+ (public_name ox_rpc)
+ (libraries ox eio))

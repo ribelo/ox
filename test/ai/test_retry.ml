@@ -20,12 +20,12 @@ let test_429_retries () =
       let client = client ~sw env server () in
       let response =
         expect_ok
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "two attempts" 2 (Fake_server.connections server);
       Alcotest.(check string)
-        "the second reply is the answer" model response.Eta_ai_systemone.Codecs.model)
+        "the second reply is the answer" model response.Ox_ai_systemone.Codecs.model)
 
 let test_529_retries () =
   (* ^nso-zmfp: 529 is the other retryable status. *)
@@ -37,7 +37,7 @@ let test_529_retries () =
       let client = client ~sw env server () in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
               ~questions:choice_questions));
       Alcotest.(check int) "two attempts" 2 (Fake_server.connections server))
 
@@ -52,11 +52,11 @@ let test_429_exhausted () =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "exactly two attempts" 2 (Fake_server.connections server);
-      Alcotest.(check bool) "^nso-77t7 retryable" true (Eta_ai.Error.retryable error))
+      Alcotest.(check bool) "^nso-77t7 retryable" true (Ox_ai.Error.retryable error))
 
 let test_401_no_retry () =
   (* ^nso-zmfp: authentication is not a transport failure. *)
@@ -68,13 +68,13 @@ let test_401_no_retry () =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "one attempt" 1 (Fake_server.connections server);
       Alcotest.(check bool)
         "authentication" true
-        (contains (Eta_ai.Error.to_string error) "authentication failed"))
+        (contains (Ox_ai.Error.to_string error) "authentication failed"))
 
 let test_500_no_retry () =
   (* ^nso-zmfp: a 5xx that is neither 429 nor 529 is answered once. *)
@@ -86,13 +86,13 @@ let test_500_no_retry () =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "one attempt" 1 (Fake_server.connections server);
       Alcotest.(check bool)
         "unavailable" true
-        (contains (Eta_ai.Error.to_string error) "unavailable"))
+        (contains (Ox_ai.Error.to_string error) "unavailable"))
 
 let test_400_no_retry () =
   (* ^nso-zmfp: a 4xx that is neither 429 nor 529 is answered once. *)
@@ -104,31 +104,31 @@ let test_400_no_retry () =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "one attempt" 1 (Fake_server.connections server);
       Alcotest.(check bool)
         "invalid response" true
-        (contains (Eta_ai.Error.to_string error) "invalid response"))
+        (contains (Ox_ai.Error.to_string error) "invalid response"))
 
 let test_transport_failure_retries () =
   (* ^nso-zmfp: the first attempt fails on the wire, so the second is tried. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
-          (Fake_server.after Eta.Duration.zero Fake_server.Silent
+          (Fake_server.after Ox.Duration.zero Fake_server.Silent
           @ Fake_server.ok response_body)
       in
       let client = client ~sw env server () in
       let response =
         expect_ok
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "two attempts" 2 (Fake_server.connections server);
       Alcotest.(check string)
-        "the second reply is the answer" model response.Eta_ai_systemone.Codecs.model)
+        "the second reply is the answer" model response.Ox_ai_systemone.Codecs.model)
 
 let test_attempt_timeout_is_retryable () =
   (* ^nso-zmfp: both attempts time out inside the deadline; the failure is Timeout. The
@@ -136,16 +136,16 @@ let test_attempt_timeout_is_retryable () =
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
-          (Fake_server.after (Eta.Duration.ms 60) Fake_server.Silent
-          @ Fake_server.after (Eta.Duration.ms 60) Fake_server.Silent)
+          (Fake_server.after (Ox.Duration.ms 60) Fake_server.Silent
+          @ Fake_server.after (Ox.Duration.ms 60) Fake_server.Silent)
       in
       let client = client ~sw env server ~timeout:attempt_timeout () in
       (match
-         Eta_ai_systemone.Client.evaluate client ~deadline ~state
+         Ox_ai_systemone.Client.evaluate client ~deadline ~state
            ~questions:choice_questions
        with
       | Error `Timeout -> ()
-      | Error error -> Alcotest.failf "not Timeout: %s" (Eta_ai.Error.to_string error)
+      | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "a stalled attempt returned an answer");
       Alcotest.(check int) "two attempts" 2 (Fake_server.connections server))
 
@@ -159,25 +159,25 @@ let test_usage_logged () =
       let client = client ~sw env server ~logger () in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
               ~questions:choice_questions));
       let records =
-        Eta_observability.Logger.Memory.find ~level:Eta_observability.Logger.Debug memory
+        Ox_observability.Logger.Memory.find ~level:Ox_observability.Logger.Debug memory
       in
       let record =
         match
           List.find_opt
-            (fun record -> String.equal record.Eta_observability.Logger.msg "systemone")
+            (fun record -> String.equal record.Ox_observability.Logger.msg "systemone")
             records
         with
         | Some record -> record
         | None -> Alcotest.fail "no systemone usage record"
       in
       let field name =
-        match List.assoc_opt name record.Eta_observability.Logger.fields with
-        | Some (Eta_observability.Logger.Int value) -> string_of_int value
-        | Some (Eta_observability.Logger.Float value) -> Printf.sprintf "%g" value
-        | Some (Eta_observability.Logger.String value) -> value
+        match List.assoc_opt name record.Ox_observability.Logger.fields with
+        | Some (Ox_observability.Logger.Int value) -> string_of_int value
+        | Some (Ox_observability.Logger.Float value) -> Printf.sprintf "%g" value
+        | Some (Ox_observability.Logger.String value) -> value
         | Some _ -> Alcotest.failf "field %s has an unexpected shape" name
         | None -> Alcotest.failf "no field %s" name
       in
@@ -197,16 +197,16 @@ let test_key_never_logged () =
       let client = client ~sw env server ~logger () in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
               ~questions:choice_questions));
       let lines =
-        Eta_observability.Logger.Memory.records memory
-        |> List.map Eta_observability.Logger.to_string
+        Ox_observability.Logger.Memory.records memory
+        |> List.map Ox_observability.Logger.to_string
       in
       Alcotest.(check bool)
         "the key is not in the log" false
         (List.exists
-           (fun line -> contains line (Eta_observability.Redact.expose key))
+           (fun line -> contains line (Ox_observability.Redact.expose key))
            lines))
 
 let () =

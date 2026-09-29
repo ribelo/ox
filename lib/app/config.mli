@@ -21,7 +21,7 @@ type 'cfg t = {
           bounded. *)
   yojson_of_t : 'cfg -> Yojson.Safe.t;
       (** The derived encoder, used by [config check] to print the effective
-          configuration. A secret field of type {!Eta_observability.Redact.t} encodes as
+          configuration. A secret field of type {!Ox_observability.Redact.t} encodes as
           ["<redacted>"]. *)
   env : getenv:(string -> string option) -> 'cfg -> 'cfg;
       (** Environment overrides, applied to the decoded value: a field the service reads

@@ -3,7 +3,7 @@ type histogram_config = float list
 
 let histogram_config bounds =
   let message =
-    "Eta_otel.Meter.histogram_config: boundaries must be finite and strictly ascending"
+    "Ox_otel.Meter.histogram_config: boundaries must be finite and strictly ascending"
   in
   let rec check = function
     | [] -> ()
@@ -45,7 +45,7 @@ type instrument = {
 }
 
 let instrument meter ~name ?(unit_ = "") ?(description = "") ?(attrs = []) kind =
-  if String.trim name = "" then invalid_arg "Eta_otel.Meter: name must not be empty";
+  if String.trim name = "" then invalid_arg "Ox_otel.Meter: name must not be empty";
   { meter; name; description; unit_; kind; attrs }
 
 let counter meter ~name ?unit_ ?description ?attrs () =
@@ -72,9 +72,9 @@ let measurement instrument value =
 let add instrument delta =
   match instrument.kind with
   | Counter _ -> instrument.meter.record (measurement instrument (Float delta))
-  | Histogram _ -> invalid_arg "Eta_otel.Meter.add: a histogram takes records, not adds"
+  | Histogram _ -> invalid_arg "Ox_otel.Meter.add: a histogram takes records, not adds"
 
 let record instrument sample =
   match instrument.kind with
   | Histogram _ -> instrument.meter.record (measurement instrument (Float sample))
-  | Counter _ -> invalid_arg "Eta_otel.Meter.record: a counter takes adds, not records"
+  | Counter _ -> invalid_arg "Ox_otel.Meter.record: a counter takes adds, not records"

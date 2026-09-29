@@ -8,7 +8,7 @@ let () =
       Eio.Switch.run (fun sw ->
           let replies = Eio.Stream.create 64 in
           let correlator =
-            Eta_rpc.Correlator.create ~sw ~clock:env#clock
+            Ox_rpc.Correlator.create ~sw ~clock:env#clock
               ~read:(fun () -> Some (Eio.Stream.take replies))
               ~write:(fun reply -> Eio.Stream.add replies reply)
               ~id:(fun message -> message.id)
@@ -16,11 +16,11 @@ let () =
               ()
           in
           let request = { id = None; payload = 42 } in
-          ignore (Eta_rpc.Correlator.call correlator request);
+          ignore (Ox_rpc.Correlator.call correlator request);
           Gc.full_major ();
           let before = Gc.quick_stat () in
           for _ = 1 to iterations do
-            match Eta_rpc.Correlator.call correlator request with
+            match Ox_rpc.Correlator.call correlator request with
             | Ok reply when reply.payload = 42 -> ()
             | _ -> failwith "correlator reply mismatch"
           done;
@@ -34,4 +34,4 @@ let () =
             ((after.minor_words +. after.major_words -. before.minor_words
             -. before.major_words)
             /. float_of_int iterations);
-          Eta_rpc.Correlator.close correlator))
+          Ox_rpc.Correlator.close correlator))

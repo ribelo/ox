@@ -3,8 +3,8 @@ type policy = {
   backlog : int;
   max_line_bytes : int;
   max_reply_bytes : int;
-  ingress : Eta.Duration.t;
-  egress : Eta.Duration.t;
+  ingress : Ox.Duration.t;
+  egress : Ox.Duration.t;
 }
 
 let default_policy =
@@ -13,8 +13,8 @@ let default_policy =
     backlog = 16;
     max_line_bytes = 65536;
     max_reply_bytes = 65536;
-    ingress = Eta.Duration.seconds 1;
-    egress = Eta.Duration.seconds 1;
+    ingress = Ox.Duration.seconds 1;
+    egress = Ox.Duration.seconds 1;
   }
 
 type error =
@@ -160,8 +160,8 @@ let validate p =
   check (p.backlog > 0) "backlog";
   check (p.max_line_bytes > 0) "max_line_bytes";
   check (p.max_reply_bytes > 0) "max_reply_bytes";
-  check (Eta.Duration.to_ms p.ingress > 0) "ingress";
-  check (Eta.Duration.to_ms p.egress > 0) "egress"
+  check (Ox.Duration.to_ms p.ingress > 0) "ingress";
+  check (Ox.Duration.to_ms p.egress > 0) "egress"
 
 let disconnected = function
   | End_of_file
@@ -196,7 +196,7 @@ let respond ~clock ~policy ~encode ~on_peer_error flow reply =
     on_peer_error `Egress_too_large
   else
     match
-      Eta.Timeout.timeout ~clock policy.egress (fun () ->
+      Ox.Timeout.timeout ~clock policy.egress (fun () ->
           try
             Eio.Flow.copy_string (bytes ^ "\n") flow;
             Ok ()
@@ -217,7 +217,7 @@ let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~error_respo
     | Some reply -> respond ~clock ~policy ~encode ~on_peer_error flow reply
   in
   let ingress =
-    Eta.Timeout.timeout ~clock policy.ingress (fun () ->
+    Ox.Timeout.timeout ~clock policy.ingress (fun () ->
         read_line flow policy.max_line_bytes)
   in
   match ingress with
@@ -234,7 +234,7 @@ let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~error_respo
                 match handler request with Ok x -> Ok x | Error e -> Error (`Handler e))
             | Some d -> (
                 match
-                  Eta.Timeout.timeout ~clock d (fun () ->
+                  Ox.Timeout.timeout ~clock d (fun () ->
                       match handler request with
                       | Ok x -> Ok x
                       | Error e -> Error (`Handler e))

@@ -1,12 +1,12 @@
 (test
  (name run)
  (modules run test_sqlite test_sql_dsl_transaction)
- (libraries eta_sql eta_sql_dsl eio_main alcotest))
+ (libraries ox_sql ox_sql_dsl eio_main alcotest))
 
 (rule
  (alias runtest)
  (deps
   (source_tree soundness)
-  (:eta_sql_cmxa ../../lib/sql/eta_sql.cmxa))
+  (:ox_sql_cmxa ../../lib/sql/ox_sql.cmxa))
  (action
-  (run bash soundness/run.sh %{eta_sql_cmxa})))
+  (run bash soundness/run.sh %{ox_sql_cmxa})))

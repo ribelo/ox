@@ -1,4 +1,4 @@
-open Eta_blocking
+open Ox_blocking
 
 let pool ~sw ?(threads = 1) ?(queued = 1) ?(policy = Pool.Drain) () =
   Pool.create ~sw ~name:"test"
@@ -72,7 +72,7 @@ let timeout_retains_slot () =
       let permit = gate () in
       let hooks = Atomic.make 0 in
       let result =
-        run_result_timeout ~pool:p ~clock:env#clock ~timeout:(Eta.Duration.ms 100)
+        run_result_timeout ~pool:p ~clock:env#clock ~timeout:(Ox.Duration.ms 100)
           ~on_timeout:`Slow
           ~on_cancel:(fun () -> ignore (Atomic.fetch_and_add hooks 1))
           (fun () ->
@@ -240,7 +240,7 @@ let settled_after_timeout_not_before_claim () =
       let started = Eio.Semaphore.make 0 in
       let settled = ref [] in
       (match
-         run_result_timeout ~pool:p ~clock:env#clock ~timeout:(Eta.Duration.ms 50)
+         run_result_timeout ~pool:p ~clock:env#clock ~timeout:(Ox.Duration.ms 50)
            ~on_timeout:()
            ~on_settled:(fun o -> settled := `First o :: !settled)
            (fun () ->
@@ -276,7 +276,7 @@ let settled_after_timeout_not_before_claim () =
       Alcotest.(check bool) "pre-claim callback never ran" false (Atomic.get queued_ran))
 
 let () =
-  Alcotest.run "eta_blocking"
+  Alcotest.run "ox_blocking"
     [
       ( "native",
         [

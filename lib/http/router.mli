@@ -1,10 +1,10 @@
 (** Pure URL path router.
 
-    v1's [eta_router] matcher ([v1:lib/router/]) copied into [eta_http] for inn and nema
+    v1's [eta_router] matcher ([v1:lib/router/]) copied into [ox_http] for inn and nema
     (story ^hserv-e3q9). The module is pure and synchronous — no I/O, no clock, no
     [Effect.t] — so dispatching a request costs one radix-trie walk. It stores the route
     patterns a caller inserts and returns the caller's value with the decoded parameters;
-    turning that into an HTTP response belongs to {!Eta_http.Server}, not here.
+    turning that into an HTTP response belongs to {!Ox_http.Server}, not here.
 
     Route syntax:
     - static: [/users/list]
@@ -15,13 +15,13 @@
 
     Example:
     {[
-    let router = Eta_http.Router.create () in
-    (match Eta_http.Router.insert router "/users/{id}" "user" with
+    let router = Ox_http.Router.create () in
+    (match Ox_http.Router.insert router "/users/{id}" "user" with
     | Ok () -> ()
     | Error _ -> assert false);
-    match Eta_http.Router.at router "/users/978" with
+    match Ox_http.Router.at router "/users/978" with
     | Ok m ->
-        assert (Eta_http.Router.Params.get m.params "id" = Some "978");
+        assert (Ox_http.Router.Params.get m.params "id" = Some "978");
         assert (m.value = "user")
     | Error _ -> assert false
     ]} *)

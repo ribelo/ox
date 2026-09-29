@@ -1,11 +1,11 @@
 (test
  (name run)
  (libraries
-  eta_otel
-  eta_observability
-  eta_http
-  eta_json
-  eta
+  ox_otel
+  ox_observability
+  ox_http
+  ox_json
+  ox
   eio
   eio_main
   yojson

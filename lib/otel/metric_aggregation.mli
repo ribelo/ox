@@ -1,5 +1,5 @@
 (** Pure aggregation of recorded metric points into OTLP metric rows, adapted from
-    [v1:lib/otel/metric_aggregation.ml] with its [Eta.Capabilities] records replaced by
+    [v1:lib/otel/metric_aggregation.ml] with its [Ox.Capabilities] records replaced by
     {!Meter}'s and its gauge, frequency and summary kinds left to the consumer that asks
     for them. Nothing here suspends, observes cancellation or registers a finalizer: a
     table is ordinary mutable state and belongs to exactly one exporter of one domain. *)

@@ -1,4 +1,4 @@
-module H = Eta_http
+module H = Ox_http
 module C = H.Ws_codec
 module W = H.Ws_client
 
@@ -34,14 +34,14 @@ let serve ?(tls = false) server test =
                       if not tls then (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
                       else
                         let ctx =
-                          H.Eta_http_tls_openssl.create_server_ctx
+                          H.Ox_http_tls_openssl.create_server_ctx
                             ~certificate_chain_file:"../localhost.crt"
                             ~private_key_file:"../localhost.key"
                             ~alpn_protocols:[ "http/1.1" ] ()
                         in
                         H.Tls_flow.create
                           ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t)
-                          ~ssl:(H.Eta_http_tls_openssl.create_server_ssl ctx)
+                          ~ssl:(H.Ox_http_tls_openssl.create_server_ssl ctx)
                     in
                     server env flow
                   with Eio.Io _ | End_of_file | H.Tls_flow.Tls_failure _ -> ()));
@@ -72,7 +72,7 @@ let header key headers = List.assoc key headers
 let upgrade ?(status = 101) ?(accept = true) flow headers =
   let value =
     if accept then
-      C.accept_key ~sha1:H.Eta_http_tls_openssl.sha1 (header "sec-websocket-key" headers)
+      C.accept_key ~sha1:H.Ox_http_tls_openssl.sha1 (header "sec-websocket-key" headers)
     else "invalid"
   in
   Eio.Flow.copy_string
@@ -190,7 +190,7 @@ let test_timeout () =
     (fun env sw url ->
       match
         W.connect ~sw ~net:env#net ~clock:env#clock
-          ~establishment_timeout:(Eta.Duration.ms 20) url
+          ~establishment_timeout:(Ox.Duration.ms 20) url
       with
       | Error `Timeout -> ()
       | _ -> Alcotest.fail "upgrade timeout expected")

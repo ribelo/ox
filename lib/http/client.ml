@@ -34,7 +34,7 @@ let has_token needle value =
 type 'c reader = {
   flow : Eio.Flow.two_way_ty Eio.Resource.t;
   clock : 'c Eio.Time.clock;
-  idle : Eta.Duration.t option;
+  idle : Ox.Duration.t option;
   input : Cstruct.t;
   mutable pos : int;
   mutable available : int;
@@ -49,7 +49,7 @@ let refill r =
     | None -> perform ()
     | Some delay -> (
         match
-          Eta.Timeout.timeout ~clock:r.clock delay (fun () ->
+          Ox.Timeout.timeout ~clock:r.clock delay (fun () ->
               match perform () with Ok n -> Ok n | Error _ -> Error `Closed)
         with
         | Error `Timeout -> Error `Idle_timeout
@@ -219,9 +219,9 @@ let request (T (_sw, net, clock, tls)) ~method_ ~url ?(headers = []) ?body ?dead
                         match Url.scheme target with
                         | Url.Http -> (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
                         | Url.Https ->
-                            let ssl_ctx = Eta_http_tls_openssl.create_ctx () in
+                            let ssl_ctx = Ox_http_tls_openssl.create_ctx () in
                             Option.iter
-                              (Eta_http_tls_openssl.ctx_load_ca ssl_ctx)
+                              (Ox_http_tls_openssl.ctx_load_ca ssl_ctx)
                               tls.ca_file;
                             let host = Url.host target in
                             let hostname, ip =
@@ -231,7 +231,7 @@ let request (T (_sw, net, clock, tls)) ~method_ ~url ?(headers = []) ?body ?dead
                               with Failure _ -> (Some host, None)
                             in
                             let ssl =
-                              Eta_http_tls_openssl.create_ssl ssl_ctx ~hostname ~ip
+                              Ox_http_tls_openssl.create_ssl ssl_ctx ~hostname ~ip
                                 ~alpn_protocols:[ "http/1.1" ]
                             in
                             Tls_flow.create
@@ -265,4 +265,4 @@ let request (T (_sw, net, clock, tls)) ~method_ ~url ?(headers = []) ?body ?dead
   in
   match deadline with
   | None -> perform ()
-  | Some delay -> Eta.Timeout.timeout ~clock delay perform
+  | Some delay -> Ox.Timeout.timeout ~clock delay perform

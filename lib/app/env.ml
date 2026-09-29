@@ -1,1 +1,1 @@
-type 'base t = { base : 'base; logger : Eta_observability.Logger.t }
+type 'base t = { base : 'base; logger : Ox_observability.Logger.t }

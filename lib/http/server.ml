@@ -550,7 +550,7 @@ let serve_flow ~clock:_ ~config ~stopping ~stop ~busy flow handler =
       with _ -> ())
   | End_of_file -> ()
 
-let run_h1_on_socket ~sw:_ ~clock ?stop ?(drain_timeout = Eta.Duration.seconds 30)
+let run_h1_on_socket ~sw:_ ~clock ?stop ?(drain_timeout = Ox.Duration.seconds 30)
     ?(config = Config.default) ?(on_error = fun _ -> ()) ~socket handler =
   if
     config.max_request_line_bytes <= 0
@@ -593,7 +593,7 @@ let run_h1_on_socket ~sw:_ ~clock ?stop ?(drain_timeout = Eta.Duration.seconds 3
         stopping := true;
         close_idle ();
         try
-          Eio.Time.with_timeout_exn clock (Eta.Duration.to_seconds_float drain_timeout)
+          Eio.Time.with_timeout_exn clock (Ox.Duration.to_seconds_float drain_timeout)
             (fun () ->
               while !active > 0 do
                 Eio.Fiber.yield ()

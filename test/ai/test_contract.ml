@@ -8,7 +8,7 @@
 open Test_helpers
 
 let test_evaluate () =
-  (* ^nso-5hom: Eta_ai_systemone.create + evaluate is one call for one decision. *)
+  (* ^nso-5hom: Ox_ai_systemone.create + evaluate is one call for one decision. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw (Fake_server.ok response_body)
@@ -16,7 +16,7 @@ let test_evaluate () =
       let client = client ~sw env server () in
       let response =
         expect_ok
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int) "one connection" 1 (Fake_server.connections server);
@@ -27,37 +27,37 @@ let test_evaluate () =
         (List.assoc_opt "host" headers);
       Alcotest.(check (option string))
         "bearer header"
-        (Some ("Bearer " ^ Eta_observability.Redact.expose key))
+        (Some ("Bearer " ^ Ox_observability.Redact.expose key))
         (List.assoc_opt "authorization" headers);
       Alcotest.(check (option string))
         "content type" (Some "application/json")
         (List.assoc_opt "content-type" headers);
-      Alcotest.(check string) "model" model response.Eta_ai_systemone.Codecs.model;
+      Alcotest.(check string) "model" model response.Ox_ai_systemone.Codecs.model;
       Alcotest.(check int)
-        "input tokens" 10 response.Eta_ai_systemone.Codecs.usage.input_tokens;
+        "input tokens" 10 response.Ox_ai_systemone.Codecs.usage.input_tokens;
       Alcotest.(check int)
-        "output tokens" 2 response.Eta_ai_systemone.Codecs.usage.output_tokens;
+        "output tokens" 2 response.Ox_ai_systemone.Codecs.usage.output_tokens;
       Alcotest.(check (float 1e-12))
-        "cost" 0.0001 response.Eta_ai_systemone.Codecs.usage.cost;
+        "cost" 0.0001 response.Ox_ai_systemone.Codecs.usage.cost;
       Alcotest.(check (option string))
-        "request id" (Some "gen-1") response.Eta_ai_systemone.Codecs.id;
+        "request id" (Some "gen-1") response.Ox_ai_systemone.Codecs.id;
       let answer =
-        match Eta_ai_systemone.Client.answer "operation" response with
-        | Some (Eta_ai_systemone.Codecs.Choice answer) -> answer
-        | Some (Eta_ai_systemone.Codecs.Score _) ->
+        match Ox_ai_systemone.Client.answer "operation" response with
+        | Some (Ox_ai_systemone.Codecs.Choice answer) -> answer
+        | Some (Ox_ai_systemone.Codecs.Score _) ->
             Alcotest.fail "a score answer for a choice question"
         | None -> Alcotest.fail "the reply did not name the operation answer"
       in
-      Alcotest.(check string) "choice" "CLICK" answer.Eta_ai_systemone.Types.choice;
+      Alcotest.(check string) "choice" "CLICK" answer.Ox_ai_systemone.Types.choice;
       Alcotest.(check (option (float 1e-12)))
         "chosen probability" (Some 0.9)
-        (Eta_ai_systemone.Codecs.probability "CLICK" answer);
+        (Ox_ai_systemone.Codecs.probability "CLICK" answer);
       Alcotest.(check (option (float 1e-12)))
         "other probability" (Some 0.1)
-        (Eta_ai_systemone.Codecs.probability "DONE" answer);
+        (Ox_ai_systemone.Codecs.probability "DONE" answer);
       Alcotest.(check (option (float 1e-12)))
         "absent probability" None
-        (Eta_ai_systemone.Codecs.probability "BLOCKED" answer))
+        (Ox_ai_systemone.Codecs.probability "BLOCKED" answer))
 
 let test_choice_question () =
   (* ^nso-jz8v: the choice question is what model.py builds: instructions as raw JSON and
@@ -69,7 +69,7 @@ let test_choice_question () =
       let client = client ~sw env server () in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
               ~questions:choice_questions));
       let body = jbody server in
       Alcotest.(check string) "model" model (text_of (member "model" body));
@@ -104,14 +104,14 @@ let test_score_question () =
       let questions =
         [
           ( "how_wrong",
-            Eta_ai_systemone.Codecs.score
+            Ox_ai_systemone.Codecs.score
               ~instructions:
-                (Eta_json.object_ [ ("goal", Some (Eta_json.string "count errors")) ])
+                (Ox_json.object_ [ ("goal", Some (Ox_json.string "count errors")) ])
               ~criteria:[ "none"; "a few"; "many" ] );
         ]
       in
       ignore
-        (expect_ok (Eta_ai_systemone.Client.evaluate client ~deadline ~state ~questions));
+        (expect_ok (Ox_ai_systemone.Client.evaluate client ~deadline ~state ~questions));
       let body = jbody server in
       let question = member "how_wrong" (member "questions" body) in
       Alcotest.(check string)
@@ -126,19 +126,19 @@ let test_score_question () =
 
 let test_question_names () =
   let choice =
-    Eta_ai_systemone.Codecs.choice ~instructions:`Null ~criteria:[ ("a", `Null) ]
-  and score = Eta_ai_systemone.Codecs.score ~instructions:`Null ~criteria:[ "a" ] in
-  Alcotest.(check string) "choice" "choice" (Eta_ai_systemone.Codecs.question_name choice);
-  Alcotest.(check string) "score" "score" (Eta_ai_systemone.Codecs.question_name score)
+    Ox_ai_systemone.Codecs.choice ~instructions:`Null ~criteria:[ ("a", `Null) ]
+  and score = Ox_ai_systemone.Codecs.score ~instructions:`Null ~criteria:[ "a" ] in
+  Alcotest.(check string) "choice" "choice" (Ox_ai_systemone.Codecs.question_name choice);
+  Alcotest.(check string) "score" "score" (Ox_ai_systemone.Codecs.question_name score)
 
 let test_endpoints () =
   (* ^nso-5hom: both endpoints serve the same contract and are named constants. *)
   Alcotest.(check string)
     "openrouter default" "https://openrouter.ai/api/v1/systemone"
-    Eta_ai_systemone.Client.default_endpoint;
+    Ox_ai_systemone.Client.default_endpoint;
   Alcotest.(check string)
     "typesafe" "https://api.typesafe.ai/v1/systemone"
-    Eta_ai_systemone.Client.typesafe_endpoint
+    Ox_ai_systemone.Client.typesafe_endpoint
 
 let test_configurable_endpoint () =
   (* The endpoint is configuration, not a constant, so a local server and the other
@@ -152,7 +152,7 @@ let test_configurable_endpoint () =
       in
       ignore
         (expect_ok
-           (Eta_ai_systemone.Client.evaluate client ~deadline ~state ~questions:[]));
+           (Ox_ai_systemone.Client.evaluate client ~deadline ~state ~questions:[]));
       let _, headers, _ = Option.get (Fake_server.request server) in
       Alcotest.(check (option string))
         "custom path" (Some "/custom/path")

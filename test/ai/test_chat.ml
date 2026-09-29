@@ -4,12 +4,12 @@
    reasoning control is written in the two forms OpenRouter documents and omitted when the
    caller says nothing. ^nchat-02vr: `~json_object:true` requires a JSON object.
    ^nchat-wtog: decoding, bounds, the two-attempt policy and the typed errors are the
-   System One client's, because both share {!Eta_ai}. ^nchat-96zw: usage at debug.
+   System One client's, because both share {!Ox_ai}. ^nchat-96zw: usage at debug.
    ^nchat-qu3j: the provider's own cost is read beside the tokens when it reports one. *)
 
 open Chat_helpers
-module Codecs = Eta_ai_chat.Codecs
-module Types = Eta_ai_chat.Types
+module Codecs = Ox_ai_chat.Codecs
+module Types = Ox_ai_chat.Types
 
 let expect_content expected completion =
   Alcotest.(check string) "content" expected completion.Codecs.content
@@ -38,7 +38,7 @@ let test_complete () =
         (List.assoc_opt "host" headers);
       Alcotest.(check (option string))
         "bearer header"
-        (Some ("Bearer " ^ Eta_observability.Redact.expose chat_key))
+        (Some ("Bearer " ^ Ox_observability.Redact.expose chat_key))
         (List.assoc_opt "authorization" headers);
       Alcotest.(check (option string))
         "content type" (Some "application/json")
@@ -200,15 +200,15 @@ let test_usage_cost_absent () =
         "no reported cost" None absent.Codecs.usage.cost;
       Alcotest.(check int) "the tokens still read" 14 absent.Codecs.usage.total_tokens;
       let logged =
-        Eta_observability.Logger.Memory.find ~level:Eta_observability.Logger.Debug memory
+        Ox_observability.Logger.Memory.find ~level:Ox_observability.Logger.Debug memory
         |> List.filter (fun record ->
-            String.equal record.Eta_observability.Logger.msg "chat")
+            String.equal record.Ox_observability.Logger.msg "chat")
       in
       (match logged with
       | record :: _ ->
           Alcotest.(check bool)
             "no cost field in the log" false
-            (List.mem_assoc "cost" record.Eta_observability.Logger.fields)
+            (List.mem_assoc "cost" record.Ox_observability.Logger.fields)
       | [] -> Alcotest.fail "no chat usage record");
       let null = expect_ok (complete client ()) in
       Alcotest.(check (option (float 0.)))
@@ -224,14 +224,13 @@ let refusal where body =
       Alcotest.(check int) "one attempt" 1 (Chat_server.connections server);
       Alcotest.(check bool)
         ("^nchat-wtog " ^ where ^ " is not retryable")
-        false
-        (Eta_ai.Error.retryable error);
+        false (Ox_ai.Error.retryable error);
       error)
 
 let expect_message needle error =
   Alcotest.(check bool)
     ("the error names " ^ needle) true
-    (contains (Eta_ai.Error.to_string error) needle)
+    (contains (Ox_ai.Error.to_string error) needle)
 
 let test_no_choices () =
   (* ^nchat-wtog: a reply that names no completion is refused, not defaulted. *)
@@ -286,7 +285,7 @@ let test_statuses () =
           let client = client ~sw env server () in
           let error = expect_error (complete client ()) in
           Alcotest.(check int) "one attempt" 1 (Chat_server.connections server);
-          let text = Eta_ai.Error.to_string error in
+          let text = Ox_ai.Error.to_string error in
           Alcotest.(check bool)
             (Printf.sprintf "%d says %s" status expected)
             true (contains text expected);
@@ -322,14 +321,14 @@ let test_429_exhausted () =
       let client = client ~sw env server () in
       let error = expect_error (complete client ()) in
       Alcotest.(check int) "exactly two attempts" 2 (Chat_server.connections server);
-      Alcotest.(check bool) "^nchat-wtog retryable" true (Eta_ai.Error.retryable error))
+      Alcotest.(check bool) "^nchat-wtog retryable" true (Ox_ai.Error.retryable error))
 
 let test_transport_failure_retries () =
   (* ^nchat-wtog: the first attempt fails on the wire, so the second is tried. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
-          (Chat_server.after Eta.Duration.zero Fake_server.Silent
+          (Chat_server.after Ox.Duration.zero Fake_server.Silent
           @ Chat_server.ok (Chat_server.reply ()))
       in
       let client = client ~sw env server () in
@@ -342,13 +341,13 @@ let test_attempt_timeout_is_retryable () =
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
-          (Chat_server.after (Eta.Duration.ms 60) Fake_server.Silent
-          @ Chat_server.after (Eta.Duration.ms 60) Fake_server.Silent)
+          (Chat_server.after (Ox.Duration.ms 60) Fake_server.Silent
+          @ Chat_server.after (Ox.Duration.ms 60) Fake_server.Silent)
       in
       let client = client ~sw env server ~timeout:attempt_timeout () in
       (match complete client () with
       | Error `Timeout -> ()
-      | Error error -> Alcotest.failf "not Timeout: %s" (Eta_ai.Error.to_string error)
+      | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "a stalled attempt returned an answer");
       Alcotest.(check int) "two attempts" 2 (Chat_server.connections server))
 
@@ -367,7 +366,7 @@ let test_request_bound () =
           Alcotest.(check bool) "the length is over it" true (length > limit);
           Alcotest.(check int) "nothing was sent" 0 (Chat_server.connections server)
       | Error error ->
-          Alcotest.failf "not Input_too_large: %s" (Eta_ai.Error.to_string error))
+          Alcotest.failf "not Input_too_large: %s" (Ox_ai.Error.to_string error))
 
 let test_response_bound () =
   (* ^nchat-wtog: over 1 MiB is rejected after one attempt, as the reference's bound read
@@ -382,7 +381,7 @@ let test_response_bound () =
       Alcotest.(check int) "one attempt" 1 (Chat_server.connections server);
       Alcotest.(check bool)
         "refused as an invalid response" true
-        (contains (Eta_ai.Error.to_string error) "invalid response"))
+        (contains (Ox_ai.Error.to_string error) "invalid response"))
 
 let test_expired_deadline () =
   (* ^nchat-wtog: a deadline already passed sends nothing. *)
@@ -391,9 +390,9 @@ let test_expired_deadline () =
         Chat_server.serve ~net:env#net ~clock:env#clock ~sw [ Chat_server.reply () ]
       in
       let client = client ~sw env server () in
-      match complete client ~deadline:Eta.Duration.zero () with
+      match complete client ~deadline:Ox.Duration.zero () with
       | Error `Timeout -> ()
-      | Error error -> Alcotest.failf "not Timeout: %s" (Eta_ai.Error.to_string error)
+      | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "an expired deadline was ignored")
 
 let test_completion_of_empty_reply () =
@@ -458,21 +457,21 @@ let test_usage_logged () =
       let client = client ~sw env server ~logger () in
       ignore (expect_ok (complete client ()));
       let records =
-        Eta_observability.Logger.Memory.find ~level:Eta_observability.Logger.Debug memory
+        Ox_observability.Logger.Memory.find ~level:Ox_observability.Logger.Debug memory
       in
       let record =
         match
           List.find_opt
-            (fun record -> String.equal record.Eta_observability.Logger.msg "chat")
+            (fun record -> String.equal record.Ox_observability.Logger.msg "chat")
             records
         with
         | Some record -> record
         | None -> Alcotest.fail "no chat usage record"
       in
       let field name =
-        match List.assoc_opt name record.Eta_observability.Logger.fields with
-        | Some (Eta_observability.Logger.Int value) -> string_of_int value
-        | Some (Eta_observability.Logger.String value) -> value
+        match List.assoc_opt name record.Ox_observability.Logger.fields with
+        | Some (Ox_observability.Logger.Int value) -> string_of_int value
+        | Some (Ox_observability.Logger.String value) -> value
         | Some _ -> Alcotest.failf "field %s has an unexpected shape" name
         | None -> Alcotest.failf "no field %s" name
       in
@@ -480,8 +479,8 @@ let test_usage_logged () =
       Alcotest.(check string) "completion tokens" "3" (field "completion_tokens");
       Alcotest.(check string) "total tokens" "14" (field "total_tokens");
       let float_field name =
-        match List.assoc_opt name record.Eta_observability.Logger.fields with
-        | Some (Eta_observability.Logger.Float value) -> value
+        match List.assoc_opt name record.Ox_observability.Logger.fields with
+        | Some (Ox_observability.Logger.Float value) -> value
         | Some _ -> Alcotest.failf "field %s has an unexpected shape" name
         | None -> Alcotest.failf "no field %s" name
       in
@@ -499,13 +498,13 @@ let test_key_never_logged () =
       let client = client ~sw env server ~logger () in
       ignore (expect_ok (complete client ()));
       let lines =
-        Eta_observability.Logger.Memory.records memory
-        |> List.map Eta_observability.Logger.to_string
+        Ox_observability.Logger.Memory.records memory
+        |> List.map Ox_observability.Logger.to_string
       in
       Alcotest.(check bool)
         "the key is not in the log" false
         (List.exists
-           (fun line -> contains line (Eta_observability.Redact.expose chat_key))
+           (fun line -> contains line (Ox_observability.Redact.expose chat_key))
            lines))
 
 let () =

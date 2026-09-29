@@ -1,6 +1,6 @@
 (* Historical logger cases ^nport-lve1, adapted to the journal contract.
    v1's pretty/logfmt and stdout/stderr routes no longer exist. *)
-open Eta_observability
+open Ox_observability
 
 let check_string = Alcotest.(check string)
 let check_int = Alcotest.(check int)

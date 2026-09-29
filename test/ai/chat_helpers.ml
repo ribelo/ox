@@ -7,15 +7,15 @@
    therefore real and short. *)
 
 let chat_model = "inception/mercury-2.5"
-let chat_key = Eta_observability.Redact.make "test-chat-key"
+let chat_key = Ox_observability.Redact.make "test-chat-key"
 
 (* Long enough that both attempts and the backoff fit inside it. *)
-let chat_deadline = Eta.Duration.seconds 5
+let chat_deadline = Ox.Duration.seconds 5
 
 (* One attempt's read cap, when a test wants an attempt to time out quickly. *)
-let attempt_timeout = Eta.Duration.ms 50
-let system = Eta_ai_chat.Types.{ role = System; content = "Answer with one JSON object." }
-let user content = Eta_ai_chat.Types.{ role = User; content }
+let attempt_timeout = Ox.Duration.ms 50
+let system = Ox_ai_chat.Types.{ role = System; content = "Answer with one JSON object." }
+let user content = Ox_ai_chat.Types.{ role = User; content }
 let chat_messages = [ system; user {|{"goal":"type ada"}|} ]
 
 (* The helpers `test_helpers.ml` keeps for both AI clients. *)
@@ -35,18 +35,18 @@ let member_opt name json =
 let has_member name json = Option.is_some (member_opt name json)
 
 let client ~sw env server ?endpoint ?logger ?timeout () =
-  let http = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+  let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
   let logger =
     match logger with Some logger -> logger | None -> fst (memory_logger env)
   in
   let endpoint =
     match endpoint with Some endpoint -> endpoint | None -> Chat_server.url server
   in
-  Eta_ai_chat.Chat.create ~http ~clock:env#clock ~logger ~endpoint ~api_key:chat_key
+  Ox_ai_chat.Chat.create ~http ~clock:env#clock ~logger ~endpoint ~api_key:chat_key
     ?timeout ()
 
 (* One call with the story's defaults filled in, so a test says only what it tests. *)
 let complete client ?(model = chat_model) ?(deadline = chat_deadline)
     ?(messages = chat_messages) ?max_tokens ?json_object ?reasoning () =
-  Eta_ai_chat.Chat.complete client ~deadline ~model ~messages ?max_tokens ?json_object
+  Ox_ai_chat.Chat.complete client ~deadline ~model ~messages ?max_tokens ?json_object
     ?reasoning ()

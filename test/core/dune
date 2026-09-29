@@ -2,9 +2,9 @@
  (name run)
  (modules run pure v1_port v1_more v1_completion support supervised)
  (deps
-  ../../lib/eta/dune
-  ../../docs/why-next.md
+  ../../lib/ox/dune
+  ../../docs/why-ox.md
   ../../docs/modes.md
-  (glob_files ../../lib/eta/*.ml)
-  (glob_files ../../lib/eta/*.mli))
- (libraries eta eio eio_main eio.mock alcotest))
+  (glob_files ../../lib/ox/*.ml)
+  (glob_files ../../lib/ox/*.mli))
+ (libraries ox eio eio_main eio.mock alcotest))

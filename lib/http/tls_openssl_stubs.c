@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT */
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -21,7 +21,7 @@
 #include "tls_openssl_alloc.h"
 
 /* Cipher policy: TLS 1.2 ECDHE RSA/ECDSA AEAD only, no FFDHE. */
-#define ETA_CIPHER_LIST \
+#define OX_CIPHER_LIST \
   "ECDHE-RSA-AES128-GCM-SHA256:" \
   "ECDHE-RSA-AES256-GCM-SHA384:" \
   "ECDHE-RSA-CHACHA20-POLY1305:" \
@@ -29,12 +29,12 @@
   "ECDHE-ECDSA-AES256-GCM-SHA384:" \
   "ECDHE-ECDSA-CHACHA20-POLY1305"
 
-#define ETA_TLS13_CIPHER_LIST \
+#define OX_TLS13_CIPHER_LIST \
   "TLS_AES_128_GCM_SHA256:" \
   "TLS_AES_256_GCM_SHA384:" \
   "TLS_CHACHA20_POLY1305_SHA256"
 
-static const unsigned char ETA_SESSION_ID_CONTEXT[] = "eta-http";
+static const unsigned char OX_SESSION_ID_CONTEXT[] = "ox-http";
 
 /* ------------------------------------------------------------------ */
 /* SSL_CTX — custom block; finalizer frees the context.                */
@@ -42,27 +42,27 @@ static const unsigned char ETA_SESSION_ID_CONTEXT[] = "eta-http";
 typedef struct {
   unsigned char *wire;
   unsigned int len;
-} eta_alpn_config;
+} ox_alpn_config;
 
 typedef struct {
   char *name;
   SSL_CTX *ctx;
-} eta_sni_entry;
+} ox_sni_entry;
 
 typedef struct {
-  eta_sni_entry *entries;
+  ox_sni_entry *entries;
   size_t count;
   int require_match;
-} eta_sni_config;
+} ox_sni_config;
 
 typedef struct {
   SSL_CTX *ctx;
-} eta_ssl_ctx_box;
+} ox_ssl_ctx_box;
 
-static int eta_alpn_ex_index = -1;
-static int eta_sni_ex_index = -1;
+static int ox_alpn_ex_index = -1;
+static int ox_sni_ex_index = -1;
 
-static void eta_alpn_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+static void ox_alpn_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
                              int idx, long argl, void *argp)
 {
   (void)parent;
@@ -70,14 +70,14 @@ static void eta_alpn_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
   (void)idx;
   (void)argl;
   (void)argp;
-  eta_alpn_config *alpn = (eta_alpn_config *)ptr;
+  ox_alpn_config *alpn = (ox_alpn_config *)ptr;
   if (alpn != NULL) {
-    eta_tls_free(alpn->wire);
-    eta_tls_free(alpn);
+    ox_tls_free(alpn->wire);
+    ox_tls_free(alpn);
   }
 }
 
-static void eta_sni_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+static void ox_sni_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
                             int idx, long argl, void *argp)
 {
   (void)parent;
@@ -85,38 +85,38 @@ static void eta_sni_ex_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
   (void)idx;
   (void)argl;
   (void)argp;
-  eta_sni_config *sni = (eta_sni_config *)ptr;
+  ox_sni_config *sni = (ox_sni_config *)ptr;
   if (sni != NULL) {
     for (size_t i = 0; i < sni->count; i++) {
-      eta_tls_free(sni->entries[i].name);
+      ox_tls_free(sni->entries[i].name);
       if (sni->entries[i].ctx != NULL) {
         SSL_CTX_free(sni->entries[i].ctx);
       }
     }
-    eta_tls_free(sni->entries);
-    eta_tls_free(sni);
+    ox_tls_free(sni->entries);
+    ox_tls_free(sni);
   }
 }
 
-static int eta_alpn_ex_index_get(void)
+static int ox_alpn_ex_index_get(void)
 {
-  if (eta_alpn_ex_index < 0) {
-    eta_alpn_ex_index =
-        SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, eta_alpn_ex_free);
+  if (ox_alpn_ex_index < 0) {
+    ox_alpn_ex_index =
+        SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, ox_alpn_ex_free);
   }
-  return eta_alpn_ex_index;
+  return ox_alpn_ex_index;
 }
 
-static int eta_sni_ex_index_get(void)
+static int ox_sni_ex_index_get(void)
 {
-  if (eta_sni_ex_index < 0) {
-    eta_sni_ex_index =
-        SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, eta_sni_ex_free);
+  if (ox_sni_ex_index < 0) {
+    ox_sni_ex_index =
+        SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, ox_sni_ex_free);
   }
-  return eta_sni_ex_index;
+  return ox_sni_ex_index;
 }
 
-static int eta_tls_compare_handles(const void *left, const void *right)
+static int ox_tls_compare_handles(const void *left, const void *right)
 {
   uintptr_t a = (uintptr_t)left;
   uintptr_t b = (uintptr_t)right;
@@ -129,57 +129,57 @@ static int eta_tls_compare_handles(const void *left, const void *right)
   return 0;
 }
 
-static int eta_ssl_ctx_cmp(value v1, value v2)
+static int ox_ssl_ctx_cmp(value v1, value v2)
 {
-  eta_ssl_ctx_box *b1 = *((eta_ssl_ctx_box **)Data_custom_val(v1));
-  eta_ssl_ctx_box *b2 = *((eta_ssl_ctx_box **)Data_custom_val(v2));
-  return eta_tls_compare_handles(b1, b2);
+  ox_ssl_ctx_box *b1 = *((ox_ssl_ctx_box **)Data_custom_val(v1));
+  ox_ssl_ctx_box *b2 = *((ox_ssl_ctx_box **)Data_custom_val(v2));
+  return ox_tls_compare_handles(b1, b2);
 }
 
-static intnat eta_ssl_ctx_hash(value v)
+static intnat ox_ssl_ctx_hash(value v)
 {
-  eta_ssl_ctx_box *box = *((eta_ssl_ctx_box **)Data_custom_val(v));
+  ox_ssl_ctx_box *box = *((ox_ssl_ctx_box **)Data_custom_val(v));
   return (intnat)box;
 }
 
-static void eta_ssl_ctx_finalize(value v)
+static void ox_ssl_ctx_finalize(value v)
 {
-  eta_ssl_ctx_box *box = *((eta_ssl_ctx_box **)Data_custom_val(v));
+  ox_ssl_ctx_box *box = *((ox_ssl_ctx_box **)Data_custom_val(v));
   if (box != NULL) {
     if (box->ctx != NULL) {
       SSL_CTX_free(box->ctx);
     }
-    eta_tls_free(box);
+    ox_tls_free(box);
   }
 }
 
-static struct custom_operations eta_ssl_ctx_ops = {
-  "eta.openssl.ctx",
-  eta_ssl_ctx_finalize,
-  eta_ssl_ctx_cmp,
-  eta_ssl_ctx_hash,
+static struct custom_operations ox_ssl_ctx_ops = {
+  "ox.openssl.ctx",
+  ox_ssl_ctx_finalize,
+  ox_ssl_ctx_cmp,
+  ox_ssl_ctx_hash,
   custom_serialize_default,
   custom_deserialize_default,
   custom_compare_ext_default,
   custom_fixed_length_default
 };
 
-static SSL_CTX *eta_ssl_ctx_val(value v)
+static SSL_CTX *ox_ssl_ctx_val(value v)
 {
-  eta_ssl_ctx_box *box = *((eta_ssl_ctx_box **)Data_custom_val(v));
+  ox_ssl_ctx_box *box = *((ox_ssl_ctx_box **)Data_custom_val(v));
   return box->ctx;
 }
 
-static value eta_root_ssl_ctx_owner(void)
+static value ox_root_ssl_ctx_owner(void)
 {
-  value v = caml_alloc_custom(&eta_ssl_ctx_ops, sizeof(void *), 0, 1);
+  value v = caml_alloc_custom(&ox_ssl_ctx_ops, sizeof(void *), 0, 1);
   *((void **)Data_custom_val(v)) = NULL;
   return v;
 }
 
-static int eta_publish_ssl_ctx(value v, SSL_CTX *ctx)
+static int ox_publish_ssl_ctx(value v, SSL_CTX *ctx)
 {
-  eta_ssl_ctx_box *box = eta_tls_alloc(sizeof(*box));
+  ox_ssl_ctx_box *box = ox_tls_alloc(sizeof(*box));
   if (box == NULL) {
     return 0;
   }
@@ -188,7 +188,7 @@ static int eta_publish_ssl_ctx(value v, SSL_CTX *ctx)
   return 1;
 }
 
-static void eta_tls_require_ba_slice(value v_buf, value v_off, value v_len,
+static void ox_tls_require_ba_slice(value v_buf, value v_off, value v_len,
                                      size_t *off_out, size_t *len_out,
                                      int require_bio_int)
 {
@@ -209,7 +209,7 @@ static void eta_tls_require_ba_slice(value v_buf, value v_off, value v_len,
   *len_out = (size_t)len;
 }
 
-CAMLprim value eta_openssl_random_bytes(value v_bytes, value v_off, value v_len)
+CAMLprim value ox_openssl_random_bytes(value v_bytes, value v_off, value v_len)
 {
   CAMLparam3(v_bytes, v_off, v_len);
   intnat off = Long_val(v_off);
@@ -229,7 +229,7 @@ CAMLprim value eta_openssl_random_bytes(value v_bytes, value v_off, value v_len)
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value eta_openssl_sha1(value v_input)
+CAMLprim value ox_openssl_sha1(value v_input)
 {
   CAMLparam1(v_input);
   unsigned char digest[20];
@@ -249,7 +249,7 @@ CAMLprim value eta_openssl_sha1(value v_input)
    reference to its SSL_CTX (via SSL_new -> SSL_CTX_up_ref), so
    SSL_free decrements the ctx refcount automatically.                */
 
-static void eta_ssl_finalize(value v)
+static void ox_ssl_finalize(value v)
 {
   void **data = (void **)Data_custom_val(v);
   SSL *ssl = (SSL *)data[0];
@@ -258,44 +258,44 @@ static void eta_ssl_finalize(value v)
   }
 }
 
-static int eta_ssl_cmp(value v1, value v2)
+static int ox_ssl_cmp(value v1, value v2)
 {
-  return eta_tls_compare_handles(*((void **)Data_custom_val(v1)),
+  return ox_tls_compare_handles(*((void **)Data_custom_val(v1)),
                                  *((void **)Data_custom_val(v2)));
 }
 
-static intnat eta_ssl_hash(value v)
+static intnat ox_ssl_hash(value v)
 {
   return (intnat)*((void **)Data_custom_val(v));
 }
 
-static struct custom_operations eta_ssl_ops = {
-  "eta.openssl.ssl",
-  eta_ssl_finalize,
-  eta_ssl_cmp,
-  eta_ssl_hash,
+static struct custom_operations ox_ssl_ops = {
+  "ox.openssl.ssl",
+  ox_ssl_finalize,
+  ox_ssl_cmp,
+  ox_ssl_hash,
   custom_serialize_default,
   custom_deserialize_default,
   custom_compare_ext_default,
   custom_fixed_length_default
 };
 
-static value eta_alloc_ssl(SSL *ssl)
+static value ox_alloc_ssl(SSL *ssl)
 {
-  value v = caml_alloc_custom(&eta_ssl_ops, sizeof(void *), 0, 1);
+  value v = caml_alloc_custom(&ox_ssl_ops, sizeof(void *), 0, 1);
   void **data = (void **)Data_custom_val(v);
   data[0] = ssl;
   return v;
 }
 
-static SSL *eta_ssl_val(value v)
+static SSL *ox_ssl_val(value v)
 {
   return ((SSL **)Data_custom_val(v))[0];
 }
 
 /* SSL_SESSION — custom block owns one SSL_SESSION reference. */
 
-static void eta_ssl_session_finalize(value v)
+static void ox_ssl_session_finalize(value v)
 {
   SSL_SESSION *session = *((SSL_SESSION **)Data_custom_val(v));
   if (session != NULL) {
@@ -303,36 +303,36 @@ static void eta_ssl_session_finalize(value v)
   }
 }
 
-static int eta_ssl_session_cmp(value v1, value v2)
+static int ox_ssl_session_cmp(value v1, value v2)
 {
-  return eta_tls_compare_handles(*((void **)Data_custom_val(v1)),
+  return ox_tls_compare_handles(*((void **)Data_custom_val(v1)),
                                  *((void **)Data_custom_val(v2)));
 }
 
-static intnat eta_ssl_session_hash(value v)
+static intnat ox_ssl_session_hash(value v)
 {
   return (intnat)*((void **)Data_custom_val(v));
 }
 
-static struct custom_operations eta_ssl_session_ops = {
-  "eta.openssl.session",
-  eta_ssl_session_finalize,
-  eta_ssl_session_cmp,
-  eta_ssl_session_hash,
+static struct custom_operations ox_ssl_session_ops = {
+  "ox.openssl.session",
+  ox_ssl_session_finalize,
+  ox_ssl_session_cmp,
+  ox_ssl_session_hash,
   custom_serialize_default,
   custom_deserialize_default,
   custom_compare_ext_default,
   custom_fixed_length_default
 };
 
-static value eta_alloc_ssl_session(SSL_SESSION *session)
+static value ox_alloc_ssl_session(SSL_SESSION *session)
 {
-  value v = caml_alloc_custom(&eta_ssl_session_ops, sizeof(void *), 0, 1);
+  value v = caml_alloc_custom(&ox_ssl_session_ops, sizeof(void *), 0, 1);
   *((void **)Data_custom_val(v)) = session;
   return v;
 }
 
-static SSL_SESSION *eta_ssl_session_val(value v)
+static SSL_SESSION *ox_ssl_session_val(value v)
 {
   return ((SSL_SESSION **)Data_custom_val(v))[0];
 }
@@ -340,7 +340,7 @@ static SSL_SESSION *eta_ssl_session_val(value v)
 /* Build ALPN protocol list in wire format.  Returns a freshly
    allocated buffer (or NULL on failure).  *out_len receives the
    total wire length. */
-static unsigned char *eta_build_alpn(const char *const *protos, size_t count,
+static unsigned char *ox_build_alpn(const char *const *protos, size_t count,
                                       size_t *out_len)
 {
   size_t i, len = 0;
@@ -351,7 +351,7 @@ static unsigned char *eta_build_alpn(const char *const *protos, size_t count,
     }
     len += 1 + plen;
   }
-  unsigned char *buf = eta_tls_alloc(len);
+  unsigned char *buf = ox_tls_alloc(len);
   if (buf == NULL) {
     return NULL;
   }
@@ -366,7 +366,7 @@ static unsigned char *eta_build_alpn(const char *const *protos, size_t count,
   return buf;
 }
 
-static unsigned char *eta_build_alpn_ocaml(value v_alpn, size_t *out_len)
+static unsigned char *ox_build_alpn_ocaml(value v_alpn, size_t *out_len)
 {
   CAMLparam1(v_alpn);
   CAMLlocal1(v_item);
@@ -391,7 +391,7 @@ static unsigned char *eta_build_alpn_ocaml(value v_alpn, size_t *out_len)
     protos[i++] = String_val(v_item);
     v_tail = Field(v_tail, 1);
   }
-  unsigned char *alpn_buf = eta_build_alpn(protos, count, out_len);
+  unsigned char *alpn_buf = ox_build_alpn(protos, count, out_len);
   free(protos);
   if (alpn_buf == NULL) {
     caml_failwith("ALPN encode failed");
@@ -399,13 +399,13 @@ static unsigned char *eta_build_alpn_ocaml(value v_alpn, size_t *out_len)
   CAMLreturnT(unsigned char *, alpn_buf);
 }
 
-static int eta_alpn_select_cb(SSL *ssl, const unsigned char **out,
+static int ox_alpn_select_cb(SSL *ssl, const unsigned char **out,
                               unsigned char *outlen,
                               const unsigned char *in, unsigned int inlen,
                               void *arg)
 {
   (void)ssl;
-  eta_alpn_config *config = (eta_alpn_config *)arg;
+  ox_alpn_config *config = (ox_alpn_config *)arg;
   if (config == NULL || config->wire == NULL || config->len == 0) {
     return SSL_TLSEXT_ERR_NOACK;
   }
@@ -417,105 +417,105 @@ static int eta_alpn_select_cb(SSL *ssl, const unsigned char **out,
   return SSL_TLSEXT_ERR_NOACK;
 }
 
-static int eta_install_alpn(SSL_CTX *ctx, const unsigned char *wire, size_t len)
+static int ox_install_alpn(SSL_CTX *ctx, const unsigned char *wire, size_t len)
 {
   if (len == 0) {
     return 1;
   }
-  eta_alpn_config *alpn = eta_tls_alloc(sizeof(*alpn));
+  ox_alpn_config *alpn = ox_tls_alloc(sizeof(*alpn));
   if (alpn == NULL) {
     return 0;
   }
-  alpn->wire = eta_tls_alloc(len);
+  alpn->wire = ox_tls_alloc(len);
   if (alpn->wire == NULL) {
-    eta_tls_free(alpn);
+    ox_tls_free(alpn);
     return 0;
   }
   memcpy(alpn->wire, wire, len);
   alpn->len = (unsigned int)len;
-  int idx = eta_alpn_ex_index_get();
+  int idx = ox_alpn_ex_index_get();
   if (idx < 0 || SSL_CTX_set_ex_data(ctx, idx, alpn) != 1) {
-    eta_tls_free(alpn->wire);
-    eta_tls_free(alpn);
+    ox_tls_free(alpn->wire);
+    ox_tls_free(alpn);
     return 0;
   }
-  SSL_CTX_set_alpn_select_cb(ctx, eta_alpn_select_cb, alpn);
+  SSL_CTX_set_alpn_select_cb(ctx, ox_alpn_select_cb, alpn);
   return 1;
 }
 
 typedef enum {
-  ETA_NEW_CTX_OK = 0,
-  ETA_NEW_CTX_METHOD,
-  ETA_NEW_CTX_NEW,
-  ETA_NEW_CTX_PROTO,
-  ETA_NEW_CTX_CIPHER,
-  ETA_NEW_CTX_CIPHERSUITES,
-  ETA_NEW_CTX_SESSION_ID,
-  ETA_NEW_CTX_CERT,
-  ETA_NEW_CTX_KEY,
-  ETA_NEW_CTX_KEY_MISMATCH,
-  ETA_NEW_CTX_ALPN_EXDATA
-} eta_new_ctx_err;
+  OX_NEW_CTX_OK = 0,
+  OX_NEW_CTX_METHOD,
+  OX_NEW_CTX_NEW,
+  OX_NEW_CTX_PROTO,
+  OX_NEW_CTX_CIPHER,
+  OX_NEW_CTX_CIPHERSUITES,
+  OX_NEW_CTX_SESSION_ID,
+  OX_NEW_CTX_CERT,
+  OX_NEW_CTX_KEY,
+  OX_NEW_CTX_KEY_MISMATCH,
+  OX_NEW_CTX_ALPN_EXDATA
+} ox_new_ctx_err;
 
-static void eta_raise_new_ctx_err(eta_new_ctx_err err)
+static void ox_raise_new_ctx_err(ox_new_ctx_err err)
 {
   switch (err) {
-  case ETA_NEW_CTX_METHOD:
+  case OX_NEW_CTX_METHOD:
     caml_failwith("TLS_server_method failed");
-  case ETA_NEW_CTX_NEW:
+  case OX_NEW_CTX_NEW:
     caml_failwith("SSL_CTX_new failed");
-  case ETA_NEW_CTX_PROTO:
+  case OX_NEW_CTX_PROTO:
     caml_failwith("SSL_CTX_set_proto_version failed");
-  case ETA_NEW_CTX_CIPHER:
+  case OX_NEW_CTX_CIPHER:
     caml_failwith("SSL_CTX_set_cipher_list failed");
-  case ETA_NEW_CTX_CIPHERSUITES:
+  case OX_NEW_CTX_CIPHERSUITES:
     caml_failwith("SSL_CTX_set_ciphersuites failed");
-  case ETA_NEW_CTX_SESSION_ID:
+  case OX_NEW_CTX_SESSION_ID:
     caml_failwith("SSL_CTX_set_session_id_context failed");
-  case ETA_NEW_CTX_CERT:
+  case OX_NEW_CTX_CERT:
     caml_failwith("SSL_CTX_use_certificate_chain_file failed");
-  case ETA_NEW_CTX_KEY:
+  case OX_NEW_CTX_KEY:
     caml_failwith("SSL_CTX_use_PrivateKey_file failed");
-  case ETA_NEW_CTX_KEY_MISMATCH:
+  case OX_NEW_CTX_KEY_MISMATCH:
     caml_failwith("SSL_CTX_check_private_key failed");
-  case ETA_NEW_CTX_ALPN_EXDATA:
+  case OX_NEW_CTX_ALPN_EXDATA:
     caml_failwith("SSL_CTX_set_ex_data failed");
-  case ETA_NEW_CTX_OK:
+  case OX_NEW_CTX_OK:
     caml_failwith("SSL_CTX create failed");
   }
 }
 
-static SSL_CTX *eta_new_server_ctx(const char *cert, const char *key,
+static SSL_CTX *ox_new_server_ctx(const char *cert, const char *key,
                                    const unsigned char *alpn_wire,
-                                   size_t alpn_len, eta_new_ctx_err *err)
+                                   size_t alpn_len, ox_new_ctx_err *err)
 {
-  *err = ETA_NEW_CTX_OK;
+  *err = OX_NEW_CTX_OK;
   const SSL_METHOD *method = TLS_server_method();
   if (method == NULL) {
-    *err = ETA_NEW_CTX_METHOD;
+    *err = OX_NEW_CTX_METHOD;
     return NULL;
   }
   SSL_CTX *ctx = SSL_CTX_new(method);
   if (ctx == NULL) {
-    *err = ETA_NEW_CTX_NEW;
+    *err = OX_NEW_CTX_NEW;
     return NULL;
   }
 
   if (!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) ||
       !SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION)) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_PROTO;
+    *err = OX_NEW_CTX_PROTO;
     return NULL;
   }
 
-  if (SSL_CTX_set_cipher_list(ctx, ETA_CIPHER_LIST) != 1) {
+  if (SSL_CTX_set_cipher_list(ctx, OX_CIPHER_LIST) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_CIPHER;
+    *err = OX_NEW_CTX_CIPHER;
     return NULL;
   }
-  if (SSL_CTX_set_ciphersuites(ctx, ETA_TLS13_CIPHER_LIST) != 1) {
+  if (SSL_CTX_set_ciphersuites(ctx, OX_TLS13_CIPHER_LIST) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_CIPHERSUITES;
+    *err = OX_NEW_CTX_CIPHERSUITES;
     return NULL;
   }
 
@@ -527,43 +527,43 @@ static SSL_CTX *eta_new_server_ctx(const char *cert, const char *key,
      while removing the cross-domain contention point. */
   SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
   if (SSL_CTX_set_session_id_context(
-          ctx, ETA_SESSION_ID_CONTEXT,
-          (unsigned int)(sizeof(ETA_SESSION_ID_CONTEXT) - 1)) != 1) {
+          ctx, OX_SESSION_ID_CONTEXT,
+          (unsigned int)(sizeof(OX_SESSION_ID_CONTEXT) - 1)) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_SESSION_ID;
+    *err = OX_NEW_CTX_SESSION_ID;
     return NULL;
   }
 
   if (SSL_CTX_use_certificate_chain_file(ctx, cert) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_CERT;
+    *err = OX_NEW_CTX_CERT;
     return NULL;
   }
 
   if (SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_KEY;
+    *err = OX_NEW_CTX_KEY;
     return NULL;
   }
 
   if (SSL_CTX_check_private_key(ctx) != 1) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_KEY_MISMATCH;
+    *err = OX_NEW_CTX_KEY_MISMATCH;
     return NULL;
   }
 
-  if (!eta_install_alpn(ctx, alpn_wire, alpn_len)) {
+  if (!ox_install_alpn(ctx, alpn_wire, alpn_len)) {
     SSL_CTX_free(ctx);
-    *err = ETA_NEW_CTX_ALPN_EXDATA;
+    *err = OX_NEW_CTX_ALPN_EXDATA;
     return NULL;
   }
 
   return ctx;
 }
 
-static int eta_sni_select_cb(SSL *ssl, int *ad, void *arg)
+static int ox_sni_select_cb(SSL *ssl, int *ad, void *arg)
 {
-  eta_sni_config *config = (eta_sni_config *)arg;
+  ox_sni_config *config = (ox_sni_config *)arg;
   const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
   if (config == NULL || name == NULL || name[0] == '\0') {
     if (config != NULL && config->require_match) {
@@ -590,11 +590,11 @@ static int eta_sni_select_cb(SSL *ssl, int *ad, void *arg)
 /* ------------------------------------------------------------------ */
 /* OCaml externals                                                    */
 
-CAMLprim value eta_openssl_ctx_create(value v_unit)
+CAMLprim value ox_openssl_ctx_create(value v_unit)
 {
   CAMLparam1(v_unit);
   CAMLlocal1(v_owner);
-  v_owner = eta_root_ssl_ctx_owner();
+  v_owner = ox_root_ssl_ctx_owner();
   const SSL_METHOD *method = TLS_client_method();
   if (method == NULL) {
     caml_failwith("TLS_client_method failed");
@@ -612,11 +612,11 @@ CAMLprim value eta_openssl_ctx_create(value v_unit)
   }
 
   /* Cipher policy. */
-  if (SSL_CTX_set_cipher_list(ctx, ETA_CIPHER_LIST) != 1) {
+  if (SSL_CTX_set_cipher_list(ctx, OX_CIPHER_LIST) != 1) {
     SSL_CTX_free(ctx);
     caml_failwith("SSL_CTX_set_cipher_list failed");
   }
-  if (SSL_CTX_set_ciphersuites(ctx, ETA_TLS13_CIPHER_LIST) != 1) {
+  if (SSL_CTX_set_ciphersuites(ctx, OX_TLS13_CIPHER_LIST) != 1) {
     SSL_CTX_free(ctx);
     caml_failwith("SSL_CTX_set_ciphersuites failed");
   }
@@ -627,17 +627,17 @@ CAMLprim value eta_openssl_ctx_create(value v_unit)
   SSL_CTX_set_default_verify_paths(ctx);
   SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
 
-  if (!eta_publish_ssl_ctx(v_owner, ctx)) {
+  if (!ox_publish_ssl_ctx(v_owner, ctx)) {
     SSL_CTX_free(ctx);
     caml_failwith("malloc failed");
   }
   CAMLreturn(v_owner);
 }
 
-CAMLprim value eta_openssl_ctx_load_ca(value v_ctx, value v_path)
+CAMLprim value ox_openssl_ctx_load_ca(value v_ctx, value v_path)
 {
   CAMLparam2(v_ctx, v_path);
-  SSL_CTX *ctx = eta_ssl_ctx_val(v_ctx);
+  SSL_CTX *ctx = ox_ssl_ctx_val(v_ctx);
   const char *path = String_val(v_path);
   if (SSL_CTX_load_verify_locations(ctx, path, NULL) != 1) {
     char buf[256];
@@ -653,22 +653,22 @@ CAMLprim value eta_openssl_ctx_load_ca(value v_ctx, value v_path)
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value eta_openssl_server_ctx_create(value v_cert, value v_key,
+CAMLprim value ox_openssl_server_ctx_create(value v_cert, value v_key,
                                              value v_sni_certs,
                                              value v_require_sni_match,
                                              value v_alpn)
 {
   CAMLparam5(v_cert, v_key, v_sni_certs, v_require_sni_match, v_alpn);
   CAMLlocal3(v_tail, v_entry, v_owner);
-  v_owner = eta_root_ssl_ctx_owner();
+  v_owner = ox_root_ssl_ctx_owner();
   size_t alpn_len = 0;
-  unsigned char *alpn_wire = eta_build_alpn_ocaml(v_alpn, &alpn_len);
-  eta_new_ctx_err ctx_err = ETA_NEW_CTX_OK;
+  unsigned char *alpn_wire = ox_build_alpn_ocaml(v_alpn, &alpn_len);
+  ox_new_ctx_err ctx_err = OX_NEW_CTX_OK;
   const char *fail_msg = NULL;
   SSL_CTX *ctx = NULL;
-  eta_sni_config *sni = NULL;
+  ox_sni_config *sni = NULL;
   int sni_attached = 0;
-  ctx = eta_new_server_ctx(String_val(v_cert), String_val(v_key), alpn_wire,
+  ctx = ox_new_server_ctx(String_val(v_cert), String_val(v_key), alpn_wire,
                            alpn_len, &ctx_err);
   if (ctx == NULL) {
     goto fail;
@@ -682,7 +682,7 @@ CAMLprim value eta_openssl_server_ctx_create(value v_cert, value v_key,
   }
 
   if (count > 0 || Bool_val(v_require_sni_match)) {
-    sni = eta_tls_calloc(1, sizeof(*sni));
+    sni = ox_tls_calloc(1, sizeof(*sni));
     if (sni == NULL) {
       fail_msg = "calloc failed";
       goto fail;
@@ -690,7 +690,7 @@ CAMLprim value eta_openssl_server_ctx_create(value v_cert, value v_key,
     sni->count = count;
     sni->require_match = Bool_val(v_require_sni_match);
     if (count > 0) {
-      sni->entries = eta_tls_calloc(count, sizeof(*sni->entries));
+      sni->entries = ox_tls_calloc(count, sizeof(*sni->entries));
       if (sni->entries == NULL) {
         fail_msg = "calloc failed";
         goto fail;
@@ -704,13 +704,13 @@ CAMLprim value eta_openssl_server_ctx_create(value v_cert, value v_key,
       const char *name = String_val(Field(v_entry, 0));
       const char *cert = String_val(Field(v_entry, 1));
       const char *key = String_val(Field(v_entry, 2));
-      sni->entries[i].name = eta_tls_strdup(name);
+      sni->entries[i].name = ox_tls_strdup(name);
       if (sni->entries[i].name == NULL) {
         fail_msg = "strdup failed";
         goto fail;
       }
       sni->entries[i].ctx =
-          eta_new_server_ctx(cert, key, alpn_wire, alpn_len, &ctx_err);
+          ox_new_server_ctx(cert, key, alpn_wire, alpn_len, &ctx_err);
       if (sni->entries[i].ctx == NULL) {
         goto fail;
       }
@@ -718,44 +718,44 @@ CAMLprim value eta_openssl_server_ctx_create(value v_cert, value v_key,
       v_tail = Field(v_tail, 1);
     }
 
-    int idx = eta_sni_ex_index_get();
+    int idx = ox_sni_ex_index_get();
     if (idx < 0 || SSL_CTX_set_ex_data(ctx, idx, sni) != 1) {
       fail_msg = "SSL_CTX_set_ex_data failed";
       goto fail;
     }
     sni_attached = 1;
-    SSL_CTX_set_tlsext_servername_callback(ctx, eta_sni_select_cb);
+    SSL_CTX_set_tlsext_servername_callback(ctx, ox_sni_select_cb);
     SSL_CTX_set_tlsext_servername_arg(ctx, sni);
   }
 
-  eta_tls_free(alpn_wire);
+  ox_tls_free(alpn_wire);
   alpn_wire = NULL;
-  if (!eta_publish_ssl_ctx(v_owner, ctx)) {
+  if (!ox_publish_ssl_ctx(v_owner, ctx)) {
     fail_msg = "malloc failed";
     goto fail;
   }
   CAMLreturn(v_owner);
 
 fail:
-  eta_tls_free(alpn_wire);
+  ox_tls_free(alpn_wire);
   if (ctx != NULL) {
     SSL_CTX_free(ctx);
   }
   if (sni != NULL && !sni_attached) {
-    eta_sni_ex_free(NULL, sni, NULL, 0, 0, NULL);
+    ox_sni_ex_free(NULL, sni, NULL, 0, 0, NULL);
   }
   if (fail_msg != NULL) {
     caml_failwith(fail_msg);
   }
-  eta_raise_new_ctx_err(ctx_err);
+  ox_raise_new_ctx_err(ctx_err);
   CAMLreturn(v_owner);
 }
 
-CAMLprim value eta_openssl_server_ssl_create(value v_ctx)
+CAMLprim value ox_openssl_server_ssl_create(value v_ctx)
 {
   CAMLparam1(v_ctx);
 
-  SSL_CTX *ctx = eta_ssl_ctx_val(v_ctx);
+  SSL_CTX *ctx = ox_ssl_ctx_val(v_ctx);
   SSL *ssl = SSL_new(ctx);
   if (ssl == NULL) {
     caml_failwith("SSL_new failed");
@@ -772,16 +772,16 @@ CAMLprim value eta_openssl_server_ssl_create(value v_ctx)
   SSL_set_bio(ssl, rbio, wbio);
   SSL_set_accept_state(ssl);
 
-  CAMLreturn(eta_alloc_ssl(ssl));
+  CAMLreturn(ox_alloc_ssl(ssl));
 }
 
-CAMLprim value eta_openssl_ssl_create(value v_ctx, value v_hostname,
+CAMLprim value ox_openssl_ssl_create(value v_ctx, value v_hostname,
                                       value v_ip, value v_alpn)
 {
   CAMLparam4(v_ctx, v_hostname, v_ip, v_alpn);
   CAMLlocal1(v_item);
 
-  SSL_CTX *ctx = eta_ssl_ctx_val(v_ctx);
+  SSL_CTX *ctx = ox_ssl_ctx_val(v_ctx);
   SSL *ssl = SSL_new(ctx);
   if (ssl == NULL) {
     caml_failwith("SSL_new failed");
@@ -859,14 +859,14 @@ CAMLprim value eta_openssl_ssl_create(value v_ctx, value v_hostname,
         v_tail = Field(v_tail, 1);
       }
       size_t alpn_len = 0;
-      unsigned char *alpn_buf = eta_build_alpn(protos, count, &alpn_len);
+      unsigned char *alpn_buf = ox_build_alpn(protos, count, &alpn_len);
       free(protos);
       if (alpn_buf == NULL) {
         SSL_free(ssl);
         caml_failwith("ALPN encode failed");
       }
       int rc = SSL_set_alpn_protos(ssl, alpn_buf, (unsigned int)alpn_len);
-      eta_tls_free(alpn_buf);
+      ox_tls_free(alpn_buf);
       if (rc != 0) {
         SSL_free(ssl);
         caml_failwith("SSL_set_alpn_protos failed");
@@ -874,19 +874,19 @@ CAMLprim value eta_openssl_ssl_create(value v_ctx, value v_hostname,
     }
   }
 
-  CAMLreturn(eta_alloc_ssl(ssl));
+  CAMLreturn(ox_alloc_ssl(ssl));
 }
 
-static int eta_ssl_capture_detail(int err)
+static int ox_ssl_capture_detail(int err)
 {
   return err != SSL_ERROR_NONE && err != SSL_ERROR_WANT_READ
          && err != SSL_ERROR_WANT_WRITE && err != SSL_ERROR_ZERO_RETURN;
 }
 
-static void eta_ssl_copy_detail(int err, char *buf, size_t buflen)
+static void ox_ssl_copy_detail(int err, char *buf, size_t buflen)
 {
   buf[0] = '\0';
-  if (!eta_ssl_capture_detail(err))
+  if (!ox_ssl_capture_detail(err))
     return;
   unsigned long e = ERR_get_error();
   if (e != 0) {
@@ -895,7 +895,7 @@ static void eta_ssl_copy_detail(int err, char *buf, size_t buflen)
   }
 }
 
-static value eta_pack_ssl_status(int code, const char *detail_c)
+static value ox_pack_ssl_status(int code, const char *detail_c)
 {
   CAMLparam0();
   CAMLlocal2(detail, pair);
@@ -909,10 +909,10 @@ static value eta_pack_ssl_status(int code, const char *detail_c)
   CAMLreturn(pair);
 }
 
-CAMLprim value eta_openssl_ssl_handshake(value v_ssl)
+CAMLprim value ox_openssl_ssl_handshake(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   char detail_buf[256];
   int err = 0;
   detail_buf[0] = '\0';
@@ -927,69 +927,69 @@ CAMLprim value eta_openssl_ssl_handshake(value v_ssl)
   int rc = SSL_do_handshake(ssl);
   if (rc != 1) {
     err = SSL_get_error(ssl, rc);
-    eta_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
+    ox_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
   }
   caml_leave_blocking_section();
-  CAMLreturn(eta_pack_ssl_status(err, detail_buf));
+  CAMLreturn(ox_pack_ssl_status(err, detail_buf));
 }
 
-CAMLprim value eta_openssl_ssl_read(value v_ssl, value v_buf,
+CAMLprim value ox_openssl_ssl_read(value v_ssl, value v_buf,
                                     value v_off, value v_len)
 {
   CAMLparam4(v_ssl, v_buf, v_off, v_len);
   size_t off = 0;
   size_t len = 0;
-  eta_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 0);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  ox_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 0);
+  SSL *ssl = ox_ssl_val(v_ssl);
   char *data = (char *)Caml_ba_data_val(v_buf) + off;
   size_t readbytes = 0;
   int rc = SSL_read_ex(ssl, data, len, &readbytes);
   if (rc > 0) {
-    CAMLreturn(eta_pack_ssl_status((int)readbytes, NULL));
+    CAMLreturn(ox_pack_ssl_status((int)readbytes, NULL));
   }
   int err = SSL_get_error(ssl, rc);
   char detail_buf[256];
-  eta_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
-  CAMLreturn(eta_pack_ssl_status(-err, detail_buf));
+  ox_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
+  CAMLreturn(ox_pack_ssl_status(-err, detail_buf));
 }
 
-CAMLprim value eta_openssl_ssl_write(value v_ssl, value v_buf,
+CAMLprim value ox_openssl_ssl_write(value v_ssl, value v_buf,
                                      value v_off, value v_len)
 {
   CAMLparam4(v_ssl, v_buf, v_off, v_len);
   size_t off = 0;
   size_t len = 0;
-  eta_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 0);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  ox_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 0);
+  SSL *ssl = ox_ssl_val(v_ssl);
   const char *data = (const char *)Caml_ba_data_val(v_buf) + off;
   size_t written = 0;
   int rc = SSL_write_ex(ssl, data, len, &written);
   if (rc > 0) {
-    CAMLreturn(eta_pack_ssl_status((int)written, NULL));
+    CAMLreturn(ox_pack_ssl_status((int)written, NULL));
   }
   int err = SSL_get_error(ssl, rc);
   char detail_buf[256];
-  eta_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
-  CAMLreturn(eta_pack_ssl_status(-err, detail_buf));
+  ox_ssl_copy_detail(err, detail_buf, sizeof(detail_buf));
+  CAMLreturn(ox_pack_ssl_status(-err, detail_buf));
 }
 
-CAMLprim value eta_openssl_ssl_shutdown(value v_ssl)
+CAMLprim value ox_openssl_ssl_shutdown(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   int rc = SSL_shutdown(ssl);
   CAMLreturn(Val_int(rc));
 }
 
 /* Read encrypted bytes from the write BIO (data OpenSSL wants to send). */
-CAMLprim value eta_openssl_bio_read(value v_ssl, value v_buf,
+CAMLprim value ox_openssl_bio_read(value v_ssl, value v_buf,
                                     value v_off, value v_len)
 {
   CAMLparam4(v_ssl, v_buf, v_off, v_len);
   size_t off = 0;
   size_t len = 0;
-  eta_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 1);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  ox_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 1);
+  SSL *ssl = ox_ssl_val(v_ssl);
   BIO *wbio = SSL_get_wbio(ssl);
   if (wbio == NULL) {
     CAMLreturn(Val_long(0));
@@ -1003,14 +1003,14 @@ CAMLprim value eta_openssl_bio_read(value v_ssl, value v_buf,
 }
 
 /* Write encrypted bytes into the read BIO (data received from network). */
-CAMLprim value eta_openssl_bio_write(value v_ssl, value v_buf,
+CAMLprim value ox_openssl_bio_write(value v_ssl, value v_buf,
                                      value v_off, value v_len)
 {
   CAMLparam4(v_ssl, v_buf, v_off, v_len);
   size_t off = 0;
   size_t len = 0;
-  eta_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 1);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  ox_tls_require_ba_slice(v_buf, v_off, v_len, &off, &len, 1);
+  SSL *ssl = ox_ssl_val(v_ssl);
   BIO *rbio = SSL_get_rbio(ssl);
   if (rbio == NULL) {
     CAMLreturn(Val_long(0));
@@ -1024,10 +1024,10 @@ CAMLprim value eta_openssl_bio_write(value v_ssl, value v_buf,
 }
 
 /* Number of bytes pending in the write BIO. */
-CAMLprim value eta_openssl_bio_write_pending(value v_ssl)
+CAMLprim value ox_openssl_bio_write_pending(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   BIO *wbio = SSL_get_wbio(ssl);
   if (wbio == NULL) {
     CAMLreturn(Val_long(0));
@@ -1040,10 +1040,10 @@ CAMLprim value eta_openssl_bio_write_pending(value v_ssl)
 }
 
 /* Number of bytes readable from SSL (decrypted). */
-CAMLprim value eta_openssl_ssl_pending(value v_ssl)
+CAMLprim value ox_openssl_ssl_pending(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   int n = SSL_pending(ssl);
   if (n < 0) {
     n = 0;
@@ -1051,11 +1051,11 @@ CAMLprim value eta_openssl_ssl_pending(value v_ssl)
   CAMLreturn(Val_long(n));
 }
 
-CAMLprim value eta_openssl_ssl_get_alpn_selected(value v_ssl)
+CAMLprim value ox_openssl_ssl_get_alpn_selected(value v_ssl)
 {
   CAMLparam1(v_ssl);
   CAMLlocal1(v_result);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   const unsigned char *data = NULL;
   unsigned int len = 0;
   SSL_get0_alpn_selected(ssl, &data, &len);
@@ -1067,17 +1067,17 @@ CAMLprim value eta_openssl_ssl_get_alpn_selected(value v_ssl)
   CAMLreturn(caml_alloc_some(v_result));
 }
 
-CAMLprim value eta_openssl_ssl_get_version(value v_ssl)
+CAMLprim value ox_openssl_ssl_get_version(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   CAMLreturn(caml_copy_string(SSL_get_version(ssl)));
 }
 
-CAMLprim value eta_openssl_ssl_get_servername(value v_ssl)
+CAMLprim value ox_openssl_ssl_get_servername(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
   if (name == NULL || name[0] == '\0') {
     CAMLreturn(Val_none);
@@ -1085,46 +1085,46 @@ CAMLprim value eta_openssl_ssl_get_servername(value v_ssl)
   CAMLreturn(caml_alloc_some(caml_copy_string(name)));
 }
 
-CAMLprim value eta_openssl_ssl_get_verify_result(value v_ssl)
+CAMLprim value ox_openssl_ssl_get_verify_result(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   long rc = SSL_get_verify_result(ssl);
   CAMLreturn(Val_long(rc));
 }
 
-CAMLprim value eta_openssl_ssl_get1_session(value v_ssl)
+CAMLprim value ox_openssl_ssl_get1_session(value v_ssl)
 {
   CAMLparam1(v_ssl);
   CAMLlocal1(v_session);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   SSL_SESSION *session = SSL_get1_session(ssl);
   if (session == NULL) {
     CAMLreturn(Val_none);
   }
-  v_session = eta_alloc_ssl_session(session);
+  v_session = ox_alloc_ssl_session(session);
   CAMLreturn(caml_alloc_some(v_session));
 }
 
-CAMLprim value eta_openssl_ssl_set_session(value v_ssl, value v_session)
+CAMLprim value ox_openssl_ssl_set_session(value v_ssl, value v_session)
 {
   CAMLparam2(v_ssl, v_session);
-  SSL *ssl = eta_ssl_val(v_ssl);
-  SSL_SESSION *session = eta_ssl_session_val(v_session);
+  SSL *ssl = ox_ssl_val(v_ssl);
+  SSL_SESSION *session = ox_ssl_session_val(v_session);
   if (SSL_set_session(ssl, session) != 1) {
     caml_failwith("SSL_set_session failed");
   }
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value eta_openssl_ssl_session_reused(value v_ssl)
+CAMLprim value ox_openssl_ssl_session_reused(value v_ssl)
 {
   CAMLparam1(v_ssl);
-  SSL *ssl = eta_ssl_val(v_ssl);
+  SSL *ssl = ox_ssl_val(v_ssl);
   CAMLreturn(Val_bool(SSL_session_reused(ssl) == 1));
 }
 
-CAMLprim value eta_openssl_err_peek_error(value v_unit)
+CAMLprim value ox_openssl_err_peek_error(value v_unit)
 {
   CAMLparam1(v_unit);
   unsigned long e = ERR_peek_error();
@@ -1136,7 +1136,7 @@ CAMLprim value eta_openssl_err_peek_error(value v_unit)
   CAMLreturn(caml_alloc_some(caml_copy_string(buf)));
 }
 
-CAMLprim value eta_openssl_err_clear_error(value v_unit)
+CAMLprim value ox_openssl_err_clear_error(value v_unit)
 {
   CAMLparam1(v_unit);
   ERR_clear_error();

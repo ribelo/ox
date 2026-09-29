@@ -1,4 +1,4 @@
-(* Unit tests for the eta_json package.
+(* Unit tests for the ox_json package.
 
    ^njson-7pjx: the public module exports the helpers v1 established
    (^njson-3ph9): a byte-bounded parse, [to_string] and [compact], the scalar
@@ -13,23 +13,23 @@
 
    The protocol group is the Leash request as a derived type (^nnoschema-44wj,
    ^nnoschema-zi2m) beside a CDP-shaped document that stays unchecked through
-   Eta_json (^njson-cdp0): shapes we own derive their codec, shapes a peer owns
+   Ox_json (^njson-cdp0): shapes we own derive their codec, shapes a peer owns
    do not. The of_json group (^nderive-vq4n) reads that peer-shaped JSON by composing
    decoders. *)
 
 (* ^njson-7pjx: the value type is [Yojson.Safe.t] itself, not a copy. *)
-let (_ : Eta_json.t -> Yojson.Safe.t) = fun value -> value
-let (_ : Yojson.Safe.t -> Eta_json.t) = fun value -> value
+let (_ : Ox_json.t -> Yojson.Safe.t) = fun value -> value
+let (_ : Yojson.Safe.t -> Ox_json.t) = fun value -> value
 
 let json =
   Alcotest.testable
-    (fun ppf value -> Format.pp_print_string ppf (Eta_json.to_string value))
-    (fun left right -> String.equal (Eta_json.to_string left) (Eta_json.to_string right))
+    (fun ppf value -> Format.pp_print_string ppf (Ox_json.to_string value))
+    (fun left right -> String.equal (Ox_json.to_string left) (Ox_json.to_string right))
 
 let expect_ok label = function
   | Ok value -> value
   | Error error ->
-      Alcotest.failf "%s: unexpected error %a" label Eta_json.pp_parse_error error
+      Alcotest.failf "%s: unexpected error %a" label Ox_json.pp_parse_error error
 
 let expect_error label = function
   | Ok _ -> Alcotest.failf "%s: expected an error result" label
@@ -43,31 +43,31 @@ let expect_some label = function
    compact line. *)
 let test_compact_rendering () =
   let document =
-    Eta_json.object_
+    Ox_json.object_
       [
-        ("text", Some (Eta_json.string "a\nb"));
-        ("count", Some (Eta_json.int 3));
-        ("flag", Some (Eta_json.bool true));
-        ("ratio", Eta_json.float 0.5);
+        ("text", Some (Ox_json.string "a\nb"));
+        ("count", Some (Ox_json.int 3));
+        ("flag", Some (Ox_json.bool true));
+        ("ratio", Ox_json.float 0.5);
         ("absent", None);
       ]
   in
-  let text = Eta_json.to_string document in
-  Alcotest.(check string) "compact equals to_string" text (Eta_json.compact document);
+  let text = Ox_json.to_string document in
+  Alcotest.(check string) "compact equals to_string" text (Ox_json.compact document);
   Alcotest.(check bool) "single line" false (String.contains text '\n');
   Alcotest.(check string)
     "exact compact bytes" "{\"text\":\"a\\nb\",\"count\":3,\"flag\":true,\"ratio\":0.5}"
     text;
   Alcotest.(check json)
     "parse of the compact text" document
-    (expect_ok "compact rendering" (Eta_json.parse text))
+    (expect_ok "compact rendering" (Ox_json.parse text))
 
 (* ^njson-7pjx ^njson-3ph9: malformed text is an error result, not an
    exception. *)
 let test_parse_rejects_invalid () =
   List.iter
     (fun raw ->
-      match expect_error ("invalid " ^ raw) (Eta_json.parse raw) with
+      match expect_error ("invalid " ^ raw) (Ox_json.parse raw) with
       | `Malformed _ -> ()
       | `Too_large _ ->
           Alcotest.failf "invalid %s: malformed text must not report the bound" raw)
@@ -80,10 +80,10 @@ let test_parse_max_bytes () =
   let bound = String.length raw in
   Alcotest.(check json)
     "input at the bound"
-    (Eta_json.object_ [ ("a", Some (Eta_json.int 1)) ])
-    (expect_ok "at the bound" (Eta_json.parse ~max_bytes:bound raw));
+    (Ox_json.object_ [ ("a", Some (Ox_json.int 1)) ])
+    (expect_ok "at the bound" (Ox_json.parse ~max_bytes:bound raw));
   let error =
-    expect_error "one byte over the bound" (Eta_json.parse ~max_bytes:(bound - 1) raw)
+    expect_error "one byte over the bound" (Ox_json.parse ~max_bytes:(bound - 1) raw)
   in
   (match error with
   | `Too_large { limit; length } ->
@@ -93,17 +93,17 @@ let test_parse_max_bytes () =
       Alcotest.failf "over the bound must be a bound refusal, got %s" message);
   Alcotest.(check string)
     "printer names the bound" "JSON input of 8 bytes exceeds max_bytes (7)"
-    (Format.asprintf "%a" Eta_json.pp_parse_error error);
+    (Format.asprintf "%a" Ox_json.pp_parse_error error);
   (* Valid JSON over the bound is refused before any value is built. *)
-  (match Eta_json.parse ~max_bytes:1 "{}" with
+  (match Ox_json.parse ~max_bytes:1 "{}" with
   | Error (`Too_large { limit = 1; length = 2 }) -> ()
   | Error _ | Ok _ -> Alcotest.fail "valid JSON over the bound must be refused");
-  (match Eta_json.parse ~max_bytes:0 raw with
+  (match Ox_json.parse ~max_bytes:0 raw with
   | Error (`Too_large _) -> ()
   | Error _ | Ok _ -> Alcotest.fail "a zero bound refuses any input");
   let raised =
     try
-      ignore (Eta_json.parse ~max_bytes:(-1) raw);
+      ignore (Ox_json.parse ~max_bytes:(-1) raw);
       false
     with Invalid_argument _ -> true
   in
@@ -113,151 +113,150 @@ let test_parse_max_bytes () =
    its name and position. *)
 let test_object_omits_absent () =
   let document =
-    Eta_json.object_
-      [ ("a", Some (Eta_json.int 1)); ("b", None); ("c", Some (Eta_json.bool false)) ]
+    Ox_json.object_
+      [ ("a", Some (Ox_json.int 1)); ("b", None); ("c", Some (Ox_json.bool false)) ]
   in
   Alcotest.(check string)
-    "absent field omitted" "{\"a\":1,\"c\":false}" (Eta_json.to_string document);
+    "absent field omitted" "{\"a\":1,\"c\":false}" (Ox_json.to_string document);
   Alcotest.(check json)
-    "kept field is readable" (Eta_json.bool false)
-    (expect_some "kept field" (Eta_json.member "c" document));
+    "kept field is readable" (Ox_json.bool false)
+    (expect_some "kept field" (Ox_json.member "c" document));
   Alcotest.(check (option json))
-    "omitted field stays absent" None
-    (Eta_json.member "b" document);
-  Alcotest.(check string) "no fields" "{}" (Eta_json.to_string (Eta_json.object_ []))
+    "omitted field stays absent" None (Ox_json.member "b" document);
+  Alcotest.(check string) "no fields" "{}" (Ox_json.to_string (Ox_json.object_ []))
 
 (* ^njson-7pjx ^njson-3ph9: scalar constructors, including the non-finite
    rejection of the float surface. *)
 let test_scalar_constructors () =
-  Alcotest.(check json) "string" (`String "eta") (Eta_json.string "eta");
-  Alcotest.(check json) "bool" (`Bool true) (Eta_json.bool true);
-  Alcotest.(check json) "int" (`Int 9) (Eta_json.int 9);
-  Alcotest.(check (option json)) "finite float" (Some (`Float 1.5)) (Eta_json.float 1.5);
-  Alcotest.(check (option json)) "nan" None (Eta_json.float Float.nan);
-  Alcotest.(check (option json)) "infinity" None (Eta_json.float Float.infinity);
+  Alcotest.(check json) "string" (`String "ox") (Ox_json.string "ox");
+  Alcotest.(check json) "bool" (`Bool true) (Ox_json.bool true);
+  Alcotest.(check json) "int" (`Int 9) (Ox_json.int 9);
+  Alcotest.(check (option json)) "finite float" (Some (`Float 1.5)) (Ox_json.float 1.5);
+  Alcotest.(check (option json)) "nan" None (Ox_json.float Float.nan);
+  Alcotest.(check (option json)) "infinity" None (Ox_json.float Float.infinity);
   Alcotest.(check (option json))
     "negative infinity" None
-    (Eta_json.float Float.neg_infinity);
+    (Ox_json.float Float.neg_infinity);
   Alcotest.(check json)
     "array"
     (`List [ `Int 1; `String "two" ])
-    (Eta_json.array [ Eta_json.int 1; Eta_json.string "two" ]);
-  Alcotest.(check string) "empty array" "[]" (Eta_json.to_string (Eta_json.array []));
+    (Ox_json.array [ Ox_json.int 1; Ox_json.string "two" ]);
+  Alcotest.(check string) "empty array" "[]" (Ox_json.to_string (Ox_json.array []));
   Alcotest.(check json)
     "array_map keeps input order"
     (`List [ `Int 2; `Int 4 ])
-    (Eta_json.array_map (fun value -> Eta_json.int (value * 2)) [ 1; 2 ])
+    (Ox_json.array_map (fun value -> Ox_json.int (value * 2)) [ 1; 2 ])
 
 (* ^njson-7pjx ^njson-3ph9: member reads on a present, a missing, and a
    wrong-typed member; a non-object input has no members at all. *)
 let test_member_accessors () =
   let document =
-    Eta_json.object_
+    Ox_json.object_
       [
-        ("name", Some (Eta_json.string "eta"));
-        ("count", Some (Eta_json.int 7));
+        ("name", Some (Ox_json.string "ox"));
+        ("count", Some (Ox_json.int 7));
         ("big", Some (`Intlit "42"));
         ("ratio", Some (`Float 2.0));
         ("half", Some (`Float 0.5));
-        ("flag", Some (Eta_json.bool true));
-        ("items", Some (Eta_json.array [ Eta_json.int 1 ]));
-        ("nested", Some (Eta_json.object_ [ ("inner", Some (Eta_json.bool true)) ]));
+        ("flag", Some (Ox_json.bool true));
+        ("items", Some (Ox_json.array [ Ox_json.int 1 ]));
+        ("nested", Some (Ox_json.object_ [ ("inner", Some (Ox_json.bool true)) ]));
         ("nothing", Some `Null);
       ]
   in
   let absent = "absent" in
   Alcotest.(check (option json))
     "member present"
-    (Some (Eta_json.string "eta"))
-    (Eta_json.member "name" document);
-  Alcotest.(check (option json)) "member missing" None (Eta_json.member absent document);
+    (Some (Ox_json.string "ox"))
+    (Ox_json.member "name" document);
+  Alcotest.(check (option json)) "member missing" None (Ox_json.member absent document);
   Alcotest.(check (option json))
     "member of a non-object" None
-    (Eta_json.member "name" (`String "eta"));
+    (Ox_json.member "name" (`String "ox"));
   Alcotest.(check (option string))
-    "string_member present" (Some "eta")
-    (Eta_json.string_member "name" document);
+    "string_member present" (Some "ox")
+    (Ox_json.string_member "name" document);
   Alcotest.(check (option string))
     "string_member missing" None
-    (Eta_json.string_member absent document);
+    (Ox_json.string_member absent document);
   Alcotest.(check (option string))
     "string_member wrong type" None
-    (Eta_json.string_member "count" document);
+    (Ox_json.string_member "count" document);
   Alcotest.(check (option string))
-    "scalar_string_member string" (Some "eta")
-    (Eta_json.scalar_string_member "name" document);
+    "scalar_string_member string" (Some "ox")
+    (Ox_json.scalar_string_member "name" document);
   Alcotest.(check (option string))
     "scalar_string_member int" (Some "7")
-    (Eta_json.scalar_string_member "count" document);
+    (Ox_json.scalar_string_member "count" document);
   Alcotest.(check (option string))
     "scalar_string_member intlit" (Some "42")
-    (Eta_json.scalar_string_member "big" document);
+    (Ox_json.scalar_string_member "big" document);
   Alcotest.(check (option string))
     "scalar_string_member float" (Some "2")
-    (Eta_json.scalar_string_member "ratio" document);
+    (Ox_json.scalar_string_member "ratio" document);
   Alcotest.(check (option string))
     "scalar_string_member bool" (Some "true")
-    (Eta_json.scalar_string_member "flag" document);
+    (Ox_json.scalar_string_member "flag" document);
   Alcotest.(check (option string))
     "scalar_string_member missing" None
-    (Eta_json.scalar_string_member absent document);
+    (Ox_json.scalar_string_member absent document);
   Alcotest.(check (option string))
     "scalar_string_member array" None
-    (Eta_json.scalar_string_member "items" document);
+    (Ox_json.scalar_string_member "items" document);
   Alcotest.(check (option string))
     "scalar_string_member null" None
-    (Eta_json.scalar_string_member "nothing" document);
+    (Ox_json.scalar_string_member "nothing" document);
   Alcotest.(check (option int))
     "int_member int" (Some 7)
-    (Eta_json.int_member "count" document);
+    (Ox_json.int_member "count" document);
   Alcotest.(check (option int))
     "int_member intlit" (Some 42)
-    (Eta_json.int_member "big" document);
+    (Ox_json.int_member "big" document);
   Alcotest.(check (option int))
     "int_member integral float" (Some 2)
-    (Eta_json.int_member "ratio" document);
+    (Ox_json.int_member "ratio" document);
   Alcotest.(check (option int))
     "int_member fractional float" None
-    (Eta_json.int_member "half" document);
+    (Ox_json.int_member "half" document);
   Alcotest.(check (option int))
     "int_member string" None
-    (Eta_json.int_member "name" document);
+    (Ox_json.int_member "name" document);
   Alcotest.(check (option int))
     "int_member missing" None
-    (Eta_json.int_member absent document);
+    (Ox_json.int_member absent document);
   Alcotest.(check (option (list json)))
     "array_member present"
-    (Some [ Eta_json.int 1 ])
-    (Eta_json.array_member "items" document);
+    (Some [ Ox_json.int 1 ])
+    (Ox_json.array_member "items" document);
   Alcotest.(check (option (list json)))
     "array_member missing" None
-    (Eta_json.array_member absent document);
+    (Ox_json.array_member absent document);
   Alcotest.(check (option (list json)))
     "array_member wrong type" None
-    (Eta_json.array_member "count" document);
+    (Ox_json.array_member "count" document);
   Alcotest.(check (option json))
     "object_member present"
-    (Some (Eta_json.object_ [ ("inner", Some (Eta_json.bool true)) ]))
-    (Eta_json.object_member "nested" document);
+    (Some (Ox_json.object_ [ ("inner", Some (Ox_json.bool true)) ]))
+    (Ox_json.object_member "nested" document);
   Alcotest.(check (option json))
     "object_member missing" None
-    (Eta_json.object_member absent document);
+    (Ox_json.object_member absent document);
   Alcotest.(check (option json))
     "object_member wrong type" None
-    (Eta_json.object_member "items" document)
+    (Ox_json.object_member "items" document)
 
 (* ^njson-7pjx ^njson-3ph9: every accessor reports an absent name as [None]. *)
 let test_accessors_ignore_absent_members () =
-  let document = Eta_json.object_ [ ("present", Some (Eta_json.string "x")) ] in
+  let document = Ox_json.object_ [ ("present", Some (Ox_json.string "x")) ] in
   List.iter
     (fun check -> Alcotest.(check bool) "absent member" true (check ()))
     [
-      (fun () -> Eta_json.member "absent" document = None);
-      (fun () -> Eta_json.string_member "absent" document = None);
-      (fun () -> Eta_json.scalar_string_member "absent" document = None);
-      (fun () -> Eta_json.int_member "absent" document = None);
-      (fun () -> Eta_json.array_member "absent" document = None);
-      (fun () -> Eta_json.object_member "absent" document = None);
+      (fun () -> Ox_json.member "absent" document = None);
+      (fun () -> Ox_json.string_member "absent" document = None);
+      (fun () -> Ox_json.scalar_string_member "absent" document = None);
+      (fun () -> Ox_json.int_member "absent" document = None);
+      (fun () -> Ox_json.array_member "absent" document = None);
+      (fun () -> Ox_json.object_member "absent" document = None);
     ]
 
 (* ^nnoschema-44wj: the Leash control-protocol smoke test, rewritten as a derived
@@ -312,23 +311,23 @@ let test_leash_protocol_derived () =
           Alcotest.(check bool) ("error names " ^ needle) true (contains message needle))
         [ "leash_request.args"; "index"; "expected int"; "\"seven\"" ];
       (* ^njson-cdp0: JSON whose shape belongs to a peer — a CDP frame, say — stays
-         unchecked through Eta_json and survives a parse/compact round-trip whatever
+         unchecked through Ox_json and survives a parse/compact round-trip whatever
          fields it carries. *)
       let cdp =
         {|{"id":7,"method":"Page.navigate","params":{"url":"about:blank"},"consumed":true}|}
       in
       let parsed =
-        match Eta_json.parse cdp with
+        match Ox_json.parse cdp with
         | Ok value -> value
         | Error error ->
-            Alcotest.failf "unchecked JSON parses: %a" Eta_json.pp_parse_error error
+            Alcotest.failf "unchecked JSON parses: %a" Ox_json.pp_parse_error error
       in
       Alcotest.(check string)
-        "the peer's shape round-trips byte for byte" cdp (Eta_json.to_string parsed)
+        "the peer's shape round-trips byte for byte" cdp (Ox_json.to_string parsed)
 
 (* ^nderive-vq4n: dynamic JSON — a CDP payload, say — is read by composing decoders, and a
-   failure is an [Eta_json.issue] carrying the path of the value that did not fit. *)
-module Decode = Eta_json.Of_json
+   failure is an [Ox_json.issue] carrying the path of the value that did not fit. *)
+module Decode = Ox_json.Of_json
 
 let cdp =
   Yojson.Safe.from_string
@@ -336,8 +335,7 @@ let cdp =
 
 let decoded label = function
   | Ok value -> value
-  | Error issue ->
-      Alcotest.failf "%s: unexpected failure %a" label Eta_json.pp_issue issue
+  | Error issue -> Alcotest.failf "%s: unexpected failure %a" label Ox_json.pp_issue issue
 
 let issue label decoder input =
   match decoder input with
@@ -345,7 +343,7 @@ let issue label decoder input =
   | Error issue -> issue
 
 let check_issue label ~path ~message ~got decoder input =
-  let { Eta_json.path = actual_path; message = actual_message; got = actual_got } =
+  let { Ox_json.path = actual_path; message = actual_message; got = actual_got } =
     issue label decoder input
   in
   Alcotest.(check string) (label ^ ": path") path actual_path;
@@ -355,9 +353,7 @@ let check_issue label ~path ~message ~got decoder input =
 (* ^nderive-vq4n: each primitive accepts its own JSON shape, with the coercions the
    deriver makes, and refuses every other shape with what it expected and the value. *)
 let test_of_json_primitives () =
-  Alcotest.(check string)
-    "string" "eta"
-    (decoded "string" (Decode.string (`String "eta")));
+  Alcotest.(check string) "string" "ox" (decoded "string" (Decode.string (`String "ox")));
   Alcotest.(check bool) "bool" true (decoded "bool" (Decode.bool (`Bool true)));
   Alcotest.(check int) "int" 7 (decoded "int" (Decode.int (`Int 7)));
   Alcotest.(check int)
@@ -379,7 +375,7 @@ let test_of_json_primitives () =
     ~got:(`Bool true) Decode.string (`Bool true);
   Alcotest.(check string)
     "the issue renders like the deriver does" "expected string, got true"
-    (Format.asprintf "%a" Eta_json.pp_issue (issue "render" Decode.string (`Bool true)))
+    (Format.asprintf "%a" Ox_json.pp_issue (issue "render" Decode.string (`Bool true)))
 
 (* ^nderive-vq4n: members are read by name, and the path grows with each read. *)
 let test_of_json_field_and_at () =
@@ -448,8 +444,8 @@ let test_of_json_one_of () =
     Decode.one_of [ Decode.field "name" Decode.string; Decode.field "id" Decode.string ]
   in
   Alcotest.(check string)
-    "the first alternative" "eta"
-    (decoded "first" (name_or_id (`Assoc [ ("name", `String "eta") ])));
+    "the first alternative" "ox"
+    (decoded "first" (name_or_id (`Assoc [ ("name", `String "ox") ])));
   Alcotest.(check string)
     "the second alternative" "7"
     (decoded "second" (name_or_id (`Assoc [ ("id", `String "7") ])));
@@ -459,7 +455,7 @@ let test_of_json_one_of () =
     (`Assoc [ ("args", `Bool true) ]);
   check_issue "an empty alternative list never matches" ~path:""
     ~message:"expected one of the alternatives" ~got:`Null
-    (Decode.one_of [] : unit Eta_json.Of_json.t)
+    (Decode.one_of [] : unit Ox_json.Of_json.t)
     `Null
 
 (* ^nderive-vq4n: a decoder is a total read — any JSON value is an Ok or an issue, never
@@ -496,7 +492,7 @@ let test_of_json_never_raises () =
              [ Decode.field "a" Decode.int; Decode.field "b" Decode.int ]
              json));
       (fun json -> ignore (Decode.try_or_none (Decode.field "a" Decode.string) json));
-      (fun json -> ignore ((Decode.one_of [] : unit Eta_json.Of_json.t) json));
+      (fun json -> ignore ((Decode.one_of [] : unit Ox_json.Of_json.t) json));
     ]
   in
   List.iter
@@ -507,12 +503,12 @@ let test_of_json_never_raises () =
           | () -> ()
           | exception error ->
               Alcotest.failf "a decoder raised %s on %s" (Printexc.to_string error)
-                (Eta_json.to_string json))
+                (Ox_json.to_string json))
         attempts)
     exotic
 
 let () =
-  Alcotest.run "eta_json"
+  Alcotest.run "ox_json"
     [
       ( "helpers",
         [

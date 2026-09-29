@@ -1,4 +1,4 @@
-module L = Eta_ipc.Listener
+module L = Ox_ipc.Listener
 
 let fail fmt = Alcotest.failf fmt
 let check_ok = function Ok () -> () | Error _ -> fail "listener acquisition failed"
@@ -42,7 +42,7 @@ let check_error name expected actual =
 let ownership () =
   (* nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz *)
   with_dir (fun dir path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let nested = dir ^ "/private/s" in
           Eio.Switch.run (fun sw ->
               check_ok (start env sw nested);
@@ -88,7 +88,7 @@ let ownership () =
 let live_and_replacement () =
   (* nipc-4kuy nipc-vayc nipc-uatz *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           Eio.Switch.run (fun sw ->
               check_ok (start env sw path);
               Eio.Switch.run (fun competing ->
@@ -110,7 +110,7 @@ let live_and_replacement () =
 let line_and_policy () =
   (* nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let policy =
             { L.default_policy with max_line_bytes = 4; max_reply_bytes = 4; peers = 1 }
           in
@@ -138,7 +138,7 @@ let line_and_policy () =
 let deadlines () =
   (* nipc-x8ph nipc-6i86 nipc-eiy8 nipc-1v8z *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let errors = ref [] and cleaned = ref false in
           let started, signal_started = Eio.Promise.create () in
           let budget_done, signal_budget_done = Eio.Promise.create () in
@@ -146,7 +146,7 @@ let deadlines () =
           Eio.Switch.run (fun sw ->
               check_ok
                 (start
-                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
                      Fun.protect
@@ -164,7 +164,7 @@ let deadlines () =
               let flow = client env sw path in
               Eio.Flow.copy_string "go\n" flow;
               Eio.Promise.await started;
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await budget_done;
               Alcotest.(check bool) "budget cancels handler" true !cleaned;
               Alcotest.(check bool)
@@ -174,7 +174,7 @@ let deadlines () =
               Eio.Flow.copy_string "partial" stalled;
               Eio.Fiber.yield ();
               Eio.Fiber.yield ();
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await ingress_done;
               Alcotest.(check bool)
                 "typed ingress" true
@@ -183,7 +183,7 @@ let deadlines () =
 let disconnect () =
   (* nipc-1v8z nipc-uatz nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           let left, signal_left = Eio.Promise.create () in
           let disconnected, signal_disconnect = Eio.Promise.create () in
@@ -212,7 +212,7 @@ let disconnect () =
 let saturated () =
   (* nipc-skdt nipc-6i86 nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let first, signal_first = Eio.Promise.create () in
           let release, signal_release = Eio.Promise.create () in
           let count = ref 0 in
@@ -243,7 +243,7 @@ let saturated () =
 let reply_bound () =
   (* nipc-eiy8 nipc-ajmi nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let rejected, signal_rejected = Eio.Promise.create () in
           let policy = { L.default_policy with max_reply_bytes = 4 } in
           Eio.Switch.run (fun sw ->
@@ -270,7 +270,7 @@ let reply_bound () =
 let cross_process () =
   (* nipc-4kuy nipc-vayc nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           Eio.Switch.run (fun sw ->
               check_ok (start env sw path);
               Eio.Process.run env#process_mgr
@@ -281,7 +281,7 @@ let cross_process () =
 let live_external () =
   (* nipc-4kuy nipc-vayc nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
           Fun.protect
             ~finally:(fun () -> Unix.close fd)
@@ -296,7 +296,7 @@ let live_external () =
 let shutdown_active () =
   (* nipc-uatz nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cancelled = ref false in
           Eio.Switch.run (fun sw ->
@@ -319,7 +319,7 @@ let shutdown_active () =
 let egress_timeout () =
   (* nipc-eiy8 nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           let timed_out, signal_timed_out = Eio.Promise.create () in
           let payload = String.make 8_000_000 'x' in
@@ -341,13 +341,13 @@ let egress_timeout () =
               Eio.Promise.await entered;
               Eio.Fiber.yield ();
               Eio.Fiber.yield ();
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await timed_out)))
 
 let unbounded_budget () =
   (* nipc-6i86 nipc-01bn *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
@@ -360,7 +360,7 @@ let unbounded_budget () =
               let flow = client env sw path in
               Eio.Flow.copy_string "handoff\n" flow;
               Eio.Promise.await entered;
-              Eta_test.advance env#clock (Eta.Duration.seconds 25);
+              Ox_test.advance env#clock (Ox.Duration.seconds 25);
               Alcotest.(check string)
                 "None budget permits long work" "eventual"
                 (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 flow)))))
@@ -368,16 +368,16 @@ let unbounded_budget () =
 let budget_reply () =
   (* nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
           let handled = ref false in
           Eio.Switch.run (fun sw ->
               check_ok
                 (start
-                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun request d ->
-                     Printf.sprintf "timeout %s %d" request (Eta.Duration.to_ms d))
+                     Printf.sprintf "timeout %s %d" request (Ox.Duration.to_ms d))
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
                      Fun.protect
@@ -392,7 +392,7 @@ let budget_reply () =
               let flow = client env sw path in
               Eio.Flow.copy_string "slow\n" flow;
               Eio.Promise.await started;
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await cut;
               Alcotest.(check bool) "handler cancelled at its budget" true !handled;
               let reader = Eio.Buf_read.of_flow ~max_size:64 flow in
@@ -408,7 +408,7 @@ let budget_reply () =
 let budget_reply_byte_bound () =
   (* nipc-i5ni nipc-eiy8 *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let errors = ref [] in
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
@@ -417,7 +417,7 @@ let budget_reply_byte_bound () =
           Eio.Switch.run (fun sw ->
               check_ok
                 (start ~policy
-                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun _ _ -> "oversize")
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
@@ -432,7 +432,7 @@ let budget_reply_byte_bound () =
               let flow = client env sw path in
               Eio.Flow.copy_string "big\n" flow;
               Eio.Promise.await started;
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await cut;
               Eio.Promise.await rejected;
               Alcotest.(check bool)
@@ -448,7 +448,7 @@ let budget_reply_byte_bound () =
 let budget_reply_egress_deadline () =
   (* nipc-i5ni nipc-eiy8 *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
           let timed_out, signal_timed_out = Eio.Promise.create () in
@@ -459,7 +459,7 @@ let budget_reply_egress_deadline () =
           Eio.Switch.run (fun sw ->
               check_ok
                 (start ~policy
-                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun _ _ -> payload)
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
@@ -473,13 +473,13 @@ let budget_reply_egress_deadline () =
               let flow = client env sw path in
               Eio.Flow.copy_string "flood\n" flow;
               Eio.Promise.await started;
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await cut;
               (* The client never reads, so the write blocks; each advance moves the mock
                  clock past the egress deadline measured from wherever that write began. *)
               let rec settle left =
                 if (not (Eio.Promise.is_resolved timed_out)) && left > 0 then (
-                  Eta_test.advance env#clock (Eta.Duration.seconds 2);
+                  Ox_test.advance env#clock (Ox.Duration.seconds 2);
                   Eio.Fiber.yield ();
                   settle (left - 1))
               in
@@ -489,13 +489,13 @@ let budget_reply_egress_deadline () =
 let budget_reply_absent () =
   (* nipc-i5ni nipc-6i86 nipc-ajmi *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
                 (start
-                   ~budget:(fun _ -> Some (Eta.Duration.seconds 2))
+                   ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
                      Eio.Time.sleep env#clock 100.;
@@ -507,7 +507,7 @@ let budget_reply_absent () =
               let flow = client env sw path in
               Eio.Flow.copy_string "silent\n" flow;
               Eio.Promise.await started;
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await cut;
               Alcotest.(check bool)
                 "no reply, connection closed" true
@@ -518,7 +518,7 @@ let budget_reply_absent () =
 let error_reply_decode () =
   (* nipc-c871 nipc-x8ph nipc-ajmi *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           Eio.Switch.run (fun sw ->
               check_ok
@@ -553,7 +553,7 @@ let error_reply_decode () =
 let error_reply_oversized () =
   (* nipc-c871 nipc-x8ph *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           let policy = { L.default_policy with max_line_bytes = 4 } in
           Eio.Switch.run (fun sw ->
@@ -581,7 +581,7 @@ let error_reply_oversized () =
 let error_reply_ingress_timeout () =
   (* nipc-c871 nipc-x8ph *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let reported, signal_reported = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
@@ -596,7 +596,7 @@ let error_reply_ingress_timeout () =
               Eio.Flow.copy_string "partial" flow;
               Eio.Fiber.yield ();
               Eio.Fiber.yield ();
-              Eta_test.advance env#clock (Eta.Duration.seconds 2);
+              Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await reported;
               Alcotest.(check string)
                 "stalled ingress answered with the chosen reply" "error timeout"
@@ -605,7 +605,7 @@ let error_reply_ingress_timeout () =
 let error_reply_declined () =
   (* nipc-c871 nipc-ajmi *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           Eio.Switch.run (fun sw ->
               check_ok
@@ -628,7 +628,7 @@ let error_reply_declined () =
 let error_reply_byte_bound () =
   (* nipc-c871 nipc-eiy8 *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let seen = ref [] in
           let decoded, signal_decoded = Eio.Promise.create () in
           let rejected, signal_rejected = Eio.Promise.create () in
@@ -660,7 +660,7 @@ let error_reply_byte_bound () =
 let error_reply_egress_timeout () =
   (* nipc-c871 nipc-eiy8 *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let decoded, signal_decoded = Eio.Promise.create () in
           let timed_out, signal_timed_out = Eio.Promise.create () in
           let payload = String.make 8_000_000 'x' in
@@ -685,7 +685,7 @@ let error_reply_egress_timeout () =
                  that write began. *)
               let rec settle left =
                 if (not (Eio.Promise.is_resolved timed_out)) && left > 0 then (
-                  Eta_test.advance env#clock (Eta.Duration.seconds 2);
+                  Ox_test.advance env#clock (Ox.Duration.seconds 2);
                   Eio.Fiber.yield ();
                   settle (left - 1))
               in
@@ -695,7 +695,7 @@ let error_reply_egress_timeout () =
 let error_reply_disconnect () =
   (* nipc-c871 nipc-1v8z *)
   with_dir (fun _ path ->
-      Eta_test.run (fun env _ ->
+      Ox_test.run (fun env _ ->
           let seen = ref [] in
           let asked = ref 0 in
           let reported, signal_reported = Eio.Promise.create () in
@@ -736,7 +736,7 @@ let () =
     exit exit_code)
 
 let () =
-  Alcotest.run "eta_ipc"
+  Alcotest.run "ox_ipc"
     [
       ( "nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz",
         [ Alcotest.test_case "directory and ownership" `Quick ownership ] );

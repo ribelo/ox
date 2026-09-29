@@ -2,12 +2,12 @@
  (name test_contract)
  (modules test_contract test_helpers test_live fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_systemone
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest
@@ -17,12 +17,12 @@
  (name test_fail_closed)
  (modules test_fail_closed test_helpers fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_systemone
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest
@@ -32,12 +32,12 @@
  (name test_bounds)
  (modules test_bounds test_helpers fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_systemone
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest
@@ -47,12 +47,12 @@
  (name test_retry)
  (modules test_retry test_helpers fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_systemone
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest
@@ -68,13 +68,13 @@
   test_helpers
   fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_chat
-  eta_ai_systemone
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_chat
+  ox_ai_systemone
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest
@@ -84,14 +84,14 @@
  (name test_openrouter)
  (modules test_openrouter test_helpers fake_server)
  (libraries
-  eta
-  eta_ai
-  eta_ai_systemone
-  eta_ai_openrouter
-  eta_ai_realtime
-  eta_http
-  eta_json
-  eta_observability
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_ai_openrouter
+  ox_ai_realtime
+  ox_http
+  ox_json
+  ox_observability
   eio
   eio_main
   alcotest

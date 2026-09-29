@@ -64,6 +64,19 @@ The library becomes **ox**: packages `ox`, `ox_http`, `ox_sql`, …; modules `Ox
 
 Deleting Eta's worktrees or branches; changing story IDs; renaming `ppx_yojson_minimal`; making either GitHub repository public; pushing consumers other than Leash (Pie, nema, inn, grip already have remotes and are pushed only when the operator asks).
 
+## Status
+
+Ticked as the ordered pass lands (story ^oxname-j9l3); every repository is clean when the last box is ticked.
+
+- [x] **Repository.** `~/projects/ribelo/ocaml/ox`: 104 commits, no `.scratch/` path in any commit's tree, tree byte-identical to Eta's `master` minus `.scratch/`, commit messages/authors/dates identical to Eta's `v1..master`; `v1-boundary` tag on the root commit (`7b60acf0`) naming Eta `ad2ee1df` and Eta's `v1` (`5b3affc8`).
+- [x] **Remotes and push.** `origin` = `git@github.com:ribelo/ox.git`, `master` and `v1-boundary` pushed; `eta` = the Eta checkout, read-only (push URL disabled), fetching `refs/tags/v1` so `git show v1:…` keeps resolving.
+- [x] **The rename in ox.** 19 opam packages `eta*` → `ox*`, modules `Eta*` → `Ox*`, `lib/eta` → `lib/ox`, `ETA_*` → `OX_*`, `eta-opam-install-ox` → `ox-opam-install`, `docs/why-next.md` → `docs/why-ox.md` with the rename paragraph; applied by `scripts/rename-eta-to-ox.sh` and reviewed for false hits; gates green.
+- [ ] **Consumers.** Leash, Pie, nema, inn and grip renamed, flake input at `git+file:///home/ribelo/projects/ribelo/ocaml/ox?ref=master`, relocked, gates green, committed.
+- [ ] **Shared switch.** `5.4.0+ox`: `eta*` removed and `ox*` installed by `ox-opam-install`; `bin/pie` byte-identical before and after; nema runs from the Nix store, untouched.
+- [ ] **nixos-config.** `ETA_*` and the Eta path renamed; `nixosConfigurations.desktop` evaluates; committed.
+- [ ] **Remotes.** Leash pushed to `github.com/ribelo/leash`; the `leash` skill in dotfiles updated and committed.
+- [ ] **Eta archive.** One final commit adding `ARCHIVED.md` (36 worktrees, `wip/rows-46-47`); nothing else in Eta changed.
+
 ## Further Notes
 
 Decision of 2026-09-29: bare `ox`, not `oxc` (oxc is the JavaScript toolchain the operator uses daily; the Scala Ox collision is intended — it names the floor). The GitHub repositories `ribelo/ox` and `ribelo/leash` were created private by the coordinator before this spec was written; `ribelo/eta` is public and stays the v1 archive.

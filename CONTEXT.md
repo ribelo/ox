@@ -1,13 +1,13 @@
-# Eta
+# Ox
 
-Eta is the kernel that Rafal's OCaml services are built from: one way to structure a process, typed failures, scoped resources on Eio, and the protocol code those services share. It exists so that every application is written the same way and every failure has a name.
+Ox is the kernel that Rafal's OCaml services are built from: one way to structure a process, typed failures, scoped resources on Eio, and the protocol code those services share. It exists so that every application is written the same way and every failure has a name.
 
 ## Language
 
 ### Shape of an application
 
 **Kernel**:
-Eta itself: the set of packages an application is built from. A kernel supplies structure and protocols, never application logic.
+Ox itself: the set of packages an application is built from. A kernel supplies structure and protocols, never application logic.
 _Avoid_: framework, runtime, platform
 
 **Door**:
@@ -35,7 +35,7 @@ Eio's standard environment plus the observability handles the Door creates. Prog
 _Avoid_: capability, runtime, environment (unqualified)
 
 **Config**:
-The decoded, validated configuration a Program receives from the Door: a plain type with `[@@deriving yojson]` (ADR-0008) whose derived decoder and encoder plus an environment function of its own make up the `Eta_app.Config.t` bundle the Door is handed.
+The decoded, validated configuration a Program receives from the Door: a plain type with `[@@deriving yojson]` (ADR-0008) whose derived decoder and encoder plus an environment function of its own make up the `Ox_app.Config.t` bundle the Door is handed.
 
 **Status**:
 What a Service reports about itself when asked, read from its real state at that moment.
@@ -72,4 +72,4 @@ A length of time at millisecond precision.
 
 ### Retired words
 
-These named v1 concepts and must not be reused: effect (as a noun for Eta's type), blueprint, interpreter, runtime, SPI, capability, component, coeffect, capsule, settlement fence, dormant provider, desired state, activation.
+These named v1 concepts and must not be reused: effect (as a noun for Ox's type), blueprint, interpreter, runtime, SPI, capability, component, coeffect, capsule, settlement fence, dormant provider, desired state, activation, eta (the library's name before the rename of 2026-09-29; it named an effect type that no longer exists).

@@ -12,16 +12,16 @@ let refusal body =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
-      Alcotest.(check bool) "^nso-megl refused" false (Eta_ai.Error.retryable error);
+      Alcotest.(check bool) "^nso-megl refused" false (Ox_ai.Error.retryable error);
       (error, Fake_server.connections server))
 
 let expect_message needle (error, _) =
   Alcotest.(check bool)
     ("error names " ^ needle) true
-    (contains (Eta_ai.Error.to_string error) needle)
+    (contains (Ox_ai.Error.to_string error) needle)
 
 (* A body too large to read is the reference adapter's INVALID_RESPONSE: not retryable,
    so it ends the call after one attempt (`reference/jev.ts`, its bound read and its
@@ -36,7 +36,7 @@ let test_oversized_body_refused () =
       let client = client ~sw env server () in
       let error =
         expect_error
-          (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
       Alcotest.(check int)
@@ -44,8 +44,8 @@ let test_oversized_body_refused () =
         (Fake_server.connections server);
       Alcotest.(check bool)
         "^nso-pflg refused" true
-        (contains (Eta_ai.Error.to_string error) "invalid response");
-      Alcotest.(check bool) "^nso-77t7 not retryable" false (Eta_ai.Error.retryable error))
+        (contains (Ox_ai.Error.to_string error) "invalid response");
+      Alcotest.(check bool) "^nso-77t7 not retryable" false (Ox_ai.Error.retryable error))
 
 let test_missing_model () =
   (* ^nso-megl: a required top-level field is required. *)
@@ -93,7 +93,7 @@ let test_wrong_model () =
   | `Model_mismatch { expected; got } ->
       Alcotest.(check string) "expected" model expected;
       Alcotest.(check string) "got" "typesafe/jev-1.13-20260917-other" got
-  | error -> Alcotest.failf "not a model mismatch: %s" (Eta_ai.Error.to_string error)
+  | error -> Alcotest.failf "not a model mismatch: %s" (Ox_ai.Error.to_string error)
 
 let test_statuses () =
   (* ^nso-77t7: the statuses the reference names map to the reference's codes. *)
@@ -115,10 +115,10 @@ let test_statuses () =
           let client = client ~sw env server () in
           let error =
             expect_error
-              (Eta_ai_systemone.Client.evaluate client ~deadline ~state
+              (Ox_ai_systemone.Client.evaluate client ~deadline ~state
                  ~questions:choice_questions)
           in
-          let text = Eta_ai.Error.to_string error in
+          let text = Ox_ai.Error.to_string error in
           Alcotest.(check bool)
             (Printf.sprintf "%d says %s" status expected)
             true (contains text expected);
@@ -130,31 +130,31 @@ let test_statuses () =
 let test_choice_valid () =
   (* ^nso-megl: the reference's own answer check, available to the caller. *)
   let answer probabilities confidence choice =
-    { Eta_ai_systemone.Types.choice; probabilities; confidence }
+    { Ox_ai_systemone.Types.choice; probabilities; confidence }
   in
   Alcotest.(check bool)
     "a good distribution" true
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.9); ("DONE", 0.1) ] 0.8 "CLICK"));
   Alcotest.(check bool)
     "a tie is allowed" true
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.5); ("DONE", 0.5) ] 0.8 "DONE"));
   Alcotest.(check bool)
     "confidence over 1" false
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.9); ("DONE", 0.1) ] 1.5 "CLICK"));
   Alcotest.(check bool)
     "not a distribution" false
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.9); ("DONE", 0.5) ] 0.8 "CLICK"));
   Alcotest.(check bool)
     "the choice is not the most probable" false
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.1); ("DONE", 0.9) ] 0.8 "CLICK"));
   Alcotest.(check bool)
     "the choice is not offered" false
-    (Eta_ai_systemone.Codecs.choice_answer_valid
+    (Ox_ai_systemone.Codecs.choice_answer_valid
        (answer [ ("CLICK", 0.9); ("DONE", 0.1) ] 0.8 "BLOCKED"))
 
 let test_score_answer () =
@@ -168,18 +168,18 @@ let test_score_answer () =
       in
       let client = client ~sw env server () in
       let response =
-        expect_ok (Eta_ai_systemone.Client.evaluate client ~deadline ~state ~questions:[])
+        expect_ok (Ox_ai_systemone.Client.evaluate client ~deadline ~state ~questions:[])
       in
-      match Eta_ai_systemone.Client.answer "how_wrong" response with
-      | Some (Eta_ai_systemone.Codecs.Score answer) ->
-          Alcotest.(check (float 1e-12)) "score" 2. answer.Eta_ai_systemone.Types.score;
+      match Ox_ai_systemone.Client.answer "how_wrong" response with
+      | Some (Ox_ai_systemone.Codecs.Score answer) ->
+          Alcotest.(check (float 1e-12)) "score" 2. answer.Ox_ai_systemone.Types.score;
           Alcotest.(check (option string))
             "level" (Some "a few")
-            (Eta_ai_systemone.Codecs.level "2" answer);
+            (Ox_ai_systemone.Codecs.level "2" answer);
           Alcotest.(check (option string))
             "absent level" None
-            (Eta_ai_systemone.Codecs.level "9" answer)
-      | Some (Eta_ai_systemone.Codecs.Choice _) ->
+            (Ox_ai_systemone.Codecs.level "9" answer)
+      | Some (Ox_ai_systemone.Codecs.Choice _) ->
           Alcotest.fail "a choice answer for a score question"
       | None -> Alcotest.fail "the reply did not name the score answer")
 

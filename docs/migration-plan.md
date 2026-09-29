@@ -1,5 +1,7 @@
 # Migration plan: v1 → eta-next, and the boundary of the kernel
 
+> **2026-09-29: the library is ox.** It lives at `/home/ribelo/projects/ribelo/ocaml/ox` with packages `ox*` and modules `Ox*`; `github.com/ribelo/eta` and the local Eta checkout stay as the v1 archive. Everything below is the v1 → eta-next migration as it happened and keeps the names of that time.
+
 Written 2026-09-27 from measurement, not memory: every consumer's actual `Eta_*` module references (not its opam declarations), and every v1 package's size and count of `Effect.t` references. Numbers are in the appendix.
 
 ## The two rules

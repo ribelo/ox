@@ -194,8 +194,8 @@ val with_transaction :
   ?mode:transaction_mode ->
   db ->
   (db @ local -> ('a, error) result) @ local ->
-  ('a, error) Eta_sql_dsl.transaction_outcome
-(** Synchronous SQLite transaction using {!Eta_sql_dsl.transaction}. The
+  ('a, error) Ox_sql_dsl.transaction_outcome
+(** Synchronous SQLite transaction using {!Ox_sql_dsl.transaction}. The
     callback returns [result]; wrap a successful bare value as [Ok]. *)
 
 val savepoint_result : db @ local -> string -> (unit, error) result

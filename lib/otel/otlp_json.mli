@@ -22,7 +22,7 @@ val encode_traces_request :
 val encode_logs_request :
   resource_attrs:(string * string) list ->
   scope_name:string ->
-  Eta_observability.Logger.record list ->
+  Ox_observability.Logger.record list ->
   string
 
 val encode_metrics_request :

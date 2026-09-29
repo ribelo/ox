@@ -1,7 +1,7 @@
 type unavailable = {
   message : string;
   retryable : bool;
-  retry_after : Eta.Duration.t option;
+  retry_after : Ox.Duration.t option;
   status : int option;
 }
 (** Why no reply came, and whether another attempt is worth making: a transport failure
@@ -14,8 +14,8 @@ type t =
   [ `Unavailable of unavailable
   | `Timeout
   | `Authentication of string
-  | `Invalid_response of Eta_json.issue
-  | `Input_too_large of Eta_json.too_large
+  | `Invalid_response of Ox_json.issue
+  | `Input_too_large of Ox_json.too_large
   | `Model_mismatch of mismatch ]
 
 let retryable = function
@@ -29,8 +29,8 @@ let pp fmt = function
   | `Timeout -> Format.pp_print_string fmt "timed out"
   | `Authentication why -> Format.fprintf fmt "authentication failed: %s" why
   | `Invalid_response issue ->
-      Format.fprintf fmt "invalid response: %a" Eta_json.pp_issue issue
-  | `Input_too_large { Eta_json.limit; length } ->
+      Format.fprintf fmt "invalid response: %a" Ox_json.pp_issue issue
+  | `Input_too_large { Ox_json.limit; length } ->
       Format.fprintf fmt "request is %d bytes, over the %d-byte limit" length limit
   | `Model_mismatch { expected; got } ->
       Format.fprintf fmt "model mismatch: asked for %s, the reply names %s" expected got

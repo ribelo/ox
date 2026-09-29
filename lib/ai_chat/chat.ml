@@ -3,17 +3,17 @@ let default_endpoint = "https://openrouter.ai/api/v1/chat/completions"
 type t =
   | T :
       'clock Eio.Time.clock
-      * Eta_http.Client.t
-      * Eta_observability.Logger.t
+      * Ox_http.Client.t
+      * Ox_observability.Logger.t
       * string
-      * Eta_observability.Redact.t
-      * Eta.Duration.t
+      * Ox_observability.Redact.t
+      * Ox.Duration.t
       * int
       -> t
 
 let create ~http ~clock ~logger ?(endpoint = default_endpoint) ~api_key
-    ?(timeout = Eta_ai.Transport.default_timeout)
-    ?(max_request_bytes = Eta_ai.Transport.default_max_request_bytes) () =
+    ?(timeout = Ox_ai.Transport.default_timeout)
+    ?(max_request_bytes = Ox_ai.Transport.default_max_request_bytes) () =
   T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes)
 
 (* The caller's control, in the spelling [complete] takes, becomes the wire record: the
@@ -35,22 +35,22 @@ let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_by
       reasoning = Option.map wire_reasoning reasoning;
     }
   in
-  let body = Eta_ai.Transport.bytes_of_json (Types.yojson_of_request request) in
+  let body = Ox_ai.Transport.bytes_of_json (Types.yojson_of_request request) in
   match
-    Eta_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes ~endpoint
-      ~authorization:(Eta_ai.Bearer.header ~api_key)
+    Ox_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes ~endpoint
+      ~authorization:(Ox_ai.Bearer.header ~api_key)
       ~body ~deadline ()
   with
   | Error error -> Error error
   | Ok response -> (
-      let raw = Bytes.to_string response.Eta_ai.Transport.body in
-      match Eta_json.parse raw with
+      let raw = Bytes.to_string response.Ox_ai.Transport.body in
+      match Ox_json.parse raw with
       | Error (`Malformed message) ->
           Error
             (`Invalid_response
                { path = ""; message = "malformed JSON: " ^ message; got = `String raw })
-      | Error (`Too_large { Eta_json.limit; length }) ->
-          Error (`Input_too_large { Eta_json.limit; length })
+      | Error (`Too_large { Ox_json.limit; length }) ->
+          Error (`Input_too_large { Ox_json.limit; length })
       | Ok json -> (
           match Types.response_of_yojson json with
           | Error message -> Error (`Invalid_response { path = ""; message; got = json })
@@ -66,23 +66,22 @@ let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_by
                      "free". *)
                   let cost_fields =
                     match usage.Types.cost with
-                    | Some cost -> [ ("cost", Eta_observability.Logger.Float cost) ]
+                    | Some cost -> [ ("cost", Ox_observability.Logger.Float cost) ]
                     | None -> []
                   in
-                  Eta_observability.Logger.debug logger
+                  Ox_observability.Logger.debug logger
                     ~fields:
                       ([
-                         ("model", Eta_observability.Logger.String completion.Codecs.model);
-                         ( "prompt_tokens",
-                           Eta_observability.Logger.Int usage.prompt_tokens );
+                         ("model", Ox_observability.Logger.String completion.Codecs.model);
+                         ("prompt_tokens", Ox_observability.Logger.Int usage.prompt_tokens);
                          ( "completion_tokens",
-                           Eta_observability.Logger.Int usage.completion_tokens );
-                         ("total_tokens", Eta_observability.Logger.Int usage.total_tokens);
+                           Ox_observability.Logger.Int usage.completion_tokens );
+                         ("total_tokens", Ox_observability.Logger.Int usage.total_tokens);
                        ]
                       @ cost_fields
                       @ [
                           ( "request_id",
-                            Eta_observability.Logger.String
+                            Ox_observability.Logger.String
                               (match completion.Codecs.id with
                               | Some id -> id
                               | None -> "") );

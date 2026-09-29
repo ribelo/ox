@@ -1,7 +1,7 @@
 ; Eio_main picks io_uring on Linux, and each ring pins a few MiB of locked
 ; memory against the user's RLIMIT_MEMLOCK (8 MiB here). Dune runs the suites
 ; in parallel, so under io_uring they fail with ENOMEM in io_uring_queue_init.
-; The suites test Eta's semantics, not the backend: run them on eio_posix.
+; The suites test Ox's semantics, not the backend: run them on eio_posix.
 
 (env
  (_

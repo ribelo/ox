@@ -20,20 +20,19 @@ let expect_invalid label f =
   | _ -> Alcotest.failf "%s: expected Invalid_argument" label
 
 let with_prehandshake_ssl f =
-  let ctx = Eta_http.Eta_http_tls_openssl.create_ctx () in
+  let ctx = Ox_http.Ox_http_tls_openssl.create_ctx () in
   let ssl =
-    Eta_http.Eta_http_tls_openssl.create_ssl ctx ~hostname:(Some "localhost") ~ip:None
+    Ox_http.Ox_http_tls_openssl.create_ssl ctx ~hostname:(Some "localhost") ~ip:None
       ~alpn_protocols:[]
   in
   f ssl
 
 let ops ssl buf ~off ~len =
   [
-    ("read", fun () -> ignore (Eta_http.Eta_http_tls_openssl.read ssl buf off len));
-    ("write", fun () -> ignore (Eta_http.Eta_http_tls_openssl.write ssl buf off len));
-    ("bio_read", fun () -> ignore (Eta_http.Eta_http_tls_openssl.bio_read ssl buf off len));
-    ( "bio_write",
-      fun () -> ignore (Eta_http.Eta_http_tls_openssl.bio_write ssl buf off len) );
+    ("read", fun () -> ignore (Ox_http.Ox_http_tls_openssl.read ssl buf off len));
+    ("write", fun () -> ignore (Ox_http.Ox_http_tls_openssl.write ssl buf off len));
+    ("bio_read", fun () -> ignore (Ox_http.Ox_http_tls_openssl.bio_read ssl buf off len));
+    ("bio_write", fun () -> ignore (Ox_http.Ox_http_tls_openssl.bio_write ssl buf off len));
   ]
 
 let test_invalid_slices_prehandshake () =
@@ -65,10 +64,10 @@ let test_zero_length_end_slice_valid () =
 
 let test_invalid_slices_pending_bio () =
   with_prehandshake_ssl @@ fun ssl ->
-  ignore (Eta_http.Eta_http_tls_openssl.handshake ssl);
-  let pending = Eta_http.Eta_http_tls_openssl.bio_write_pending ssl in
+  ignore (Ox_http.Ox_http_tls_openssl.handshake ssl);
+  let pending = Ox_http.Ox_http_tls_openssl.bio_write_pending ssl in
   Alcotest.(check bool) "pending BIO > 0 after handshake step" true (pending > 0);
-  let decrypted = Eta_http.Eta_http_tls_openssl.ssl_pending ssl in
+  let decrypted = Ox_http.Ox_http_tls_openssl.ssl_pending ssl in
   let buf = ba 8 in
   fill buf 'C';
   List.iter
@@ -80,9 +79,9 @@ let test_invalid_slices_pending_bio () =
       Alcotest.(check int)
         (name ^ " write-BIO pending unchanged")
         pending
-        (Eta_http.Eta_http_tls_openssl.bio_write_pending ssl);
+        (Ox_http.Ox_http_tls_openssl.bio_write_pending ssl);
       Alcotest.(check int)
         (name ^ " ssl_pending unchanged")
         decrypted
-        (Eta_http.Eta_http_tls_openssl.ssl_pending ssl))
+        (Ox_http.Ox_http_tls_openssl.ssl_pending ssl))
     (ops ssl buf ~off:(-2) ~len:3)

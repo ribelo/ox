@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 type t = (string * string) list
 type name = string

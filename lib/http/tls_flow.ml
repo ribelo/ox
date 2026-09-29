@@ -1,4 +1,4 @@
-module Ssl = Eta_http_tls_openssl
+module Ssl = Ox_http_tls_openssl
 
 exception Tls_failure of string
 

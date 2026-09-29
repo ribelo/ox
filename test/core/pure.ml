@@ -1,4 +1,4 @@
-open Eta
+open Ox
 
 let dur_ms = Duration.ms
 let some_dur = Alcotest.option (Alcotest.testable Duration.pp Duration.equal)

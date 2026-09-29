@@ -15,7 +15,7 @@ type value =
   | Int of int
   | Float of float
   | Bool of bool
-  | Json of Eta_json.t
+  | Json of Ox_json.t
   | Redacted of Redact.t
 
 let value_to_string = function
@@ -23,19 +23,19 @@ let value_to_string = function
   | Int value -> string_of_int value
   | Float value -> Printf.sprintf "%g" value
   | Bool value -> string_of_bool value
-  | Json value -> Eta_json.to_string value
+  | Json value -> Ox_json.to_string value
   | Redacted value -> Redact.to_string value
 
 let pp_value fmt value = Format.pp_print_string fmt (value_to_string value)
 
 let value_to_json = function
-  | String value -> Eta_json.string value
-  | Int value -> Eta_json.int value
+  | String value -> Ox_json.string value
+  | Int value -> Ox_json.int value
   | Float value -> (
-      match Eta_json.float value with
+      match Ox_json.float value with
       | Some json -> json
-      | None -> Eta_json.string (Printf.sprintf "%g" value))
-  | Bool value -> Eta_json.bool value
+      | None -> Ox_json.string (Printf.sprintf "%g" value))
+  | Bool value -> Ox_json.bool value
   | Json value -> value
   | Redacted value -> Redact.to_json value
 
@@ -78,24 +78,24 @@ let iso8601_of_epoch_ms ms =
     seconds millis
 
 let json_object_of_fields fields =
-  Eta_json.object_
+  Ox_json.object_
     (List.map (fun (name, value) -> (name, Some (value_to_json value))) fields)
 
 let json_object_of_context context =
-  Eta_json.object_
-    (List.map (fun (name, value) -> (name, Some (Eta_json.string value))) context)
+  Ox_json.object_
+    (List.map (fun (name, value) -> (name, Some (Ox_json.string value))) context)
 
 let timestamp_json ts =
   let ms = int_of_float (Float.round (ts *. 1_000.)) in
-  Eta_json.string (iso8601_of_epoch_ms ms)
+  Ox_json.string (iso8601_of_epoch_ms ms)
 
 let to_json record =
-  Eta_json.object_
+  Ox_json.object_
     [
       ("ts", Some (timestamp_json record.ts));
-      ("level", Some (Eta_json.string (level_to_string record.level)));
-      ("service", Some (Eta_json.string record.service));
-      ("msg", Some (Eta_json.string record.msg));
+      ("level", Some (Ox_json.string (level_to_string record.level)));
+      ("service", Some (Ox_json.string record.service));
+      ("msg", Some (Ox_json.string record.msg));
       ( "fields",
         match record.fields with
         | [] -> None
@@ -106,7 +106,7 @@ let to_json record =
         | context -> Some (json_object_of_context context) );
     ]
 
-let to_string record = Eta_json.to_string (to_json record)
+let to_string record = Ox_json.to_string (to_json record)
 
 module Reporter = struct
   type t = { emit : record -> unit }
@@ -166,12 +166,12 @@ module Memory = struct
   let find ?level ?field memory = List.filter (matches ?level ?field) (records memory)
 end
 
-type limit = { max : int; window : Eta.Duration.t }
+type limit = { max : int; window : Ox.Duration.t }
 
 let limit ~max ~window =
-  if max < 1 then invalid_arg "Eta_observability.Logger.limit: max must be at least 1";
-  if Eta.Duration.to_ms window <= 0 then
-    invalid_arg "Eta_observability.Logger.limit: window must be positive";
+  if max < 1 then invalid_arg "Ox_observability.Logger.limit: max must be at least 1";
+  if Ox.Duration.to_ms window <= 0 then
+    invalid_arg "Ox_observability.Logger.limit: window must be positive";
   { max; window }
 
 type window_state = { mutable window_start : Mtime.t; mutable window_count : int }
@@ -246,7 +246,7 @@ let admit t limit msg =
       in
       if
         milliseconds_between state.window_start now
-        >= float_of_int (Eta.Duration.to_ms window)
+        >= float_of_int (Ox.Duration.to_ms window)
       then begin
         state.window_start <- now;
         state.window_count <- 0
@@ -272,7 +272,7 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
     | Some pp_err -> pp_err
     | None -> fun fmt _ -> Format.pp_print_string fmt "<error>"
   in
-  let summarize cause = Format.asprintf "%a" (Eta.Cause.pp_compact pp_err) cause in
+  let summarize cause = Format.asprintf "%a" (Ox.Cause.pp_compact pp_err) cause in
   let run () =
   emit_if_enabled t level ~msg ~fields:(("event", String "start") :: fields);
   let finish outcome exit_level extra =
@@ -288,7 +288,7 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
       finish "ok" level [];
       Ok value
   | Error error ->
-      finish "failed" Error [ ("error", String (summarize (Eta.Cause.Fail error))) ];
+      finish "failed" Error [ ("error", String (summarize (Ox.Cause.Fail error))) ];
       Error error
   | exception exn ->
       let backtrace = Printexc.get_raw_backtrace () in
@@ -298,7 +298,7 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
         | exn ->
             ( "defect",
               Error,
-              [ ("error", String (summarize (Eta.Cause.Die (exn, backtrace)))) ] )
+              [ ("error", String (summarize (Ox.Cause.Die (exn, backtrace)))) ] )
       in
       (* Best effort: a reporter failure must not replace the exception that is
          already propagating out of the span. *)

@@ -1,4 +1,4 @@
-type error = [ `Eta_sql of Types.sql_error | `Pool_shutdown | `Timeout ]
+type error = [ `Ox_sql of Types.sql_error | `Pool_shutdown | `Timeout ]
 type pool
 type tx
 
@@ -30,10 +30,10 @@ let shutdown_state s =
   Ok ()
 
 let create ~sw ?clock ?default_timeout ?(max_size = 4) config =
-  if max_size < 1 then Error (`Eta_sql (Types.Pool_error "max_size must be positive"))
+  if max_size < 1 then Error (`Ox_sql (Types.Pool_error "max_size must be positive"))
   else
     match Connection.create config with
-    | Error err -> Error (`Eta_sql err)
+    | Error err -> Error (`Ox_sql err)
     | Ok initial ->
         let mutex = Eio.Mutex.create () in
         let handles = ref [ initial ] in
@@ -83,7 +83,7 @@ let apply_timeout s override f =
   | _ -> f ()
 
 let use ?timeout runner f =
-  let run s c = match f c with Ok x -> Ok x | Error err -> Error (`Eta_sql err) in
+  let run s c = match f c with Ok x -> Ok x | Error err -> Error (`Ox_sql err) in
   match runner with
   | Transaction (s, c, valid) ->
       if not !valid then Error `Pool_shutdown
@@ -105,7 +105,7 @@ let use ?timeout runner f =
                         guard s (fun () -> s.active <- s.active - 1);
                         Eio.Condition.broadcast s.changed)
                       (fun () -> run s c)))
-            with Types.Error err -> Error (`Eta_sql err))
+            with Types.Error err -> Error (`Ox_sql err))
 
 module Typed = struct
   let select ?timeout r q = use ?timeout r (fun c -> Connection.Typed.select c q)
@@ -151,12 +151,12 @@ let with_transaction ?timeout pool body =
               (fun () ->
                 match body (Transaction (s, c, valid)) with
                 | Ok x -> Ok x
-                | Error (`Eta_sql err) -> Error err
+                | Error (`Ox_sql err) -> Error err
                 | Error `Pool_shutdown -> Error (Types.Pool_error "pool shut down")
                 | Error `Timeout -> Error (Types.Pool_error "transaction timed out")))
       in
       match outcome with
-      | Eta_sql_dsl.Committed x -> Ok x
+      | Ox_sql_dsl.Committed x -> Ok x
       | Failed failure -> (
           match failure.primary with
           | Returned err -> Error err

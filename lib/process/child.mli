@@ -19,7 +19,7 @@ val spawn :
   ?cwd:Eio.Fs.dir_ty Eio.Path.t ->
   ?stdout:output ->
   ?stderr:output ->
-  grace:Eta.Duration.t ->
+  grace:Ox.Duration.t ->
   fds:(int * Eio_unix.Fd.t) list ->
   unit ->
   (t, error) result

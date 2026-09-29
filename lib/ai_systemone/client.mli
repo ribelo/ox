@@ -12,11 +12,11 @@
     `~endpoint` at {!create}, so a test points the client at a local server.
 
     Cancellation and finalizers: {!evaluate} runs in the calling fiber, opens and closes
-    one socket per attempt through {!Eta_http.Client}, sleeps its backoff on the caller's
+    one socket per attempt through {!Ox_http.Client}, sleeps its backoff on the caller's
     clock and registers no finalizer. Cancelling the fiber closes the socket of the
     attempt in flight; the typed result is [`Timeout] when the caller's deadline passed,
     and cancellation itself propagates as [Eio.Cancel.Cancelled] and is classified by
-    [Eta.Scope.run] at the boundary. *)
+    [Ox.Scope.run] at the boundary. *)
 
 val default_endpoint : string
 (** [https://openrouter.ai/api/v1/systemone]: the endpoint the reference client uses. *)
@@ -29,34 +29,34 @@ type t
 (** A configured client: the transport, the clock, the endpoint, the key and the model. *)
 
 val create :
-  http:Eta_http.Client.t ->
+  http:Ox_http.Client.t ->
   clock:_ Eio.Time.clock ->
-  logger:Eta_observability.Logger.t ->
+  logger:Ox_observability.Logger.t ->
   ?endpoint:string ->
-  api_key:Eta_observability.Redact.t ->
+  api_key:Ox_observability.Redact.t ->
   model:string ->
-  ?timeout:Eta.Duration.t ->
+  ?timeout:Ox.Duration.t ->
   ?max_request_bytes:int ->
   unit ->
   t
 (** [create ~http ~clock ~logger ?endpoint ~api_key ~model ()] is a client. [endpoint]
-    defaults to {!default_endpoint}; [api_key] is a {!Eta_observability.Redact.t}, so the
-    key cannot reach a log line by accident, and only {!Eta_ai.Bearer.header} reveals it,
+    defaults to {!default_endpoint}; [api_key] is a {!Ox_observability.Redact.t}, so the
+    key cannot reach a log line by accident, and only {!Ox_ai.Bearer.header} reveals it,
     on the request path. [timeout] (10 s by default) is the ceiling on one attempt's read
     and [max_request_bytes] (4 MiB by default) the bound on the serialized request. Pure
     and synchronous: it takes no switch, opens no socket and registers no finalizer. *)
 
 val evaluate :
   t ->
-  deadline:Eta.Duration.t ->
+  deadline:Ox.Duration.t ->
   state:Yojson.Safe.t ->
   questions:(string * Codecs.question) list ->
-  (Codecs.response, Eta_ai.Error.t) result
+  (Codecs.response, Ox_ai.Error.t) result
 (** [evaluate client ~deadline ~state ~questions] POSTs [{"model"; "state"; "questions"}]
     and returns the decoded reply.
 
     The states of failure, all inside [deadline], all under the two-attempt policy of
-    {!Eta_ai.Transport}:
+    {!Ox_ai.Transport}:
     - [`Input_too_large bound] — the serialized request is over the bound (4 MiB); nothing
       was sent.
     - [`Invalid_response issue] — the reply is not the documented shape (a missing field,

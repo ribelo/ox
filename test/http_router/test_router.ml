@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 (* Copied from v1:test/router/test_eta_router.ml (story ^hserv-e3q9): the pure
    path matcher regression suite - static, named, catch-all, prefix/suffix and
@@ -11,32 +11,32 @@ let escape_tests =
     ( "unescape doubled braces",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/{{hello}}/{{world}}" in
-        check string "bytes" "/{hello}/{world}" (Eta_http.Router.Escape.to_string r);
-        check bool "0" false (Eta_http.Router.Escape.is_escaped r 0);
+        let r = Ox_http.Router.Escape.of_string "/{{hello}}/{{world}}" in
+        check string "bytes" "/{hello}/{world}" (Ox_http.Router.Escape.to_string r);
+        check bool "0" false (Ox_http.Router.Escape.is_escaped r 0);
         (* '/' *)
-        check bool "1" true (Eta_http.Router.Escape.is_escaped r 1);
+        check bool "1" true (Ox_http.Router.Escape.is_escaped r 1);
         (* '{' *)
-        check bool "9" true (Eta_http.Router.Escape.is_escaped r 9) );
+        check bool "9" true (Ox_http.Router.Escape.is_escaped r 9) );
     ( "slice preserves escaping",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/{{a}}/{b}" in
-        let s = Eta_http.Router.Escape.slice_off (Eta_http.Router.Escape.full r) 1 in
-        check string "slice" "{a}/{b}" (Eta_http.Router.Escape.slice_to_string s);
-        check bool "0 escaped" true (Eta_http.Router.Escape.slice_is_escaped s 0);
-        check bool "2 escaped" true (Eta_http.Router.Escape.slice_is_escaped s 2);
-        check bool "4 not escaped" false (Eta_http.Router.Escape.slice_is_escaped s 4) );
+        let r = Ox_http.Router.Escape.of_string "/{{a}}/{b}" in
+        let s = Ox_http.Router.Escape.slice_off (Ox_http.Router.Escape.full r) 1 in
+        check string "slice" "{a}/{b}" (Ox_http.Router.Escape.slice_to_string s);
+        check bool "0 escaped" true (Ox_http.Router.Escape.slice_is_escaped s 0);
+        check bool "2 escaped" true (Ox_http.Router.Escape.slice_is_escaped s 2);
+        check bool "4 not escaped" false (Ox_http.Router.Escape.slice_is_escaped s 4) );
     ( "common prefix with escapes",
       `Quick,
       fun () ->
-        let a = Eta_http.Router.Escape.of_string "/{{x}}" in
-        let b = Eta_http.Router.Escape.of_string "/{x}" in
-        let pa = Eta_http.Router.Escape.full a in
-        let pb = Eta_http.Router.Escape.full b in
+        let a = Ox_http.Router.Escape.of_string "/{{x}}" in
+        let b = Ox_http.Router.Escape.of_string "/{x}" in
+        let pa = Ox_http.Router.Escape.full a in
+        let pb = Ox_http.Router.Escape.full b in
         (* Both have '/' as first byte, but the second byte differs in escape
            status, so the common prefix is 1. *)
-        check int "prefix" 1 (Eta_http.Router.Escape.common_prefix pa pb) );
+        check int "prefix" 1 (Ox_http.Router.Escape.common_prefix pa pb) );
   ]
 
 let route_tests =
@@ -44,8 +44,8 @@ let route_tests =
     ( "find simple parameter",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/users/{id}" in
-        match Eta_http.Router.Route.find_wildcard (Eta_http.Router.Escape.full r) with
+        let r = Ox_http.Router.Escape.of_string "/users/{id}" in
+        match Ox_http.Router.Route.find_wildcard (Ox_http.Router.Escape.full r) with
         | Ok (Some w) ->
             check int "start" 7 w.start;
             check int "end" 11 w.end_
@@ -53,8 +53,8 @@ let route_tests =
     ( "find catch-all",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/{*path}" in
-        match Eta_http.Router.Route.find_wildcard (Eta_http.Router.Escape.full r) with
+        let r = Ox_http.Router.Escape.of_string "/{*path}" in
+        match Ox_http.Router.Route.find_wildcard (Ox_http.Router.Escape.full r) with
         | Ok (Some w) ->
             check int "start" 1 w.start;
             check int "end" 8 w.end_
@@ -62,50 +62,50 @@ let route_tests =
     ( "reject empty parameter",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/users/{}" in
+        let r = Ox_http.Router.Escape.of_string "/users/{}" in
         check bool "error" true
-          (match Eta_http.Router.Route.find_wildcard (Eta_http.Router.Escape.full r) with
-          | Error (Eta_http.Router.Error.Invalid_route _) -> true
+          (match Ox_http.Router.Route.find_wildcard (Ox_http.Router.Escape.full r) with
+          | Error (Ox_http.Router.Error.Invalid_route _) -> true
           | _ -> false) );
     ( "reject slash in parameter",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/users/{a/b}" in
+        let r = Ox_http.Router.Escape.of_string "/users/{a/b}" in
         check bool "error" true
-          (match Eta_http.Router.Route.find_wildcard (Eta_http.Router.Escape.full r) with
-          | Error (Eta_http.Router.Error.Invalid_route _) -> true
+          (match Ox_http.Router.Route.find_wildcard (Ox_http.Router.Escape.full r) with
+          | Error (Ox_http.Router.Error.Invalid_route _) -> true
           | _ -> false) );
     ( "normalize replaces names",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/users/{id}/posts/{slug}" in
-        match Eta_http.Router.Route.normalize r with
+        let r = Ox_http.Router.Escape.of_string "/users/{id}/posts/{slug}" in
+        match Ox_http.Router.Route.normalize r with
         | Ok (norm, remapping) ->
             check string "normalized" "/users/{a}/posts/{b}"
-              (Eta_http.Router.Escape.to_string norm);
+              (Ox_http.Router.Escape.to_string norm);
             check (list string) "remapping" [ "id"; "slug" ] remapping
         | Error _ -> fail "expected ok" );
     ( "normalize preserves catch-all",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/{*path}" in
-        match Eta_http.Router.Route.normalize r with
+        let r = Ox_http.Router.Escape.of_string "/{*path}" in
+        match Ox_http.Router.Route.normalize r with
         | Ok (norm, remapping) ->
-            check string "normalized" "/{*path}" (Eta_http.Router.Escape.to_string norm);
+            check string "normalized" "/{*path}" (Ox_http.Router.Escape.to_string norm);
             check (list string) "remapping" [] remapping
         | Error _ -> fail "expected ok" );
     ( "denormalize restores names",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/users/{a}/posts/{b}" in
-        let restored = Eta_http.Router.Route.denormalize r [ "id"; "slug" ] in
+        let r = Ox_http.Router.Escape.of_string "/users/{a}/posts/{b}" in
+        let restored = Ox_http.Router.Route.denormalize r [ "id"; "slug" ] in
         check string "denormalized" "/users/{id}/posts/{slug}"
-          (Eta_http.Router.Escape.to_string restored) );
+          (Ox_http.Router.Escape.to_string restored) );
     ( "escaped braces are not wildcards",
       `Quick,
       fun () ->
-        let r = Eta_http.Router.Escape.of_string "/{{hello}}" in
-        match Eta_http.Router.Route.find_wildcard (Eta_http.Router.Escape.full r) with
+        let r = Ox_http.Router.Escape.of_string "/{{hello}}" in
+        match Ox_http.Router.Route.find_wildcard (Ox_http.Router.Escape.full r) with
         | Ok None -> ()
         | _ -> fail "expected no wildcard" );
   ]
@@ -115,18 +115,18 @@ let route_tests =
 type expect = Ok | Conflict | Invalid
 
 let check_insert router route expected =
-  let got = Eta_http.Router.insert router route route in
+  let got = Ox_http.Router.insert router route route in
   let ok =
     match (got, expected) with
     | Ok (), Ok -> true
-    | Error (Eta_http.Router.Error.Conflict _), Conflict -> true
-    | Error (Eta_http.Router.Error.Invalid_route _), Invalid -> true
+    | Error (Ox_http.Router.Error.Conflict _), Conflict -> true
+    | Error (Ox_http.Router.Error.Invalid_route _), Invalid -> true
     | _ -> false
   in
   check bool route true ok
 
 let run_insert_tests cases () =
-  let router = Eta_http.Router.create () in
+  let router = Ox_http.Router.create () in
   List.iter (fun (route, expected) -> check_insert router route expected) cases
 
 (* Ported from matchit tests/insert.rs ------------------------------------ *)
@@ -476,7 +476,7 @@ let bare_catchall_tests = [ ("{*foo}", Ok); ("foo/{*bar}", Ok) ]
 type match_expect = Found of string * (string * string) list | Not_found
 
 let check_match router path expected =
-  match Eta_http.Router.at router path with
+  match Ox_http.Router.at router path with
   | Ok m -> (
       match expected with
       | Not_found ->
@@ -486,17 +486,17 @@ let check_match router path expected =
           check
             (list (pair string string))
             "params" params
-            (Eta_http.Router.Params.to_list m.params))
+            (Ox_http.Router.Params.to_list m.params))
   | Error _ -> (
       match expected with
       | Found _ -> fail (Printf.sprintf "expected match for %s" path)
       | Not_found -> ())
 
 let run_match_tests routes matches () =
-  let router = Eta_http.Router.create () in
+  let router = Ox_http.Router.create () in
   List.iter
     (fun route ->
-      match Eta_http.Router.insert router route route with
+      match Ox_http.Router.insert router route route with
       | Ok () -> ()
       | Error _ -> fail (Printf.sprintf "insert %s failed" route))
     routes;
@@ -1229,10 +1229,10 @@ let match_test name cases =
 type remove_op = Insert of string | Remove of string * string option
 
 let run_remove_test ~routes ~ops ~remaining () =
-  let router = Eta_http.Router.create () in
+  let router = Ox_http.Router.create () in
   List.iter
     (fun route ->
-      match Eta_http.Router.insert router route route with
+      match Ox_http.Router.insert router route route with
       | Ok () -> ()
       | Error _ -> fail (Printf.sprintf "insert %s failed" route))
     routes;
@@ -1240,16 +1240,16 @@ let run_remove_test ~routes ~ops ~remaining () =
     (fun op ->
       match op with
       | Insert route -> (
-          match Eta_http.Router.insert router route route with
+          match Ox_http.Router.insert router route route with
           | Ok () -> ()
           | Error _ -> fail (Printf.sprintf "insert %s failed" route))
       | Remove (route, expected) ->
-          let got = Eta_http.Router.remove router route in
+          let got = Ox_http.Router.remove router route in
           check (option string) route expected got)
     ops;
   List.iter
     (fun route ->
-      match Eta_http.Router.at router route with
+      match Ox_http.Router.at router route with
       | Ok _ -> ()
       | Error _ -> fail (Printf.sprintf "remaining %s not found" route))
     remaining
@@ -1454,77 +1454,69 @@ let remove_wildcard_suffix_test =
 (* Ported from matchit tests/merge.rs ------------------------------------- *)
 
 let merge_ok_test () =
-  let root = Eta_http.Router.create () in
-  let child = Eta_http.Router.create () in
+  let root = Ox_http.Router.create () in
+  let child = Ox_http.Router.create () in
   check bool "insert /foo" true
-    (match Eta_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
   check bool "insert /bar/{id}" true
-    (match Eta_http.Router.insert root "/bar/{id}" "bar" with
-    | Ok () -> true
-    | _ -> false);
+    (match Ox_http.Router.insert root "/bar/{id}" "bar" with Ok () -> true | _ -> false);
   check bool "child /baz" true
-    (match Eta_http.Router.insert child "/baz" "baz" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert child "/baz" "baz" with Ok () -> true | _ -> false);
   check bool "child /xyz/{id}" true
-    (match Eta_http.Router.insert child "/xyz/{id}" "xyz" with
+    (match Ox_http.Router.insert child "/xyz/{id}" "xyz" with
     | Ok () -> true
     | _ -> false);
   check bool "merge ok" true
-    (match Eta_http.Router.merge ~into:root child with Ok () -> true | _ -> false);
+    (match Ox_http.Router.merge ~into:root child with Ok () -> true | _ -> false);
   check (option string) "/foo" (Some "foo")
-    (match Eta_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
   check (option string) "/bar/1" (Some "bar")
-    (match Eta_http.Router.at root "/bar/1" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/bar/1" with Ok m -> Some m.value | _ -> None);
   check (option string) "/baz" (Some "baz")
-    (match Eta_http.Router.at root "/baz" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/baz" with Ok m -> Some m.value | _ -> None);
   check (option string) "/xyz/2" (Some "xyz")
-    (match Eta_http.Router.at root "/xyz/2" with Ok m -> Some m.value | _ -> None)
+    (match Ox_http.Router.at root "/xyz/2" with Ok m -> Some m.value | _ -> None)
 
 let merge_conflict_test () =
-  let root = Eta_http.Router.create () in
-  let child = Eta_http.Router.create () in
+  let root = Ox_http.Router.create () in
+  let child = Ox_http.Router.create () in
   check bool "insert /foo" true
-    (match Eta_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
   check bool "insert /bar" true
-    (match Eta_http.Router.insert root "/bar" "bar" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert root "/bar" "bar" with Ok () -> true | _ -> false);
   check bool "child /foo" true
-    (match Eta_http.Router.insert child "/foo" "changed" with
-    | Ok () -> true
-    | _ -> false);
+    (match Ox_http.Router.insert child "/foo" "changed" with Ok () -> true | _ -> false);
   check bool "child /bar" true
-    (match Eta_http.Router.insert child "/bar" "changed" with
-    | Ok () -> true
-    | _ -> false);
+    (match Ox_http.Router.insert child "/bar" "changed" with Ok () -> true | _ -> false);
   check bool "child /baz" true
-    (match Eta_http.Router.insert child "/baz" "baz" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert child "/baz" "baz" with Ok () -> true | _ -> false);
   check bool "merge conflict" true
-    (match Eta_http.Router.merge ~into:root child with
-    | Error (Eta_http.Router.Error.Conflicts _) -> true
+    (match Ox_http.Router.merge ~into:root child with
+    | Error (Ox_http.Router.Error.Conflicts _) -> true
     | _ -> false);
   check (option string) "/foo unchanged" (Some "foo")
-    (match Eta_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
   check (option string) "/bar unchanged" (Some "bar")
-    (match Eta_http.Router.at root "/bar" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/bar" with Ok m -> Some m.value | _ -> None);
   check (option string) "/baz merged" (Some "baz")
-    (match Eta_http.Router.at root "/baz" with Ok m -> Some m.value | _ -> None)
+    (match Ox_http.Router.at root "/baz" with Ok m -> Some m.value | _ -> None)
 
 let merge_nested_test () =
-  let root = Eta_http.Router.create () in
-  let child = Eta_http.Router.create () in
+  let root = Ox_http.Router.create () in
+  let child = Ox_http.Router.create () in
   check bool "insert /foo" true
-    (match Eta_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
+    (match Ox_http.Router.insert root "/foo" "foo" with Ok () -> true | _ -> false);
   check bool "child /foo/bar" true
-    (match Eta_http.Router.insert child "/foo/bar" "bar" with
-    | Ok () -> true
-    | _ -> false);
+    (match Ox_http.Router.insert child "/foo/bar" "bar" with Ok () -> true | _ -> false);
   check bool "merge ok" true
-    (match Eta_http.Router.merge ~into:root child with Ok () -> true | _ -> false);
+    (match Ox_http.Router.merge ~into:root child with Ok () -> true | _ -> false);
   check (option string) "/foo" (Some "foo")
-    (match Eta_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
+    (match Ox_http.Router.at root "/foo" with Ok m -> Some m.value | _ -> None);
   check (option string) "/foo/bar" (Some "bar")
-    (match Eta_http.Router.at root "/foo/bar" with Ok m -> Some m.value | _ -> None)
+    (match Ox_http.Router.at root "/foo/bar" with Ok m -> Some m.value | _ -> None)
 
 let () =
-  run "eta_http_router"
+  run "ox_http_router"
     [
       ("escape", escape_tests);
       ("route", route_tests);

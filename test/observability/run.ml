@@ -1,4 +1,4 @@
-(* Tests for eta_observability.
+(* Tests for ox_observability.
 
    Story IDs covered here, one group per story:
    ^nobs-og4h  log writes one record with a timestamp, a level, the message,
@@ -13,14 +13,14 @@
    ^nobs-xovg  span logs start and end with elapsed time and an outcome
    ^nobs-8i5y  Reporter.tee delivers every record to each reporter in order, a
                failing reporter never preventing the others
-   ^nobs-6x58  the package depends on eta, eio and eta_json only (row 16 adds
+   ^nobs-6x58  the package depends on ox, eio and ox_json only (row 16 adds
                yojson for Redact.t's codecs, ^nnoschema-ifg0)
 
-   The clocks are eta_test's mock clocks: the wall clock for timestamps, the
+   The clocks are ox_test's mock clocks: the wall clock for timestamps, the
    monotonic clock for span elapsed time and rate-limit windows. *)
 
-open Eta
-open Eta_observability
+open Ox
+open Ox_observability
 
 let contains haystack needle =
   let haystack_length = String.length haystack in
@@ -69,13 +69,13 @@ let test_redact_paths () =
   let secret = Redact.make "sk-live-1234" in
   check_string "pp" "<redacted>" (Format.asprintf "%a" Redact.pp secret);
   check_string "to_string" "<redacted>" (Redact.to_string secret);
-  check_string "to_json" "\"<redacted>\"" (Eta_json.to_string (Redact.to_json secret));
+  check_string "to_json" "\"<redacted>\"" (Ox_json.to_string (Redact.to_json secret));
   check_string "expose is the one revealing path" "sk-live-1234" (Redact.expose secret)
 
 (* ^nobs-iedi: a secret reaches a record only as a Redacted field, and the line
    it produces contains the wrapper's rendering and never the secret. *)
 let test_redact_in_record () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Logger.info logger
@@ -106,7 +106,7 @@ let test_redact_yojson () =
 (* ^nobs-2d4r: fields attached with with_fields reach records logged inside its
    extent and stop when it ends. *)
 let test_context_extent () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Context.with_fields
@@ -131,7 +131,7 @@ let test_context_extent () =
 
 (* ^nobs-2d4r: a fiber forked inside the extent inherits the fields. *)
 let test_context_fork_inheritance () =
-  Eta_test.run (fun env sw ->
+  Ox_test.run (fun env sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Context.with_fields
@@ -149,7 +149,7 @@ let test_context_fork_inheritance () =
 (* ^nobs-2d4r: nesting replaces a name in place, keeps the rest, and restores
    the outer set when the inner extent ends. *)
 let test_context_nesting () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Context.with_fields
@@ -182,7 +182,7 @@ let test_context_outside_fiber () =
 (* ^nobs-og4h: one record carries the timestamp, the level, the message, the
    event's fields and the fiber's inherited context. *)
 let test_log_record () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       set_wall env 5.25;
       let logger = make_logger env memory in
@@ -209,7 +209,7 @@ let test_log_record () =
 (* ^nobs-og4h: base fields are defaults for every record; the record's own
    field with the same name wins. *)
 let test_base_fields () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger =
         make_logger
@@ -228,7 +228,7 @@ let test_base_fields () =
 (* ^nobs-ek28: the journal reporter writes one compact JSON object per line,
    with a fixed key order, and every line parses on its own. *)
 let test_journal_lines () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let buffer = Buffer.create 256 in
       let logger =
         Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
@@ -252,17 +252,17 @@ let test_journal_lines () =
         (List.nth lines 1);
       List.iter
         (fun line ->
-          match Eta_json.parse line with
+          match Ox_json.parse line with
           | Ok _ -> ()
           | Error error ->
               Alcotest.failf "a journal line is not one JSON document: %a"
-                Eta_json.pp_parse_error error)
+                Ox_json.pp_parse_error error)
         lines)
 
 (* ^nobs-ek28: the timestamp is UTC with millisecond precision, and years
    before the epoch render too. *)
 let test_journal_timestamp () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let buffer = Buffer.create 128 in
       let logger =
         Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
@@ -281,7 +281,7 @@ let test_journal_timestamp () =
 
 (* ^nobs-262i: a per-logger minimum level drops records below it. *)
 let test_minimum_level () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger ~level:Logger.Warn env memory in
       check_bool "info is below the minimum" false (Logger.enabled logger Logger.Info);
@@ -295,7 +295,7 @@ let test_minimum_level () =
 
 (* ^nobs-rayu: the in-memory reporter answers by level and by field. *)
 let test_memory_find () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Logger.info logger ~fields:[ ("tab", Logger.String "t-1") ] "first";
@@ -319,7 +319,7 @@ let test_memory_find () =
 (* ^nobs-262i: one message is written at most max times per window, measured on
    the monotonic clock, and each message name has its own budget. *)
 let test_rate_limit () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let limit = Logger.limit ~max:2 ~window:(Duration.seconds 10) in
@@ -340,7 +340,7 @@ let test_rate_limit () =
 
 (* ^nobs-xovg: a successful span logs start and end with monotonic elapsed. *)
 let test_span_ok () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let result =
@@ -363,7 +363,7 @@ let test_span_ok () =
 
 (* ^nobs-xovg: a typed failure is logged with its cause summary and returned. *)
 let test_span_failure () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let result =
@@ -383,7 +383,7 @@ let test_span_failure () =
 
 (* ^nobs-xovg: a raise is logged as a defect and re-raised. *)
 let test_span_defect () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let raised =
@@ -401,7 +401,7 @@ let test_span_defect () =
 
 (* ^nobs-xovg: cancellation is an interruption, not a defect, and propagates. *)
 let test_span_interrupt () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       let cancelled =
@@ -421,7 +421,7 @@ let test_span_interrupt () =
 (* ^nobs-xovg: the span's records carry its own fields and the inherited
    context. *)
 let test_span_fields_and_context () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger env memory in
       Context.with_fields
@@ -446,7 +446,7 @@ let test_span_fields_and_context () =
 
 (* ^nobs-262i ^nobs-xovg: the logger's minimum level applies to spans too. *)
 let test_span_minimum_level () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let memory = Logger.Memory.create () in
       let logger = make_logger ~level:Logger.Warn env memory in
       let result = Logger.span logger "quiet" (fun () -> Ok 1) in
@@ -461,13 +461,13 @@ let test_span_minimum_level () =
       check_string "and it is the end record" "end" (field_text record "event");
       check_string "with the failure outcome" "failed" (field_text record "outcome"))
 
-(* ^nobs-6x58: the package depends on eta, eio and eta_json only — plus yojson,
+(* ^nobs-6x58: the package depends on ox, eio and ox_json only — plus yojson,
    which row 16 admits for Redact.t's codecs (^nnoschema-ifg0, ADR-0007). The generated
    opam file is the contract, so this reads it: every runtime dependency must be
    one of those (plus Eio's own mtime type for the monotonic clock, and the
    compiler and build-tool entries dune generates). *)
 let test_dependency_ceiling () =
-  let lines = read_file "../../eta_observability.opam" |> String.split_on_char '\n' in
+  let lines = read_file "../../ox_observability.opam" |> String.split_on_char '\n' in
   let rec drop_while predicate = function
     | line :: rest when predicate line -> drop_while predicate rest
     | rest -> rest
@@ -479,7 +479,7 @@ let test_dependency_ceiling () =
   let depends =
     lines |> drop_while (fun line -> not (String.starts_with ~prefix:"depends: [" line))
     |> function
-    | [] -> Alcotest.fail "eta_observability.opam has no depends list"
+    | [] -> Alcotest.fail "ox_observability.opam has no depends list"
     | _ :: rest -> take_while (fun line -> not (String.equal (String.trim line) "]")) rest
   in
   let name_of line =
@@ -500,23 +500,23 @@ let test_dependency_ceiling () =
       depends
   in
   let allowed =
-    [ "dune"; "ocaml"; "conf-eta-oxcaml"; "eta"; "eio"; "eta_json"; "yojson"; "mtime" ]
+    [ "dune"; "ocaml"; "conf-ox-oxcaml"; "ox"; "eio"; "ox_json"; "yojson"; "mtime" ]
   in
   List.iter
     (fun name ->
       if not (List.mem name allowed) then
-        Alcotest.failf "%s is outside eta_observability's dependency ceiling" name)
+        Alcotest.failf "%s is outside ox_observability's dependency ceiling" name)
     runtime;
   List.iter
     (fun name ->
       if not (List.mem name runtime) then
-        Alcotest.failf "%s is missing from eta_observability's runtime deps" name)
-    [ "eta"; "eio"; "eta_json"; "yojson" ]
+        Alcotest.failf "%s is missing from ox_observability's runtime deps" name)
+    [ "ox"; "eio"; "ox_json"; "yojson" ]
 
 (* ^nobs-xovg ^notel-6m2q: the optional generator binds nested IDs to the
    fiber; the typed reporter observes exactly the same records as a journal. *)
 let test_span_ids_and_records () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let records = ref [] in
       let next = ref 0 in
       let generate () =
@@ -554,7 +554,7 @@ let test_span_ids_and_records () =
 (* ^nobs-8i5y: a tee delivers every record to each reporter in the order given, and a
    reporter that raises never prevents the later ones from receiving it. *)
 let test_reporter_tee () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let seen = ref [] in
       let note name = Logger.Reporter.records (fun _ -> seen := name :: !seen) in
       let explode = Logger.Reporter.records (fun _ -> failwith "exporter exploded") in
@@ -571,7 +571,7 @@ let test_reporter_tee () =
 (* ^nobs-8i5y: cancellation is the logging fiber's own interruption, not a reporter
    failure, so a tee does not contain it. *)
 let test_reporter_tee_cancellation () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let seen = ref [] in
       let logger =
         Logger.create ~service:"leash" ~clock:env#clock ~mono_clock:env#mono_clock
@@ -594,7 +594,7 @@ let test_reporter_tee_cancellation () =
 
 (* ^napp-xb3q: a reporter threshold wraps only the chosen destination. *)
 let test_reporter_at_least () =
-  Eta_test.run (fun env _sw ->
+  Ox_test.run (fun env _sw ->
       let journal = Logger.Memory.create () in
       let telemetry = Logger.Memory.create () in
       let logger =
@@ -625,7 +625,7 @@ let test_reporter_at_least () =
         (messages telemetry))
 
 let () =
-  Alcotest.run "eta_observability"
+  Alcotest.run "ox_observability"
     (V1_logger.tests
     @ [
         ( "Redact",
@@ -703,7 +703,7 @@ let () =
         ( "Package",
           [
             Alcotest.test_case
-              "depends on eta, eio, eta_json and yojson only (^nobs-6x58 ^nnoschema-ifg0)"
+              "depends on ox, eio, ox_json and yojson only (^nobs-6x58 ^nnoschema-ifg0)"
               `Quick test_dependency_ceiling;
           ] );
       ])

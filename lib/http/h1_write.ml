@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 type body = Empty | Fixed of bytes list
 type stream_framing = Fixed_length of int | Chunked

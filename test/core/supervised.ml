@@ -1,6 +1,6 @@
 (* Row 45: supervised scopes with application errors, Concurrent over Eio, Retry policy,
    Schedule vocabulary. Every case cites its story IDs (nsup IDs). *)
-open Eta
+open Ox
 
 let check_bool = Alcotest.(check bool)
 let check_int = Alcotest.(check int)
@@ -978,7 +978,7 @@ let timeout_alias () =
         (ours = theirs && ours = Error `Timeout);
       check_bool "fast body passes through" true
         (Timeout.timeout ~clock (Duration.ms 100) (fun () -> Ok 1) = Ok 1));
-  let lib = if Sys.file_exists "lib/eta/dune" then "lib/eta" else "../../lib/eta" in
+  let lib = if Sys.file_exists "lib/ox/dune" then "lib/ox" else "../../lib/ox" in
   check_bool "Resource.acquire_release is gone" false
     (Sys.file_exists (Filename.concat lib "resource.ml")
     || Sys.file_exists (Filename.concat lib "resource.mli"));
@@ -992,7 +992,7 @@ let timeout_alias () =
 (* ---- nsup-o65j nsup-hje5: the doctrine is written down ---------------------------------- *)
 
 let doctrine_docs () =
-  let docs = if Sys.file_exists "docs/why-next.md" then "docs" else "../../docs" in
+  let docs = if Sys.file_exists "docs/why-ox.md" then "docs" else "../../docs" in
   let read name =
     let channel = open_in (Filename.concat docs name) in
     Fun.protect
@@ -1006,9 +1006,9 @@ let doctrine_docs () =
     in
     scan 0
   in
-  let why = read "why-next.md" and modes = read "modes.md" in
+  let why = read "why-ox.md" and modes = read "modes.md" in
   List.iter
-    (fun phrase -> check_bool ("why-next.md: " ^ phrase) true (contains why phrase))
+    (fun phrase -> check_bool ("why-ox.md: " ^ phrase) true (contains why phrase))
     [
       "Unrecoverable errors";
       "Recoverable errors";

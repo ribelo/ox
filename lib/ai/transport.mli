@@ -8,11 +8,11 @@
     the second only after a transport failure, an attempt's own timeout, or HTTP 429 or
     529, with a 100 ms backoff on the caller's clock; every other failure stops at the
     first attempt. The whole call, backoff included, is bounded by the caller's
-    {!Eta.Duration.t} deadline.
+    {!Ox.Duration.t} deadline.
 
     Cancellation and finalizers: {!post_json} runs in the calling fiber, sleeps on the
     caller's clock, and owns no switch; each attempt's socket is opened and closed by
-    {!Eta_http.Client.request}, so cancellation closes the socket and a cancelled call
+    {!Ox_http.Client.request}, so cancellation closes the socket and a cancelled call
     leaves nothing behind. No finalizer is registered here.
 
     ^nso-y4rw ^nso-77t7 ^nso-zmfp *)
@@ -21,34 +21,34 @@ type response = { status : int; body : bytes }
 (** What the endpoint answered: the HTTP status and the raw body. Decoding is the
     client's, because each AI endpoint documents its own reply. *)
 
-val default_timeout : Eta.Duration.t
-(** [Eta.Duration.seconds 10]: the ceiling on one attempt's read, the reference adapter's
+val default_timeout : Ox.Duration.t
+(** [Ox.Duration.seconds 10]: the ceiling on one attempt's read, the reference adapter's
     transport timeout. *)
 
 val default_max_request_bytes : int
 (** [4 * 1024 * 1024]: the serialized request bound. *)
 
 val default_max_response_bytes : int
-(** [1024 * 1024]: the response bound, enforced while reading by {!Eta_http.Client}. *)
+(** [1024 * 1024]: the response bound, enforced while reading by {!Ox_http.Client}. *)
 
 val max_attempts : int
 (** [2]: the number of attempts one {!post_json} call may make. *)
 
-val backoff : Eta.Duration.t
-(** [Eta.Duration.ms 100]: the fixed delay between the two attempts. *)
+val backoff : Ox.Duration.t
+(** [Ox.Duration.ms 100]: the fixed delay between the two attempts. *)
 
 val post_json :
-  http:Eta_http.Client.t ->
+  http:Ox_http.Client.t ->
   clock:_ Eio.Time.clock ->
-  logger:Eta_observability.Logger.t ->
-  ?timeout:Eta.Duration.t ->
+  logger:Ox_observability.Logger.t ->
+  ?timeout:Ox.Duration.t ->
   ?max_request_bytes:int ->
   ?max_response_bytes:int ->
   ?max_attempts:int ->
   endpoint:string ->
   authorization:(string * string) list ->
   body:bytes ->
-  deadline:Eta.Duration.t ->
+  deadline:Ox.Duration.t ->
   unit ->
   (response, Error.t) result
 (** [post_json ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ()] POSTs

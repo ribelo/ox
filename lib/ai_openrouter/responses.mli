@@ -1,4 +1,4 @@
-type schema = { name : string; schema : Eta_json.t; strict : bool option }
+type schema = { name : string; schema : Ox_json.t; strict : bool option }
 (** Pie Responses text plus input_audio/WAV. The call is bounded by the supplied deadline;
     cancellation closes the HTTP socket, with no additional finalizer. *)
 
@@ -59,9 +59,9 @@ type rejection =
     (** An output item kind this endpoint cannot deliver; the string is its [type]. *) ]
 
 val default_endpoint : string
-val encode : request -> Eta_json.t
+val encode : request -> Ox_json.t
 
-val decode : Eta_json.t -> (response, Eta_ai.Error.t) result
+val decode : Ox_json.t -> (response, Ox_ai.Error.t) result
 (** [decode json] is the reply's status, identity, concatenated text and every output
     item, in order.
 
@@ -84,13 +84,13 @@ val deliverable : response -> (string, rejection) result
     synchronous: it performs no I/O and registers no finalizer. *)
 
 val create :
-  http:Eta_http.Client.t ->
+  http:Ox_http.Client.t ->
   clock:_ Eio.Time.clock ->
-  logger:Eta_observability.Logger.t ->
-  api_key:Eta_observability.Redact.t ->
+  logger:Ox_observability.Logger.t ->
+  api_key:Ox_observability.Redact.t ->
   ?endpoint:string ->
-  deadline:Eta.Duration.t ->
+  deadline:Ox.Duration.t ->
   request ->
-  (response, Eta_ai.Error.t) result
+  (response, Ox_ai.Error.t) result
 (** One non-streaming call to [endpoint]. The caller's [deadline] bounds the whole call;
     cancellation closes the HTTP socket and no finalizer is registered. *)

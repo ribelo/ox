@@ -6,7 +6,7 @@
   test_writer_legacy
   test_openssl_compare
   test_openssl_bounds)
- (libraries eta_http eta eio eio.unix eio_main alcotest)
+ (libraries ox_http ox eio eio.unix eio_main alcotest)
  (deps localhost.crt localhost.key)
  (action
   (run %{test})))

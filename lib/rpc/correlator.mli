@@ -31,7 +31,7 @@ val create :
     stops on switch teardown; no underlying transport is closed by this module. *)
 
 val call :
-  'msg t -> ?session:string -> ?deadline:Eta.Duration.t -> 'msg -> ('msg, error) result
+  'msg t -> ?session:string -> ?deadline:Ox.Duration.t -> 'msg -> ('msg, error) result
 (** Registers before writing; [session] overrides the session extracted from the outgoing
     message for reply matching. Concurrent writes are serialized, never retried, and a
     write is never interrupted: cancelling a call waits for its frame to be written whole.

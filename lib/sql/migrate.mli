@@ -87,7 +87,7 @@ type error =
   | Migration_execution_error of { version : Version.t; error : Types.sql_error }
   | Migration_transaction of {
       version : Version.t;
-      phase : Eta_sql_dsl.transaction_phase;
+      phase : Ox_sql_dsl.transaction_phase;
       error : Types.sql_error;
     }
 

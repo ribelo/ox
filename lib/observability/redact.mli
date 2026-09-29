@@ -28,7 +28,7 @@ val pp : Format.formatter -> t -> unit
 val to_string : t -> string
 (** [to_string t] is ["<redacted>"], never the wrapped text. *)
 
-val to_json : t -> Eta_json.t
+val to_json : t -> Ox_json.t
 (** [to_json t] is the JSON string ["<redacted>"], never the wrapped text. *)
 
 val yojson_of_t : t -> Yojson.Safe.t

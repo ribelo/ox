@@ -14,7 +14,7 @@ let next_id = Atomic.make 0
 
 let fresh_id () =
   let value = Atomic.fetch_and_add next_id 1 + 1 in
-  "eta-sql-" ^ string_of_int value
+  "ox-sql-" ^ string_of_int value
 
 let now = Unix.gettimeofday
 
@@ -244,7 +244,7 @@ let rollback t =
     | Result.Error err -> Result.Error (Types.Sqlite err)
 
 let with_transaction t f =
-  Eta_sql_dsl.transaction
+  Ox_sql_dsl.transaction
     ~begin_:(fun _ -> begin_transaction t)
     ~commit:(fun _ -> commit t)
     ~rollback:(fun _ -> rollback t)

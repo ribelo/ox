@@ -114,14 +114,14 @@ let update_acc kind acc value =
   match (kind, acc) with
   | Meter.Counter _, Acc_sum current -> Acc_sum (add_number current value)
   | Histogram _, Acc_histogram samples -> Acc_histogram (float_of_number value :: samples)
-  | _ -> invalid_arg "Eta_otel.Metric_aggregation.update_acc: kind/acc mismatch"
+  | _ -> invalid_arg "Ox_otel.Metric_aggregation.update_acc: kind/acc mismatch"
 
 let finish_acc kind acc =
   match (kind, acc) with
   | Meter.Counter _, Acc_sum value -> Sum value
   | Histogram config, Acc_histogram samples ->
       Histogram (histogram_state (Meter.histogram_boundaries config) (List.rev samples))
-  | _ -> invalid_arg "Eta_otel.Metric_aggregation.finish_acc: kind/acc mismatch"
+  | _ -> invalid_arg "Ox_otel.Metric_aggregation.finish_acc: kind/acc mismatch"
 
 type entry = { mutable acc : acc; start_ms : int; mutable end_ms : int }
 type t = { table : entry Table.t; max_series : int; mutable series : int }

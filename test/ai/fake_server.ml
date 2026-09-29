@@ -16,7 +16,7 @@ type response =
           client, after the script's delay so a test can make the client's deadline the
           thing that fires. *)
 
-type script = { delay : Eta.Duration.t; response : response }
+type script = { delay : Ox.Duration.t; response : response }
 (** What one connection does. *)
 
 type t = {
@@ -39,7 +39,7 @@ let http_response ?(status = 200) ?(reason = "OK") ?(headers = []) body =
 let ok ?status ?reason ?headers body =
   [
     {
-      delay = Eta.Duration.zero;
+      delay = Ox.Duration.zero;
       response = Response (http_response ?status ?reason ?headers body);
     };
   ]
@@ -90,10 +90,10 @@ let start ~clock ~sw listener scripts =
            let script =
              match List.nth_opt scripts (!connections - 1) with
              | Some script -> script
-             | None -> { delay = Eta.Duration.zero; response = Silent }
+             | None -> { delay = Ox.Duration.zero; response = Silent }
            in
-           if Eta.Duration.to_seconds_float script.delay > 0. then
-             Eio.Time.sleep clock (Eta.Duration.to_seconds_float script.delay);
+           if Ox.Duration.to_seconds_float script.delay > 0. then
+             Eio.Time.sleep clock (Ox.Duration.to_seconds_float script.delay);
            (* A client that stops reading (a response past its bound) closes its side
               first, so a write can fail; that is the client's verdict to make, not the
               server's. *)

@@ -1,6 +1,6 @@
 (library
- (name eta_ai)
- (public_name eta_ai)
+ (name ox_ai)
+ (public_name ox_ai)
  (synopsis
   "Shared AI transport: bearer auth, bounded JSON POST, typed errors")
- (libraries eta eta_json eta_http eta_observability eio yojson))
+ (libraries ox ox_json ox_http ox_observability eio yojson))

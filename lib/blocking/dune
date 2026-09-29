@@ -1,4 +1,4 @@
 (library
- (name eta_blocking)
- (public_name eta_blocking)
- (libraries eta eio eio.unix))
+ (name ox_blocking)
+ (public_name ox_blocking)
+ (libraries ox eio eio.unix))

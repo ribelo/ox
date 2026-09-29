@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 type t = H1_0 | H1_1 | H2
 

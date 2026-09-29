@@ -1,4 +1,4 @@
 (library
- (name eta_otel)
- (public_name eta_otel)
- (libraries eta eio eta_http eta_observability eta_json))
+ (name ox_otel)
+ (public_name ox_otel)
+ (libraries ox eio ox_http ox_observability ox_json))

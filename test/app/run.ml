@@ -12,7 +12,7 @@
    refusal stands
    (^nnoschema-zi2m carries it into the derived decoder); ^napp-tuvw's
    schema-declared overrides are superseded. *)
-open Eta_app
+open Ox_app
 
 let check_int = Alcotest.(check int)
 let check_string = Alcotest.(check string)
@@ -37,7 +37,7 @@ let expect_part where needle = Alcotest.(check bool) needle true (contains where
 (* ^nnoschema-5mdj: the consumer's config is a plain record with [@@deriving
    yojson]. The secret is typed [Redact.t], so it is redacted by being of that
    type; it is an option because the environment, not the file, supplies it. *)
-type models = { api_key : Eta_observability.Redact.t option } [@@deriving yojson]
+type models = { api_key : Ox_observability.Redact.t option } [@@deriving yojson]
 type settings = { models : models; port : int } [@@deriving yojson]
 
 (* ^nnoschema-5mdj: what the Door takes is the type's derived decoder, its
@@ -55,7 +55,7 @@ let config : settings Config.t =
           | Some key ->
               {
                 settings with
-                models = { api_key = Some (Eta_observability.Redact.make key) };
+                models = { api_key = Some (Ox_observability.Redact.make key) };
               }
           | None -> settings
         in
@@ -76,7 +76,7 @@ let pp_err fmt = function `Problem message -> Format.pp_print_string fmt message
 let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?validate
     ?doc ?validation_exit ?log_level ?journal_level ?telemetry ?telemetry_result
     ?(read_path = fun _ -> ()) ?read ?(program = fun _ _ _ -> Ok ()) () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -85,11 +85,11 @@ let run ?(argv = [| "demo" |]) ?(text = good) ?(envvars = getenv) ?on_switch ?va
         end
       in
       let output = Buffer.create 80 and errors = Buffer.create 80 in
-      let memory = Eta_observability.Logger.Memory.create () in
+      let memory = Ox_observability.Logger.Memory.create () in
       let code =
         run_for_test ?on_switch ?validate ?doc ?validation_exit ?log_level ?journal_level
           ?telemetry ?telemetry_result ~env ~name:"demo" ~config ~pp_err
-          ~journal:(Eta_observability.Logger.Memory.reporter memory)
+          ~journal:(Ox_observability.Logger.Memory.reporter memory)
           ~getenv:envvars
           ~read:(fun path ->
             read_path path;
@@ -121,8 +121,8 @@ let door ~env ~config ?(argv = [| "demo" |]) ?(read_path = fun _ -> ())
   let code =
     run_for_test ~env ~name:"demo" ~config ~pp_err
       ~journal:
-        (Eta_observability.Logger.Memory.reporter
-           (Eta_observability.Logger.Memory.create ()))
+        (Ox_observability.Logger.Memory.reporter
+           (Ox_observability.Logger.Memory.create ()))
       ~getenv
       ~read:(fun path ->
         read_path path;
@@ -144,7 +144,7 @@ let test_derived_config () =
   let settings = decode_json {|{"models":{"api_key":"file-secret"},"port":42}|} in
   check_int "^nnoschema-5mdj a typed field decodes" 42 settings.port;
   check_string "^nnoschema-ifg0 the secret arrives wrapped" "file-secret"
-    (Eta_observability.Redact.expose (Option.get settings.models.api_key));
+    (Ox_observability.Redact.expose (Option.get settings.models.api_key));
   let encoded = Yojson.Safe.to_string (config.yojson_of_t settings) in
   expect_part encoded "\"api_key\":\"<redacted>\"";
   Alcotest.(check bool)
@@ -154,7 +154,7 @@ let test_derived_config () =
   let decoded = decode_json {|{"models":{"api_key":null},"port":7}|} in
   Alcotest.(check (option string))
     "an absent secret is None" None
-    (Option.map Eta_observability.Redact.expose decoded.models.api_key);
+    (Option.map Ox_observability.Redact.expose decoded.models.api_key);
   Alcotest.(check bool)
     "^nnoschema-5mdj ^nderive-mmnx missing or null secret encodes omitted" true
     (Yojson.Safe.equal absent (config.yojson_of_t decoded))
@@ -164,7 +164,7 @@ let test_clean () =
   let program env (settings : settings) _ =
     started := true;
     check_int "^nnoschema-5mdj derived config reaches the program" 42 settings.port;
-    Eta_observability.Logger.info env.Env.logger "started";
+    Ox_observability.Logger.info env.Env.logger "started";
     Ok ()
   in
   let code, _, err, logs = run ~program () in
@@ -172,7 +172,7 @@ let test_clean () =
   check_string "no diagnostics" "" err;
   Alcotest.(check int)
     "^napp-mbpr journal logger created" 1
-    (List.length (Eta_observability.Logger.Memory.records logs));
+    (List.length (Ox_observability.Logger.Memory.records logs));
   Alcotest.(check bool) "^napp-o6d6 env passed" true !started
 
 let test_failures () =
@@ -262,7 +262,7 @@ end
 
 let test_status_query_before_serve () =
   let events = ref [] in
-  let id = Eta.Interrupt_id.create () in
+  let id = Ox.Interrupt_id.create () in
   let live = ref [] and counter = ref "" and seen = ref "" and reporter = ref "" in
   let status_count = ref 0 in
   let program _ settings sw =
@@ -312,7 +312,7 @@ let test_status_query_before_serve () =
    Eio then propagates [Cancelled (Cancelled (Stop id))], not only the original
    switch failure. Start the service fiber before requesting shutdown. *)
 let test_daemon_stop () =
-  let stop_id = Eta.Interrupt_id.create () in
+  let stop_id = Ox.Interrupt_id.create () in
   let code, _, err, _ =
     run
       ~on_switch:(fun sw ->
@@ -355,7 +355,7 @@ let test_config () =
    an error naming it; config check follows the same rule; and a file that is there and
    cannot be read is an error at the default path too. *)
 let test_absent_default_config () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -439,7 +439,7 @@ let test_default_path_absent () =
   let absent =
     Filename.concat
       (Filename.get_temp_dir_name ())
-      (Printf.sprintf "eta-app-absent-%d" (Unix.getpid ()))
+      (Printf.sprintf "ox-app-absent-%d" (Unix.getpid ()))
   in
   let missing = Filename.concat absent "config.toml" in
   let env =
@@ -456,25 +456,25 @@ let test_default_path_absent () =
           in
           let spawn argv =
             match
-              Eta_process.Child.spawn ~sw ~clock:base#clock ~mgr:base#process_mgr ~argv
-                ~env ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~sw ~clock:base#clock ~mgr:base#process_mgr ~argv
+                ~env ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid absent-config fixture spawn"
           in
           let await child =
             Eio.Time.with_timeout_exn base#clock 5. (fun () ->
-                Eta_process.Child.await child)
+                Ox_process.Child.await child)
           in
           let code_of status =
-            match status with Eta_process.Child.Exited code -> code | _ -> -1
+            match status with Ox_process.Child.Exited code -> code | _ -> -1
           in
           let printed child =
-            Eio.Flow.read_all (Option.get (Eta_process.Child.stdout child))
+            Eio.Flow.read_all (Option.get (Ox_process.Child.stdout child))
           in
           let errors child =
-            Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+            Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
           in
           (* No file at the default path: the program starts, as a fresh install must. *)
           let child = spawn [ fixture ] in
@@ -482,24 +482,24 @@ let test_default_path_absent () =
             Eio.Time.with_timeout_exn base#clock 5. (fun () ->
                 Eio.Buf_read.line
                   (Eio.Buf_read.of_flow ~max_size:1024
-                     (Option.get (Eta_process.Child.stdout child))))
+                     (Option.get (Ox_process.Child.stdout child))))
           in
           check_string "Door ready" "ready" ready;
-          Eta_process.Child.signal child Sys.sigterm;
+          Ox_process.Child.signal child Sys.sigterm;
           check_int "^napp-9x0s the real Door starts with no config file" 0
             (code_of (await child));
           (* ^napp-d5e4: the fixture asks the Door to call its start command `serve`, so
-             this spawn proves Eta_app.run forwards the name; the spawn above started the
+             this spawn proves Ox_app.run forwards the name; the spawn above started the
              same program through the group's default term. *)
           let child = spawn [ fixture; "serve" ] in
           let ready =
             Eio.Time.with_timeout_exn base#clock 5. (fun () ->
                 Eio.Buf_read.line
                   (Eio.Buf_read.of_flow ~max_size:1024
-                     (Option.get (Eta_process.Child.stdout child))))
+                     (Option.get (Ox_process.Child.stdout child))))
           in
           check_string "Door ready" "ready" ready;
-          Eta_process.Child.signal child Sys.sigterm;
+          Ox_process.Child.signal child Sys.sigterm;
           check_int "^napp-d5e4 the real Door starts under the name its author gave" 0
             (code_of (await child));
           (* config check sees the same defaults. *)
@@ -578,7 +578,7 @@ let test_env_override_and_check () =
       ~program:(fun _ (cfg : settings) _ ->
         check_int "^nnoschema-5mdj typed environment override" 73 cfg.port;
         check_string "the environment fills the optional secret" "override-secret"
-          (Eta_observability.Redact.expose (Option.get cfg.models.api_key));
+          (Ox_observability.Redact.expose (Option.get cfg.models.api_key));
         Ok ())
       ()
   in
@@ -644,7 +644,7 @@ let test_validate_env_and_config () =
   let seen_port = ref 0 in
   let validate env (cfg : settings) =
     seen_port := cfg.port;
-    Eta_observability.Logger.info env.Env.logger "validated";
+    Ox_observability.Logger.info env.Env.logger "validated";
     Ok ()
   in
   let code, _, err, logs = run ~validate ~envvars ~text:"port = 3\n[models]\n" () in
@@ -653,18 +653,18 @@ let test_validate_env_and_config () =
   check_int "^napp-57qi env override applied before validation" 73 !seen_port;
   Alcotest.(check int)
     "^napp-57qi validator got the Door's Env" 1
-    (List.length (Eta_observability.Logger.Memory.find logs))
+    (List.length (Ox_observability.Logger.Memory.find logs))
 
 (* ^napp-57qi: an environment-dependent check reads the capability the Door passed: the
    validator accepts the file while it exists and fails once it is gone, like a check for
    the Chrome binary the problem statement names. *)
 let test_validate_uses_door_fs () =
-  let path = Filename.temp_file "eta-app-validate-" ".bin" in
+  let path = Filename.temp_file "ox-app-validate-" ".bin" in
   let validate env cfg =
     match cfg.models.api_key with
     | Some key
       when Eio.Path.is_file
-             Eio.Path.(env.Env.base#fs / Eta_observability.Redact.expose key) ->
+             Eio.Path.(env.Env.base#fs / Ox_observability.Redact.expose key) ->
         Ok ()
     | _ -> Error [ { Config.pointer = "/models/api_key"; message = "no such file" } ]
   in
@@ -732,13 +732,12 @@ let test_telemetry_hook () =
     check_int "^napp-idii the hook gets the validated config" 42 cfg.port;
     Alcotest.(check bool)
       "^napp-idii and the Door's own logger" true
-      (Eta_observability.Logger.enabled env.Env.logger Eta_observability.Logger.Info);
+      (Ox_observability.Logger.enabled env.Env.logger Ox_observability.Logger.Info);
     Eio.Switch.on_release sw (fun () -> released := true);
     {
       reporters =
         [
-          Eta_observability.Logger.Reporter.records (fun record ->
-              seen := record :: !seen);
+          Ox_observability.Logger.Reporter.records (fun record -> seen := record :: !seen);
         ];
       span_ids = Some (fun () -> String.make 32 'a');
     }
@@ -747,7 +746,7 @@ let test_telemetry_hook () =
     run ~telemetry:hook
       ~program:(fun env _ _ ->
         ignore
-          (Eta_observability.Logger.span env.Env.logger "unit" (fun () -> Ok ())
+          (Ox_observability.Logger.span env.Env.logger "unit" (fun () -> Ok ())
             : (unit, string) result);
         Ok ())
       ()
@@ -757,11 +756,11 @@ let test_telemetry_hook () =
   let seen = List.rev !seen in
   check_int "^napp-idii the telemetry reporter receives every record" 2 (List.length seen);
   check_int "the journal receives them too" 2
-    (List.length (Eta_observability.Logger.Memory.records journal));
+    (List.length (Ox_observability.Logger.Memory.records journal));
   Alcotest.(check bool)
     "^napp-idii the hook's span IDs are the program logger's" true
     (List.for_all
-       (fun record -> List.mem_assoc "trace_id" record.Eta_observability.Logger.context)
+       (fun record -> List.mem_assoc "trace_id" record.Ox_observability.Logger.context)
        seen);
   Alcotest.(check bool)
     "^napp-idii the root switch released the hook's resource before the Door returned"
@@ -791,11 +790,11 @@ let test_telemetry_result () =
       ~telemetry_result:(fun ~sw:_ _ _ ->
         Ok
           {
-            reporters = [ Eta_observability.Logger.Reporter.records (fun _ -> incr seen) ];
+            reporters = [ Ox_observability.Logger.Reporter.records (fun _ -> incr seen) ];
             span_ids = None;
           })
       ~program:(fun env _ _ ->
-        Eta_observability.Logger.info env.Env.logger "hello";
+        Ox_observability.Logger.info env.Env.logger "hello";
         Ok ())
       ()
   in
@@ -834,7 +833,7 @@ let test_telemetry_check_path () =
   expect_part out "\"port\":42"
 
 let test_cli_hook () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -852,8 +851,8 @@ let test_cli_hook () =
       let code =
         run_for_test ~commands:[ hook ] ~env ~name:"demo" ~config ~pp_err
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~getenv
           ~read:(fun _ -> failwith "hook must not load config")
           ~stderr:ignore ~stdout:ignore ~argv:[| "demo"; "ping" |]
@@ -865,7 +864,7 @@ let test_cli_hook () =
 (* ^napp-wf22: the Door's own config group takes a consumer subcommand beside check, so
    `<name> config init` exists, runs, and is listed in the group's help. *)
 let test_config_commands () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -883,8 +882,8 @@ let test_config_commands () =
       let door ~argv ~stdout =
         run_for_test ~config_commands:[ init ] ~env ~name:"demo" ~config ~pp_err
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~getenv
           ~read:(fun _ -> failwith "a config subcommand must not load the config")
           ~stderr:ignore ~stdout ~argv
@@ -908,7 +907,7 @@ let test_config_commands () =
    term, so a bare invocation starts the program under either name, and a service that
    never asks still gets `run`. *)
 let test_service_command () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -919,8 +918,8 @@ let test_service_command () =
       let door ?service_command argv =
         run_for_test ?service_command ~env ~name:"demo" ~config ~pp_err
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~getenv
           ~read:(fun _ -> Ok good)
           ~stderr:ignore ~stdout:ignore ~argv
@@ -948,7 +947,7 @@ let test_service_command () =
    named `run` beside a Door whose start command is `serve`: `run` is the consumer's
    verb, `serve` starts the program, and neither shadows the other. *)
 let test_service_command_coexists () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -967,8 +966,8 @@ let test_service_command_coexists () =
         run_for_test ~service_command:"serve" ~commands:[ run_verb ] ~env ~name:"demo"
           ~config ~pp_err
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~getenv
           ~read:(fun _ -> Ok good)
           ~stderr:ignore ~stdout:ignore ~argv
@@ -986,11 +985,11 @@ let test_service_command_coexists () =
       check_int "and the consumer's verb still ran once" 1 !verbs)
 
 let test_foreign_interruption () =
-  let foreign = Eta.Interrupt_id.create () in
+  let foreign = Ox.Interrupt_id.create () in
   let code, _, err, _ =
     run
       ~program:(fun _ _ sw ->
-        Eio.Switch.fail sw (Eio.Cancel.Cancelled (Eta.Interrupt_id.stop foreign));
+        Eio.Switch.fail sw (Eio.Cancel.Cancelled (Ox.Interrupt_id.stop foreign));
         Eio.Fiber.await_cancel ())
       ()
   in
@@ -1022,7 +1021,7 @@ let test_cli_and_io_errors () =
   check_int "a TOML date exits 2" 2 code;
   expect_part err "TOML dates have no JSON representation";
   expect_part err "/at";
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let env =
         object
           method clock = base#clock
@@ -1033,8 +1032,8 @@ let test_cli_and_io_errors () =
       let code =
         run_for_test ~env ~name:"demo" ~config ~pp_err
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~getenv
           ~read:(fun _ -> Error (`Unreadable "no such file"))
           ~stderr:(fun text -> Buffer.add_string err text)
@@ -1044,10 +1043,10 @@ let test_cli_and_io_errors () =
       check_int "^napp-2aa6 ^napp-9x0s unreadable config" 2 code;
       expect_part (Buffer.contents err) "no such file")
 
-(* ^napp-57qi: Eta_app.run itself, not only run_for_test, runs the validator before the
-   program's switch. The fixture is the only executable that goes through Eta_app.run. *)
+(* ^napp-57qi: Ox_app.run itself, not only run_for_test, runs the validator before the
+   program's switch. The fixture is the only executable that goes through Ox_app.run. *)
 let test_run_validates () =
-  let config_path = Filename.temp_file "eta-app-validate-run-" ".toml" in
+  let config_path = Filename.temp_file "ox-app-validate-run-" ".toml" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
     (fun () ->
@@ -1063,34 +1062,34 @@ let test_run_validates () =
               in
               let child =
                 match
-                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
-                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                    ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                    ~stderr:Ox_process.Child.Pipe ~fds:[] ()
                 with
                 | Ok child -> child
                 | Error _ -> Alcotest.fail "invalid validator fixture spawn"
               in
               let status =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                    Eta_process.Child.await child)
+                    Ox_process.Child.await child)
               in
               Alcotest.(check bool)
                 "^napp-57qi run exits 2 without starting" true
-                (match status with Eta_process.Child.Exited 2 -> true | _ -> false);
+                (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
               let errors =
-                Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+                Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
               in
               expect_part errors "/port";
               expect_part errors "port rejected by validator";
               let printed =
-                Eio.Flow.read_all (Option.get (Eta_process.Child.stdout child))
+                Eio.Flow.read_all (Option.get (Ox_process.Child.stdout child))
               in
               check_string "^napp-57qi the program never printed" "" printed)))
 
 (* nlimit-s3f4: real SIGTERM and SIGINT travel through the Door. *)
 let test_real_signal signo () =
-  let config_path = Filename.temp_file "eta-app-signal-" ".toml" in
+  let config_path = Filename.temp_file "ox-app-signal-" ".toml" in
   Fun.protect
     ~finally:(fun () -> Sys.remove config_path)
     (fun () ->
@@ -1106,32 +1105,32 @@ let test_real_signal signo () =
               in
               let child =
                 match
-                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
-                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                    ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                    ~stderr:Ox_process.Child.Pipe ~fds:[] ()
                 with
                 | Ok child -> child
                 | Error _ -> Alcotest.fail "invalid signal fixture spawn"
               in
-              let source = Option.get (Eta_process.Child.stdout child) in
+              let source = Option.get (Ox_process.Child.stdout child) in
               let ready =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () ->
                     Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:1024 source))
               in
               check_string "Door ready" "ready" ready;
-              Eta_process.Child.signal child signo;
+              Ox_process.Child.signal child signo;
               let status =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                    Eta_process.Child.await child)
+                    Ox_process.Child.await child)
               in
               Alcotest.(check bool)
                 "signal maps to exit code zero" true
-                (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
-              Eta_process.Child.signal child signo;
-              ignore (Eta_process.Child.stop child);
+                (match status with Ox_process.Child.Exited 0 -> true | _ -> false);
+              Ox_process.Child.signal child signo;
+              ignore (Ox_process.Child.stop child);
               let journal =
-                Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+                Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
               in
               expect_part journal "\"msg\":\"signal stopped\"")))
 
@@ -1139,7 +1138,7 @@ let test_real_signal signo () =
    record on the real SIGTERM path, and its root-switch resource flushes before the
    process exits. *)
 let test_real_signal_telemetry () =
-  let config_path = Filename.temp_file "eta-app-telemetry-" ".toml" in
+  let config_path = Filename.temp_file "ox-app-telemetry-" ".toml" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
     (fun () ->
@@ -1155,30 +1154,30 @@ let test_real_signal_telemetry () =
               in
               let child =
                 match
-                  Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
-                    ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                    ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                    ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                    ~stderr:Ox_process.Child.Pipe ~fds:[] ()
                 with
                 | Ok child -> child
                 | Error _ -> Alcotest.fail "invalid telemetry fixture spawn"
               in
               let input =
                 Eio.Buf_read.of_flow ~max_size:65536
-                  (Option.get (Eta_process.Child.stdout child))
+                  (Option.get (Ox_process.Child.stdout child))
               in
               let ready =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
               in
               check_string "Door ready" "ready" ready;
-              Eta_process.Child.signal child Sys.sigterm;
+              Ox_process.Child.signal child Sys.sigterm;
               let status =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                    Eta_process.Child.await child)
+                    Ox_process.Child.await child)
               in
               Alcotest.(check bool)
                 "signal maps to exit code zero" true
-                (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
+                (match status with Ox_process.Child.Exited 0 -> true | _ -> false);
               let printed = Eio.Buf_read.take_all input in
               expect_part printed "\"msg\":\"signal stopped\"";
               expect_part printed "telemetry flushed";
@@ -1244,7 +1243,7 @@ let otlp_messages bodies =
 (* ^notel-1stb: run the fixture to a real SIGTERM stop with a configured OTLP exporter
    and report its exit status, its stdout, and the messages the collector received. *)
 let signal_stop_otlp env sw ~shutdown =
-  let config_path = Filename.temp_file "eta-app-otlp-" ".toml" in
+  let config_path = Filename.temp_file "ox-app-otlp-" ".toml" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
     (fun () ->
@@ -1263,34 +1262,34 @@ let signal_stop_otlp env sw ~shutdown =
           in
           let child =
             match
-              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
                 ~argv:[ fixture; "--config"; config_path ]
-                ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid OTLP fixture spawn"
           in
           let input =
             Eio.Buf_read.of_flow ~max_size:65536
-              (Option.get (Eta_process.Child.stdout child))
+              (Option.get (Ox_process.Child.stdout child))
           in
           let ready =
             Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
           in
           check_string "Door ready" "ready" ready;
-          Eta_process.Child.signal child Sys.sigterm;
+          Ox_process.Child.signal child Sys.sigterm;
           let status =
             Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                Eta_process.Child.await child)
+                Ox_process.Child.await child)
           in
-          ( (match status with Eta_process.Child.Exited 0 -> true | _ -> false),
+          ( (match status with Ox_process.Child.Exited 0 -> true | _ -> false),
             Eio.Buf_read.take_all input,
             otlp_messages (List.rev !received) )))
 
 (* ^notel-1stb: the exporter the telemetry hook builds exports on the root switch's
    release, so the record the program logs while SIGTERM stops it reaches the collector
-   even though nothing calls Eta_otel.shutdown. *)
+   even though nothing calls Ox_otel.shutdown. *)
 let test_real_signal_otlp () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
@@ -1301,7 +1300,7 @@ let test_real_signal_otlp () =
             "^notel-1stb the exporter itself exported the last record"
             [ "signal stopped" ] messages))
 
-(* ^notel-1stb: the pre-fix consumer pattern — [Eta_otel.shutdown] registered with
+(* ^notel-1stb: the pre-fix consumer pattern — [Ox_otel.shutdown] registered with
    [Eio.Switch.on_release] — used to wait for the daemon the switch had already
    cancelled and hang the stop; the record logged just before it still arrives. *)
 let test_real_signal_otlp_shutdown () =
@@ -1325,37 +1324,37 @@ let test_door2_real_signal_extra () =
           in
           let child =
             match
-              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
-                ~argv:[ fixture; "long" ] ~grace:(Eta.Duration.ms 50)
-                ~stdout:Eta_process.Child.Pipe ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long" ] ~grace:(Ox.Duration.ms 50)
+                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid extra command fixture spawn"
           in
           let output =
             Eio.Buf_read.of_flow ~max_size:1024
-              (Option.get (Eta_process.Child.stdout child))
+              (Option.get (Ox_process.Child.stdout child))
           in
           let ready =
             Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output)
           in
           check_string "^napp-x11e extra command ready" "ready" ready;
-          Eta_process.Child.signal child Sys.sigterm;
+          Ox_process.Child.signal child Sys.sigterm;
           let status =
             Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                Eta_process.Child.await child)
+                Ox_process.Child.await child)
           in
           Alcotest.(check bool)
             "SIGTERM clean exit" true
-            (match status with Eta_process.Child.Exited 0 -> true | _ -> false);
+            (match status with Ox_process.Child.Exited 0 -> true | _ -> false);
           check_string "^napp-x11e release before exit" "command released"
             (Eio.Buf_read.line output);
-          ignore (Eta_process.Child.stop child)))
+          ignore (Ox_process.Child.stop child)))
 
 (* ^napp-ersz: the production reader policy is actually wired to both startup
    and config check, not merely available as an isolated helper. *)
 let test_door2_production_reader () =
-  let file = Filename.temp_file "eta-door2-reader-" ".toml" in
+  let file = Filename.temp_file "ox-door2-reader-" ".toml" in
   Fun.protect
     ~finally:(fun () -> Sys.remove file)
     (fun () ->
@@ -1373,26 +1372,26 @@ let test_door2_production_reader () =
                 (fun command ->
                   let child =
                     match
-                      Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                      Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
                         ~argv:((fixture :: command) @ [ "--config"; file ])
-                        ~grace:(Eta.Duration.ms 50) ~stdout:Eta_process.Child.Pipe
-                        ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+                        ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                        ~stderr:Ox_process.Child.Pipe ~fds:[] ()
                     with
                     | Ok child -> child
                     | Error _ -> Alcotest.fail "invalid fixture spawn"
                   in
                   let status =
                     Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                        Eta_process.Child.await child)
+                        Ox_process.Child.await child)
                   in
                   Alcotest.(check bool)
                     "reader rejects oversized file" true
-                    (match status with Eta_process.Child.Exited 2 -> true | _ -> false);
+                    (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
                   let errors =
-                    Eio.Flow.read_all (Option.get (Eta_process.Child.stderr child))
+                    Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
                   in
                   expect_part errors "file exceeds byte limit";
-                  ignore (Eta_process.Child.stop child))
+                  ignore (Ox_process.Child.stop child))
                 [ []; [ "config"; "check" ] ])))
 
 let test_door2_service_args () =
@@ -1403,7 +1402,7 @@ let test_door2_service_args () =
       const (fun transcribe translate -> (transcribe, translate))
       $ flag "ptt-transcribe-keysym" $ flag "ptt-translate-keysym")
   in
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let seen = ref [] in
       let output = Buffer.create 80 and errors = Buffer.create 80 in
       let invoke argv =
@@ -1411,8 +1410,8 @@ let test_door2_service_args () =
           ~getenv
           ~read:(fun _ -> Ok good)
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~stderr:(fun text -> Buffer.add_string errors text)
           ~stdout:(fun text -> Buffer.add_string output text)
           ~argv
@@ -1435,7 +1434,7 @@ let test_door2_service_args () =
 (* ^napp-x11e: one Env builds terms, each execution receives a fresh owned switch. *)
 let test_door2_commands () =
   let open Cmdliner in
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let seen = ref [] and releases = ref 0 in
       let errors = Buffer.create 80 in
       let code argv =
@@ -1443,8 +1442,8 @@ let test_door2_commands () =
           ~config ~pp_err ~getenv
           ~read:(fun _ -> Alcotest.fail "an extra command must not read service config")
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~stderr:(fun text -> Buffer.add_string errors text)
           ~stdout:ignore ~argv
           ~commands_with_env:(fun door_env run_owned ->
@@ -1471,7 +1470,7 @@ let test_door2_commands () =
 (* ^napp-ersz: file selection, strict missing, explicit override and source reach
    both run and config check through the same reader seam. *)
 let test_door2_source_policy () =
-  Eta_test.run (fun base _ ->
+  Ox_test.run (fun base _ ->
       let seen = ref [] and validated = ref [] and prompt_paths = ref [] in
       let out = Buffer.create 80 and err = Buffer.create 80 in
       let read path =
@@ -1490,8 +1489,8 @@ let test_door2_source_policy () =
               Filename.concat (Filename.dirname path) "prompts/foo.md" :: !prompt_paths;
             Ok ())
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~stdout:(fun text -> Buffer.add_string out text)
           ~stderr:(fun text -> Buffer.add_string err text)
           ~argv
@@ -1520,8 +1519,8 @@ let test_door2_source_policy () =
            ~read:(fun _ -> Error `Missing)
            ~missing:`Required ~config_file:"stt.toml"
            ~journal:
-             (Eta_observability.Logger.Memory.reporter
-                (Eta_observability.Logger.Memory.create ()))
+             (Ox_observability.Logger.Memory.reporter
+                (Ox_observability.Logger.Memory.create ()))
            ~stdout:ignore
            ~stderr:(fun text -> Buffer.add_string err text)
            ~argv:[| "demo" |]
@@ -1529,7 +1528,7 @@ let test_door2_source_policy () =
       expect_part (Buffer.contents err) "/demo/stt.toml: no such file")
 
 let test_door2_bounded_reader () =
-  let file = Filename.temp_file "eta-door2-" ".toml" in
+  let file = Filename.temp_file "ox-door2-" ".toml" in
   let fifo = file ^ "-fifo" in
   Unix.mkfifo fifo 0o600;
   Fun.protect
@@ -1565,7 +1564,7 @@ let test_door2_bounded_reader () =
 (* ^napp-k0x0 ^napp-1k5x: no default command means group help, not config
    loading or service execution; a parse error uses the consumer's usage code. *)
 let test_door3_bare_help_and_usage () =
-  Eta_test.run (fun env _ ->
+  Ox_test.run (fun env _ ->
       let output = Buffer.create 256 and errors = Buffer.create 80 in
       let starts = ref 0 in
       let invoke argv =
@@ -1573,8 +1572,8 @@ let test_door3_bare_help_and_usage () =
           ~service_args:(Cmdliner.Term.const ()) ~env ~name:"demo" ~config ~pp_err ~getenv
           ~read:(fun _ -> Alcotest.fail "help must not load config")
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~stdout:(fun text -> Buffer.add_string output text)
           ~stderr:(fun text -> Buffer.add_string errors text)
           ~argv
@@ -1597,7 +1596,7 @@ let test_door3_bare_help_and_usage () =
    consumer, defects remain 2, and owned-code tasks return their own integer. *)
 let test_door3_exit_codes () =
   let open Cmdliner in
-  Eta_test.run (fun env _ ->
+  Ox_test.run (fun env _ ->
       let errors = Buffer.create 128 and released = ref 0 in
       let invoke ?(interrupt_exit = 130) ?(defect = false) argv =
         run_for_test_with_args ~service_args:(Term.const ()) ~env ~name:"demo" ~config
@@ -1606,8 +1605,8 @@ let test_door3_exit_codes () =
           ~exit_code:(function `Problem _ -> 65)
           ~interrupt_exit
           ~journal:
-            (Eta_observability.Logger.Memory.reporter
-               (Eta_observability.Logger.Memory.create ()))
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
           ~stdout:ignore
           ~stderr:(fun text -> Buffer.add_string errors text)
           ~argv
@@ -1623,7 +1622,7 @@ let test_door3_exit_codes () =
               Cmd.v (Cmd.info "code-stop")
                 (Term.const (fun () ->
                      run_owned_code (fun sw ->
-                         let id = Eta.Interrupt_id.create () in
+                         let id = Ox.Interrupt_id.create () in
                          request_stop ~sw id;
                          Eio.Fiber.await_cancel ())));
             ])
@@ -1653,30 +1652,30 @@ let test_door3_real_signal_owned_code () =
           in
           let child =
             match
-              Eta_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
-                ~argv:[ fixture; "long-code" ] ~grace:(Eta.Duration.ms 50)
-                ~stdout:Eta_process.Child.Pipe ~stderr:Eta_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long-code" ] ~grace:(Ox.Duration.ms 50)
+                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid owned-code fixture spawn"
           in
           let output =
             Eio.Buf_read.of_flow ~max_size:1024
-              (Option.get (Eta_process.Child.stdout child))
+              (Option.get (Ox_process.Child.stdout child))
           in
           check_string "^napp-izjt owned code ready" "ready"
             (Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output));
-          Eta_process.Child.signal child Sys.sigterm;
+          Ox_process.Child.signal child Sys.sigterm;
           let status =
             Eio.Time.with_timeout_exn env#clock 5. (fun () ->
-                Eta_process.Child.await child)
+                Ox_process.Child.await child)
           in
           Alcotest.(check bool)
             "^napp-izjt SIGTERM exits 130" true
-            (match status with Eta_process.Child.Exited 130 -> true | _ -> false);
+            (match status with Ox_process.Child.Exited 130 -> true | _ -> false);
           check_string "^napp-izjt release before exit" "code command released"
             (Eio.Buf_read.line output);
-          ignore (Eta_process.Child.stop child)))
+          ignore (Ox_process.Child.stop child)))
 
 (* ^napp-fsxf: the top-level command advertises the consumer's description,
    including when a bare invocation requests group help. *)
@@ -1685,15 +1684,15 @@ let test_door4_doc () =
   let code, output, _, _ = run ~doc ~argv:[| "demo"; "--help" |] () in
   check_int "^napp-fsxf help succeeds" 0 code;
   expect_part output doc;
-  Eta_test.run (fun env _ ->
+  Ox_test.run (fun env _ ->
       let output = Buffer.create 128 in
       check_int "^napp-fsxf bare group help succeeds" 0
         (run_for_test_with_args ~bare:`Help ~doc ~service_args:(Cmdliner.Term.const ())
            ~env ~name:"demo" ~config ~pp_err ~getenv
            ~read:(fun _ -> Alcotest.fail "help must not read config")
            ~journal:
-             (Eta_observability.Logger.Memory.reporter
-                (Eta_observability.Logger.Memory.create ()))
+             (Ox_observability.Logger.Memory.reporter
+                (Ox_observability.Logger.Memory.create ()))
            ~stdout:(fun text -> Buffer.add_string output text)
            ~stderr:ignore ~argv:[| "demo" |]
            (fun _ _ _ () _ -> Alcotest.fail "help must not start program"));
@@ -1723,20 +1722,20 @@ let test_door4_validation_exit () =
 (* ^napp-k9in: one logger level filters both journal-only pre-config logs and
    the program logger teeing journal with telemetry. *)
 let test_door4_log_level () =
-  let telemetry_logs = Eta_observability.Logger.Memory.create () in
+  let telemetry_logs = Ox_observability.Logger.Memory.create () in
   let telemetry ~sw:_ env _ =
-    Eta_observability.Logger.info env.Env.logger "hook info";
-    Eta_observability.Logger.warn env.Env.logger "hook warning";
+    Ox_observability.Logger.info env.Env.logger "hook info";
+    Ox_observability.Logger.warn env.Env.logger "hook warning";
     {
-      reporters = [ Eta_observability.Logger.Memory.reporter telemetry_logs ];
+      reporters = [ Ox_observability.Logger.Memory.reporter telemetry_logs ];
       span_ids = None;
     }
   in
   let code, _, err, journal =
-    run ~log_level:Eta_observability.Logger.Warn ~telemetry
+    run ~log_level:Ox_observability.Logger.Warn ~telemetry
       ~program:(fun env _ _ ->
-        Eta_observability.Logger.info env.Env.logger "program info";
-        Eta_observability.Logger.warn env.Env.logger "program warning";
+        Ox_observability.Logger.info env.Env.logger "program info";
+        Ox_observability.Logger.warn env.Env.logger "program warning";
         Ok ())
       ()
   in
@@ -1744,8 +1743,8 @@ let test_door4_log_level () =
   check_string "no diagnostics" "" err;
   let messages memory =
     List.map
-      (fun (record : Eta_observability.Logger.record) -> record.msg)
-      (Eta_observability.Logger.Memory.records memory)
+      (fun (record : Ox_observability.Logger.record) -> record.msg)
+      (Ox_observability.Logger.Memory.records memory)
   in
   Alcotest.(check (list string))
     "^napp-k9in journal suppresses info"
@@ -1757,11 +1756,11 @@ let test_door4_log_level () =
 (* ^napp-xb3q: a quiet journal must not starve the exporter of info spans. *)
 let test_door4_journal_level () =
   let run_case ?journal_level () =
-    let telemetry_logs = Eta_observability.Logger.Memory.create () in
+    let telemetry_logs = Ox_observability.Logger.Memory.create () in
     let telemetry ~sw:_ env _ =
-      Eta_observability.Logger.info env.Env.logger "hook info";
+      Ox_observability.Logger.info env.Env.logger "hook info";
       {
-        reporters = [ Eta_observability.Logger.Memory.reporter telemetry_logs ];
+        reporters = [ Ox_observability.Logger.Memory.reporter telemetry_logs ];
         span_ids = None;
       }
     in
@@ -1769,9 +1768,9 @@ let test_door4_journal_level () =
       run ?journal_level ~telemetry
         ~program:(fun env _ _ ->
           ignore
-            (Eta_observability.Logger.span env.Env.logger "info span" (fun () -> Ok ())
+            (Ox_observability.Logger.span env.Env.logger "info span" (fun () -> Ok ())
               : (unit, string) result);
-          Eta_observability.Logger.error env.Env.logger "program error";
+          Ox_observability.Logger.error env.Env.logger "program error";
           Ok ())
         ()
     in
@@ -1779,12 +1778,12 @@ let test_door4_journal_level () =
     check_string "no diagnostics" "" err;
     let messages memory =
       List.map
-        (fun (record : Eta_observability.Logger.record) -> record.msg)
-        (Eta_observability.Logger.Memory.records memory)
+        (fun (record : Ox_observability.Logger.record) -> record.msg)
+        (Ox_observability.Logger.Memory.records memory)
     in
     (messages journal, messages telemetry_logs)
   in
-  let journal, telemetry = run_case ~journal_level:Eta_observability.Logger.Error () in
+  let journal, telemetry = run_case ~journal_level:Ox_observability.Logger.Error () in
   Alcotest.(check (list string))
     "^napp-xb3q only the error reaches the journal" [ "program error" ] journal;
   Alcotest.(check (list string))
@@ -1802,7 +1801,7 @@ let test_door4_journal_level () =
     telemetry
 
 let () =
-  Alcotest.run "eta_app"
+  Alcotest.run "ox_app"
     [
       ( "door",
         [

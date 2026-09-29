@@ -15,7 +15,7 @@
 type unavailable = {
   message : string;
   retryable : bool;
-  retry_after : Eta.Duration.t option;
+  retry_after : Ox.Duration.t option;
   status : int option;
 }
 (** Why no reply came, and whether another attempt is worth making: [true] for a transport
@@ -29,8 +29,8 @@ type t =
   [ `Unavailable of unavailable
   | `Timeout
   | `Authentication of string
-  | `Invalid_response of Eta_json.issue
-  | `Input_too_large of Eta_json.too_large
+  | `Invalid_response of Ox_json.issue
+  | `Input_too_large of Ox_json.too_large
   | `Model_mismatch of mismatch ]
 (** What went wrong:
     - [`Unavailable failure] — the attempt could not produce a reply, or an HTTP status
@@ -56,7 +56,7 @@ val retryable : [< t ] -> bool
 
 val pp : Format.formatter -> [< t ] -> unit
 (** [pp fmt error] renders the failure as one line of text. The [`Invalid_response] case
-    renders through {!Eta_json.pp_issue}, which bounds the offending subtree, so the
+    renders through {!Ox_json.pp_issue}, which bounds the offending subtree, so the
     rendered width is bounded. *)
 
 val to_string : [< t ] -> string

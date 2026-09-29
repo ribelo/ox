@@ -14,7 +14,7 @@ val default_endpoint : string
 val max_request_bytes : int
 (** The default bound on one encoded multipart body: 8 MiB, unchanged by ^nor-474w. *)
 
-val body : ?max_request_bytes:int -> request -> (bytes, Eta_ai.Error.t) result
+val body : ?max_request_bytes:int -> request -> (bytes, Ox_ai.Error.t) result
 (** [body ?max_request_bytes request] encodes the multipart body — the model and optional
     language, prompt and temperature parts, then the WAV file — and refuses it with
     [`Input_too_large { limit; length }] when the encoded body is longer than the bound.
@@ -26,16 +26,16 @@ val body : ?max_request_bytes:int -> request -> (bytes, Eta_ai.Error.t) result
       when the bound is not positive. A bound that admits nothing is a programming defect,
       not a provider failure. *)
 
-val decode : Eta_json.t -> (string, Eta_ai.Error.t) result
+val decode : Ox_json.t -> (string, Ox_ai.Error.t) result
 
 val create :
-  http:Eta_http.Client.t ->
-  api_key:Eta_observability.Redact.t ->
+  http:Ox_http.Client.t ->
+  api_key:Ox_observability.Redact.t ->
   ?endpoint:string ->
   ?max_request_bytes:int ->
-  deadline:Eta.Duration.t ->
+  deadline:Ox.Duration.t ->
   request ->
-  (string, Eta_ai.Error.t) result
+  (string, Ox_ai.Error.t) result
 (** [create ... request] uploads the body built by {!body} to [endpoint] and decodes the
     transcription text.
 

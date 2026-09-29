@@ -1,10 +1,10 @@
 (* ^air2-rsp1 ^air2-emb2 ^air2-aud3 ^air2-rtm4 ^air2-tst5 ^nor-pn0b ^nor-474w *)
-module R = Eta_ai_openrouter.Responses
-module E = Eta_ai_openrouter.Embeddings
-module A = Eta_ai_openrouter.Audio
+module R = Ox_ai_openrouter.Responses
+module E = Ox_ai_openrouter.Embeddings
+module A = Ox_ai_openrouter.Audio
 
-let key = Eta_observability.Redact.make "fake-key"
-let deadline = Eta.Duration.seconds 3
+let key = Ox_observability.Redact.make "fake-key"
+let deadline = Ox.Duration.seconds 3
 
 let request =
   R.
@@ -28,7 +28,7 @@ let setup ~sw env json =
   let server =
     Fake_server.serve ~net:env#net ~clock:env#clock ~sw (Fake_server.ok json)
   in
-  let http = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+  let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
   let logger = fst (Test_helpers.memory_logger env) in
   (server, http, logger)
 
@@ -145,11 +145,11 @@ let test_fail_closed () =
    with
   | Error _ -> ()
   | Ok _ -> Alcotest.fail "invalid output must fail");
-  (match Eta_ai_realtime.Session.decode {|{"type":"conversation.item.created"}|} with
+  (match Ox_ai_realtime.Session.decode {|{"type":"conversation.item.created"}|} with
   | Ok event ->
       Alcotest.(check string) "event type" "conversation.item.created" event.kind
   | Error _ -> Alcotest.fail "valid event rejected");
-  match Eta_ai_realtime.Session.decode {|{"other":"missing"}|} with
+  match Ox_ai_realtime.Session.decode {|{"other":"missing"}|} with
   | Error _ -> ()
   | Ok _ -> Alcotest.fail "missing event type accepted"
 
@@ -184,31 +184,31 @@ let test_audio () =
 
 let check_authentication what = function
   | Error (`Authentication _) -> ()
-  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+  | Error error -> Alcotest.failf "%s: %s" what (Ox_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
 let check_input_too_large what = function
   | Error (`Input_too_large _) -> ()
-  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+  | Error error -> Alcotest.failf "%s: %s" what (Ox_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
 let check_invalid_response what = function
   | Error (`Invalid_response _) -> ()
-  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+  | Error error -> Alcotest.failf "%s: %s" what (Ox_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
-let check_unavailable ~retryable what (result : ('a, Eta_ai.Error.t) result) =
+let check_unavailable ~retryable what (result : ('a, Ox_ai.Error.t) result) =
   match result with
   | Error (`Unavailable { retryable = actual; _ }) ->
       Alcotest.(check bool) (what ^ " retryable") retryable actual
-  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+  | Error error -> Alcotest.failf "%s: %s" what (Ox_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
 (* ^nai-97as ^nai-337c ^nai-rjkq: the caller bounds the reply, can ask for one attempt,
    and gets the provider's Retry-After in the typed failure. *)
 let test_transport_controls () =
   Test_helpers.run (fun ~sw env ->
-      let http () = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+      let http () = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
       let logger = fst (Test_helpers.memory_logger env) in
       let embed ?max_response_bytes ?max_attempts server =
         E.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
@@ -230,7 +230,7 @@ let test_transport_controls () =
           Alcotest.(check int)
             "^nai-97as larger bound decodes" 1
             (List.length response.embeddings)
-      | Error error -> Alcotest.failf "larger bound: %s" (Eta_ai.Error.to_string error));
+      | Error error -> Alcotest.failf "larger bound: %s" (Ox_ai.Error.to_string error));
       (* One attempt means one request, and the 429's Retry-After is kept. *)
       let throttled headers =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
@@ -244,7 +244,7 @@ let test_transport_controls () =
           Alcotest.(check bool) "^nai-rjkq retryable" true retryable;
           Alcotest.(check (option int))
             "^nai-rjkq delta-seconds" (Some 7000)
-            (Option.map Eta.Duration.to_ms retry_after)
+            (Option.map Ox.Duration.to_ms retry_after)
       | _ -> Alcotest.fail "expected Unavailable with Retry-After");
       Alcotest.(check int)
         "^nai-337c one attempt, one request" 1
@@ -261,7 +261,7 @@ let test_transport_controls () =
       | Error (`Unavailable { retry_after = Some delay; _ }) ->
           Alcotest.(check bool)
             "^nai-rjkq HTTP-date in the future" true
-            (Eta.Duration.to_ms delay > 0)
+            (Ox.Duration.to_ms delay > 0)
       | _ -> Alcotest.fail "expected an HTTP-date Retry-After");
       (match embed ~max_attempts:1 (throttled [ ("Retry-After", "soon") ]) with
       | Error (`Unavailable { retry_after = None; _ }) -> ()
@@ -269,14 +269,14 @@ let test_transport_controls () =
       (* ^nai-8s4k: the per-attempt timeout is the caller's, not a hidden 10 s. *)
       let slow =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
-          (Fake_server.after (Eta.Duration.seconds 2)
+          (Fake_server.after (Ox.Duration.seconds 2)
              (Fake_server.Response (Fake_server.http_response "{}")))
       in
       let started = Eio.Time.now env#clock in
       (match
          E.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
            ~endpoint:(Fake_server.url slow "/embeddings")
-           ~timeout:(Eta.Duration.ms 200) ~max_attempts:1 ~deadline
+           ~timeout:(Ox.Duration.ms 200) ~max_attempts:1 ~deadline
            E.{ model = "embedding-model"; input = Text "one"; dimensions = None }
        with
       | Error `Timeout ->
@@ -293,7 +293,7 @@ let test_failures () =
       let server ?(status = 200) body =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw (Fake_server.ok ~status body)
       in
-      let http () = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+      let http () = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
       let logger = fst (Test_helpers.memory_logger env) in
       let responses server =
         R.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
@@ -364,7 +364,7 @@ let test_response_kinds () =
   let decoded json =
     match R.decode (Yojson.Safe.from_string json) with
     | Ok response -> response
-    | Error error -> Alcotest.failf "decode failed: %s" (Eta_ai.Error.to_string error)
+    | Error error -> Alcotest.failf "decode failed: %s" (Ox_ai.Error.to_string error)
   in
   let reasoning =
     decoded
@@ -398,9 +398,9 @@ let audio_request : A.request =
 
 let check_over_bound what ~limit ~length = function
   | Error (`Input_too_large actual) ->
-      Alcotest.(check int) (what ^ " limit") limit actual.Eta_json.limit;
-      Alcotest.(check int) (what ^ " length") length actual.Eta_json.length
-  | Error error -> Alcotest.failf "%s: %s" what (Eta_ai.Error.to_string error)
+      Alcotest.(check int) (what ^ " limit") limit actual.Ox_json.limit;
+      Alcotest.(check int) (what ^ " length") length actual.Ox_json.length
+  | Error error -> Alcotest.failf "%s: %s" what (Ox_ai.Error.to_string error)
   | Ok _ -> Alcotest.failf "%s accepted" what
 
 let test_audio_bound () =
@@ -445,18 +445,18 @@ let test_audio_bound () =
 
 (* One text frame as the client sends it, and one read back from the wire. *)
 let frame_of_text text =
-  Eta_http.Ws_codec.encode
-    { Eta_http.Ws_codec.fin = true; opcode = Text; payload = Bytes.of_string text }
+  Ox_http.Ws_codec.encode
+    { Ox_http.Ws_codec.fin = true; opcode = Text; payload = Bytes.of_string text }
 
 let read_frame input =
   let header = Eio.Buf_read.take 2 input in
   let length = Char.code header.[1] land 0x7f in
   let extended = if length = 126 then 2 else if length = 127 then 8 else 0 in
   let rest = Eio.Buf_read.take (extended + 4 + length) input in
-  match Eta_http.Ws_codec.decode ~masked:true (Bytes.of_string (header ^ rest)) with
+  match Ox_http.Ws_codec.decode ~masked:true (Bytes.of_string (header ^ rest)) with
   | Ok (frame, _) -> frame
   | Error error ->
-      Alcotest.failf "client frame: %s" (Eta_http.Ws_codec.parse_error_to_string error)
+      Alcotest.failf "client frame: %s" (Ox_http.Ws_codec.parse_error_to_string error)
 
 let test_realtime_session () =
   Test_helpers.run (fun ~sw env ->
@@ -495,7 +495,7 @@ let test_realtime_session () =
                "subprotocol" "realtime"
                (List.assoc "sec-websocket-protocol" headers);
              let accept =
-               Eta_http.Ws_codec.accept_key ~sha1:Eta_http.Eta_http_tls_openssl.sha1
+               Ox_http.Ws_codec.accept_key ~sha1:Ox_http.Ox_http_tls_openssl.sha1
                  (List.assoc "sec-websocket-key" headers)
              in
              Eio.Flow.copy_string
@@ -511,10 +511,10 @@ let test_realtime_session () =
              let frame = read_frame input in
              Alcotest.(check bool)
                "client frame is text" true
-               (frame.Eta_http.Ws_codec.opcode = Eta_http.Ws_codec.Text);
+               (frame.Ox_http.Ws_codec.opcode = Ox_http.Ws_codec.Text);
              Alcotest.(check string)
                "client event" {|{"type":"input_audio_buffer.commit"}|}
-               (Bytes.to_string frame.Eta_http.Ws_codec.payload);
+               (Bytes.to_string frame.Ox_http.Ws_codec.payload);
              Eio.Flow.copy_string
                (Bytes.to_string
                   (frame_of_text {|{"type":"input_audio_buffer.committed"}|}))
@@ -523,7 +523,7 @@ let test_realtime_session () =
       let url = Printf.sprintf "ws://127.0.0.1:%d/v1/realtime?model=test" port in
       let session =
         match
-          Eta_ai_realtime.Session.connect ~sw ~net:env#net ~clock:env#clock ~api_key:key
+          Ox_ai_realtime.Session.connect ~sw ~net:env#net ~clock:env#clock ~api_key:key
             ~headers:[ ("originator", "codex_cli_rs") ]
             ~protocols:[ "realtime" ] url
         with
@@ -531,47 +531,47 @@ let test_realtime_session () =
         | Error _ -> Alcotest.fail "upgrade failed"
       in
       let receive () =
-        match Eta_ai_realtime.Session.receive session with
+        match Ox_ai_realtime.Session.receive session with
         | Ok event -> event
         | Error _ -> Alcotest.fail "missing event"
       in
       let event = receive () in
       Alcotest.(check string) "kind" "conversation.item.created" event.kind;
       (match
-         Eta_ai_realtime.Session.send session
+         Ox_ai_realtime.Session.send session
            (`Assoc [ ("type", `String "input_audio_buffer.commit") ])
        with
       | Ok () -> ()
       | Error _ -> Alcotest.fail "send failed");
       let event = receive () in
       Alcotest.(check string) "ack" "input_audio_buffer.committed" event.kind;
-      match Eta_ai_realtime.Session.close session with
+      match Ox_ai_realtime.Session.close session with
       | Ok () -> ()
       | Error _ -> Alcotest.fail "close failed")
 
 let live_smoke () =
   let key =
     match Sys.getenv_opt "OPENROUTER_API_KEY" with
-    | Some key when String.trim key <> "" -> Eta_observability.Redact.make key
+    | Some key when String.trim key <> "" -> Ox_observability.Redact.make key
     | _ -> Alcotest.fail "OPENROUTER_API_KEY is required for opt-in smoke"
   in
   Test_helpers.run (fun ~sw env ->
-      let http = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+      let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
       let logger = fst (Test_helpers.memory_logger env) in
       let model =
         Option.value ~default:"qwen/qwen3-embedding-4b"
-          (Sys.getenv_opt "ETA_AI_LIVE_EMBEDDING_MODEL")
+          (Sys.getenv_opt "OX_AI_LIVE_EMBEDDING_MODEL")
       in
       let result =
         E.create ~http ~clock:env#clock ~logger ~api_key:key
-          ~deadline:(Eta.Duration.seconds 30)
+          ~deadline:(Ox.Duration.seconds 30)
           E.{ model; input = Text "smoke"; dimensions = None }
       in
       ignore (ok result))
 
 let () =
   let live =
-    if Sys.getenv_opt "ETA_AI_LIVE_SMOKE" = Some "1" then
+    if Sys.getenv_opt "OX_AI_LIVE_SMOKE" = Some "1" then
       [ ("live", [ Alcotest.test_case "opt-in embedding ^air2-tst5" `Quick live_smoke ]) ]
     else []
   in

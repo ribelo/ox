@@ -6,7 +6,7 @@ type item = { index : int; vector : float list }
 type response = { embeddings : item list; input_tokens : int option }
 
 module Raw = struct
-  type t = Eta_json.t
+  type t = Ox_json.t
 
   let yojson_of_t json = json
   let t_of_yojson json = Ok json
@@ -26,8 +26,8 @@ let default_endpoint = "https://openrouter.ai/api/v1/embeddings"
 let encode (request : request) =
   let input =
     match request.input with
-    | Text text -> Eta_json.string text
-    | Texts texts -> Eta_json.array (List.map Eta_json.string texts)
+    | Text text -> Ox_json.string text
+    | Texts texts -> Ox_json.array (List.map Ox_json.string texts)
   in
   yojson_of_wire_request { model = request.model; input; dimensions = request.dimensions }
 
@@ -52,9 +52,9 @@ let decode json =
                 response.data;
             input_tokens =
               Option.bind response.usage (fun u ->
-                  match Eta_json.int_member "prompt_tokens" u with
+                  match Ox_json.int_member "prompt_tokens" u with
                   | Some _ as tokens -> tokens
-                  | None -> Eta_json.int_member "input_tokens" u);
+                  | None -> Ox_json.int_member "input_tokens" u);
           }
 
 let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ?timeout

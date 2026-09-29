@@ -1,8 +1,8 @@
 (library
- (name eta_ai_realtime)
- (public_name eta_ai_realtime)
+ (name ox_ai_realtime)
+ (public_name ox_ai_realtime)
  (synopsis "Scoped Codex Realtime WebSocket JSON session")
- (libraries eta eta_ai eta_json eta_http eta_observability eio yojson)
+ (libraries ox ox_ai ox_json ox_http ox_observability eio yojson)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))

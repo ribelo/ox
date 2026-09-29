@@ -1,5 +1,5 @@
 (test
  (name run)
  (modules run test_ws_codec)
- (libraries eta_http eta eio eio.unix eio_main alcotest)
+ (libraries ox_http ox eio eio.unix eio_main alcotest)
  (deps ../localhost.crt ../localhost.key))

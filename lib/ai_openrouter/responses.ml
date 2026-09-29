@@ -1,5 +1,5 @@
 (* OpenRouter's Responses input_audio shape follows v1:openai_codec/content.ml. *)
-type schema = { name : string; schema : Eta_json.t; strict : bool option }
+type schema = { name : string; schema : Ox_json.t; strict : bool option }
 type format = Text | Json_object | Json_schema of schema
 
 type request = {
@@ -12,7 +12,7 @@ type request = {
 }
 
 module Raw = struct
-  type t = Eta_json.t
+  type t = Ox_json.t
 
   let yojson_of_t json = json
   let t_of_yojson json = Ok json
@@ -68,8 +68,8 @@ let base64 bytes =
   done;
   Buffer.contents out
 
-let obj = Eta_json.object_
-let s value = Some (Eta_json.string value)
+let obj = Ox_json.object_
+let s value = Some (Ox_json.string value)
 
 let format_json = function
   | Text -> obj [ ("type", s "text") ]
@@ -80,7 +80,7 @@ let format_json = function
           ("type", s "json_schema");
           ("name", s name);
           ("schema", Some schema);
-          ("strict", Option.map Eta_json.bool strict);
+          ("strict", Option.map Ox_json.bool strict);
         ]
 
 let encode (request : request) =
@@ -94,15 +94,15 @@ let encode (request : request) =
   in
   let text = obj [ ("type", s "input_text"); ("text", s request.prompt) ] in
   let input =
-    Eta_json.array
-      [ obj [ ("role", s "user"); ("content", Some (Eta_json.array [ text; audio ])) ] ]
+    Ox_json.array
+      [ obj [ ("role", s "user"); ("content", Some (Ox_json.array [ text; audio ])) ] ]
   in
   obj
     [
       ("model", s request.model);
       ("input", Some input);
-      ("stream", Some (Eta_json.bool false));
-      ("temperature", Option.bind request.temperature Eta_json.float);
+      ("stream", Some (Ox_json.bool false));
+      ("temperature", Option.bind request.temperature Ox_json.float);
       ( "text",
         Option.map
           (fun format -> obj [ ("format", Some (format_json format)) ])
@@ -116,15 +116,15 @@ let encode (request : request) =
    and every message content part with the kind the provider named, so a disqualifying
    item — a tool continuation above all — cannot be silently dropped (^nor-pn0b).
    Malformed relevant content stays an error rather than becoming empty text. *)
-let field name decoder json = Eta_json.Of_json.field name decoder json
+let field name decoder json = Ox_json.Of_json.field name decoder json
 let invalid_issue result = Result.map_error (fun issue -> `Invalid_response issue) result
-let issue path message got = Error { Eta_json.path; message; got }
+let issue path message got = Error { Ox_json.path; message; got }
 
 let text_of part =
-  field "text" Eta_json.Of_json.string part |> Result.map (fun text -> Output_text text)
+  field "text" Ox_json.Of_json.string part |> Result.map (fun text -> Output_text text)
 
 let refusal_of item =
-  match (Eta_json.string_member "refusal" item, Eta_json.string_member "text" item) with
+  match (Ox_json.string_member "refusal" item, Ox_json.string_member "text" item) with
   | Some text, _ | None, Some text -> Ok (Refusal text)
   | None, None -> issue "refusal" "refusal without text" item
 
@@ -132,14 +132,14 @@ let refusal_of item =
    other part kind reported instead of dropped. A part without a [type] has always read
    as text; keep that. *)
 let part_of part =
-  match Eta_json.string_member "type" part with
+  match Ox_json.string_member "type" part with
   | Some "output_text" | None -> text_of part
   | Some "refusal" -> refusal_of part
   | Some kind -> Ok (Other kind)
 
 let outputs_of_item item =
-  match Eta_json.string_member "type" item with
-  | Some "message" | None -> field "content" (Eta_json.Of_json.list part_of) item
+  match Ox_json.string_member "type" item with
+  | Some "message" | None -> field "content" (Ox_json.Of_json.list part_of) item
   | Some "output_text" -> text_of item |> Result.map (fun output -> [ output ])
   | Some "refusal" -> refusal_of item |> Result.map (fun output -> [ output ])
   | Some "function_call" ->
@@ -147,8 +147,8 @@ let outputs_of_item item =
         [
           Function_call
             {
-              name = Eta_json.string_member "name" item;
-              call_id = Eta_json.string_member "call_id" item;
+              name = Ox_json.string_member "name" item;
+              call_id = Ox_json.string_member "call_id" item;
             };
         ]
   | Some kind -> Ok [ Other kind ]

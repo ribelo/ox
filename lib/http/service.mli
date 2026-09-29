@@ -62,7 +62,7 @@ module Extractors : sig
 end
 
 module Json : sig
-  val response : ?status:int -> ?newline:bool -> Eta_json.t -> Server.Response.t
+  val response : ?status:int -> ?newline:bool -> Ox_json.t -> Server.Response.t
 end
 
 module Serve : sig
@@ -73,7 +73,7 @@ module Serve : sig
     net:_ Eio.Net.t ->
     clock:[> float Eio.Time.clock_ty ] Eio.Std.r ->
     ?stop:unit Eio.Promise.t ->
-    ?drain_timeout:Eta.Duration.t ->
+    ?drain_timeout:Ox.Duration.t ->
     ?config:Server.Config.t ->
     ?on_error:(exn -> unit) ->
     ?addr:Eio.Net.Sockaddr.stream ->

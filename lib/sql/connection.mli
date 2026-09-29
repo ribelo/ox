@@ -1,4 +1,4 @@
-(** Internal SQLite connection API used by [Eta_sql.Pool] and migrations.
+(** Internal SQLite connection API used by [Ox_sql.Pool] and migrations.
 
     Raw operations in this module bypass the typed SQL DSL. Callers using this escape
     hatch own SQL validity, parameter ordering, and result decoding. *)
@@ -52,7 +52,7 @@ val rollback : t -> (unit, Types.sql_error) result
 val with_transaction :
   t ->
   (t -> ('a, Types.sql_error) result) ->
-  ('a, Types.sql_error) Eta_sql_dsl.transaction_outcome
+  ('a, Types.sql_error) Ox_sql_dsl.transaction_outcome
 
 val id : t -> string
 val created_at : t -> float

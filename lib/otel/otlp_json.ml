@@ -1,7 +1,7 @@
 (* Adapted from v1:lib/otel/otlp_json.ml, retaining its pure resource/scope
    envelope, attribute, status and ProtoJSON timestamp encoding. Metrics and
    the v1 Capabilities records are deliberately not copied. *)
-type yj = Eta_json.t
+type yj = Ox_json.t
 
 type span = {
   trace_id : string;
@@ -18,7 +18,7 @@ type span = {
 let attr_value_string s : yj = `Assoc [ ("stringValue", `String s) ]
 
 let attrs_json (attrs : (string * string) list) : yj =
-  Eta_json.array_map
+  Ox_json.array_map
     (fun (k, v) -> `Assoc [ ("key", `String k); ("value", attr_value_string v) ])
     attrs
 
@@ -57,7 +57,7 @@ let scope_json scope_name : yj = `Assoc [ ("name", `String scope_name) ]
 
 let encode_otlp_request ~resource_attrs ~scope_name ~wrapper_key ~scope_key ~records_key
     encode_item items =
-  Eta_json.to_string
+  Ox_json.to_string
     (`Assoc
        [
          ( wrapper_key,
@@ -72,7 +72,7 @@ let encode_otlp_request ~resource_attrs ~scope_name ~wrapper_key ~scope_key ~rec
                          `Assoc
                            [
                              ("scope", scope_json scope_name);
-                             (records_key, Eta_json.array_map encode_item items);
+                             (records_key, Ox_json.array_map encode_item items);
                            ];
                        ] );
                  ];
@@ -84,13 +84,13 @@ let encode_traces_request ~resource_attrs ~scope_name spans =
     ~scope_key:"scopeSpans" ~records_key:"spans" span_json spans
 
 let severity_number = function
-  | Eta_observability.Logger.Debug -> 5
+  | Ox_observability.Logger.Debug -> 5
   | Info -> 9
   | Warn -> 13
   | Error -> 17
 
 let severity_text level =
-  Eta_observability.Logger.level_to_string level |> String.uppercase_ascii
+  Ox_observability.Logger.level_to_string level |> String.uppercase_ascii
 
 let unix_ns seconds =
   let ns = seconds *. 1_000_000_000. in
@@ -112,7 +112,7 @@ let rec any_value_json (value : yj) : yj =
   | `Assoc fields ->
       `Assoc [ ("kvlistValue", `Assoc [ ("values", attrs_any_json fields) ]) ]
   | `Null -> `Assoc [ ("stringValue", `String "null") ]
-  | other -> attr_value_string (Eta_json.to_string other)
+  | other -> attr_value_string (Ox_json.to_string other)
 
 and attrs_any_json fields : yj =
   `List
@@ -121,7 +121,7 @@ and attrs_any_json fields : yj =
          `Assoc [ ("key", `String name); ("value", any_value_json value) ])
        fields)
 
-let log_json (r : Eta_observability.Logger.record) : yj =
+let log_json (r : Ox_observability.Logger.record) : yj =
   let trace_fields =
     List.filter_map
       (fun (name, key) ->
@@ -130,7 +130,7 @@ let log_json (r : Eta_observability.Logger.record) : yj =
   in
   let attrs =
     List.map
-      (fun (name, value) -> (name, Eta_observability.Logger.value_to_json value))
+      (fun (name, value) -> (name, Ox_observability.Logger.value_to_json value))
       r.fields
     @ List.map
         (fun (name, value) -> (name, `String value))
@@ -237,7 +237,7 @@ let metric_json (key : Metric_aggregation.Metric_key.t) point : yj =
             ("dataPoints", `List [ histogram_data_point_json key state start_ts end_ts ]);
             ("aggregationTemporality", `Int 1);
           ]
-    | _ -> invalid_arg "Eta_otel.Otlp_json.metric_json: metric kind/value mismatch"
+    | _ -> invalid_arg "Ox_otel.Otlp_json.metric_json: metric kind/value mismatch"
   in
   let kind_field =
     match key.kind with Meter.Counter _ -> "sum" | Histogram _ -> "histogram"

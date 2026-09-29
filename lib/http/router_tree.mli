@@ -1,5 +1,5 @@
 (* Copied from v1:lib/router/tree.mli (story ^hserv-e3q9); module paths adapted only.
-   Internal to {!Eta_http.Router}. *)
+   Internal to {!Ox_http.Router}. *)
 
 (** Radix tree used for route storage and lookup. *)
 

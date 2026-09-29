@@ -1,8 +1,8 @@
 (library
- (name eta_test)
- (public_name eta_test)
+ (name ox_test)
+ (public_name ox_test)
  (libraries
-  eta
+  ox
   eio
   eio_main
   eio.mock

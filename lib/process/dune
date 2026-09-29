@@ -1,4 +1,4 @@
 (library
- (name eta_process)
- (public_name eta_process)
- (libraries eta eio eio.unix))
+ (name ox_process)
+ (public_name ox_process)
+ (libraries ox eio eio.unix))

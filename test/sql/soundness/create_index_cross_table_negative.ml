@@ -1,4 +1,4 @@
-module Q = Eta_sql
+module Q = Ox_sql
 
 module Users = struct
   module T = Q.Table.Make (struct
@@ -26,5 +26,4 @@ end
    table identity, so an index column list cannot borrow another table's
    column even though the list is heterogeneous. *)
 let _bad_index =
-  Q.Eta_schema.create_index ~name:"users_by_title" Users.table
-    [ Q.Column.any Posts.title ]
+  Q.Ox_schema.create_index ~name:"users_by_title" Users.table [ Q.Column.any Posts.title ]

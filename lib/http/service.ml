@@ -231,7 +231,7 @@ end
 
 module Json = struct
   let response ?(status = 200) ?(newline = false) json =
-    let content = Eta_json.compact json ^ if newline then "\n" else "" in
+    let content = Ox_json.compact json ^ if newline then "\n" else "" in
     S.Response.text ~status
       ~headers:
         (Header.unsafe_of_list [ ("content-type", "application/json; charset=utf-8") ])

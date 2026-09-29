@@ -115,7 +115,7 @@ val run_h1_on_socket :
   sw:Eio.Switch.t ->
   clock:[> float Eio.Time.clock_ty ] Eio.Std.r ->
   ?stop:unit Eio.Promise.t ->
-  ?drain_timeout:Eta.Duration.t ->
+  ?drain_timeout:Ox.Duration.t ->
   ?config:Config.t ->
   ?on_error:(exn -> unit) ->
   socket:_ Eio.Net.listening_socket ->
@@ -130,7 +130,7 @@ val run_h1 :
   net:_ Eio.Net.t ->
   clock:[> float Eio.Time.clock_ty ] Eio.Std.r ->
   ?stop:unit Eio.Promise.t ->
-  ?drain_timeout:Eta.Duration.t ->
+  ?drain_timeout:Ox.Duration.t ->
   ?config:Config.t ->
   ?on_error:(exn -> unit) ->
   addr:Eio.Net.Sockaddr.stream ->

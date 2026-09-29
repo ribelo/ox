@@ -1,5 +1,5 @@
 (library
- (name eta_observability)
- (public_name eta_observability)
+ (name ox_observability)
+ (public_name ox_observability)
  (synopsis "Structured logging with fiber-local fields and journal output")
- (libraries eta eio eta_json yojson mtime))
+ (libraries ox eio ox_json yojson mtime))

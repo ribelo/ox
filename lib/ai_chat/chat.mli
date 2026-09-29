@@ -1,17 +1,17 @@
 (** The OpenAI-compatible chat client: one non-streaming completion.
 
     [Chat.complete] writes one request — the model, the messages, and the caller's cap,
-    JSON-object requirement and reasoning control — posts it through {!Eta_ai.Transport}
-    to an OpenAI-compatible `chat/completions` endpoint (OpenRouter by default), and reads
+    JSON-object requirement and reasoning control — posts it through {!Ox_ai.Transport} to
+    an OpenAI-compatible `chat/completions` endpoint (OpenRouter by default), and reads
     the first choice's content and usage out of the reply, fail-closed and bounded on both
     sides (^nchat-dys0 ^nchat-wtog).
 
     Cancellation and finalizers: {!complete} runs in the calling fiber, opens and closes
-    one socket per attempt through {!Eta_http.Client}, sleeps its backoff on the caller's
+    one socket per attempt through {!Ox_http.Client}, sleeps its backoff on the caller's
     clock and registers no finalizer. Cancelling the fiber closes the socket of the
     attempt in flight; the typed result is [`Timeout] when the caller's deadline passed,
     and cancellation itself propagates as [Eio.Cancel.Cancelled] and is classified by
-    [Eta.Scope.run] at the boundary. *)
+    [Ox.Scope.run] at the boundary. *)
 
 val default_endpoint : string
 (** [https://openrouter.ai/api/v1/chat/completions]: the OpenRouter route, the reference
@@ -22,12 +22,12 @@ type t
     the bounds. *)
 
 val create :
-  http:Eta_http.Client.t ->
+  http:Ox_http.Client.t ->
   clock:_ Eio.Time.clock ->
-  logger:Eta_observability.Logger.t ->
+  logger:Ox_observability.Logger.t ->
   ?endpoint:string ->
-  api_key:Eta_observability.Redact.t ->
-  ?timeout:Eta.Duration.t ->
+  api_key:Ox_observability.Redact.t ->
+  ?timeout:Ox.Duration.t ->
   ?max_request_bytes:int ->
   unit ->
   t
@@ -35,21 +35,21 @@ val create :
     client. [endpoint] defaults to {!default_endpoint} and is the full URL of the
     `chat/completions` route, so an OpenAI-compatible server of any base URL works — a
     DeepSeek key, a local model server, or a fake server in a test. [api_key] is a
-    {!Eta_observability.Redact.t}: only {!Eta_ai.Bearer.header} reveals it, on the request
+    {!Ox_observability.Redact.t}: only {!Ox_ai.Bearer.header} reveals it, on the request
     path. [timeout] (10 s by default) caps one attempt's read and [max_request_bytes] (4
     MiB by default) bounds the serialized request. Pure and synchronous: it takes no
     switch, opens no socket and registers no finalizer. *)
 
 val complete :
   t ->
-  deadline:Eta.Duration.t ->
+  deadline:Ox.Duration.t ->
   model:string ->
   messages:Types.message list ->
   ?max_tokens:int ->
   ?json_object:bool ->
   ?reasoning:[ `Disabled | `Effort of string ] ->
   unit ->
-  (Codecs.completion, Eta_ai.Error.t) result
+  (Codecs.completion, Ox_ai.Error.t) result
 (** [complete client ~deadline ~model ~messages ?max_tokens ?json_object ?reasoning ()]
     POSTs one chat completion and returns its first choice with the usage the reply
     reported.
@@ -62,7 +62,7 @@ val complete :
     when given and omitted when not.
 
     The states of failure, all inside [deadline], all under the two-attempt policy of
-    {!Eta_ai.Transport}:
+    {!Ox_ai.Transport}:
     - [`Input_too_large bound] — the serialized request is over the bound (4 MiB by
       default); nothing was sent.
     - [`Invalid_response issue] — the reply is not the documented shape (text that is not

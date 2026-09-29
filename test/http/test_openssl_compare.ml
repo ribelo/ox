@@ -1,18 +1,18 @@
 (* Copied from v1:test/http/test_tls_handle_compare.ml, client handles. *)
 module Ctx_set = Set.Make (struct
-  type t = Eta_http.Eta_http_tls_openssl.ctx
+  type t = Ox_http.Ox_http_tls_openssl.ctx
 
   let compare = Stdlib.compare
 end)
 
 module Ssl_set = Set.Make (struct
-  type t = Eta_http.Eta_http_tls_openssl.ssl
+  type t = Ox_http.Ox_http_tls_openssl.ssl
 
   let compare = Stdlib.compare
 end)
 
 module Session_set = Set.Make (struct
-  type t = Eta_http.Eta_http_tls_openssl.session
+  type t = Ox_http.Ox_http_tls_openssl.session
 
   let compare = Stdlib.compare
 end)
@@ -40,9 +40,9 @@ let check_equal_implies_hash label compare hash a b =
     Alcotest.(check bool) (label ^ " equal implies hash") true (hash a = hash b)
 
 let test_ctx_ssl_handle_ordering () =
-  let ctx_a = Eta_http.Eta_http_tls_openssl.create_ctx () in
-  let ctx_b = Eta_http.Eta_http_tls_openssl.create_ctx () in
-  let ctx_c = Eta_http.Eta_http_tls_openssl.create_ctx () in
+  let ctx_a = Ox_http.Ox_http_tls_openssl.create_ctx () in
+  let ctx_b = Ox_http.Ox_http_tls_openssl.create_ctx () in
+  let ctx_c = Ox_http.Ox_http_tls_openssl.create_ctx () in
   check_total_order "ctx" Stdlib.compare ctx_a ctx_b ctx_c;
   check_equal_implies_hash "ctx self" Stdlib.compare Hashtbl.hash ctx_a ctx_a;
   let set =
@@ -53,15 +53,15 @@ let test_ctx_ssl_handle_ordering () =
   Alcotest.(check bool) "ctx set mem c" true (Ctx_set.mem ctx_c set);
   Alcotest.(check int) "ctx set cardinal" 3 (Ctx_set.cardinal set);
   let ssl_a =
-    Eta_http.Eta_http_tls_openssl.create_ssl ctx_a ~hostname:None ~ip:None
+    Ox_http.Ox_http_tls_openssl.create_ssl ctx_a ~hostname:None ~ip:None
       ~alpn_protocols:[]
   in
   let ssl_b =
-    Eta_http.Eta_http_tls_openssl.create_ssl ctx_a ~hostname:None ~ip:None
+    Ox_http.Ox_http_tls_openssl.create_ssl ctx_a ~hostname:None ~ip:None
       ~alpn_protocols:[]
   in
   let ssl_c =
-    Eta_http.Eta_http_tls_openssl.create_ssl ctx_b ~hostname:None ~ip:None
+    Ox_http.Ox_http_tls_openssl.create_ssl ctx_b ~hostname:None ~ip:None
       ~alpn_protocols:[]
   in
   check_total_order "ssl" Stdlib.compare ssl_a ssl_b ssl_c;

@@ -3,7 +3,7 @@ type 'e reason = [ `Spawn of 'e | `Schedule_exhausted of Child.exit ]
 type 'e event =
   | Started of int
   | Exited of int * Child.exit
-  | Gave_up of 'e reason Eta.Cause.t
+  | Gave_up of 'e reason Ox.Cause.t
   | Stopped
 
 type 'e t = {
@@ -69,21 +69,20 @@ let start ~sw ~clock ~schedule ~spawn =
                           Ok (n, Child.await child))
                 in
                 match outcome with
-                | Error e -> emit t (Gave_up (Eta.Cause.Fail (`Spawn e)))
+                | Error e -> emit t (Gave_up (Ox.Cause.Fail (`Spawn e)))
                 | Ok (n, exit) -> (
                     emit t (Exited (n, exit));
                     let decision, next =
-                      Eta.Schedule.step ~now_ms:(now_ms clock) ~input:exit driver
+                      Ox.Schedule.step ~now_ms:(now_ms clock) ~input:exit driver
                     in
                     match decision with
-                    | Eta.Schedule.Done _ ->
-                        emit t (Gave_up (Eta.Cause.Fail (`Schedule_exhausted exit)))
-                    | Eta.Schedule.Continue metadata ->
-                        Eio.Time.sleep clock
-                          (Eta.Duration.to_seconds_float metadata.delay);
+                    | Ox.Schedule.Done _ ->
+                        emit t (Gave_up (Ox.Cause.Fail (`Schedule_exhausted exit)))
+                    | Ox.Schedule.Continue metadata ->
+                        Eio.Time.sleep clock (Ox.Duration.to_seconds_float metadata.delay);
                         loop next)
             in
-            loop (Eta.Schedule.start schedule))
+            loop (Ox.Schedule.start schedule))
       in
       let result =
         match run () with
@@ -91,7 +90,7 @@ let start ~sw ~clock ~schedule ~spawn =
         | exception Eio.Cancel.Cancelled _ -> Ok ()
         | exception ex ->
             let bt = Printexc.get_raw_backtrace () in
-            emit t (Gave_up (Eta.Cause.Die (ex, bt)));
+            emit t (Gave_up (Ox.Cause.Die (ex, bt)));
             Error ex
       in
       Eio.Cancel.protect (fun () ->

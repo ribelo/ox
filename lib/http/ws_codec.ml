@@ -1,4 +1,4 @@
-(* Copyright (c) 2026 Eta contributors. SPDX-License-Identifier: MIT *)
+(* Copyright (c) 2026 Ox contributors. SPDX-License-Identifier: MIT *)
 
 type opcode = Continuation | Text | Binary | Close | Ping | Pong
 type frame = { fin : bool; opcode : opcode; payload : bytes }
@@ -193,5 +193,5 @@ let accept_key ~sha1 key =
 
 let key_of_nonce nonce =
   if Bytes.length nonce <> 16 then
-    invalid_arg "Eta_http_ws.Codec.key_of_nonce: nonce must be 16 bytes";
+    invalid_arg "Ox_http_ws.Codec.key_of_nonce: nonce must be 16 bytes";
   Ws_base64.encode_string (Bytes.unsafe_to_string nonce)

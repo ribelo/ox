@@ -1,5 +1,5 @@
-module L = Eta_observability.Logger
-module O = Eta_otel
+module L = Ox_observability.Logger
+module O = Ox_otel
 
 let check_string = Alcotest.(check string)
 let check_int = Alcotest.(check int)
@@ -79,7 +79,7 @@ let wire_encoding () =
   let doc =
     O.Otlp_json.encode_traces_request
       ~resource_attrs:[ ("service.name", "nema") ]
-      ~scope_name:"eta_otel" [ span ]
+      ~scope_name:"ox_otel" [ span ]
     |> json
   in
   let resource = first "resourceSpans" doc in
@@ -105,7 +105,7 @@ let wire_encoding () =
     }
   in
   let doc =
-    O.Otlp_json.encode_logs_request ~resource_attrs:[] ~scope_name:"eta_otel" [ record ]
+    O.Otlp_json.encode_logs_request ~resource_attrs:[] ~scope_name:"ox_otel" [ record ]
     |> json
   in
   let row = doc |> first "resourceLogs" |> first "scopeLogs" |> first "logRecords" in
@@ -126,7 +126,7 @@ let metric ?(description = "") ?(unit_ = "") ?(attrs = []) ?(ts_ms = 1_000) ~nam
 
 let encode_metrics ?(resource_attrs = [ ("service.name", "nema") ]) points =
   let rows = O.Metric_aggregation.aggregate_points points in
-  O.Otlp_json.encode_metrics_request ~resource_attrs ~scope_name:"eta_otel" rows |> json
+  O.Otlp_json.encode_metrics_request ~resource_attrs ~scope_name:"ox_otel" rows |> json
 
 let metrics_of body =
   body |> first "resourceMetrics" |> first "scopeMetrics" |> member "metrics" |> list
@@ -193,7 +193,7 @@ let metric_wire_encoding () =
     body |> first "resourceMetrics" |> member "resource" |> member "attributes" |> list
   in
   check_string "the resource identity" "nema" (attr resource "service.name");
-  check_string "the scope" "eta_otel"
+  check_string "the scope" "ox_otel"
     (body |> first "resourceMetrics" |> first "scopeMetrics" |> member "scope"
    |> member "name" |> string);
   let requests = metric_of "http.requests" body in
@@ -372,7 +372,7 @@ let with_collector ?(status = 200) ?(refuse_traces = false) f =
                   flow
               done;
               `Stop_daemon);
-          let client = Eta_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
+          let client = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
           let endpoint = Printf.sprintf "http://127.0.0.1:%d/otlp" port in
           (* ^notel-1stb: a lifecycle defect shows up as a hang; the bound fails the test
              instead of blocking the suite. *)
@@ -816,7 +816,7 @@ let metrics_exported_periodically () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
         O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~metrics_interval:(Eta.Duration.ms 30) ()
+          ~metrics_interval:(Ox.Duration.ms 30) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -836,7 +836,7 @@ let drained_window_is_not_reposted () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
         O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~metrics_interval:(Eta.Duration.seconds 3600) ()
+          ~metrics_interval:(Ox.Duration.seconds 3600) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -858,7 +858,7 @@ let metrics_export_under_load () =
       Eio.Switch.run (fun owned ->
           let exporter =
             O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ~metrics_interval:(Eta.Duration.ms 40) ()
+              ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 40) ()
             |> exporter_ok
           in
           let logger =
@@ -919,7 +919,7 @@ let metrics_failure_reaches_flush () =
       exporter_ok (O.shutdown exporter))
 
 let () =
-  Alcotest.run "eta_otel"
+  Alcotest.run "ox_otel"
     [
       ( "wire",
         [

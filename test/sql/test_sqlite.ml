@@ -1,4 +1,4 @@
-module S = Eta_sql.Sqlite
+module S = Ox_sql.Sqlite
 
 let rc =
   Alcotest.testable (fun ppf rc -> Format.pp_print_string ppf (S.rc_name rc)) S.rc_equal
@@ -90,7 +90,7 @@ let test_sqlite_column_int_rejects_out_of_ocaml_range () =
       check_row "select oversized int" (S.step stmt);
       Alcotest.check_raises "column_int range"
         (Invalid_argument
-           "Eta_sql.Sqlite.column_int: SQLite integer outside OCaml int range") (fun () ->
+           "Ox_sql.Sqlite.column_int: SQLite integer outside OCaml int range") (fun () ->
           ignore (S.column_int stmt 0)))
 
 let test_sqlite_close_with_live_statement () =
@@ -103,7 +103,7 @@ let test_sqlite_close_with_live_statement () =
   check_ok "close twice" (S.close db)
 
 let test_sqlite_path_and_read_only_mode () =
-  let path = Filename.temp_file "eta-sqlite-" ".db" in
+  let path = Filename.temp_file "ox-sqlite-" ".db" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
@@ -148,7 +148,7 @@ let test_sqlite_config_exec_script_and_pragmas () =
 let test_sqlite_transactions_and_savepoints () =
   with_db @@ fun db ->
   S.exec db "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)";
-  let open Eta_sql_dsl in
+  let open Ox_sql_dsl in
   (match
      S.with_transaction db (fun db ->
          S.exec db "INSERT INTO items (name) VALUES ('committed')";
@@ -162,7 +162,7 @@ let test_sqlite_transactions_and_savepoints () =
      S.exec db "INSERT INTO items (name) VALUES ('rolled back')";
      Error { operation = "probe"; code = S.misuse; message = "force rollback" }
    with
-  | Eta_sql_dsl.Committed () -> Alcotest.fail "forced body error unexpectedly committed"
+  | Ox_sql_dsl.Committed () -> Alcotest.fail "forced body error unexpectedly committed"
   | Failed { phase = Body; rollback = Rollback_succeeded; _ } -> ()
   | Failed _ -> Alcotest.fail "forced body error did not roll back");
   Alcotest.(check int) "rolled back" 1 (S.query_one_int db "SELECT COUNT(*) FROM items");
@@ -185,7 +185,7 @@ let test_sqlite_transaction_commit_failure_rolls_back () =
     \       parent_id INTEGER,\n\
     \       FOREIGN KEY(parent_id) REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED\n\
     \     );";
-  let open Eta_sql_dsl in
+  let open Ox_sql_dsl in
   (match
      S.with_transaction db (fun db ->
          S.exec db "INSERT INTO child (parent_id) VALUES (42)";
@@ -196,7 +196,7 @@ let test_sqlite_transaction_commit_failure_rolls_back () =
       Alcotest.(check string) "commit operation" "exec" err.operation
   | Failed _ -> Alcotest.fail "deferred FK violation did not fail at commit with rollback");
   Alcotest.(check bool) "autocommit restored" true (S.autocommit db);
-  let open Eta_sql_dsl in
+  let open Ox_sql_dsl in
   (match
      S.with_transaction db (fun db ->
          S.exec db "INSERT INTO parent (id) VALUES (1)";
@@ -245,7 +245,7 @@ let test_sqlite_float_blob_metadata_and_counters () =
   check_ok "finalize typed query" (S.finalize query)
 
 let test_sqlite_backup_and_restore () =
-  let backup_path = Filename.temp_file "eta-sqlite-backup-" ".db" in
+  let backup_path = Filename.temp_file "ox-sqlite-backup-" ".db" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists backup_path then Sys.remove backup_path)
     (fun () ->
@@ -263,8 +263,8 @@ let process_cpu_seconds () =
   t.Unix.tms_utime +. t.tms_stime +. t.tms_cutime +. t.tms_cstime
 
 let test_sqlite_backup_waits_without_busy_spinning () =
-  let source_path = Filename.temp_file "eta-sqlite-source-" ".db" in
-  let backup_path = Filename.temp_file "eta-sqlite-backup-" ".db" in
+  let source_path = Filename.temp_file "ox-sqlite-source-" ".db" in
+  let backup_path = Filename.temp_file "ox-sqlite-backup-" ".db" in
   Fun.protect
     ~finally:(fun () ->
       if Sys.file_exists source_path then Sys.remove source_path;
@@ -324,12 +324,12 @@ let test_sqlite_config_error_and_testing_helpers () =
   Alcotest.(check string) "interrupt rc name" "INTERRUPT" (S.rc_name S.interrupt_)
 
 let test_sqlite_unexpected_step_success_is_typed_error () =
-  match Eta_sql__Types.unexpected_sqlite_step ~operation:"query" S.ok with
-  | Error (Eta_sql.Sqlite err) ->
+  match Ox_sql__Types.unexpected_sqlite_step ~operation:"query" S.ok with
+  | Error (Ox_sql.Sqlite err) ->
       Alcotest.(check string) "operation" "query" err.operation;
       check_ok "code" err.code;
       Alcotest.(check bool)
         "message names unexpected" true
         (contains err.message "unexpected SQLite step result OK")
-  | Error err -> Alcotest.failf "expected SQLite error, got %s" (Eta_sql.show_error err)
+  | Error err -> Alcotest.failf "expected SQLite error, got %s" (Ox_sql.show_error err)
   | Ok () -> Alcotest.fail "unexpected step success returned Ok"

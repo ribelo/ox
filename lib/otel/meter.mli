@@ -6,7 +6,7 @@
     Recording never suspends, forks no fiber and registers no finalizer: it updates the
     meter's aggregation table in place, and the exporter that owns the meter drains that
     table on its interval, on flush and when its switch ends. A meter and every instrument
-    made from it belong to one domain, like {!Eta_observability.Logger}: a program that
+    made from it belong to one domain, like {!Ox_observability.Logger}: a program that
     records from several domains keeps one meter per domain. ^notel-bez2
 
     {!counter} and {!up_down_counter} report the sum of the {!add} calls that fall in one
@@ -53,7 +53,7 @@ type t
 
 val create : now_ms:(unit -> int) -> record:(point -> unit) -> t
 (** [create ~now_ms ~record] is a meter that stamps each point with [now_ms ()] and hands
-    it to [record]. Exporters call this; a program gets its meter from {!Eta_otel.meter}.
+    it to [record]. Exporters call this; a program gets its meter from {!Ox_otel.meter}.
 *)
 
 type instrument

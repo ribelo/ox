@@ -1,8 +1,8 @@
 (library
- (name eta_ai_openrouter)
- (public_name eta_ai_openrouter)
+ (name ox_ai_openrouter)
+ (public_name ox_ai_openrouter)
  (synopsis "OpenRouter Responses, embeddings and WAV transcription")
- (libraries eta eta_ai eta_json eta_http eta_observability eio yojson)
+ (libraries ox ox_ai ox_json ox_http ox_observability eio yojson)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))

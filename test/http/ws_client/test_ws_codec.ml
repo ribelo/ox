@@ -1,4 +1,4 @@
-module C = Eta_http.Ws_codec
+module C = Ox_http.Ws_codec
 
 let byte_list xs = Bytes.init (List.length xs) (fun i -> Char.chr (List.nth xs i))
 
@@ -6,7 +6,7 @@ let test_vectors () =
   (* Copied from v1's RFC 6455 codec acceptance / masking cases. ^nws-d5r1 *)
   Alcotest.(check string)
     "RFC accept" "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
-    (C.accept_key ~sha1:Eta_http.Eta_http_tls_openssl.sha1 "dGhlIHNhbXBsZSBub25jZQ==");
+    (C.accept_key ~sha1:Ox_http.Ox_http_tls_openssl.sha1 "dGhlIHNhbXBsZSBub25jZQ==");
   Alcotest.(check string)
     "nonce" "dGhlIHNhbXBsZSBub25jZQ=="
     (C.key_of_nonce (Bytes.of_string "the sample nonce"));

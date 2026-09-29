@@ -1,10 +1,10 @@
 type response = { status : int; body : bytes }
 
-let default_timeout = Eta.Duration.seconds 10
+let default_timeout = Ox.Duration.seconds 10
 let default_max_request_bytes = 4 * 1024 * 1024
 let default_max_response_bytes = 1024 * 1024
 let max_attempts = 2
-let backoff = Eta.Duration.ms 100
+let backoff = Ox.Duration.ms 100
 let retryable_status status = status = 429 || status = 529
 
 (* ^nai-rjkq: Retry-After is delta-seconds or an HTTP-date (RFC 9110 10.2.3). Only the
@@ -45,14 +45,14 @@ let retry_after ~now headers =
   | Some (_, raw) -> (
       let value = String.trim raw in
       if value <> "" && String.for_all (fun c -> c >= '0' && c <= '9') value then
-        Option.map Eta.Duration.seconds (int_of_string_opt value)
+        Option.map Ox.Duration.seconds (int_of_string_opt value)
       else
         match http_date value with
         | Some at when at > now ->
-            Some (Eta.Duration.ms (int_of_float (Float.ceil ((at -. now) *. 1000.))))
+            Some (Ox.Duration.ms (int_of_float (Float.ceil ((at -. now) *. 1000.))))
         | _ -> None)
 
-(* The one boundary where eta_http's typed transport errors become this client's
+(* The one boundary where ox_http's typed transport errors become this client's
    failures (^nso-77t7): a connection that never completed, a TLS failure, a framing
    error the peer caused and a connection that closed mid-reply are [`Unavailable]; an
    idle or overall read timeout is [`Timeout]; a body past the response bound is an
@@ -61,12 +61,12 @@ let retry_after ~now headers =
 let transport_failure message =
   `Unavailable { Error.message; retryable = true; retry_after = None; status = None }
 
-let map_error ~max_response_bytes : Eta_http.Client.error -> Error.t = function
+let map_error ~max_response_bytes : Ox_http.Client.error -> Error.t = function
   | `Timeout | `Idle_timeout -> `Timeout
   | `Body_too_large ->
       `Invalid_response
         {
-          Eta_json.path = "";
+          Ox_json.path = "";
           message =
             Printf.sprintf "response body exceeds the %d-byte bound" max_response_bytes;
           got = `Null;
@@ -95,12 +95,11 @@ let retryable_error (error : Error.t) =
    follow — is [`Unavailable], like any other attempt that produced no reply. *)
 let status_error ~max_request_bytes ~length ~retry_after status =
   if status = 401 then `Authentication (Printf.sprintf "HTTP %d" status)
-  else if status = 413 then
-    `Input_too_large { Eta_json.limit = max_request_bytes; length }
+  else if status = 413 then `Input_too_large { Ox_json.limit = max_request_bytes; length }
   else if status >= 400 && status < 500 then
     `Invalid_response
       {
-        Eta_json.path = "";
+        Ox_json.path = "";
         message = Printf.sprintf "HTTP %d is not an answer" status;
         got = `Null;
       }
@@ -115,24 +114,23 @@ let status_error ~max_request_bytes ~length ~retry_after status =
 
 let attempt ~http ~url ~authorization ~body ~deadline ~max_response_bytes =
   match
-    Eta_http.Client.request http ~method_:"POST" ~url
+    Ox_http.Client.request http ~method_:"POST" ~url
       ~headers:(("Content-Type", "application/json") :: authorization)
       ~body ~deadline ~max_body_bytes:max_response_bytes ()
   with
-  | Ok response -> Ok (response.Eta_http.Client.status, response.headers, response.body)
+  | Ok response -> Ok (response.Ox_http.Client.status, response.headers, response.body)
   | Error error -> Error (map_error ~max_response_bytes error)
 
 let bytes_of_json json = Bytes.of_string (Yojson.Safe.to_string json)
 
 (* The backoff runs on the caller's clock, so the sleep is cancellable and testable: a
-   mock clock advances it, and the caller's deadline — the [Eta.Timeout.timeout] wrapper
+   mock clock advances it, and the caller's deadline — the [Ox.Timeout.timeout] wrapper
    {!post_json} installs — bounds it. *)
 let wait ~clock ~logger duration =
-  Eta_observability.Logger.debug logger
-    ~fields:
-      [ ("retry_in_ms", Eta_observability.Logger.Int (Eta.Duration.to_ms duration)) ]
+  Ox_observability.Logger.debug logger
+    ~fields:[ ("retry_in_ms", Ox_observability.Logger.Int (Ox.Duration.to_ms duration)) ]
     "retry";
-  Eio.Time.sleep clock (Eta.Duration.to_seconds_float duration)
+  Eio.Time.sleep clock (Ox.Duration.to_seconds_float duration)
 
 (* One attempt's verdict. It keeps the retry decision separate from the error's own kind:
    a 5xx reply is [`Unavailable] to the caller and is still not retried, because the
@@ -141,14 +139,14 @@ type verdict = Reply of response | Retry of Error.t | Final of Error.t
 
 (* At most [max_attempts] attempts, the later ones only under {!retryable_error}, all
    inside the caller's [deadline] because {!post_json} wraps this loop in one
-   {!Eta.Timeout.timeout}. [timeout] caps one attempt's read so a hung peer cannot eat the
+   {!Ox.Timeout.timeout}. [timeout] caps one attempt's read so a hung peer cannot eat the
    whole budget. *)
 let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
     ~max_request_bytes ~max_response_bytes ~length ~attempts =
   let verdict =
     match
       attempt ~http ~url:endpoint ~authorization ~body ~max_response_bytes
-        ~deadline:(Eta.Duration.min deadline timeout)
+        ~deadline:(Ox.Duration.min deadline timeout)
     with
     | Ok (status, _, body) when status >= 200 && status < 300 -> Reply { status; body }
     | Ok (status, headers, _) ->
@@ -173,7 +171,7 @@ let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeo
       else (
         wait ~clock ~logger backoff;
         run ~http ~clock ~logger ~endpoint ~authorization ~body
-          ~deadline:(Eta.Duration.subtract deadline backoff)
+          ~deadline:(Ox.Duration.subtract deadline backoff)
           ~timeout ~max_request_bytes ~max_response_bytes ~length ~attempts:(attempts - 1))
 
 let post_json ~http ~clock ~logger ?(timeout = default_timeout)
@@ -181,13 +179,13 @@ let post_json ~http ~clock ~logger ?(timeout = default_timeout)
     ?(max_response_bytes = default_max_response_bytes) ?(max_attempts = max_attempts)
     ~endpoint ~authorization ~body ~deadline () =
   if max_response_bytes <= 0 then
-    invalid_arg "Eta_ai.Transport.post_json: max_response_bytes must be positive";
+    invalid_arg "Ox_ai.Transport.post_json: max_response_bytes must be positive";
   if max_attempts < 1 then
-    invalid_arg "Eta_ai.Transport.post_json: max_attempts must be at least 1";
+    invalid_arg "Ox_ai.Transport.post_json: max_attempts must be at least 1";
   let length = Bytes.length body in
   if length > max_request_bytes then
-    Error (`Input_too_large { Eta_json.limit = max_request_bytes; length })
+    Error (`Input_too_large { Ox_json.limit = max_request_bytes; length })
   else
-    Eta.Timeout.timeout ~clock deadline (fun () ->
+    Ox.Timeout.timeout ~clock deadline (fun () ->
         run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
           ~max_request_bytes ~max_response_bytes ~length ~attempts:max_attempts)

@@ -1,7 +1,7 @@
-(* Injected-callback matrix for Eta_sql_dsl.transaction. Disjoint from
+(* Injected-callback matrix for Ox_sql_dsl.transaction. Disjoint from
    D108/D110/fold suites; register in test/sql/run.ml when granted. *)
 
-open Eta_sql_dsl
+open Ox_sql_dsl
 
 exception Begin_boom
 exception Body_boom
@@ -29,7 +29,7 @@ let run_action t name bump action () =
 let run ~begin_ ~body ~commit ~rollback =
   let t = counts () in
   let outcome =
-    Eta_sql_dsl.transaction
+    Ox_sql_dsl.transaction
       ~begin_:(fun () ->
         run_action t "begin" (fun t -> t.begins <- t.begins + 1) begin_ ())
       ~commit:(fun () ->
@@ -54,7 +54,7 @@ let test_commit_success_does_not_rollback () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Committed 7 -> ()
+  | Ox_sql_dsl.Committed 7 -> ()
   | Committed _ -> Alcotest.fail "unexpected committed value"
   | Failed _ -> Alcotest.fail "expected Committed");
   check_counts t ~begins:1 ~bodies:1 ~commits:1 ~rollbacks:0
@@ -66,7 +66,7 @@ let test_begin_returned_does_not_rollback () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       { phase = Begin; primary = Returned "begin"; rollback = Rollback_not_attempted } ->
       ()
   | _ -> Alcotest.fail "expected begin returned failure");
@@ -78,7 +78,7 @@ let test_begin_raised_does_not_rollback () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       {
         phase = Begin;
         primary = Raised (Begin_boom, _);
@@ -94,7 +94,7 @@ let test_body_returned_rolls_back_once () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       { phase = Body; primary = Returned "body"; rollback = Rollback_succeeded } ->
       ()
   | _ -> Alcotest.fail "expected body returned failure");
@@ -108,7 +108,7 @@ let test_body_raised_rolls_back_once () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       { phase = Body; primary = Raised (exn, bt); rollback = Rollback_succeeded } ->
       Alcotest.(check bool) "body exn identity" true (exn = Body_boom);
       Alcotest.(check bool)
@@ -124,7 +124,7 @@ let test_commit_returned_rolls_back_once () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       { phase = Commit; primary = Returned "commit"; rollback = Rollback_succeeded } ->
       ()
   | _ -> Alcotest.fail "expected commit returned failure");
@@ -138,7 +138,7 @@ let test_commit_raised_rolls_back_once () =
       ~rollback:(Ret (Ok ()))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       {
         phase = Commit;
         primary = Raised (Commit_boom, bt);
@@ -162,7 +162,7 @@ let test_body_returned_rollback_returned () =
       ~rollback:(Ret (Error "rollback"))
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       {
         phase = Body;
         primary = Returned "body";
@@ -179,7 +179,7 @@ let test_body_raised_rollback_raised_once () =
       ~rollback:(Raise Rollback_boom)
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       {
         phase = Body;
         primary = Raised (Body_boom, _);
@@ -196,7 +196,7 @@ let test_commit_raised_rollback_raised_once () =
       ~rollback:(Raise Rollback_boom)
   in
   (match outcome with
-  | Eta_sql_dsl.Failed
+  | Ox_sql_dsl.Failed
       {
         phase = Commit;
         primary = Raised (Commit_boom, _);

@@ -192,7 +192,7 @@ type error =
   | Migration_execution_error of { version : Version.t; error : Types.sql_error }
   | Migration_transaction of {
       version : Version.t;
-      phase : Eta_sql_dsl.transaction_phase;
+      phase : Ox_sql_dsl.transaction_phase;
       error : Types.sql_error;
     }
 
@@ -385,9 +385,9 @@ let error_to_string = function
   | Migration_transaction { version; phase; error } ->
       let phase =
         match phase with
-        | Eta_sql_dsl.Begin -> "begin"
-        | Eta_sql_dsl.Body -> "body"
-        | Eta_sql_dsl.Commit -> "commit"
+        | Ox_sql_dsl.Begin -> "begin"
+        | Ox_sql_dsl.Body -> "body"
+        | Ox_sql_dsl.Commit -> "commit"
       in
       "migration " ^ Version.to_string version ^ " failed at " ^ phase ^ ": "
       ^ Types.show_error error
@@ -396,7 +396,7 @@ let ( let* ) = Result.bind
 let table_name config = Dsl.quote_ident (Table_name.to_string config.Config.table_name)
 
 let pool_error = function
-  | `Eta_sql err -> Sql_error err
+  | `Ox_sql err -> Sql_error err
   | `Pool_shutdown -> Sql_error (Types.Pool_error "pool shut down")
   | `Timeout -> Sql_error (Types.Pool_error "pool timeout")
 
