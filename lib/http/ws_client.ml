@@ -153,7 +153,7 @@ let create_tls raw host ca_file =
     with Stdlib.Failure _ -> (Some host, None)
   in
   let ssl = Ssl.create_ssl ctx ~hostname ~ip ~alpn_protocols:[ "http/1.1" ] in
-  Tls_flow.create ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t) ~ssl
+  Tls_flow.create ~raw:(raw :> Tls_flow.ty Eio.Resource.t) ~ssl
 
 let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
     ?(establishment_timeout = Ox.Duration.seconds 10) ?(max_message_bytes = 1_048_576)
@@ -203,8 +203,13 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
             if secure then (
               stage := `Tls;
               create_tls raw (Url.host url) ca_file)
-            else (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
+            else (raw :> Tls_flow.ty Eio.Resource.t)
           in
+          (* nhttp-rs5p: the TLS flow owns graceful shutdown, not the raw socket. *)
+          (cleanup :=
+             fun () ->
+               try Eio.Flow.close flow
+               with Eio.Io _ | End_of_file | Tls_flow.Tls_failure _ -> ());
           stage := `Upgrade;
           let key = C.key_of_nonce (Ssl.random_bytes 16) in
           let buf = Buffer.create 512 in
@@ -251,8 +256,8 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
           established := true;
           Ok
             {
-              flow;
-              shutdown = (fun () -> Eio.Flow.close raw);
+              flow :> Eio.Flow.two_way_ty Eio.Resource.t;
+              shutdown = !cleanup;
               lock = Eio.Mutex.create ();
               closed = false;
               selected;

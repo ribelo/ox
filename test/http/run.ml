@@ -36,9 +36,10 @@ let with_server ?(tls = false) serve test =
                             ~private_key_file:"localhost.key"
                             ~alpn_protocols:[ "http/1.1" ] ()
                         in
-                        H.Tls_flow.create
-                          ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t)
-                          ~ssl:(H.Ox_http_tls_openssl.create_server_ssl ctx)
+                        (H.Tls_flow.create
+                           ~raw:(raw :> H.Tls_flow.ty Eio.Resource.t)
+                           ~ssl:(H.Ox_http_tls_openssl.create_server_ssl ctx)
+                          :> Eio.Flow.two_way_ty Eio.Resource.t)
                       else (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
                     in
                     serve env flow
@@ -307,6 +308,7 @@ let () =
           Alcotest.test_case "invalid content length" `Quick
             Test_writer_legacy.test_parse_cl_rejection;
         ] );
+      ("TLS flow close (nhttp-7pp8 nhttp-rs5p)", Test_tls_flow.cases);
       ( "copied OpenSSL binding",
         [
           Alcotest.test_case "handle ordering" `Quick

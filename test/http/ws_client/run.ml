@@ -17,7 +17,7 @@ let expect_ok = function
         | `Timeout -> "timeout"
         | `Message_too_large -> "message too large")
 
-let serve ?(tls = false) server test =
+let serve ?(tls = false) ?(observe_tls = fun _ -> ()) server test =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let listener = Eio.Net.listen ~sw ~backlog:2 env#net (`Tcp (local, 0)) in
@@ -39,9 +39,14 @@ let serve ?(tls = false) server test =
                             ~private_key_file:"../localhost.key"
                             ~alpn_protocols:[ "http/1.1" ] ()
                         in
-                        H.Tls_flow.create
-                          ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t)
-                          ~ssl:(H.Ox_http_tls_openssl.create_server_ssl ctx)
+                        let ssl = H.Ox_http_tls_openssl.create_server_ssl ctx in
+                        let flow =
+                          H.Tls_flow.create
+                            ~raw:(raw :> H.Tls_flow.ty Eio.Resource.t)
+                            ~ssl
+                        in
+                        observe_tls ssl;
+                        (flow :> Eio.Flow.two_way_ty Eio.Resource.t)
                     in
                     server env flow
                   with Eio.Io _ | End_of_file | H.Tls_flow.Tls_failure _ -> ()));
@@ -149,6 +154,40 @@ let test_tls () =
         |> expect_ok
       in
       match W.receive ws with Ok (`Text "secure") -> () | _ -> Alcotest.fail "TLS event")
+
+let test_tls_close () =
+  (* nhttp-rs5p: public WebSocket close must close the TLS wrapper, not raw TCP. *)
+  let peer_ssl = ref None in
+  let notified = ref false in
+  serve ~tls:true
+    ~observe_tls:(fun ssl -> peer_ssl := Some ssl)
+    (fun _ flow ->
+      let _, headers, input = request flow in
+      upgrade flow headers;
+      let head = Eio.Buf_read.take 2 input in
+      let length = Char.code head.[1] land 0x7f in
+      let rest = Eio.Buf_read.take (4 + length) input in
+      (match C.decode ~masked:true (Bytes.of_string (head ^ rest)) with
+      | Ok ({ opcode = C.Close; _ }, _) -> ()
+      | _ -> Alcotest.fail "expected WebSocket close");
+      (try
+         ignore (Eio.Buf_read.take 1 input);
+         Alcotest.fail "expected TLS EOF"
+       with End_of_file -> ());
+      let ssl = Option.get !peer_ssl in
+      match
+        H.Ox_http_tls_openssl.read ssl (Cstruct.to_bigarray (Cstruct.create 1)) 0 1
+      with
+      | H.Ox_http_tls_openssl.Io_error { code = 6; _ } -> notified := true
+      | _ -> Alcotest.fail "WebSocket close did not send TLS close_notify")
+    (fun env sw url ->
+      let ws =
+        W.connect ~sw ~net:env#net ~clock:env#clock ~ca_file:"../localhost.crt" url
+        |> expect_ok
+      in
+      W.close ws |> expect_ok;
+      W.close ws |> expect_ok);
+  Alcotest.(check bool) "TLS peer observed close_notify" true !notified
 
 let test_tls_untrusted () =
   (* ^nws-b9q4: untrusted peer retains typed TLS diagnostic. *)
@@ -300,6 +339,7 @@ let () =
         [
           Alcotest.test_case "^nws-a7k2 ^nws-c3m8 plain flow" `Quick test_plain;
           Alcotest.test_case "^nws-a7k2 TLS flow" `Quick test_tls;
+          Alcotest.test_case "^nhttp-rs5p TLS close_notify" `Quick test_tls_close;
           Alcotest.test_case "^nws-b9q4 untrusted TLS" `Quick test_tls_untrusted;
           Alcotest.test_case "^nws-b9q4 401 upgrade" `Quick test_reject;
           Alcotest.test_case "^nws-b9q4 invalid accept" `Quick test_bad_accept;

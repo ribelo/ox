@@ -234,9 +234,8 @@ let request (T (_sw, net, clock, tls)) ~method_ ~url ?(headers = []) ?body ?dead
                               Ox_http_tls_openssl.create_ssl ssl_ctx ~hostname ~ip
                                 ~alpn_protocols:[ "http/1.1" ]
                             in
-                            Tls_flow.create
-                              ~raw:(raw :> Eio.Flow.two_way_ty Eio.Resource.t)
-                              ~ssl
+                            (Tls_flow.create ~raw:(raw :> Tls_flow.ty Eio.Resource.t) ~ssl
+                              :> Eio.Flow.two_way_ty Eio.Resource.t)
                       in
                       phase := `Closed;
                       Eio.Flow.copy_string message flow;

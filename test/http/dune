@@ -3,6 +3,7 @@
  (modules
   run
   test_url
+  test_tls_flow
   test_writer_legacy
   test_openssl_compare
   test_openssl_bounds)

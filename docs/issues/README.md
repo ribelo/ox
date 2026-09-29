@@ -46,7 +46,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 35 | `openrouter-2/01-openrouter-2.md` | `eta_ai_openrouter` | 25 | Pie (row 32) | [x] |
 | 36 | `door-2/01-door-2.md` | `eta_app` | 14, 33 | Pie (row 32) | [x] |
 | 37 | `ipc-peer-reply/01-ipc-peer-reply.md` | `eta_ipc` | 7 | Pie (row 32) | [x] |
-| 38 | `tls-close/01-tls-close.md` | `eta_http` | 19 | Pie (row 32) | [ ] |
+| 38 | `tls-close/01-tls-close.md` | `ox_http` | 19 | Pie (row 32) | [x] |
 | 39 | `blocking-settled/01-blocking-settled.md` | `eta_blocking` | 28 | nema (row 31) | [x] |
 | 40 | `ai-transport-controls/01-ai-transport-controls.md` | `eta_ai`, `eta_ai_openrouter` | 20, 25 | nema (row 31) | [x] |
 | 41 | `door-telemetry-result/01-door-telemetry-result.md` | `eta_app` | 33 | nema (row 31) | [x] |
