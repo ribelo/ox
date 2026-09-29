@@ -10,6 +10,10 @@ Ox is the kernel that Rafal's OCaml services are built from: one way to structur
 Ox itself: the set of packages an application is built from. A kernel supplies structure and protocols, never application logic.
 _Avoid_: framework, runtime, platform
 
+**Floor**:
+Scala Ox's table of contents (https://ox.softwaremill.com), which ADR-0009 makes the checklist of this library's core: everything on it exists in direct style over Eio or is recorded with a reason in `docs/design/ox-floor.md`. Scala Ox is the floor; Cause and the handler discipline of ADR-0006 are what this library adds above it.
+_Avoid_: baseline, feature parity
+
 **Door**:
 The one entry point that turns a Program into a process: it builds the Env, decodes Config, installs signal handling, runs the Program, renders its Cause on failure, and returns the exit code.
 _Avoid_: main, runtime, run_main, bootstrap
@@ -60,6 +64,23 @@ An exception that escaped. Never part of a function's contract; always a bug or 
 **Interruption**:
 Eio cancellation observed at a scope boundary, carrying the identity of what requested it.
 _Avoid_: cancel (as a noun), abort
+
+### Concurrent data and flow
+
+**Flow**:
+A lazy description of a stream, after Ox's `Flow`: it does nothing until it is run, carries a typed error, and forks fibers only in the stages that need them. Designed in `docs/design/flow.md`; not yet built.
+_Avoid_: pipeline, observable, reactive stream
+
+**Channel**:
+A bounded queue between fibers that can be closed with `Done` or a typed error, the thing `Eio.Stream` lacks and `Select` needs.
+_Avoid_: mailbox, queue
+
+**Select**:
+Waiting on several channels at once and acting on whichever clause is ready first, with default and timeout clauses; a closed channel is a typed outcome, not an exception.
+
+**Rate limiter**:
+A permit dispenser over an injected clock (fixed window, sliding window, token bucket, or a custom algorithm) that blocks or drops an operation until a permit is available. It replaces a sleep between requests.
+_Avoid_: throttle (that is a Flow stage), semaphore
 
 ### Time and repetition
 

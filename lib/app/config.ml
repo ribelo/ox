@@ -7,6 +7,13 @@ type 'cfg t = {
   env : getenv:(string -> string option) -> 'cfg -> 'cfg;
 }
 
+let none =
+  {
+    of_yojson = (fun _ -> Ok ());
+    yojson_of_t = (fun () -> `Assoc []);
+    env = (fun ~getenv:_ () -> ());
+  }
+
 let ( let* ) = Result.bind
 let pointer_text pointer text = if pointer = "" then text else text ^ " (" ^ pointer ^ ")"
 

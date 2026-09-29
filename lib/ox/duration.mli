@@ -13,7 +13,17 @@ val hours : int -> t
 val days : int -> t
 val weeks : int -> t
 val to_ms : t -> int
+val to_seconds : t -> float
+(** Length in seconds, the unit of Eio's clocks ([Eio.Time.sleep], [Eio.Time.now]). Exact
+    for whole milliseconds. *)
+
+val of_seconds : float -> t
+(** [of_seconds s] is [s] seconds rounded to the nearest millisecond; a negative [s]
+    is {!zero}, as {!ms} clamps.
+    @raise Invalid_argument if [s] is NaN or too large to represent. *)
+
 val to_seconds_float : t -> float
+(** Alias of {!to_seconds}, kept for existing callers. *)
 val is_zero : t -> bool
 val add : t -> t -> t
 val ( + ) : t -> t -> t

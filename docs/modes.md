@@ -15,6 +15,11 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Ox.Observability.Context.with_fields` | **Global**; forwarded to `Eio.Fiber.with_binding`, whose signature does not accept `local`. |
 | `Ox.Concurrent.race, race_first, par, both, all, for_each, with_background` | **Global**; tasks run in Eio fibers (`Fiber.both`/`all`/`any`, `Fiber.List.map`), which take unmoded closures, and outlive the invocation of the spawning function. |
 | `Ox.Scope.supervised_error, fork_error, fork, fork_daemon, fork_error_daemon, exit_on_error` | **Global**; `supervised_error`'s body is forwarded to `Eio.Switch.run` and every fork thunk to `Eio.Fiber.fork`, both unmoded; `exit_on_error`'s body receives a closure that forks are expected to keep. |
+| `Ox.Rate_limiter.run, run_or_drop` | **Local**; the operation runs in place in the calling fiber after the permit is granted and is not retained (compiled against `@ local`). |
+| `Ox.Rate_limiter.algorithm` record, `Custom` factory | **Global**; the algorithm's `try_acquire` is stored in the limiter for every later permit. |
+| `Ox.Resource.use_in_scope, use_closeable_in_scope` | `acquire` **local** (run in place); `release` **global**, stored on the switch until it ends. |
+| `Ox.Select.receive_clause, send_clause, default_clause, timeout_clause` | **Global**; the handler is stored in the clause until the select fires or is cancelled. |
+| `Ox_app.run_simple` | **Global**; the program is forwarded to `run`, which stores it (see `Ox_app.run` above). |
 | `Ox.Schedule.recur_until, modify_delay, while_output` | **Global**; predicates and delay transformation are stored inside the schedule for future steps. |
 | `Ox.Cause.pp, pp_compact; Ox.Exit.pp` | **Global**; printers flow through `Format` and recursively applied formatting callbacks; no locally-mode-qualified formatter contract. |
 | `Ox_json.array_map` | **Global**; passed to `Stdlib.List.map` (whose callback requires global). Replacing it with a naive recursive map would change stack behavior for large arrays. |

@@ -5,6 +5,8 @@ lib/ox/cause.mli
 lib/ox/duration.mli
 lib/ox/exit.mli
 lib/ox/interrupt_id.mli
+lib/ox/rate_limiter.ml
+lib/ox/rate_limiter.mli
 lib/ox/resource.ml
 lib/ox/resource.mli
 lib/ox/retry.ml

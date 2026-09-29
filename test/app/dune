@@ -6,6 +6,28 @@
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
 
+(executable
+ (name simple_fixture)
+ (modules simple_fixture)
+ (libraries ox ox_app eio eio_main))
+
+(test
+ (name oxapp)
+ (modules oxapp)
+ (deps simple_fixture.exe)
+ (libraries
+  ox_app
+  ox
+  ox_observability
+  ox_test
+  ox_process
+  eio_main
+  eio
+  cmdliner
+  yojson
+  alcotest
+  unix))
+
 (test
  (name run)
  (modules run)

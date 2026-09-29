@@ -240,15 +240,16 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   | Error _ -> usage_exit
   | Ok (`Ok f) -> f ()
 
-let run_for_test ?on_switch ?commands ?config_commands ?doc ?validation_exit ?log_level
-    ?journal_level ?service_command ?config_file ?missing ?validate ?validate_source
-    ?telemetry ?telemetry_result ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr
-    ~stdout ~argv program =
-  run_for_test_with_args ?on_switch ?commands ?config_commands ?doc ?validation_exit
+let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?doc ?validation_exit
     ?log_level ?journal_level ?service_command ?config_file ?missing ?validate
-    ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
-    ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
-    (fun env _source settings () sw -> program env settings sw)
+    ?validate_source ?telemetry ?telemetry_result ~env ~journal ~name ~config ~pp_err
+    ~getenv ~read ~stderr ~stdout ~argv program =
+  run_for_test_with_args ?on_switch ?commands ?config_commands ?exit_code ?doc
+    ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
+    ?validate ?validate_source ?telemetry ?telemetry_result
+    ~service_args:(Cmdliner.Term.const ()) ~env ~journal ~name ~config ~pp_err ~getenv
+    ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
+      program env settings sw)
 
 let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_env_code
     ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc ?validation_exit ?log_level
@@ -309,10 +310,14 @@ let run_with_args ?commands ?config_commands ?commands_with_env ?commands_with_e
             ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
             ~argv:Sys.argv program))
 
-let run ?commands ?config_commands ?doc ?validation_exit ?log_level ?journal_level
-    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
-    ?telemetry ?telemetry_result ~name ~config ~pp_err program =
-  run_with_args ?commands ?config_commands ?doc ?validation_exit ?log_level ?journal_level
-    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
-    ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~name ~config
-    ~pp_err (fun env _source settings () sw -> program env settings sw)
+let run ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
+    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~name ~config ~pp_err program =
+  run_with_args ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
+    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
+    ~name ~config ~pp_err (fun env _source settings () sw -> program env settings sw)
+
+let run_simple ?exit_code ?log_level ?journal_level ~name ~pp_err program =
+  run ?exit_code ?log_level ?journal_level ~name ~config:Config.none ~pp_err
+    (fun env () sw -> program env sw)

@@ -10,7 +10,7 @@ type state = {
   mutex : Eio.Mutex.t;
   changed : Eio.Condition.t;
   clock : [ `Clock of float ] Eio.Time.clock option;
-  default_timeout : float option;
+  default_timeout : Ox.Duration.t option;
 }
 
 type 'kind runner = Pool of state | Transaction of state * Connection.t * bool ref
@@ -79,7 +79,8 @@ let apply_timeout s override f =
   match
     (s.clock, match override with Some _ -> override | None -> s.default_timeout)
   with
-  | Some clock, Some seconds -> Eio.Time.with_timeout clock seconds f
+  | Some clock, Some timeout ->
+      Eio.Time.with_timeout clock (Ox.Duration.to_seconds timeout) f
   | _ -> f ()
 
 let use ?timeout runner f =

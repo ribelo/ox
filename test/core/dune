@@ -1,10 +1,21 @@
 (test
  (name run)
- (modules run pure v1_port v1_more v1_completion support supervised)
+ (modules
+  run
+  pure
+  v1_port
+  v1_more
+  v1_completion
+  support
+  supervised
+  floor_tests)
  (deps
   ../../lib/ox/dune
   ../../docs/why-ox.md
   ../../docs/modes.md
+  ../../CONTEXT.md
+  (glob_files ../../docs/design/*.md)
+  (source_tree ../../lib)
   (glob_files ../../lib/ox/*.ml)
   (glob_files ../../lib/ox/*.mli))
  (libraries ox eio eio_main eio.mock alcotest))

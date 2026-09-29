@@ -137,6 +137,7 @@ val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?exit_code:('err -> int) ->
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Ox_observability.Logger.level ->
@@ -261,6 +262,7 @@ val run_with_args :
 val run :
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?exit_code:('err -> int) ->
   ?doc:string ->
   ?validation_exit:int ->
   ?log_level:Ox_observability.Logger.level ->
@@ -297,4 +299,26 @@ val run :
 
     [service_command] is forwarded as well: the Door's start command carries the name the
     service author gives it, so a program can use `run` for a verb of its own. ^napp-d5e4
-*)
+
+    [exit_code] maps a typed failure of the program to the process's exit code (default
+    [(fun _ -> 1)]): Ox's `OxApp.WithEitherErrors.handleError`. A defect, a foreign
+    interruption or a release failure still exits 2, and a stop the Door requested
+    (SIGINT, SIGTERM) exits 0, Ox's default `interruptedExitCode`. ^nfloor-6n2e *)
+
+val run_simple :
+  ?exit_code:('err -> int) ->
+  ?log_level:Ox_observability.Logger.level ->
+  ?journal_level:Ox_observability.Logger.level ->
+  name:string ->
+  pp_err:(Format.formatter -> 'err -> unit) ->
+  (Eio_unix.Stdenv.base Env.t -> Eio.Switch.t -> (unit, 'err) result) ->
+  int
+(** {!run} for a program with no configuration: Ox's `OxApp.Simple`. No file is read, and
+    any [--config] document is decoded to [()] and ignored ({!Config.none}); the Door
+    still owns Eio_main, the journal logger, SIGINT / SIGTERM, the classification of the
+    program's exit and the exit code. The program receives the {!Env} and the root switch,
+    on which its background fibers and resources live: they are cancelled, their releases
+    run in reverse order and the Door returns only afterwards. A typed failure exits
+    through [exit_code] (default 1); a defect is rendered as a full [Cause] on stderr and
+    exits 2 where Ox's [Simple] prints a stack trace and exits 1, so that a defect can be
+    told from a typed failure. ^nfloor-6n2e *)

@@ -17,7 +17,16 @@ let hours n = { ms = checked_mul "Duration.hours" n 3_600_000 }
 let days n = { ms = checked_mul "Duration.days" n 86_400_000 }
 let weeks n = { ms = checked_mul "Duration.weeks" n 604_800_000 }
 let to_ms t = t.ms [@@zero_alloc]
-let to_seconds_float t = float_of_int t.ms /. 1000.0
+let to_seconds t = float_of_int t.ms /. 1000.0
+let to_seconds_float = to_seconds
+
+let of_seconds s =
+  let scaled = Float.round (s *. 1000.0) in
+  if Float.is_nan scaled || scaled >= float_of_int max_int then
+    invalid_arg "Duration.of_seconds"
+  else if scaled <= 0.0 then zero
+  else { ms = int_of_float scaled }
+
 let is_zero t = t.ms = 0 [@@zero_alloc]
 let add a b = { ms = checked_add "Duration.add" a.ms b.ms }
 let ( + ) a b = add a b

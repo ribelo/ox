@@ -83,7 +83,7 @@ let test_timeout () =
   with_pool (fun pool ->
       let result =
         P.Raw.with_connection pool (fun _ ->
-            match P.Raw.query ~timeout:0.02 pool "SELECT 1" [] with
+            match P.Raw.query ~timeout:(Ox.Duration.ms 20) pool "SELECT 1" [] with
             | Error `Timeout -> Ok ()
             | _ -> Alcotest.fail "wait for occupied pool did not time out")
       in

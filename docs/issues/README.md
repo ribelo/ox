@@ -54,7 +54,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 43 | `door-4/01-door-4.md` | `eta_app` | 42 | nema (row 31) U4 | [x] |
 | 44 | `otel-error-signal/01-otel-error-signal.md` | `eta_otel` | 26 | nema (row 31) | [x] |
 | 45 | `supervised-error/01-supervised-error.md` | `eta` | 1 | typed errors across forks; Concurrent over Eio; consumers move | [x] |
-| 46 | `ox-floor/01-ox-floor.md` | `eta`, `eta_app`, docs | 45 | rate limiter, select, resources, OxApp parity, Flow design | [x] |
+| 46 | `ox-floor/01-ox-floor.md` | `ox`, `ox_app`, docs | 45 | rate limiter, select, resources, OxApp parity, Flow design | [x] |
 | 47 | `actor/01-actor.md` | `eta` | 45 | typed mailbox with state fold; Leash registry moves | [ ] |
 | 48 | `caps/01-caps.md` | `eta_caps`, `eta_app`, Leash | 45 | capabilities in signatures; Semgrep gate; Leash first | [ ] |
 | 49 | `ox-rename/01-ox-rename.md` | everything | 45 | the library is ox in a fresh private repository; consumers and nixos-config follow; Leash gets a remote | [x] |

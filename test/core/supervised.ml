@@ -979,9 +979,23 @@ let timeout_alias () =
       check_bool "fast body passes through" true
         (Timeout.timeout ~clock (Duration.ms 100) (fun () -> Ok 1) = Ok 1));
   let lib = if Sys.file_exists "lib/ox/dune" then "lib/ox" else "../../lib/ox" in
-  check_bool "Resource.acquire_release is gone" false
-    (Sys.file_exists (Filename.concat lib "resource.ml")
-    || Sys.file_exists (Filename.concat lib "resource.mli"));
+  (* Row 46 (nfloor-elwp) brought back a Resource module of a different shape:
+     use_in_scope over Switch.on_release. acquire_release stays gone. *)
+  let resource_mli = Filename.concat lib "resource.mli" in
+  if Sys.file_exists resource_mli then begin
+    let channel = open_in resource_mli in
+    let text =
+      Fun.protect
+        (fun () -> really_input_string channel (in_channel_length channel))
+        ~finally:(fun () -> close_in channel)
+    in
+    let needle = "val acquire_release" in
+    let n = String.length needle in
+    let rec mentions i =
+      i + n <= String.length text && (String.sub text i n = needle || mentions (i + 1))
+    in
+    check_bool "Resource.acquire_release is gone" false (mentions 0)
+  end;
   Eio_main.run (fun _ ->
       let order = ref [] in
       Eio.Switch.run (fun sw ->

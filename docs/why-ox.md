@@ -33,6 +33,7 @@ A **kernel**, not a framework: the packages Rafal's services are built from, wri
 3. Tabula rasa and pull-only: nothing exists here until a consumer's spec cites the story that needs it; pure codecs are copied from v1 when pulled, everything effectful is rewritten (ADR-0003).
 4. One application model: Services, Deps, a Switch, a Door; no runtime dependency graph (ADR-0004).
 5. OxCaml-first with a strict dependency policy: stdlib, Eio, Jane Street packages when installable on our compiler, unavoidable C bindings, and an ADR for anything else (ADR-0005).
+6. Ox is the floor (ADR-0009): the table of contents of Scala's Ox (https://ox.softwaremill.com) is the checklist of the core, every item present in direct style or recorded with a reason in `docs/design/ox-floor.md`; what Ox adds above it is the Cause tree and the handler discipline of ADR-0006.
 
 Vocabulary is in `CONTEXT.md`. The words *effect*, *blueprint*, *runtime*, *interpreter*, *capability*, *component* and *coeffect* are retired.
 
@@ -104,7 +105,19 @@ val timeout : clock:_ Eio.Time.clock -> Duration.t -> (unit -> ('a, [> `Timeout 
   (* an alias of Eio.Time.with_timeout *)
 ```
 
-`Scope.supervised_error` is Ox's `supervisedError`: a scope whose `fork_error` fibers return `result`s, where the first `Error e` ends the scope with `Error e` after every other fork was cancelled and awaited. It carries a typed error across forks by value, which is the direct-style answer to what `handled_effect` promised (`docs/modes.md`). Resources are Eio's: register the release with `Eio.Switch.on_release`; Ox has no resource module.
+`Scope.supervised_error` is Scala Ox's `supervisedError`: a scope whose `fork_error` fibers return `result`s, where the first `Error e` ends the scope with `Error e` after every other fork was cancelled and awaited. It carries a typed error across forks by value, which is the direct-style answer to what `handled_effect` promised (`docs/modes.md`). Resources are Eio's: register the release with `Eio.Switch.on_release`; `Resource` provides the small named helpers described below.
+
+The rest of Ox's floor is small modules over Eio. `Rate_limiter` (fixed window, sliding window, token bucket or a custom algorithm, computed on demand from an injected clock, so a mock clock tests it and nothing runs in the background) is what a per-site or per-model request limit uses instead of a sleep. `Channel` is a bounded queue that can be closed with `Done` or a typed error, and `Select` waits on several channels with default and timeout clauses, reporting a closed channel as a value:
+
+```ocaml
+val Rate_limiter.create : sw:Switch.t -> clock:_ Eio.Time.clock -> Rate_limiter.config -> Rate_limiter.t
+val Rate_limiter.run : Rate_limiter.t -> (unit -> 'a) -> 'a            (* blocks until a permit is granted *)
+val Rate_limiter.run_or_drop : Rate_limiter.t -> (unit -> 'a) -> 'a option
+val Select.select : 'r Select.clause list -> 'r                      (* receive_clause, send_clause, default_clause, timeout_clause *)
+val Resource.use_in_scope : sw:Switch.t -> (unit -> 'a) -> ('a -> unit) -> 'a   (* release on Switch.on_release *)
+```
+
+Streams are designed, not built: `docs/design/flow.md` specifies `Flow` (a lazy `('a, 'e) t` after Ox's, typed error through `run_*`) for the day an application pulls it.
 
 The Switch is passed explicitly, as Eio does; here it is only checked, the combinator owning nothing on it. Deadlines use `timeout`, never `race` against a sleep: race selects the first *success*.
 

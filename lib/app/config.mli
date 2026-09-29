@@ -30,6 +30,11 @@ type 'cfg t = {
           cannot be parsed is ignored; bounds belong in the Door's validator. *)
 }
 
+val none : unit t
+(** The config of a program that has none: decodes any document, whatever it holds, to
+    [()], encodes to the empty object, and overrides nothing. What {!Ox_app.run_simple}
+    passes. A value: it owns no resource. ^nfloor-6n2e *)
+
 type read_error = [ `Missing | `Unreadable of string ]
 (** Why reading the config file failed: [`Missing] is nothing at that path,
     [`Unreadable message] a path that exists and could not be read. The Door's rule turns
