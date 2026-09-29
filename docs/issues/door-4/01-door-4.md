@@ -15,7 +15,7 @@ Under the Door, `nema --help` shows the Door's "Run the service." instead of nem
 1. As a service author, I want `?doc:string` (and `?man` if cheap) for the Door's top-level command, so that `--help` describes my program. ^napp-fsxf
 2. As a service author, I want `?validation_exit:int` (default 2) for a configuration that fails decoding or validation, so that my documented code survives. ^napp-7hvu
 3. As a service author, I want `?log_level:Eta_observability.Logger.level` (default Info) for the Door's journal logger (and the program logger it builds), so that a quiet service keeps journald quiet; telemetry reporters still receive what the level admits. ^napp-k9in
-4. As a service author, I want the journal quieter than my telemetry, so that journald gets only errors while the OTLP exporter still receives info spans. ^napp-xb3q (consumer: nema row 31)
+4. As a service author, I want the journal quieter than my telemetry, so that journald gets only errors while the OTLP exporter still receives info spans. ^napp-xb3q (consumer: nema row 31) ^napp-q2a2
 
 ## Implementation Decisions
 

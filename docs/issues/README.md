@@ -53,6 +53,10 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 42 | `door-3/01-door-3.md` | `eta_app` | 36 | nema (row 31) U4 | [x] |
 | 43 | `door-4/01-door-4.md` | `eta_app` | 42 | nema (row 31) U4 | [x] |
 | 44 | `otel-error-signal/01-otel-error-signal.md` | `eta_otel` | 26 | nema (row 31) | [x] |
+| 45 | `supervised-error/01-supervised-error.md` | `eta` | 1 | typed errors across forks; Concurrent over Eio; consumers move | [ ] |
+| 46 | `ox-floor/01-ox-floor.md` | `eta`, `eta_app`, docs | 45 | rate limiter, select, resources, OxApp parity, Flow design | [ ] |
+| 47 | `actor/01-actor.md` | `eta` | 45 | typed mailbox with state fold; Leash registry moves | [ ] |
+| 48 | `caps/01-caps.md` | `eta_caps`, `eta_app`, Leash | 45 | capabilities in signatures; Semgrep gate; Leash first | [ ] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).
@@ -60,6 +64,8 @@ Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are indep
 Running alongside, not blocking: the local-handler spike in `../../.scratch/research/handled-pattern/` decides whether ADR-0002's error channel is revisited. Rows do not wait for it; if it wins, the change is a new spec.
 
 Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. Row 32 landed on 2026-09-28; `eta-next` became `master` on 2026-09-29 (`5b09ee47`), and `v1` stays a tag (`5b3affc8`) for taumel and p-doom. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
+
+Rows 45–48 implement ADR-0009 (Ox is the floor). Order: 45 first (it changes `Concurrent` that the others build on), then 46 and 47 in parallel, then 48. Consumers (Pie, nema, Leash) are updated in the same rows where a story says so; they are internal tools and may change.
 
 ## Definition of done, every row
 
