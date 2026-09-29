@@ -26,6 +26,9 @@
 # eta_ai.ml -> ox_ai.ml, eta.opam -> ox.opam, conf-eta-oxcaml ->
 # conf-ox-oxcaml), plus docs/why-next.md -> docs/why-ox.md.
 #
+# Skipped trees: .git, any _build* or node_modules at any depth, and .scratch
+# (research evidence, like the archive).
+#
 # Protected spans keep their names because they name the archive, not the
 # library: v1:<path> references (they must keep resolving against the v1 tag,
 # story ^oxname-y149), the eta-next branch and worktree, and "Eta v1".
@@ -60,7 +63,10 @@ cd "$root"
 
 is_skipped() {
   case "$1" in
-    .git/* | _build/* | _build* | node_modules/*) return 0 ;;
+    # Build trees at any depth, .git, node_modules, and the research bundles:
+    # .scratch is evidence, like the archive, and some of it is read-only.
+    .git/* | */.git/* | _build* | */_build* | node_modules/* | */node_modules/*) return 0 ;;
+    .scratch/* | */.scratch/*) return 0 ;;
   esac
   local s
   for s in "${skips[@]+"${skips[@]}"}"; do
