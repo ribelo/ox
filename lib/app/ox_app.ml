@@ -80,7 +80,7 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   in
   (* ^ncaps-0mvw: the one powerbox of this process, minted here and nowhere else in
      library code; every Env the Door builds carries it. *)
-  let caps = (Ox_caps.Cap.powerbox [@alert "-mint"]) () in
+  let caps = (Ox_caps_door.powerbox [@alert "-mint"]) () in
   let door_env = { Env.base = env; logger = initial_logger; caps } in
   let run_owned task =
     let requested = ref [] in

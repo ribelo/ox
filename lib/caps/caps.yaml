@@ -10,9 +10,8 @@
 #
 # Semgrep does not resolve OCaml's implicit Stdlib, so a Stdlib value is listed both
 # bare and qualified; a local binding that shadows one of those function names is
-# reported too: rename it. The channel values themselves are matched only qualified
-# (Stdlib.stdout, Out_channel.stderr, ...): a bare stdout cannot be told from a
-# record field or a local of that name, so "output_string stdout" is not caught.
+# reported too: rename it. Bare stdin/stdout/stderr may also be local values or
+# record fields; conservative matching requires authors to rename those values.
 rules:
   - id: ox-caps-fork
     languages: [ocaml]
@@ -155,6 +154,7 @@ rules:
       capability: Cap.stdin
       story: ncaps-n6r0
     pattern-either:
+      - pattern: stdin
       - pattern: Stdlib.stdin
       - pattern: In_channel.stdin
       - pattern: read_line ()
@@ -187,6 +187,7 @@ rules:
       - pattern: Stdlib.print_endline
       - pattern: print_newline
       - pattern: Stdlib.print_newline
+      - pattern: stdout
       - pattern: Stdlib.stdout
       - pattern: Out_channel.stdout
       - pattern: Printf.printf
@@ -217,6 +218,7 @@ rules:
       - pattern: Stdlib.prerr_endline
       - pattern: prerr_newline
       - pattern: Stdlib.prerr_newline
+      - pattern: stderr
       - pattern: Stdlib.stderr
       - pattern: Out_channel.stderr
       - pattern: Printf.eprintf
@@ -323,6 +325,7 @@ rules:
       capability: the Door
       story: ncaps-n6r0
     pattern-either:
+      - pattern: Ox_caps_door.powerbox
       - pattern: Ox_caps.Cap.powerbox
       - pattern: Cap.powerbox
       - pattern: Ox_test.powerbox

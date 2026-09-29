@@ -4,6 +4,7 @@
  (libraries
   ox
   ox_caps
+  ox_caps.door
   eio
   eio_main
   eio.mock

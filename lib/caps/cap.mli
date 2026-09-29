@@ -2,9 +2,9 @@
 
     A capability is an object with one method whose result type is an abstract token, so
     the only way to hold one is to be handed it: the Door mints the one powerbox of a
-    process ({!powerbox}, ^ncaps-0mvw), a program narrows it by type ascription
-    ([(env.caps :> < Cap.fork; Cap.exec >)]) and passes each service exactly the
-    capabilities it names. A function that may fork and exec says so:
+    process ([Ox_caps_door.powerbox], ^ncaps-0mvw ^ncaps-uiq6), a program narrows it by
+    type ascription ([(env.caps :> < Cap.fork; Cap.exec >)]) and passes each service
+    exactly the capabilities it names. A function that may fork and exec says so:
     [val launch : caps:< Cap.fork; Cap.exec; .. > -> ...]. The row variable [..] lets a
     wider powerbox be passed as it is, and the body can use only the methods the type
     lists.
@@ -21,25 +21,25 @@
     across. Capabilities own no resource, never suspend and are not affected by
     cancellation. *)
 
-(** The abstract results of the capability methods. They have no constructor outside this
-    library: a capability cannot be forged by writing an object with the same method names
-    (^ncaps-aw5n). *)
+(** The abstract results of the capability methods. Their representations are sealed in
+    [ox_caps.door]: a capability cannot be forged by writing an object with the same
+    method names (^ncaps-aw5n ^ncaps-uiq6). *)
 module Token : sig
-  type fork
-  type exec
-  type exit
-  type chdir
-  type env
-  type signal
-  type time
-  type random
-  type stdin
-  type stdout
-  type stderr
-  type fs_read
-  type fs_write
-  type tmp
-  type network
+  type fork = Ox_caps_door.fork
+  type exec = Ox_caps_door.exec
+  type exit = Ox_caps_door.exit
+  type chdir = Ox_caps_door.chdir
+  type env = Ox_caps_door.env
+  type signal = Ox_caps_door.signal
+  type time = Ox_caps_door.time
+  type random = Ox_caps_door.random
+  type stdin = Ox_caps_door.stdin
+  type stdout = Ox_caps_door.stdout
+  type stderr = Ox_caps_door.stderr
+  type fs_read = Ox_caps_door.fs_read
+  type fs_write = Ox_caps_door.fs_write
+  type tmp = Ox_caps_door.tmp
+  type network = Ox_caps_door.network
 end
 
 type fork = < fork : Token.fork >
@@ -87,13 +87,3 @@ type all_caps =
 
 type no_caps = < >
 (** A function that takes [no_caps] states that it touches nothing. *)
-
-val powerbox : unit -> all_caps
-[@@alert
-  mint
-    "Only the Door (Ox_app) and Ox_test mint a powerbox; library and service code \
-     receives capabilities as arguments (docs/caps.md)."]
-(** Mint a powerbox. The Door calls it once per process and hands the result to the
-    program in [Ox_app.Env.t]; [Ox_test.powerbox] is the test entry. Everywhere else the
-    call is refused by the [ox-caps-mint] Semgrep rule and reported by the [mint] alert
-    (^ncaps-0mvw). *)

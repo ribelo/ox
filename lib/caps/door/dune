@@ -1,0 +1,5 @@
+; ^ncaps-uiq6: the constructor is a separate library, never listed by services.
+
+(library
+ (name ox_caps_door)
+ (public_name ox_caps.door))

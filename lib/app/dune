@@ -1,4 +1,13 @@
 (library
  (name ox_app)
  (public_name ox_app)
- (libraries ox ox_caps ox_observability eio eio_main cmdliner toml yojson))
+ (libraries
+  ox
+  ox_caps
+  ox_caps.door
+  ox_observability
+  eio
+  eio_main
+  cmdliner
+  toml
+  yojson))

@@ -1,19 +1,19 @@
 module Token = struct
-  type fork = unit
-  type exec = unit
-  type exit = unit
-  type chdir = unit
-  type env = unit
-  type signal = unit
-  type time = unit
-  type random = unit
-  type stdin = unit
-  type stdout = unit
-  type stderr = unit
-  type fs_read = unit
-  type fs_write = unit
-  type tmp = unit
-  type network = unit
+  type fork = Ox_caps_door.fork
+  type exec = Ox_caps_door.exec
+  type exit = Ox_caps_door.exit
+  type chdir = Ox_caps_door.chdir
+  type env = Ox_caps_door.env
+  type signal = Ox_caps_door.signal
+  type time = Ox_caps_door.time
+  type random = Ox_caps_door.random
+  type stdin = Ox_caps_door.stdin
+  type stdout = Ox_caps_door.stdout
+  type stderr = Ox_caps_door.stderr
+  type fs_read = Ox_caps_door.fs_read
+  type fs_write = Ox_caps_door.fs_write
+  type tmp = Ox_caps_door.tmp
+  type network = Ox_caps_door.network
 end
 
 type fork = < fork : Token.fork >
@@ -53,22 +53,3 @@ type all_caps =
   ; network >
 
 type no_caps = < >
-
-let powerbox () : all_caps =
-  object
-    method fork = ()
-    method exec = ()
-    method exit = ()
-    method chdir = ()
-    method env = ()
-    method signal = ()
-    method time = ()
-    method random = ()
-    method stdin = ()
-    method stdout = ()
-    method stderr = ()
-    method fs_read = ()
-    method fs_write = ()
-    method tmp = ()
-    method network = ()
-  end

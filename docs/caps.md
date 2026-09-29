@@ -1,10 +1,10 @@
 # Capabilities: a function's type says what it may touch
 
-Row 48 (^ncaps-xzx5). Every line here is written by agents, so the interface is what a reviewer trusts. A function that forks, execs, reads the environment, writes a file outside Eio's `fs`, prints, exits or seeds randomness from the system says so in its type, and a Semgrep gate refuses the raw call everywhere else.
+Rows 48 and 54 (^ncaps-xzx5 ^ncaps-uiq6). Every line here is written by agents, so the interface is what a reviewer trusts. A function that forks, execs, reads the environment, writes a file outside Eio's `fs`, prints, exits or seeds randomness from the system says so in its type, and a Semgrep gate refuses the raw call everywhere else.
 
 ## The shape
 
-`ox_caps` (`lib/caps/`) has one module of types and three of wrappers.
+`ox_caps` (`lib/caps/`) has one module of types and three of wrappers. Its separate constructor library is `ox_caps.door` (`lib/caps/door/`).
 
 - `Ox_caps.Cap`: one capability per thing a program can touch outside Eio — `fork`, `exec`, `exit`, `chdir`, `env`, `signal`, `time`, `random`, `stdin`, `stdout`, `stderr`, `fs_read`, `fs_write`, `tmp`, `network`. Each is an object type with one method whose result is an abstract token (`Cap.fork = < fork : Cap.Token.fork >`), so a capability cannot be written by hand. Row types compose them: `< Cap.fork; Cap.exec; .. >`. Groups: `Cap.process`, `Cap.console`, `Cap.fs`, `Cap.all_caps`, `Cap.no_caps`.
 - `Ox_caps.Cap_unix`, `Cap_sys`, `Cap_stdlib`: the dangerous `Unix`, `Sys` and `Stdlib` calls, each taking `~caps` with exactly the capability it needs and doing nothing else. `Cap_sys.urandom` (random bytes, `Cap.random`) and `Cap_unix.open_dev_null` (no capability) are the two additions.
@@ -14,7 +14,9 @@ Eio's own capabilities stay Eio values (^ncaps-jkku): `net`, `fs`, `process_mgr`
 
 ## Where a powerbox comes from
 
-Only the Door mints one (^ncaps-0mvw). `Ox_app` mints the powerbox of the process once and puts it in every `Ox_app.Env.t` it builds: the program's, the validator's, and the one `commands_with_env` / `config_commands_with_env` give to command builders. Tests take `Ox_test.powerbox ()`. `Cap.powerbox` carries the `mint` alert, and the `ox-caps-mint` rule refuses it (and `Ox_test.powerbox`) wherever the gate runs.
+Only the Door mints one (^ncaps-0mvw ^ncaps-uiq6). `Ox_app` calls `Ox_caps_door.powerbox ()` once per process and puts it in every `Ox_app.Env.t` it builds: the program's, the validator's, and the one `commands_with_env` / `config_commands_with_env` give to command builders. Tests take `Ox_test.powerbox ()`. There is no constructor in public `Ox_caps.Cap`; the `ox_caps.door` sub-library has the constructor, marked with a `mint` alert. Only `lib/caps/dune` (for token identity), `lib/app/dune` and `lib/test/dune` list that library. The gate rejects other Dune dependencies on `ox_caps.door` and other source references to `Ox_caps_door`; it also rejects `Ox_test.powerbox` in production.
+
+`Cap.Token` aliases the token types from `Ox_caps_door`; the token types remain abstract in the door library's interface, so a hand-written object cannot forge them. The type equations in `Cap.mli` let `Ox_app` and `Ox_test` accept the door constructor's result as `Cap.all_caps`. A direct transitive module reference is not permission to mint: the gate rejects the identifier outside the two allowed libraries.
 
 ## Narrowing a powerbox
 
@@ -46,7 +48,7 @@ v1 dropped object capabilities because objects are not `portable` across OxCaml 
 nix develop -c scripts/caps-gate      # in ox and in Leash; the fourth gate beside build, test, fmt
 ```
 
-`caps-gate [--allow GLOB]... [PATH]...` runs `semgrep --config caps.yaml --error --disable-nosem --no-git-ignore` over `lib/`, `packages/` and `bin/` (whichever exist), excluding `test/` and `tests/` (tests mint their own powerbox). An inline `nosemgrep` does not silence it; the allow-list is the `--allow` entries in the repository's own `scripts/caps-gate`, each with its reason. Run it from inside the repository: `--allow` paths are resolved from the repository root. Semgrep must be on `PATH`; it is in the dev shells of ox and Leash.
+`caps-gate [--allow GLOB]... [PATH]...` checks `lib/`, `packages/` and `bin/` (whichever exist), excluding `test/` and `tests/` (tests mint their own powerbox). It runs Semgrep with JSON output, `--disable-nosem` and `--no-git-ignore`. A file skipped because Semgrep cannot parse it is checked by a lexical fallback against the forbidden identifiers in `caps.yaml`; a finding fails the gate and names the file. A skipped file passes only if that fallback finds no forbidden identifier. An inline `nosemgrep` does not silence either check; the allow-list is the `--allow` entries in the repository's own `scripts/caps-gate`, each with its reason. Run it from inside the repository: `--allow` paths are resolved from the repository root. Semgrep must be on `PATH`; it is in the dev shells of ox and Leash.
 
 The rules, one per capability plus two:
 
@@ -67,21 +69,21 @@ The rules, one per capability plus two:
 | `ox-caps-fs-write` | `open_out*`, `Out_channel.open_*` / `with_open_*`, `Unix.openfile`, remove/rename/mkdir/rmdir/unlink/chmod/truncate/link/symlink | `Cap_stdlib.*`, `Cap_sys.*`, `Cap_unix.*` |
 | `ox-caps-tmp` | `Filename.temp_file`, `open_temp_file`, `temp_dir` | `Cap_stdlib.Filename.*` |
 | `ox-caps-network` | `Unix.socket`, `socketpair`, `open_connection`, `establish_server` (prefer Eio's `net`) | `Cap_unix.socket`, ... |
-| `ox-caps-mint` | `Ox_caps.Cap.powerbox`, `Ox_test.powerbox` | receive capabilities as arguments |
+| `ox-caps-mint` | `Ox_caps_door.powerbox`, legacy `Ox_caps.Cap.powerbox`, `Ox_test.powerbox`; `Ox_caps_door` references and `ox_caps.door` dependencies outside the Door and test entry | receive capabilities as arguments |
 | `ox-caps-forge` | `Obj.magic` | — |
 
 `test/caps/gate/` is the gate's own test: one violation per rule in `violating/lib/raw.ml` (every rule must fire, a `nosemgrep` comment must not help, `test/` is not scanned, `--allow` excludes exactly its file) and the same operations through the wrappers in `clean/`, which must pass.
 
 ### What the gate cannot see
 
-- Semgrep does not resolve OCaml's implicit `Stdlib`, so each Stdlib function is listed bare and qualified; a local binding that shadows one of those names is reported too — rename it. The bare channel values `stdout`, `stderr`, `stdin` are not matched (they cannot be told from a field or a local of that name), so `output_string stdout s` passes.
-- Semgrep's OCaml parser does not know OxCaml's mode syntax (`@ local`, `global_`, `@@ portable`) and skips the regions it cannot parse (its summary says "Partially analyzed"); calls inside them are not checked.
+- Semgrep does not resolve OCaml's implicit `Stdlib`, so each Stdlib function is listed bare and qualified. Some shadowed bare functions may still be reported; inspect the binding before renaming it. Bare `stdout`, `stderr`, `stdin` channel values are checked (^ncaps-znyh), while shadowed local channel names and record labels are not violations (the gate fixtures prove both). Use `Cap_stdlib.stdout ~caps`, `Cap_stdlib.stderr ~caps`, or `Cap_stdlib.stdin ~caps` for the actual Stdlib streams.
+- Semgrep's OCaml parser does not know OxCaml's mode syntax (`@ local`, `global_`, `@@ portable`). The gate reads skipped-file diagnostics and checks those files lexically instead (^ncaps-a27b ^ncaps-tpjy): skipped files do not silently pass, though the fallback matches identifiers, not OCaml binding identity or syntax.
 - A library that reads or writes files through its own API (`Yojson.Safe.from_file`, say) is not one of the calls the rules name. Wrap such a call behind a capability yourself (Leash reads through `Cap_stdlib.In_channel.with_open_bin` and `Yojson.Safe.from_channel`).
 - Metadata reads (`Sys.file_exists`, `Unix.stat`, `Unix.realpath`) are not capabilities.
 
 ## Adding a capability, a wrapper and its rule
 
-1. A new capability: a token in `Cap.Token`, the alias `type x = < x : Token.x >` in `Cap`, the method in `all_caps` and in `powerbox` (`cap.ml`). Every powerbox gains it; nothing else changes.
+1. A new capability: add an abstract token type and method to `ox_caps.door`'s interface, its concrete representation and constructor method to `ox_caps_door.ml`, and the alias `type x = < x : Token.x >` plus sealed token type equation in `Cap`. Every Door powerbox gains it.
 2. A new wrapper: the raw call with `~caps:< Cap.x; .. >` in front, in `Cap_unix`, `Cap_sys` or `Cap_stdlib` after the module it wraps, and nothing else in its body. Say in the `.mli` if it blocks.
 3. Its rule: add the raw name to the rule of its capability in `caps.yaml` (bare and `Stdlib.`-qualified if it is a Stdlib value), a line to `test/caps/gate/violating/lib/raw.ml` if it is a new rule, and a row to the table above.
 

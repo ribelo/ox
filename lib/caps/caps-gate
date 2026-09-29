@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# caps-gate: the capability gate (^ncaps-w6n2). Runs the ox_caps Semgrep rules
-# (caps.yaml, beside this script, or $OX_CAPS_RULES) over a repository's library and
-# application code and exits non-zero on any raw call a capability stands for.
+# caps-gate: the capability gate (^ncaps-w6n2 ^ncaps-a27b ^ncaps-tpjy).
+# Run ox_caps Semgrep rules, then lexically check files Semgrep could not parse.
 #
 #   caps-gate [--allow GLOB]... [PATH]...
 #
@@ -10,10 +9,8 @@
 # --allow GLOB excludes matching files (gitignore syntax, as semgrep --exclude, paths
 # from the repository root; run the gate from inside a git repository); every
 # allow-list entry belongs in the calling repository's gate script with its reason.
-# Inline "nosemgrep" comments are ignored (--disable-nosem). Semgrep's OCaml parser does
-# not know OxCaml's mode syntax (@ local, global_, ...): it skips the regions it cannot
-# parse and says so in its summary ("Partially analyzed"); calls inside those regions are
-# not checked (docs/caps.md, "What the gate cannot see").
+# Inline "nosemgrep" comments are ignored. Skipped and partially parsed OCaml files
+# get a token-level fallback scan, reporting the reason and any forbidden identifier.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,5 +56,282 @@ if [ "${#paths[@]}" -eq 0 ]; then
   exit 2
 fi
 
-exec semgrep scan --config "$rules" --error --disable-nosem --no-git-ignore --metrics=off \
-  --disable-version-check "${excludes[@]}" "${paths[@]}"
+# Semgrep exits 1 for findings, but can exit 0 after only *partially* parsing an
+# OxCaml source. Do not let its exit status decide whether coverage is complete.
+set +e
+semgrep scan --config "$rules" --json --quiet --error --disable-nosem --no-git-ignore \
+  --metrics=off --disable-version-check "${excludes[@]}" "${paths[@]}" \
+  | python3 /dev/fd/3 "$rules" "$PWD" "${paths[@]}" 3<<'PY'
+# ^ncaps-a27b ^ncaps-tpjy ^ncaps-uiq6: Semgrep JSON plus a fail-closed fallback.
+import json
+import os
+from pathlib import Path
+import re
+import sys
+
+rules_path, root_name, *paths = sys.argv[1:]
+root = Path(root_name).resolve()
+targets = [Path(path).resolve() for path in paths]
+
+
+def relative(path):
+    p = Path(path).resolve()
+    try:
+        return p.relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def in_scope(path):
+    name = relative(path)
+    if name is None or not name.endswith((".ml", ".mli")):
+        return False
+    if any(part in ("test", "tests") for part in Path(name).parts):
+        return False
+    p = Path(path).resolve()
+    return any(p == target or target in p.parents for target in targets)
+
+
+def masked(source):
+    """Keep source offsets while removing OCaml comments, strings and characters."""
+    chars = list(source)
+    i = 0
+    n = len(source)
+
+    def blank(start, end):
+        for k in range(start, end):
+            if chars[k] != "\n":
+                chars[k] = " "
+
+    while i < n:
+        start = i
+        if source.startswith("(*", i):
+            depth = 1
+            i += 2
+            while i < n and depth:
+                if source.startswith("(*", i):
+                    depth += 1
+                    i += 2
+                elif source.startswith("*)", i):
+                    depth -= 1
+                    i += 2
+                elif source[i] == '"':
+                    i += 1
+                    while i < n:
+                        if source[i] == "\\":
+                            i += 2
+                        elif source[i] == '"':
+                            i += 1
+                            break
+                        else:
+                            i += 1
+                else:
+                    i += 1
+        elif source[i] == '"':
+            i += 1
+            while i < n:
+                if source[i] == "\\":
+                    i += 2
+                elif source[i] == '"':
+                    i += 1
+                    break
+                else:
+                    i += 1
+        elif source[i] == "{":
+            opening = re.match(r"\{([A-Za-z_][A-Za-z_0-9]*|)\|", source[i:])
+            if opening is None:
+                i += 1
+                continue
+            end = source.find("|" + opening.group(1) + "}", i + len(opening.group()))
+            i = n if end < 0 else end + len(opening.group(1)) + 2
+        elif source[i] == "'":
+            character = re.match(r"'(?:\\.|[^'\\])'", source[i:])
+            if character is None:
+                i += 1  # A type variable or polymorphic variant, not a char literal.
+                continue
+            i += len(character.group())
+        else:
+            i += 1
+            continue
+        blank(start, min(i, n))
+    return "".join(chars)
+
+
+def line(text, index):
+    return text.count("\n", 0, index) + 1
+
+
+def shadowed_channel(code, offset, name):
+    """Ignore a bare stream name only when this expression has a local binder.
+
+    Semgrep cannot resolve Stdlib's implicit names. Dune source uses the same
+    names for optional output modes and record labels; the value at these sites
+    is not a standard channel. Do not suppress qualified channel access.
+    """
+    if name not in ("stdin", "stdout", "stderr"):
+        return False
+    tail = code[offset + len(name):]
+    if re.match(r"\s*=", tail):  # Record label / local binding, not a value use.
+        return True
+    # Optional arguments shadow the name throughout their top-level function.
+    starts = list(re.finditer(r"(?m)^let(?:\s+rec)?\b", code[:offset]))
+    scope = code[starts[-1].start():offset] if starts else code[:offset]
+    if re.search(r"\?\(\s*" + name + r"\s*=", scope.split("\n", 1)[0]):
+        return True
+    # For a local let, prove only the simple same-line let ... in expression.
+    # A later/sibling expression is ambiguous without an OCaml name resolver,
+    # and must fail closed rather than accidentally hide a raw Stdlib channel.
+    current = code[code.rfind("\n", 0, offset) + 1:offset]
+    binder = re.search(r"\blet\s+" + name + r"\s*=", current)
+    return bool(binder and len(re.findall(r"\bin\b", current[binder.end():])) == 1)
+
+
+try:
+    rule_text = Path(rules_path).read_text()
+    # Every raw identifier is taken from positive Semgrep patterns, never a second
+    # hand-maintained list. The argument shape in exit $CODE/read_line () is not a
+    # token; its identifier is. Negative patterns are intentionally excluded.
+    names = set()
+    for value in re.findall(r"^\s+- pattern: (.+)$", rule_text, re.MULTILINE):
+        value = value.strip().strip('"')
+        identifier = value.split()[0]
+        if re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*", identifier):
+            names.add(identifier)
+    names.update(("Ox_caps_door.powerbox", "Ox_caps.Cap.powerbox", "Cap.powerbox", "Ox_test.powerbox", "Obj.magic"))
+    if not names:
+        raise ValueError("the Semgrep rule file contains no raw identifiers")
+    patterns = [(name, re.compile(r"(?<![\w'.])" + r"\s*\.\s*".join(map(re.escape, name.split("."))) + r"(?![\w'])"))
+                for name in sorted(names)]
+    report = json.load(sys.stdin)
+    results = report["results"]
+    errors = report["errors"]
+    skipped = report.get("paths", {}).get("skipped", [])
+    if not isinstance(results, list) or not isinstance(errors, list) or not isinstance(skipped, list):
+        raise ValueError("unexpected Semgrep JSON report")
+except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+    print(f"caps-gate: cannot check Semgrep coverage: {error}", file=sys.stderr)
+    sys.exit(2)
+
+failed = False
+for result in results:
+    location = result.get("start", {}).get("line", "?")
+    try:
+        full_source = Path(result["path"]).read_text()
+        rows = full_source.splitlines(keepends=True)
+        row = int(location) - 1
+        source = rows[row].strip()
+        bare = result.get("check_id", "").split(".")[-1].removeprefix("ox-caps-")
+        offset = sum(map(len, rows[:row])) + int(result["start"]["col"]) - 1
+        if full_source[offset:offset + len(bare)] == bare and shadowed_channel(masked(full_source), offset, bare):
+            continue
+    except (OSError, UnicodeError, IndexError, KeyError, TypeError, ValueError):
+        source = result.get("extra", {}).get("lines", "").strip()
+    print(f"{result.get('path')}:{location}: {result.get('check_id')}: {source}")
+    failed = True
+
+# A PartialParsing error can coexist with paths.scanned: this is exactly the
+# dangerous case. Treat every error path and every skipped in-scope source as
+# needing the fallback, not just paths.skipped.
+unchecked = {}
+for item in skipped:
+    if isinstance(item, str):
+        unchecked.setdefault(item, []).append("Semgrep skipped")
+    elif isinstance(item, dict) and item.get("path"):
+        unchecked.setdefault(item["path"], []).append("Semgrep skipped: " + str(item.get("reason", "no reason")))
+for error in errors:
+    if isinstance(error, dict):
+        reason = error.get("type", "error")
+        if isinstance(reason, list):
+            reason = reason[0]
+        if error.get("path"):
+            unchecked.setdefault(error["path"], []).append("Semgrep " + str(reason))
+        for span in error.get("spans", []):
+            if isinstance(span, dict) and span.get("file"):
+                unchecked.setdefault(span["file"], []).append("Semgrep " + str(reason))
+
+for path, reasons in sorted(unchecked.items()):
+    if not in_scope(path):
+        continue
+    reason = ", ".join(sorted(set(reasons)))
+    print(f"caps-gate: lexical scan {path} ({reason})")
+    try:
+        source = Path(path).read_text()
+    except (OSError, UnicodeError) as error:
+        print(f"caps-gate: {path}: cannot lexically scan: {error}", file=sys.stderr)
+        failed = True
+        continue
+    code = masked(source)
+    for name, pattern in patterns:
+        for match in pattern.finditer(code):
+            if shadowed_channel(code, match.start(), name):
+                continue
+            print(f"caps-gate: {path}:{line(source, match.start())}: forbidden identifier {name} ({reason})")
+            failed = True
+
+# The door is not a public capability: even if Dune's transitive dependencies
+# make its module visible, only the app, test entry and caps implementation may
+# name it. Inspect source independently of Semgrep's parser.
+for target in targets:
+    files = [target] if target.is_file() else list(target.rglob("*.ml")) + list(target.rglob("*.mli"))
+    for path in files:
+        if not in_scope(path):
+            continue
+        name = relative(path)
+        if name.startswith("lib/caps/") or name in ("lib/app/ox_app.ml", "lib/test/ox_test.ml"):
+            continue
+        try:
+            source = path.read_text()
+        except (OSError, UnicodeError) as error:
+            print(f"caps-gate: {name}: cannot check door access: {error}", file=sys.stderr)
+            failed = True
+            continue
+        if "Ox_caps_door" in source:
+            for match in re.finditer(r"\bOx_caps_door\b", masked(source)):
+                print(f"caps-gate: {name}:{line(source, match.start())}: forbidden Ox_caps_door access")
+                failed = True
+
+# Check direct dependencies in every real Dune file, not just directories passed
+# to Semgrep. Fixtures live under test/caps/gate and are checked in their own
+# temporary repository by the gate test.
+for directory, dirs, filenames in os.walk(root):
+    dirs[:] = [d for d in dirs if not d.startswith("_build") and d not in (".git", "node_modules", "_opam")]
+    if "dune" not in filenames:
+        continue
+    path = Path(directory) / "dune"
+    name = relative(path)
+    if name in ("lib/caps/dune", "lib/app/dune", "lib/test/dune") or name.startswith(("test/caps/gate/", "test/caps-gate/")):
+        continue
+    try:
+        text = path.read_text()
+    except (OSError, UnicodeError) as error:
+        print(f"caps-gate: {name}: cannot check dependencies: {error}", file=sys.stderr)
+        failed = True
+        continue
+    text = re.sub(r";[^\n]*", "", text)
+    # A small S-expression walk catches both direct and nested Dune dependency
+    # forms, without confusing a comment or another stanza with libraries.
+    stack = []
+    for token in re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text):
+        value = token.group()
+        if value == "(":
+            stack.append(None)
+        elif value == ")":
+            if stack:
+                stack.pop()
+        elif stack:
+            if stack[-1] is None:
+                stack[-1] = value
+            elif value == "ox_caps.door" and "libraries" in stack:
+                print(f"caps-gate: {name}:{line(text, token.start())}: forbidden dependency ox_caps.door (only lib/caps, lib/app and lib/test may depend on it)")
+                failed = True
+
+sys.exit(1 if failed else 0)
+PY
+statuses=("${PIPESTATUS[@]}")
+# Semgrep exits 1 even for findings that are demonstrably shadowed; Python
+# decides whether any real violation remains. Other Semgrep failures stay fatal.
+if [ "${statuses[0]}" -gt 1 ]; then
+  echo "caps-gate: Semgrep failed (exit ${statuses[0]})" >&2
+  exit "${statuses[0]}"
+fi
+exit "${statuses[1]}"

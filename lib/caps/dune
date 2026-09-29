@@ -6,7 +6,7 @@
 (library
  (name ox_caps)
  (public_name ox_caps)
- (libraries unix))
+ (libraries unix ox_caps.door))
 
 (install
  (package ox_caps)

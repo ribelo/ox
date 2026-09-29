@@ -1,0 +1,11 @@
+; Fixture trees are data for the caps gate, never built or formatted by dune.
+
+(data_only_dirs
+ clean
+ violating
+ door-access
+ door-dependency
+ shadowed
+ skip-clean
+ skip-violating
+ stream-violating)
