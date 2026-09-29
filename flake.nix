@@ -460,6 +460,11 @@
                 case "$package" in
                   eta* | ppx_eta* | conf-eta*) continue ;;
                 esac
+                # This repository's own packages (ppx_yojson_minimal, ...) are
+                # what is being installed, not dependents to keep.
+                case " $declared " in
+                  *" $package "*) continue ;;
+                esac
                 changes="$switch_prefix/.opam-switch/install/$package.changes"
                 [ -f "$changes" ] || continue
                 while IFS= read -r line; do
