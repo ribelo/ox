@@ -13,6 +13,7 @@ depends: [
   "ox_json"
   "ox_http"
   "ox_observability"
+  "ox_caps"
   "eio"
   "eio_main" {with-test}
   "alcotest" {with-test}

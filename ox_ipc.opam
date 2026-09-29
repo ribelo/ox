@@ -11,6 +11,7 @@ depends: [
   "ocaml" {>= "5.4.0"}
   "conf-ox-oxcaml" {= version}
   "ox"
+  "ox_caps"
   "eio"
   "base-unix"
   "ox_test" {with-test}

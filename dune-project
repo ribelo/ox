@@ -98,6 +98,7 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
+  ox_caps
   eio
   base-unix
   (ox_test :with-test)
@@ -140,6 +141,7 @@
   ox_json
   ox_http
   ox_observability
+  ox_caps
   eio
   (eio_main :with-test)
   (alcotest :with-test)
