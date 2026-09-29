@@ -1,6 +1,8 @@
-# eta-next delivery map
+# Delivery map
 
-Everything an implementing agent needs, in order. Each row is one spec under this directory; the spec says what must be true when it is done. Rows are delivered on the `eta-next` branch (this worktree), each as its own commits citing story IDs. Read `../../AGENTS.md`, `../../CONTEXT.md`, `../why-next.md` and the five ADRs first — they are short and they are the rules.
+> **Migration complete, 2026-09-29.** `master` was reset to `5b09ee47f92a3bc7ea5ee18b8e37c03f38b9594d` (the `eta-next` tip) and this record is the docs commit on top of it; the old master is the `v1` tag (`5b3affc840010c1ffa3420ad30df21a46f08bd87`). Leash, grip, inn, nema and Pie take their Eta input from `?ref=master` and are re-locked to it; taumel and p-doom stay on `v1` by pinned revision. See `../migration-plan.md`.
+
+Everything an implementing agent needs, in order. Each row is one spec under this directory; the spec says what must be true when it is done. Rows were delivered on the `eta-next` branch, which became `master` on 2026-09-29; each row is its own commits citing story IDs. Read `../../AGENTS.md`, `../../CONTEXT.md`, `../why-next.md` and the five ADRs first — they are short and they are the rules.
 
 ## Order
 
@@ -57,7 +59,7 @@ Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are indep
 
 Running alongside, not blocking: the local-handler spike in `../../.scratch/research/handled-pattern/` decides whether ADR-0002's error channel is revisited. Rows do not wait for it; if it wins, the change is a new spec.
 
-Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. When row 32 lands, `eta-next` becomes `master` and `v1` stays a tag. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
+Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. Row 32 landed on 2026-09-28; `eta-next` became `master` on 2026-09-29 (`5b09ee47`), and `v1` stays a tag (`5b3affc8`) for taumel and p-doom. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
 
 ## Definition of done, every row
 
@@ -74,4 +76,4 @@ Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the orde
 
 ## The first consumer
 
-Leash: `/home/ribelo/projects/ribelo/leash`. Its milestone 1 spec (`docs/issues/managed-chrome/`) names the stories each row above serves. When rows 1–8 are done, Leash pins `git+file:///home/ribelo/projects/ribelo/ocaml/Eta?ref=eta-next` in its flake and milestone 1 starts.
+Leash: `/home/ribelo/projects/ribelo/leash`. Its milestone 1 spec (`docs/issues/managed-chrome/`) names the stories each row above serves. When rows 1–8 are done, Leash pins `git+file:///home/ribelo/projects/ribelo/ocaml/Eta?ref=master` in its flake and milestone 1 starts.

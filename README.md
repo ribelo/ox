@@ -2,7 +2,7 @@
 
 Eta is a private application kernel for OCaml services: typed errors, structured failure causes, Eio concurrency with scoped resources, one door for every process, and the protocol clients and servers those services need. It is built on OxCaml and Eio, in direct style.
 
-This branch (`eta-next`) is a fresh start. The previous design — an effect blueprint interpreted by a runtime layered over Eio — lives on the `v1` tag and branch for the applications that still use it. `docs/why-next.md` explains the change and how code is written here.
+This branch (`master`; it was the `eta-next` branch until the switch of 2026-09-29) is a fresh start. The previous design — an effect blueprint interpreted by a runtime layered over Eio — lives on the `v1` tag for the two applications that still use it (taumel, p-doom). `docs/why-next.md` explains the change and how code is written here.
 
 Nothing enters this tree without a consumer. The first consumer is Leash (`/home/ribelo/projects/ribelo/leash`).
 

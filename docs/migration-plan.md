@@ -72,3 +72,21 @@ eta-next at the end of this plan: core, test, json, observability (+otel), app, 
 v1 package sizes (library lines, `Effect.t` references): http 13.8k/146 (h2 codec 4.6k/0, ws codec 206/0, core 718/0, error 503/0, body 792/15, client 689/40); http_eio 14.1k/314 (server.ml 773/0, h1_server_connection 1.5k/46, ws 1.4k/1, h2 747/23); http_tls_openssl 1.4k/0; http_service 703/50; sql 4.8k/90; sql_dsl 3.2k/0; ppx_sql 461/0; ai 27.4k/366 (openrouter 1.6k/31, openai 7k/44, anthropic 860/6); otel 3.8k/63; otel_eio 1k/10; stream 2.1k/206; blocking 1.3k/23; par 1.8k/16; cache 928/27; router 1.6k/0; crux 11.7k/426; signal 7k/7; signal_map 792/0; jsoo 1.1k/17; http_js 748/65.
 
 Consumer references by module family: see the table above; raw counts in the session that produced this document.
+
+## Executed: the switch to master (2026-09-29)
+
+- **Old master** (the v1 line) was `5b3affc840010c1ffa3420ad30df21a46f08bd87` ("feat(json): eta_json package owns the unchecked Yojson helpers", 2026-09-26). It is the `v1` tag, and the tag is the whole boundary: both dormant consumers pin revisions, not a branch, so no `v1` branch was created.
+- **The switch commit** is `5b09ee47f92a3bc7ea5ee18b8e37c03f38b9594d` (2026-09-29 09:15, "Row 31 done: nema on eta-next and in production") — the `eta-next` branch tip, which `master` was reset to. The commit that records this is the docs commit on top of it, and it is the revision the consumers are locked to. Nothing was pushed.
+- **Every active consumer** moved its Eta input from `git+file:///home/ribelo/projects/ribelo/ocaml/Eta?ref=eta-next` to `?ref=master`, its `ETA_PATH` default from `../ocaml/eta-next` to `../ocaml/Eta`, and its eta lock node with `nix flake update eta` (that node only):
+
+| Consumer | lock before | lock after | gates, 2026-09-29 |
+| --- | --- | --- | --- |
+| grip | `14f80b76` | `5b09ee47` | `dune build @install`, `dune test` (38 tests), `dune build @fmt` green |
+| inn | `14f80b76` | `5b09ee47` | `dune build @install`, `dune test` (45 tests) green; no `@fmt` alias (no `.ocamlformat`) |
+| nema | `90f17cf0` | `5b09ee47` | `dune build @install` green; `dune runtest --force` green (36 suites) |
+| Pie | `ec352e9b` | `5b09ee47` | `dune build @install` and `@fmt` green; `dune test --force` green with `EIO_BACKEND=posix` (35 suites). Without it the suite is red on `io_uring_queue_init` `ENOMEM`: `ulimit -l` is 8 MiB on this machine, Pie's service unit already sets `EIO_BACKEND=posix`, and the failures do not involve Eta |
+| Leash | `ec352e9b` | `5b09ee47` | `dune build @install` green; `dune test` red only in row L37's `extr-tkco books.toscrape.com example`, whose playbook the row-L40 worker is editing in that tree; `@fmt` not run (that worker is editing the tree) |
+
+- **taumel and p-doom stay on v1** and needed no repin: neither has an Eta flake input. taumel pins `eta-revision` `1589b3e5033ec1552d9ef0a6f55a248aaf1a814f`; p-doom pins `builtins.fetchGit { rev = "4197be98d5e56a3bfd22a904ec4d84cb8fc69ddc"; }`. Both revisions are on the tagged v1 history, so moving master changes neither build. p-doom's dev-shell default `ETA_PATH` (`../ocaml/Eta`) now names the master checkout: its pinned Nix package build is unaffected, but `eta-opam-install-ox` run from that default would install master's packages into the shared switch.
+- **Left for the lead, in order:** run `eta-opam-install-ox` from `/home/ribelo/projects/ribelo/ocaml/Eta` — the `5.4.0+ox` switch still pins every eta package to `git+file:///home/ribelo/projects/ribelo/ocaml/eta-next#90f17cf0…` — then remove the eta-next worktree and delete the `eta-next` branch. The worktree was kept for exactly that reason.
+- Two facts about the Eta main checkout, recorded so nobody is surprised: a pre-existing uncommitted draft (eta_process / eta_ipc / system_one, written 2026-09-26) was preserved on branch `wip/eta-main-checkout-2026-09-26` before the switch, and 505 v1-era untracked files remain under `.scratch/research/` because the directories' tracked `.gitignore` files belonged to the v1 tree.

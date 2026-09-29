@@ -4,7 +4,7 @@ Read `CONTEXT.md` (vocabulary), then `docs/why-next.md` (why this tree exists an
 
 ## Landing
 
-You are the only agent working here. Uncommitted work is lost work: commit each verified slice to `eta-next` (the branch of this worktree) with a message that cites the consumer story ID that justified it. Push only when asked.
+You are the only agent working here. Uncommitted work is lost work: commit each verified slice to `master` (this checkout) with a message that cites the consumer story ID that justified it. Push only when asked.
 
 ## The one rule
 
