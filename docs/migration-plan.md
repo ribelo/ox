@@ -90,3 +90,44 @@ Consumer references by module family: see the table above; raw counts in the ses
 - **taumel and p-doom stay on v1** and needed no repin: neither has an Eta flake input. taumel pins `eta-revision` `1589b3e5033ec1552d9ef0a6f55a248aaf1a814f`; p-doom pins `builtins.fetchGit { rev = "4197be98d5e56a3bfd22a904ec4d84cb8fc69ddc"; }`. Both revisions are on the tagged v1 history, so moving master changes neither build. p-doom's dev-shell default `ETA_PATH` (`../ocaml/Eta`) now names the master checkout: its pinned Nix package build is unaffected, but `eta-opam-install-ox` run from that default would install master's packages into the shared switch.
 - **Left for the lead, in order:** run `eta-opam-install-ox` from `/home/ribelo/projects/ribelo/ocaml/Eta` — the `5.4.0+ox` switch still pins every eta package to `git+file:///home/ribelo/projects/ribelo/ocaml/eta-next#90f17cf0…` — then remove the eta-next worktree and delete the `eta-next` branch. The worktree was kept for exactly that reason.
 - Two facts about the Eta main checkout, recorded so nobody is surprised: a pre-existing uncommitted draft (eta_process / eta_ipc / system_one, written 2026-09-26) was preserved on branch `wip/eta-main-checkout-2026-09-26` before the switch, and 505 v1-era untracked files remain under `.scratch/research/` because the directories' tracked `.gitignore` files belonged to the v1 tree.
+
+## Leftover v1-era research trees (for the operator; not removed)
+
+These worktrees hold v1-era research and prototypes. No active consumer references them, and nothing in the migration removed them.
+
+- `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux` [docs/eta-crux-v1-design] and its prototype worktrees under `Eta-eta-crux/.scratch/worktrees/`: eta-crux-exported-endpoint, eta-crux-failure-state, eta-crux-host-adapter, eta-crux-observation-plan, eta-crux-ocaml-api, eta-crux-performance-gates, eta-crux-transport-equivalence, eta-crux-wire-protocol.
+- Prototype and research worktrees of the main checkout under `/home/ribelo/projects/ribelo/ocaml/Eta/.scratch/worktrees/`:
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-exported-endpoint` [prototype/eta-crux-exported-endpoint]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-failure-state` [prototype/eta-crux-failure-state]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-host-adapter` [prototype/eta-crux-host-adapter]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-observation-plan` [prototype/eta-crux-observation-plan]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-ocaml-api` [prototype/eta-crux-ocaml-api]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-performance-gates` [prototype/eta-crux-performance-gates]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-transport-equivalence` [prototype/eta-crux-transport-equivalence]
+  - `/home/ribelo/projects/ribelo/ocaml/Eta-eta-crux/.scratch/worktrees/eta-crux-wire-protocol` [prototype/eta-crux-wire-protocol]
+  - `eta-blocking-crossing` [prototype/eta-blocking-crossing]
+  - `eta-component-desired-state` [prototype/eta-component-desired-state]
+  - `eta-component-executable-laws` [prototype/eta-component-executable-laws]
+  - `eta-component-isolation-interception` [prototype/eta-component-isolation-interception]
+  - `eta-component-lifecycle-failure` [prototype/eta-component-lifecycle-failure]
+  - `eta-component-module-replacement` [prototype/eta-component-module-replacement]
+  - `eta-component-operational-diagnostics` [prototype/eta-component-operational-diagnostics]
+  - `eta-component-oxcaml-cost-gates` [prototype/eta-component-oxcaml-cost-gates]
+  - `eta-component-public-interface` [prototype/eta-component-public-interface-alternatives]
+  - `eta-component-reactive-resolution` [prototype/eta-component-reactive-resolution]
+  - `eta-component-runtime-eio-adapter` [prototype/eta-component-runtime-eio-adapter]
+  - `eta-component-temporal-ownership` [prototype/eta-component-temporal-ownership]
+  - `eta-crux-capability-audit/bonsai-census` [research/eta-crux-capability-bonsai]
+  - `eta-crux-capability-audit/current-baseline` [research/eta-crux-capability-current]
+  - `eta-crux-capability-audit/elm-census` [research/eta-crux-capability-elm]
+  - `eta-crux-capability-audit/eta-substrate` [research/eta-crux-capability-eta]
+  - `eta-crux-capability-audit/rust-crux-census` [research/eta-crux-capability-rust-crux]
+  - `eta-crux-safe-crossing` [prototype/eta-crux-safe-crossing]
+  - `eta-crux-typed-projection-delivery/baseline` [research/eta-crux-projection-baseline]
+  - `eta-crux-typed-projection-delivery/incremental-bonsai` [research/eta-crux-projection-incremental-bonsai]
+  - `eta-crux-typed-projection-delivery/rust-crux-elm` [research/eta-crux-projection-rust-crux-elm]
+  - `eta-crux-typed-projection-delivery/snapshot-subscription` [research/eta-crux-projection-snapshot-subscription]
+  - `eta-crux-typed-projection-delivery/stateflow` [research/eta-crux-projection-stateflow]
+  - `eta-par-safe-crossing` [prototype/eta-par-safe-crossing]
+  - `eta-portability-implementation` [eta-portability-implementation]
+- The branch `wip/eta-main-checkout-2026-09-26` holds the uncommitted draft that was in the main checkout before the master switch.
