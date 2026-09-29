@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: ox_caps, scripts/caps-gate, ox_app
 consumer: every consumer's caps gate
 ---
