@@ -348,7 +348,7 @@ let worker t =
   in
   loop ()
 
-let create ?caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "ox_otel")
+let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "ox_otel")
     ?(resource = []) ?(headers = []) ?(batch_size = 64) ?(max_queue = 1024)
     ?(metrics_interval = Ox.Duration.seconds 60) ?(max_metric_series = 1024)
     ?request_deadline ?(on_error = fun _ -> ()) ?(on_signal_error = fun _ _ -> ()) () =
@@ -401,10 +401,7 @@ let create ?caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
                 | Error `Timeout -> None);
             metrics_interval_ms = max 1 (Ox.Duration.to_ms metrics_interval);
             now_ms = (fun () -> int_of_float (Eio.Time.now clock *. 1000.));
-            ids =
-              (match caps with
-              | Some caps -> Ox_caps.Cap_stdlib.Random.make_self_init ~caps ()
-              | None -> Random.State.make_self_init ());
+            ids = Ox_caps.Cap_stdlib.Random.make_self_init ~caps ();
             dropped = 0;
             metrics = Metric_aggregation.create ~max_series:max_metric_series;
             pending_metric_rows = None;

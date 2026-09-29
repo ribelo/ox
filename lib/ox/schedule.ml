@@ -244,8 +244,6 @@ let map_continue_delay decision f =
   | Done _ as done_ -> done_
   | Continue metadata -> Continue { metadata with delay = f metadata.delay }
 
-let default_random () = Random.State.make_self_init ()
-
 type (_, _) state =
   | Driver_recurs : { times : int; count : int; meta : meta_state } -> ('input, int) state
   | Driver_forever : { count : int; meta : meta_state } -> ('input, int) state
@@ -386,12 +384,18 @@ let rec state_of_schedule : type input output. (input, output) t -> (input, outp
       Driver_jitter_kind
         { kind; base = None; previous = None; inner = state_of_schedule inner }
 
+(* A jittered step draws only from a state the caller supplied. Seeding from the
+   system is [Ox_caps.Cap.random] and does not happen here (^ncaps-21nk). *)
+let rng = function
+  | Some state -> state
+  | None -> invalid_arg "Schedule.start: a jittered schedule requires ~random"
+
 (* A uniform draw from [lo, hi] milliseconds, both ends reachable. *)
 let uniform_ms random lo hi =
   if hi <= lo then lo
   else
     let drawn =
-      lo + int_of_float (float_of_int (hi - lo) *. Random.State.float random 1.0)
+      lo + int_of_float (float_of_int (hi - lo) *. Random.State.float (rng random) 1.0)
     in
     Stdlib.max lo (Stdlib.min hi drawn)
 
@@ -419,7 +423,7 @@ let step_result_phase decision state =
   match decision with Continue _ -> Active state | Done metadata -> Finished metadata
 
 let rec step_phase : type input output.
-    Random.State.t ->
+    Random.State.t option ->
     now_ms:int ->
     input:input ->
     (input, output) phase ->
@@ -431,7 +435,7 @@ let rec step_phase : type input output.
       (decision, step_result_phase decision state)
 
 and step_state : type input output.
-    Random.State.t ->
+    Random.State.t option ->
     now_ms:int ->
     input:input ->
     (input, output) state ->
@@ -602,7 +606,7 @@ and step_state : type input output.
       let decision, inner = step_state random ~now_ms ~input inner in
       let decision =
         map_continue_delay decision @@ fun delay ->
-        let factor = lo +. ((hi -. lo) *. Random.State.float random 1.0) in
+        let factor = lo +. ((hi -. lo) *. Random.State.float (rng random) 1.0) in
         scale_capped delay factor
       in
       (decision, Driver_jittered (inner, lo, hi))
@@ -665,13 +669,11 @@ and step_state : type input output.
             Driver_jitter_kind { kind; base = Some base; previous = Some delay; inner } ))
 
 type ('input, 'output) driver = {
-  random : Random.State.t;
+  random : Random.State.t option;
   phase : ('input, 'output) phase;
 }
 
-let start ?random schedule =
-  let random = Option.value random ~default:(default_random ()) in
-  { random; phase = Active (state_of_schedule schedule) }
+let start ?random schedule = { random; phase = Active (state_of_schedule schedule) }
 
 let step ~now_ms ~input driver =
   let decision, phase = step_phase driver.random ~now_ms ~input driver.phase in

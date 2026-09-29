@@ -124,15 +124,16 @@ val pp : Format.formatter -> ('input, 'output) t -> unit
 type ('input, 'output) driver
 
 val start : ?random:Random.State.t -> ('input, 'output) t -> ('input, 'output) driver
-(** Start a stateful schedule driver. [Jittered] draws from the optional Stdlib random
-    state; without one, a fresh state is created. No sleeps, cancellation, or finalizers
-    are involved.
+(** Start a stateful schedule driver. A jittered schedule ([jittered],
+    {!decorrelated_jitter}, or a {!jitter} kind) draws from [~random]; stepping one
+    without it raises [Invalid_argument]. A schedule that does not draw ignores
+    [~random]. No sleeps, cancellation, or finalizers are involved, and this module does
+    not seed from the system.
 
-    Capabilities (^ncaps-x7z8): the fresh state is seeded from the system, which is
-    [Ox_caps.Cap.random]; pass [~random] (from [Ox_caps.Cap_stdlib.Random.make_self_init])
-    to make that visible in the caller's signature. The default stays, and this module
-    stays on ox's gate allow-list, until every consumer passes one ([ox] itself does not
-    depend on [ox_caps]). *)
+    Capabilities (^ncaps-x7z8 ^ncaps-21nk): seeding is [Ox_caps.Cap.random]. The caller
+    that wants system randomness passes a state from
+    [Ox_caps.Cap_stdlib.Random.make_self_init ~caps], so the capability stays in that
+    caller's signature. [ox] does not depend on [ox_caps]. *)
 
 val step :
   now_ms:int ->

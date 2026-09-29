@@ -42,3 +42,5 @@ test/caps/gate/skip-clean/lib/unparseable.ml
 test/caps/gate/skip-violating/lib/unparseable.ml
 test/caps/gate/stream-violating/lib/channels.ml
 test/caps/gate/door-access/lib/*.ml
+test/caps/gate/mint-library/lib/call.ml
+test/caps/gate/mint-entry/bin/main.ml

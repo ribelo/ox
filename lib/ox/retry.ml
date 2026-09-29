@@ -26,8 +26,8 @@ let rec retry_loop ~clock ~policy (f @ local) driver attempt =
         sleep clock meta.delay;
         retry_loop ~clock ~policy f next (attempt + 1)
 
-let retry ~clock ?(policy = default_policy) schedule (f @ local) =
-  retry_loop ~clock ~policy f (Schedule.start schedule) 1
+let retry ~clock ?(policy = default_policy) ?random schedule (f @ local) =
+  retry_loop ~clock ~policy f (Schedule.start ?random schedule) 1
 
 let rec repeat_loop ~clock (f @ local) driver =
     match f () with
@@ -39,5 +39,5 @@ let rec repeat_loop ~clock (f @ local) driver =
             sleep clock meta.delay;
             repeat_loop ~clock f next)
 
-let repeat ~clock schedule (f @ local) =
-  repeat_loop ~clock f (Schedule.start schedule)
+let repeat ~clock ?random schedule (f @ local) =
+  repeat_loop ~clock f (Schedule.start ?random schedule)

@@ -328,7 +328,7 @@ let cadence_cases () =
       let start = Eio.Time.now clock in
       attempts := 0;
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock ~random:(Random.State.make [| 1 |])
           (Schedule.both (Schedule.recurs 4)
              (Schedule.jittered ~min:0.5 ~max:1.5 (Schedule.spaced (Duration.ms 10))))
           (fun () ->
@@ -336,7 +336,7 @@ let cadence_cases () =
             Error !attempts)
       in
       let elapsed = Eio.Time.now clock -. start in
-      check_bool "retry jittered schedule uses runtime random" true
+      check_bool "retry jittered schedule stays inside the supplied range" true
         (result = Error 5 && !attempts = 5 && elapsed >= 0.02 && elapsed <= 0.06))
 
 let resource_edge_cases () =

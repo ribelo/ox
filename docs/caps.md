@@ -14,7 +14,7 @@ Eio's own capabilities stay Eio values (^ncaps-jkku): `net`, `fs`, `process_mgr`
 
 ## Where a powerbox comes from
 
-Only the Door mints one (^ncaps-0mvw ^ncaps-uiq6). `Ox_app` calls `Ox_caps_door.powerbox ()` once per process and puts it in every `Ox_app.Env.t` it builds: the program's, the validator's, and the one `commands_with_env` / `config_commands_with_env` give to command builders. Tests take `Ox_test.powerbox ()`. There is no constructor in public `Ox_caps.Cap`; the `ox_caps.door` sub-library has the constructor, marked with a `mint` alert. Only `lib/caps/dune` (for token identity), `lib/app/dune` and `lib/test/dune` list that library. The gate rejects other Dune dependencies on `ox_caps.door` and other source references to `Ox_caps_door`; it also rejects `Ox_test.powerbox` in production.
+Only the Door mints one (^ncaps-0mvw ^ncaps-uiq6). `Ox_app` calls `Ox_caps_door.powerbox ()` once per process and puts it in every `Ox_app.Env.t` it builds: the program's, the validator's, and the one `commands_with_env` / `config_commands_with_env` give to command builders. A process that already owns its CLI and runtime — grip does — calls `Ox_app.with_powerbox` once at the entry and passes the result down; that call does not start Eio or parse arguments (^grpcap-4kdm). The gate treats that call as a mint: it is allowed only in `bin/**/main.ml`, or in a file the repository's `scripts/caps-gate` names with `--allow`. A library that calls it fails. Tests take `Ox_test.powerbox ()`. There is no constructor in public `Ox_caps.Cap`; the `ox_caps.door` sub-library has the constructor, marked with a `mint` alert. Only `lib/caps/dune` (for token identity), `lib/app/dune` and `lib/test/dune` list that library. The gate rejects other Dune dependencies on `ox_caps.door` and other source references to `Ox_caps_door`; it also rejects `Ox_test.powerbox` in production.
 
 `Cap.Token` aliases the token types from `Ox_caps_door`; the token types remain abstract in the door library's interface, so a hand-written object cannot forge them. The type equations in `Cap.mli` let `Ox_app` and `Ox_test` accept the door constructor's result as `Cap.all_caps`. A direct transitive module reference is not permission to mint: the gate rejects the identifier outside the two allowed libraries.
 
@@ -69,7 +69,7 @@ The rules, one per capability plus two:
 | `ox-caps-fs-write` | `open_out*`, `Out_channel.open_*` / `with_open_*`, `Unix.openfile`, remove/rename/mkdir/rmdir/unlink/chmod/truncate/link/symlink | `Cap_stdlib.*`, `Cap_sys.*`, `Cap_unix.*` |
 | `ox-caps-tmp` | `Filename.temp_file`, `open_temp_file`, `temp_dir` | `Cap_stdlib.Filename.*` |
 | `ox-caps-network` | `Unix.socket`, `socketpair`, `open_connection`, `establish_server` (prefer Eio's `net`) | `Cap_unix.socket`, ... |
-| `ox-caps-mint` | `Ox_caps_door.powerbox`, legacy `Ox_caps.Cap.powerbox`, `Ox_test.powerbox`; `Ox_caps_door` references and `ox_caps.door` dependencies outside the Door and test entry | receive capabilities as arguments |
+| `ox-caps-mint` | `Ox_caps_door.powerbox`, legacy `Ox_caps.Cap.powerbox`, `Ox_test.powerbox`, `Ox_app.with_powerbox` outside an executable entry; `Ox_caps_door` references and `ox_caps.door` dependencies outside the Door and test entry | receive capabilities as arguments; `with_powerbox` only in `bin/**/main.ml` or a file the repository's `--allow` names |
 | `ox-caps-forge` | `Obj.magic` | — |
 
 `test/caps/gate/` is the gate's own test: one violation per rule in `violating/lib/raw.ml` (every rule must fire, a `nosemgrep` comment must not help, `test/` is not scanned, `--allow` excludes exactly its file) and the same operations through the wrappers in `clean/`, which must pass.
@@ -105,14 +105,14 @@ The rule id names the capability. Fix it by giving the enclosing function `~caps
 | --- | --- | --- |
 | `ox_process` | `fork`, `exec` | `Child.spawn ~caps` |
 | `ox_ipc` | `fs_write`, `network` (the socket, its directory and lock) | `Listener.run ~caps` |
-| `ox_otel` | `random` (trace IDs), beside Eio’s `net` and clock | optional `create ?caps`; inn passes it, grip’s uncapped fallback remains until row 53 |
-| `ox` | `random` only for `Schedule.start` without `~random` | declared; pass `~random` |
+| `ox_otel` | `random` (trace IDs), beside Eio’s `net` and clock | `create ~caps` required |
+| `ox` | `random` only when a jittered schedule is stepped | `Schedule.start ~random` from the caller; no default seed |
 | `ox_sql` | `time`, `fs_read` (migrations), `tmp` + `fs_write` (temporary databases) | `Pool.create` and `Connection.create` take `time`; `Migrate.run` and `run_to` take `fs_read` + `time`; `Source.resolve` and `undo` take `fs_read`; `Sqlite.Testing.with_db` takes `tmp` + `fs_write` |
 | `ox_app` | mints them all | the Door |
 | `ox_test` | mints them all | the test entry |
 | `ox_http`, `ox_ai*`, `ox_rpc`, `ox_json`, `ox_observability`, `ox_blocking`, `ox_sql_dsl` | nothing beyond the Eio values they take | — |
 
-`ox_sql` takes its capabilities (row 52, ^inncap-b8ts). What remains on the allow-list is `ox_otel`’s uncapped fallback and `Schedule`’s default random state, both still required until grip’s row 53. Requiring them now would break a consumer that has not migrated, and the shared opam switch rebuilds every consumer when ox is installed.
+`ox_sql` takes its capabilities (row 52, ^inncap-b8ts). Grip takes its capabilities (row 53, ^grpcap-4kdm). `Ox_otel.create` requires `~caps`, and `Schedule.start` no longer seeds a default random state, so neither file is on the allow-list. What remains is the wrappers (`lib/caps`), the Door (`lib/app/ox_app.ml`), and the ppx driver (`lib/ppx_yojson_minimal/main.ml`).
 
 ## Cost (^ncaps-21nk)
 

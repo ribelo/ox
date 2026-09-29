@@ -68,8 +68,9 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Ox_app.Env.t) (cfg : config) =
         let client = Ox_http.Client.create ~sw ~net:base#net ~clock:base#clock () in
         let exporter =
           match
-            Ox_otel.create ~sw ~clock:base#clock ~http_client:client ~endpoint
-              ~service_name:"signal-fixture" ~request_deadline:(Ox.Duration.ms 2000) ()
+            Ox_otel.create ~caps:env.Ox_app.Env.caps ~sw ~clock:base#clock
+              ~http_client:client ~endpoint ~service_name:"signal-fixture"
+              ~request_deadline:(Ox.Duration.ms 2000) ()
           with
           | Ok exporter -> exporter
           | Error error ->

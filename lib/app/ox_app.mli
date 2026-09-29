@@ -316,6 +316,14 @@ val run :
     interruption or a release failure still exits 2, and a stop the Door requested
     (SIGINT, SIGTERM) exits 0, Ox's default `interruptedExitCode`. ^nfloor-6n2e *)
 
+val with_powerbox : (Ox_caps.Cap.all_caps -> 'a) -> 'a
+(** Mint this process's powerbox and pass it to [f]. For an entry that already owns its
+    CLI and runtime, and so does not use {!run}: grip's commands stay grip's parser, and
+    its OTLP worker keeps its own [Eio_main] on a systhread (^grpcap-4kdm). Does not start
+    Eio, parse arguments, or install signal handlers. Call it once, from the process entry
+    ([exit (Ox_app.with_powerbox ...)] is the entry form the gate allows), and pass the
+    result down. A library does not mint. ^ncaps-0mvw *)
+
 val run_simple :
   ?exit_code:('err -> int) ->
   ?log_level:Ox_observability.Logger.level ->

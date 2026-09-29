@@ -291,10 +291,14 @@ let test_jittered_accepts_equal_signed_zero_and_defaults () =
   Alcotest.(check some_dur)
     "equal bounds"
     (Some (Duration.ms 100))
-    (next_delay (Schedule.jittered ~min:1.0 ~max:1.0 inner) ~step:0);
+    (next_delay ~random:(Random.State.make [| 0 |])
+       (Schedule.jittered ~min:1.0 ~max:1.0 inner)
+       ~step:0);
   Alcotest.(check some_dur)
     "signed zero bounds" (Some Duration.zero)
-    (next_delay (Schedule.jittered ~min:(-0.0) ~max:(-0.0) inner) ~step:0);
+    (next_delay ~random:(Random.State.make [| 0 |])
+       (Schedule.jittered ~min:(-0.0) ~max:(-0.0) inner)
+       ~step:0);
   let random = (fun seed -> Stdlib.Random.State.make [| seed |]) 17 in
   Alcotest.(check bool)
     "defaults construct" true
@@ -753,7 +757,7 @@ let test_schedule_and_then_offsets_second_phase () =
   Alcotest.(check some_dur)
     "jittered wraps second phase step 0"
     (Some (Duration.ms 100))
-    (next_delay jittered ~step:2)
+    (next_delay ~random:(Random.State.make [| 0 |]) jittered ~step:2)
 
 let test_schedule_jittered_stays_inside_multiplier_bounds () =
   let schedule =

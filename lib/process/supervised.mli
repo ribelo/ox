@@ -22,7 +22,8 @@ val start :
 (** Starts asynchronously; successful spawns increment the generation from zero. A typed
     spawn error stops and emits [Gave_up (Fail (Spawn e))]; schedule exhaustion emits
     [Gave_up (Fail (Schedule_exhausted exit))]. Defects are emitted as
-    [Gave_up (Die ...)]. *)
+    [Gave_up (Die ...)]. A jittered [schedule] is not seeded here: stepping one raises
+    [Invalid_argument]. Pass a schedule that does not draw. *)
 
 val generation : 'e t -> int
 

@@ -324,6 +324,8 @@ let run ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
     ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
     ~name ~config ~pp_err (fun env _source settings () sw -> program env settings sw)
 
+let with_powerbox f = f ((Ox_caps_door.powerbox [@alert "-mint"]) ())
+
 let run_simple ?exit_code ?log_level ?journal_level ~name ~pp_err program =
   run ?exit_code ?log_level ?journal_level ~name ~config:Config.none ~pp_err
     (fun env () sw -> program env sw)

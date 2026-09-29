@@ -320,7 +320,9 @@ rules:
     severity: ERROR
     message: >-
       Only the Door (Ox_app) and tests mint a powerbox; a service receives its
-      capabilities as arguments. See docs/caps.md in ox.
+      capabilities as arguments. Ox_app.with_powerbox is a mint too: only an
+      executable entry (bin/**/main.ml, or a file the repository's caps-gate
+      --allow names) may call it. See docs/caps.md in ox.
     metadata:
       capability: the Door
       story: ncaps-n6r0
@@ -329,6 +331,7 @@ rules:
       - pattern: Ox_caps.Cap.powerbox
       - pattern: Cap.powerbox
       - pattern: Ox_test.powerbox
+      - pattern: Ox_app.with_powerbox
 
   - id: ox-caps-forge
     languages: [ocaml]

@@ -955,7 +955,7 @@ let schedule_vocabulary () =
   | _ -> Alcotest.fail "~kind with ~min accepted");
   (* a finished inner schedule stays finished under a jitter kind *)
   delays_ "jitter kind on a finite schedule" ([ 0 ], true)
-    (run_schedule
+    (run_schedule ~random:(Random.State.make [| 1 |])
        (Schedule.jittered ~kind:Schedule.Full
           (Schedule.both (Schedule.recurs 1) (Schedule.spaced (ms 0))))
        5)

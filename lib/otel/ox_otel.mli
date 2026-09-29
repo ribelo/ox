@@ -3,11 +3,10 @@
     explicit [shutdown] or the switch that owns the exporter. No global SDK, no telemetry
     of the exporter's own sends.
 
-    Capabilities (^ncaps-x7z8): beyond Eio's [net] (through the borrowed client) and
-    clock, trace and span IDs are drawn from a [Random.State] seeded from the system,
-    which is [Ox_caps.Cap.random]. [create] accepts [caps] for Pie and inn while
-    preserving the old call for grip until row 53; the uncapped fallback remains on ox's
-    gate allow-list. ^ncaps-21nk *)
+    Capabilities (^ncaps-x7z8 ^ncaps-21nk): beyond Eio's [net] (through the borrowed
+    client) and clock, trace and span IDs are drawn from a [Random.State] seeded from the
+    system, which is [Ox_caps.Cap.random]. [create] requires [~caps]; there is no uncapped
+    fallback. *)
 
 module Meter : module type of Meter
 (** The instruments a program records through: a counter, an up-down counter and a
@@ -34,7 +33,7 @@ val pp_error : Format.formatter -> error -> unit
 type signal = Logs | Traces | Metrics
 
 val create :
-  ?caps:< Ox_caps.Cap.random ; .. > ->
+  caps:< Ox_caps.Cap.random ; .. > ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
   http_client:Ox_http.Client.t ->
@@ -110,8 +109,8 @@ val reporter : t -> Ox_observability.Logger.Reporter.t
 
 val span_ids : t -> unit -> string
 (** A 32-digit hexadecimal correlation ID generator, suitable for
-    [Logger.create ~span_ids:(Ox_otel.span_ids exporter)]. Uses a private
-    [Random.State.make_self_init] state: IDs are not secrets or credentials. *)
+    [Logger.create ~span_ids:(Ox_otel.span_ids exporter)]. Draws from the private state
+    {!create} seeded through [Ox_caps.Cap.random]. IDs are not secrets or credentials. *)
 
 val dropped : t -> int
 (** Number of records rejected when the bounded queue was full, and metric records

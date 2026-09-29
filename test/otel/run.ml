@@ -438,8 +438,8 @@ let release_exports_pending () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ()
+            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
+              ~http_client:client ~endpoint ~service_name:"nema" ()
             |> exporter_ok
           in
           let logger =
@@ -459,8 +459,8 @@ let release_hook_records () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ()
+            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
+              ~http_client:client ~endpoint ~service_name:"nema" ()
             |> exporter_ok
           in
           let logger =
@@ -481,8 +481,8 @@ let shutdown_in_release () =
       let opened = ref None and released = ref None in
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ()
+            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
+              ~http_client:client ~endpoint ~service_name:"nema" ()
             |> exporter_ok
           in
           opened := Some exporter;
@@ -510,8 +510,8 @@ let spans_without_ids_remain_logs () =
      both legacy start/end records as logs rather than silently drop the start. *)
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -535,7 +535,8 @@ let trace_failure_names_signal () =
   with_collector ~refuse_traces:true (fun env sw client endpoint received ->
       let errors = ref [] and signal_errors = ref [] in
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema"
           ~on_error:(fun error -> errors := error :: !errors)
           ~on_signal_error:(fun signal error ->
             signal_errors := (signal, error) :: !signal_errors)
@@ -568,8 +569,8 @@ let bounded_and_failure () =
   with_collector ~status:503 (fun env sw client endpoint received ->
       let errors = ref [] in
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~max_queue:2 ~batch_size:2
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ~max_queue:2 ~batch_size:2
           ~on_error:(fun error -> errors := error :: !errors)
           ()
         |> exporter_ok
@@ -603,7 +604,8 @@ let bounded_and_failure () =
 let headers_and_resource_on_the_wire () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema"
           ~resource:
             [ ("service.version", "1.2.3"); ("deployment.environment", "staging") ]
           ~headers:[ ("authorization", "Bearer sk-live-secret"); ("x-tenant", "acme") ]
@@ -657,7 +659,8 @@ let header_values_never_rendered () =
   with_collector ~status:503 (fun env sw client endpoint _received ->
       let errors = ref [] in
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema"
           ~headers:[ ("authorization", "Bearer sk-live-secret") ]
           ~on_error:(fun error -> errors := error :: !errors)
           ()
@@ -691,8 +694,8 @@ let flush_failure_and_closed () =
      exporter refuses further flushes and repeated shutdown stays idempotent. *)
   with_collector ~status:503 (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -729,7 +732,8 @@ let wait_for_metrics env received =
 let counter_and_histogram_on_the_wire () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema"
           ~resource:[ ("service.version", "1.2.3") ]
           ~headers:[ ("authorization", "Bearer sk-live-secret") ]
           ()
@@ -798,8 +802,8 @@ let metrics_drain_on_release () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ()
+            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
+              ~http_client:client ~endpoint ~service_name:"nema" ()
             |> exporter_ok
           in
           let meter = O.meter exporter in
@@ -815,8 +819,8 @@ let metrics_drain_on_release () =
 let metrics_exported_periodically () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~metrics_interval:(Ox.Duration.ms 30) ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 30) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -835,8 +839,8 @@ let metrics_exported_periodically () =
 let drained_window_is_not_reposted () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~metrics_interval:(Ox.Duration.seconds 3600) ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ~metrics_interval:(Ox.Duration.seconds 3600) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -857,8 +861,9 @@ let metrics_export_under_load () =
          against a live collector instead of waiting on one the teardown cancelled. *)
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
-              ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 40) ()
+            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
+              ~http_client:client ~endpoint ~service_name:"nema"
+              ~metrics_interval:(Ox.Duration.ms 40) ()
             |> exporter_ok
           in
           let logger =
@@ -883,8 +888,8 @@ let metrics_export_under_load () =
 let metric_series_bound () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ~max_metric_series:1 ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ~max_metric_series:1 ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -906,8 +911,8 @@ let metric_series_bound () =
 let metrics_failure_reaches_flush () =
   with_collector ~status:503 (fun env sw client endpoint _received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
         |> exporter_ok
       in
       let meter = O.meter exporter in

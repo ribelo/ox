@@ -92,6 +92,15 @@ def in_scope(path):
     return any(p == target or target in p.parents for target in targets)
 
 
+def entry_file(path):
+    """bin/**/main.ml may call Ox_app.with_powerbox. Another entry is --allow."""
+    name = relative(path)
+    if name is None:
+        return False
+    parts = Path(name).parts
+    return len(parts) >= 2 and parts[-1] == "main.ml" and "bin" in parts[:-1]
+
+
 def masked(source):
     """Keep source offsets while removing OCaml comments, strings and characters."""
     chars = list(source)
@@ -197,7 +206,7 @@ try:
         identifier = value.split()[0]
         if re.fullmatch(r"[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*", identifier):
             names.add(identifier)
-    names.update(("Ox_caps_door.powerbox", "Ox_caps.Cap.powerbox", "Cap.powerbox", "Ox_test.powerbox", "Obj.magic"))
+    names.update(("Ox_caps_door.powerbox", "Ox_caps.Cap.powerbox", "Cap.powerbox", "Ox_test.powerbox", "Ox_app.with_powerbox", "Obj.magic"))
     if not names:
         raise ValueError("the Semgrep rule file contains no raw identifiers")
     patterns = [(name, re.compile(r"(?<![\w'.])" + r"\s*\.\s*".join(map(re.escape, name.split("."))) + r"(?![\w'])"))
@@ -225,6 +234,8 @@ for result in results:
         source = rows[row].strip()
         bare = result.get("check_id", "").split(".")[-1].removeprefix("ox-caps-")
         offset = sum(map(len, rows[:row])) + int(result["start"]["col"]) - 1
+        if "Ox_app.with_powerbox" in source and entry_file(result.get("path", "")):
+            continue
         if full_source[offset:offset + len(bare)] == bare and shadowed_channel(masked(full_source), offset, bare):
             continue
     except (OSError, UnicodeError, IndexError, KeyError, TypeError, ValueError):
@@ -293,6 +304,8 @@ for path, reasons in sorted(unchecked.items()):
         continue
     code = masked(source)
     for name, pattern in patterns:
+        if name == "Ox_app.with_powerbox" and entry_file(path):
+            continue
         for match in pattern.finditer(code):
             if shadowed_channel(code, match.start(), name):
                 continue

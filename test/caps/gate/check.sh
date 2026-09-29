@@ -12,10 +12,10 @@ export HOME="$work/home"
 mkdir -p "$HOME"
 status=0
 
-cp -R violating clean skip-clean skip-violating door-dependency door-access stream-violating shadowed "$work/"
+cp -R violating clean skip-clean skip-violating door-dependency door-access stream-violating shadowed mint-library mint-entry "$work/"
 # dune fmt leaves .formatted copies beside the fixtures in the build tree.
 find "$work" -name .formatted -type d -prune -exec rm -rf {} +
-for fixture in violating clean skip-clean skip-violating door-dependency door-access stream-violating shadowed; do
+for fixture in violating clean skip-clean skip-violating door-dependency door-access stream-violating shadowed mint-library mint-entry; do
   git -C "$work/$fixture" init -q
 done
 
@@ -150,6 +150,24 @@ if [ "$code" -eq 0 ]; then
 else
   echo "FAIL: shadowed stdout exit $code"
   cat "$work/shadowed.out"
+  status=1
+fi
+
+# Ox_app.with_powerbox is a mint. A library call fails; bin/**/main.ml may call it.
+(cd "$work/mint-library" && bash "$gate") >"$work/mint-library.out" 2>&1
+code=$?
+if [ "$code" -eq 1 ] && grep -q 'ox-caps-mint' "$work/mint-library.out" && grep -q 'Ox_app.with_powerbox' "$work/mint-library.out"; then
+  echo "ok: a library cannot call Ox_app.with_powerbox"
+else
+  echo "FAIL: library with_powerbox exit $code or missing finding"
+  cat "$work/mint-library.out"
+  status=1
+fi
+if (cd "$work/mint-entry" && bash "$gate") >"$work/mint-entry.out" 2>&1; then
+  echo "ok: bin/main.ml may call Ox_app.with_powerbox"
+else
+  echo "FAIL: entry with_powerbox was refused"
+  cat "$work/mint-entry.out"
   status=1
 fi
 
