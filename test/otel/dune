@@ -2,6 +2,7 @@
  (name run)
  (libraries
   ox_otel
+  ox_test
   ox_observability
   ox_http
   ox_json

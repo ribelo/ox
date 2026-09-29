@@ -53,6 +53,30 @@ else
   status=1
 fi
 
+# ^ncaps-a27b ^ncaps-rwnz: malformed Semgrep coverage cannot pass or traceback.
+mkdir -p "$work/fake-bin"
+cat >"$work/fake-bin/semgrep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$FAKE_SEMGREP_JSON"
+SH
+chmod +x "$work/fake-bin/semgrep"
+for kind in skip error; do
+  if [ "$kind" = skip ]; then
+    report='{"results":[],"errors":[],"paths":{"skipped":[{"path":null,"reason":"parse error"}]}}'
+  else
+    report='{"results":[],"errors":[{"path":null,"type":"PartialParsing"}],"paths":{"skipped":[]}}'
+  fi
+  (cd "$work/clean" && FAKE_SEMGREP_JSON="$report" PATH="$work/fake-bin:$PATH" bash "$gate") >"$work/null-$kind.out" 2>&1
+  code=$?
+  if [ "$code" -eq 1 ] && grep -q "Semgrep $kind has no usable path; cannot check coverage" "$work/null-$kind.out" && ! grep -q Traceback "$work/null-$kind.out"; then
+    echo "ok: Semgrep $kind without a path fails closed, without a traceback"
+  else
+    echo "FAIL: malformed Semgrep $kind exit $code or missing coverage warning"
+    cat "$work/null-$kind.out"
+    status=1
+  fi
+done
+
 # An allow-list entry excludes exactly the file it names.
 if (cd "$work/violating" && bash "$gate" --allow lib/raw.ml) >"$work/allowed.out" 2>&1; then
   echo "ok: --allow excludes the named file"

@@ -1,4 +1,4 @@
 (library
  (name ox_otel)
  (public_name ox_otel)
- (libraries ox eio ox_http ox_observability ox_json))
+ (libraries ox ox_caps eio ox_http ox_observability ox_json))

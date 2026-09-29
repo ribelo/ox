@@ -89,6 +89,16 @@ val openfile :
 (** Both capabilities: the flags decide at run time whether the descriptor reads, writes
     or creates. *)
 
+val openfile_write :
+  caps:< Cap.fs_write ; .. > ->
+  string ->
+  Unix.open_flag list ->
+  Unix.file_perm ->
+  Unix.file_descr
+(** Open a write-only descriptor. Reject [O_RDONLY] and [O_RDWR] flags; the wrapper
+    supplies [O_WRONLY]. A lockfile used only for [lockf] and [fstat] needs no read
+    access. *)
+
 val open_dev_null : unit -> Unix.file_descr
 (** A write-only, close-on-exec descriptor on [/dev/null]. No capability: the null device
     neither reads nor keeps anything, and discarding a child's output is part of spawning

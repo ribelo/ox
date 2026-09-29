@@ -1,4 +1,4 @@
 (library
  (name ox_ipc)
  (public_name ox_ipc)
- (libraries ox eio eio.unix unix))
+ (libraries ox ox_caps eio eio.unix unix))

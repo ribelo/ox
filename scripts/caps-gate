@@ -15,11 +15,9 @@ allow=(
   # A build-time preprocessor executable, not a Door program: it reads its input file,
   # prints to stdout and exits with its status.
   --allow lib/ppx_yojson_minimal/main.ml
-  # Pending the consumer's caps row (docs/issues/README.md rows 50-53): these declare
-  # their capabilities in their interface (^ncaps-x7z8) but do not take them yet,
-  # because requiring one would break a consumer that has not migrated.
-  --allow lib/ipc/listener.ml # fs_write + network; Pie's row
-  --allow lib/otel/ox_otel.ml # random (trace IDs); Pie, grip, inn rows
+  # Pending other consumer caps rows (docs/issues/README.md rows 52-53): these
+  # are still needed by consumers that have not migrated.
+  --allow lib/otel/ox_otel.ml # uncapped fallback for grip and inn until rows 52-53
   --allow lib/ox/schedule.ml # random (default jitter source); every consumer
   --allow lib/sql/connection.ml # time; inn's row
   --allow lib/sql/migrate.ml # fs_read + time; inn's row

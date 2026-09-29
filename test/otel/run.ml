@@ -385,12 +385,12 @@ let exporter_ok result =
   | Error err -> Alcotest.failf "exporter error: %a" O.pp_error err
 
 let log_and_spans () =
-  (* ^notel-6m2q ^notel-j9vc ^notel-p4xe: one logger, two signal endpoints,
+  (* ^notel-6m2q ^notel-j9vc ^notel-p4xe ^pcaps-wury: one logger, two signal endpoints,
      nested spans, correlated logs, explicit drain before borrowed client release. *)
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~sw ~clock:env#clock ~http_client:client ~endpoint ~service_name:"nema"
-          ()
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -952,7 +952,8 @@ let () =
       ( "exporter",
         [
           Alcotest.test_case
-            "logs, nested traces and shutdown (^notel-6m2q ^notel-j9vc ^notel-p4xe)"
+            "logs, nested traces and shutdown (^notel-6m2q ^notel-j9vc ^notel-p4xe \
+             ^pcaps-wury)"
             `Quick log_and_spans;
           Alcotest.test_case "release exports the pending queue (^notel-1stb)" `Quick
             release_exports_pending;

@@ -6,8 +6,8 @@
 
     Capabilities (^ncaps-x7z8): creating the socket needs [Ox_caps.Cap.fs_write] (the
     runtime directory, the lock file, the socket path) and [Ox_caps.Cap.network] (a raw
-    Unix socket). [run] does not take them yet: Pie calls it and has not migrated, so the
-    listener is on ox's gate allow-list until Pie's caps row makes them a parameter. *)
+    Unix socket). [run] requires both; the write-only lockfile descriptor does not read
+    file contents. ^ncaps-21nk *)
 
 type policy = {
   peers : int;
@@ -46,6 +46,7 @@ type ('decode, 'handler) peer_error =
   | `Disconnected ]
 
 val run :
+  caps:< Ox_caps.Cap.fs_write ; Ox_caps.Cap.network ; .. > ->
   sw:Eio.Switch.t ->
   fs:_ Eio.Path.t ->
   net:_ Eio.Net.ty Eio.Resource.t ->

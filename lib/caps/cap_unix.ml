@@ -26,6 +26,12 @@ let sigprocmask ~caps:_ command signals = Unix.sigprocmask command signals
 let time ~caps:_ () = Unix.time ()
 let gettimeofday ~caps:_ () = Unix.gettimeofday ()
 let openfile ~caps:_ path flags perm = Unix.openfile path flags perm
+
+let openfile_write ~caps:_ path flags perm =
+  if List.mem Unix.O_RDONLY flags || List.mem Unix.O_RDWR flags then
+    invalid_arg "Cap_unix.openfile_write: read access is not allowed";
+  Unix.openfile path (Unix.O_WRONLY :: flags) perm
+
 let open_dev_null () = Unix.openfile "/dev/null" [ Unix.O_WRONLY; Unix.O_CLOEXEC ] 0
 let opendir ~caps:_ path = Unix.opendir path
 let unlink ~caps:_ path = Unix.unlink path

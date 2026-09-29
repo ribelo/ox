@@ -26,8 +26,10 @@ let with_dir f =
 let start ?policy ?on_peer_error ?on_budget_exceeded ?error_response
     ?(decode = fun s -> Ok s) ?(budget = fun _ -> None) ?(handler = fun x -> Ok x) env sw
     path =
-  L.run ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy ~decode ~encode:Fun.id
-    ~budget ~handler ?on_budget_exceeded ?error_response ?on_peer_error ()
+  (* ^pcaps-pdn5: only the Door/test powerbox grants socket creation and path writes. *)
+  L.run ~caps:(Ox_test.powerbox ()) ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path
+    ?policy ~decode ~encode:Fun.id ~budget ~handler ?on_budget_exceeded ?error_response
+    ?on_peer_error ()
 
 let client env sw path = Eio.Net.connect ~sw env#net (`Unix path)
 
@@ -739,7 +741,7 @@ let () =
   Alcotest.run "ox_ipc"
     [
       ( "nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz",
-        [ Alcotest.test_case "directory and ownership" `Quick ownership ] );
+        [ Alcotest.test_case "directory and ownership (^pcaps-pdn5)" `Quick ownership ] );
       ( "nipc-4kuy nipc-vayc nipc-uatz",
         [ Alcotest.test_case "live and replacement" `Quick live_and_replacement ] );
       ( "nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn",

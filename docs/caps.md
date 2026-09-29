@@ -104,15 +104,15 @@ The rule id names the capability. Fix it by giving the enclosing function `~caps
 | Library | Capabilities | In the signature |
 | --- | --- | --- |
 | `ox_process` | `fork`, `exec` | `Child.spawn ~caps` |
-| `ox_ipc` | `fs_write`, `network` (the socket, its directory and lock) | declared in `Listener`'s interface; taken when Pie migrates |
-| `ox_otel` | `random` (trace IDs), beside Eio's `net` and clock | declared; taken when Pie, grip and inn migrate |
+| `ox_ipc` | `fs_write`, `network` (the socket, its directory and lock) | `Listener.run ~caps` |
+| `ox_otel` | `random` (trace IDs), beside Eio’s `net` and clock | optional `create ?caps` for Pie; uncapped fallback until grip and inn migrate |
 | `ox` | `random` only for `Schedule.start` without `~random` | declared; pass `~random` |
 | `ox_sql` | `time`, `fs_read` (migrations), `tmp` + `fs_write` (temporary databases) | declared in `Connection`; taken when inn migrates |
 | `ox_app` | mints them all | the Door |
 | `ox_test` | mints them all | the test entry |
 | `ox_http`, `ox_ai*`, `ox_rpc`, `ox_json`, `ox_observability`, `ox_blocking`, `ox_sql_dsl` | nothing beyond the Eio values they take | — |
 
-The "declared" rows are ox's gate allow-list (`scripts/caps-gate`) and follow-up rows 50–53 of `docs/issues/README.md`: requiring the capability now would break a consumer that has not migrated, and the shared opam switch rebuilds every consumer when ox is installed.
+The remaining "declared" rows and `ox_otel`’s uncapped fallback are ox’s gate allow-list (`scripts/caps-gate`) and follow-up rows 52–53 of `docs/issues/README.md`: requiring a capability now would break a consumer that has not migrated, and the shared opam switch rebuilds every consumer when ox is installed.
 
 ## Cost (^ncaps-21nk)
 

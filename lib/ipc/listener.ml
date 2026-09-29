@@ -61,15 +61,16 @@ let claim key =
 
 let release key = synchronized (fun () -> Hashtbl.remove reg key)
 
-let rec parent path =
+let rec parent ~caps path =
   match Unix.lstat path with
   | s ->
       if s.st_kind <> Unix.S_DIR then raise (Refusal `Inaccessible_runtime_dir);
       if not (private_dir s) then raise (Refusal `Unsafe_runtime_dir);
       s
   | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
-      (try Unix.mkdir path 0o700 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
-      parent path
+      (try Ox_caps.Cap_unix.mkdir ~caps path 0o700
+       with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+      parent ~caps path
   | exception Unix.Unix_error _ -> raise (Refusal `Inaccessible_runtime_dir)
 
 let verify_parent path before =
@@ -85,7 +86,7 @@ let protect_fd fd f =
       Unix.close fd;
       raise e
 
-let lock path =
+let lock ~caps path =
   let path = path ^ ".lock" in
   let valid s =
     s.Unix.st_kind = Unix.S_REG && ours s && s.st_perm land 0o022 = 0 && s.st_nlink = 1
@@ -94,15 +95,15 @@ let lock path =
     match Unix.lstat path with
     | before ->
         if not (valid before) then raise (Refusal `Lock_identity);
-        let fd = Unix.openfile path [ Unix.O_RDWR; Unix.O_CLOEXEC ] 0o600 in
+        let fd = Ox_caps.Cap_unix.openfile_write ~caps path [ Unix.O_CLOEXEC ] 0o600 in
         protect_fd fd (fun fd ->
             if not (valid (Unix.fstat fd) && same before (Unix.fstat fd)) then
               raise (Refusal `Lock_identity);
             fd)
     | exception Unix.Unix_error (Unix.ENOENT, _, _) -> (
         match
-          Unix.openfile path
-            [ Unix.O_RDWR; Unix.O_CREAT; Unix.O_EXCL; Unix.O_CLOEXEC ]
+          Ox_caps.Cap_unix.openfile_write ~caps path
+            [ Unix.O_CREAT; Unix.O_EXCL; Unix.O_CLOEXEC ]
             0o600
         with
         | fd ->
@@ -120,8 +121,8 @@ let lock path =
 
 type probe = Live | Stale | Missing
 
-let probe path =
-  let fd = Unix.socket ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+let probe ~caps path =
+  let fd = Ox_caps.Cap_unix.socket ~caps ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0 in
   Fun.protect
     ~finally:(fun () -> Unix.close fd)
     (fun () ->
@@ -132,25 +133,26 @@ let probe path =
       | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Missing
       | exception Unix.Unix_error _ -> raise (Refusal `Probe_failed))
 
-let recover path =
+let recover ~caps path =
   match Unix.lstat path with
   | before -> (
       if before.st_kind <> Unix.S_SOCK || not (ours before) then
         raise (Refusal (`Ownership_conflict path));
-      match probe path with
+      match probe ~caps path with
       | Live -> raise (Refusal `Active_listener)
       | Missing -> ()
       | Stale -> (
           match Unix.lstat path with
           | after when after.st_kind = Unix.S_SOCK && ours after && same before after ->
-              Unix.unlink path
+              Ox_caps.Cap_unix.unlink ~caps path
           | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
           | _ -> raise (Refusal (`Ownership_conflict path))))
   | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
 
-let unlink_owned path id =
+let unlink_owned ~caps path id =
   match Unix.lstat path with
-  | s when s.st_kind = Unix.S_SOCK && ours s && same s id -> Unix.unlink path
+  | s when s.st_kind = Unix.S_SOCK && ours s && same s id ->
+      Ox_caps.Cap_unix.unlink ~caps path
   | _ -> ()
   | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
 
@@ -268,13 +270,13 @@ let peer ~clock ~policy ~decode ~encode ~budget ~on_budget_exceeded ~error_respo
               | Some reply ->
                   respond ~clock ~policy ~encode ~on_peer_error flow (reply request d))))
 
-let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock ~path
-    ?(policy = default_policy) ~decode ~encode ~budget ~handler ?on_budget_exceeded
+let run ~caps ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
+    ~path ?(policy = default_policy) ~decode ~encode ~budget ~handler ?on_budget_exceeded
     ?(error_response = fun _ -> None) ?(on_peer_error = fun _ -> ()) () =
   try
     validate policy;
     let dirname = Filename.dirname path in
-    let parent_id = parent dirname in
+    let parent_id = parent ~caps dirname in
     let key = (parent_id.st_dev, parent_id.st_ino, Filename.basename path) in
     if not (claim key) then raise (Refusal `Lock_conflict);
     let lock_fd = ref None
@@ -291,7 +293,7 @@ let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
               ~finally:(fun () -> Option.iter Unix.close !lock_fd)
               (fun () ->
                 Fun.protect
-                  ~finally:(fun () -> Option.iter (unlink_owned path) !identity)
+                  ~finally:(fun () -> Option.iter (unlink_owned ~caps path) !identity)
                   (fun () -> Option.iter Unix.close !raw))))
     in
     Eio.Switch.on_release sw retire;
@@ -303,11 +305,13 @@ let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
           raise e
     in
     guarded (fun () ->
-        lock_fd := Some (lock path);
+        lock_fd := Some (lock ~caps path);
         verify_parent dirname parent_id;
-        recover path;
+        recover ~caps path;
         verify_parent dirname parent_id;
-        let fd = Unix.socket ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+        let fd =
+          Ox_caps.Cap_unix.socket ~caps ~cloexec:true Unix.PF_UNIX Unix.SOCK_STREAM 0
+        in
         raw := Some fd;
         Unix.bind fd (Unix.ADDR_UNIX path);
         let id = Unix.lstat path in
@@ -315,7 +319,7 @@ let run ~sw ~fs:(_ : _ Eio.Path.t) ~net:(_ : _ Eio.Net.ty Eio.Resource.t) ~clock
           raise (Refusal (`Ownership_conflict path));
         identity := Some id;
         Unix.listen fd policy.backlog;
-        Unix.chmod path 0o600;
+        Ox_caps.Cap_unix.chmod ~caps path 0o600;
         verify_parent dirname parent_id;
         Eio.Switch.check sw;
         let listener = Eio_unix.Net.import_socket_listening ~sw ~close_unix:true fd in

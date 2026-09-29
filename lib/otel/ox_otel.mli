@@ -5,9 +5,9 @@
 
     Capabilities (^ncaps-x7z8): beyond Eio's [net] (through the borrowed client) and
     clock, trace and span IDs are drawn from a [Random.State] seeded from the system,
-    which is [Ox_caps.Cap.random]. [create] does not take it yet: Pie, grip and inn call
-    it and have not migrated, so this module is on ox's gate allow-list until their caps
-    rows. *)
+    which is [Ox_caps.Cap.random]. [create] accepts [caps] for Pie while preserving the
+    old call for grip and inn until their caps rows; the uncapped fallback remains on ox's
+    gate allow-list. ^ncaps-21nk *)
 
 module Meter : module type of Meter
 (** The instruments a program records through: a counter, an up-down counter and a
@@ -34,6 +34,7 @@ val pp_error : Format.formatter -> error -> unit
 type signal = Logs | Traces | Metrics
 
 val create :
+  ?caps:< Ox_caps.Cap.random ; .. > ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
   http_client:Ox_http.Client.t ->

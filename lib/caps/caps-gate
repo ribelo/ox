@@ -205,7 +205,10 @@ try:
     report = json.load(sys.stdin)
     results = report["results"]
     errors = report["errors"]
-    skipped = report.get("paths", {}).get("skipped", [])
+    report_paths = report.get("paths", {})
+    if not isinstance(report_paths, dict):
+        raise ValueError("unexpected Semgrep paths")
+    skipped = report_paths.get("skipped", [])
     if not isinstance(results, list) or not isinstance(errors, list) or not isinstance(skipped, list):
         raise ValueError("unexpected Semgrep JSON report")
 except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
@@ -233,21 +236,49 @@ for result in results:
 # dangerous case. Treat every error path and every skipped in-scope source as
 # needing the fallback, not just paths.skipped.
 unchecked = {}
+
+
+def coverage_path(path, reason):
+    global failed
+    if not isinstance(path, str) or not path:
+        print(f"caps-gate: Semgrep {reason} has no usable path; cannot check coverage", file=sys.stderr)
+        failed = True
+        return None
+    return path
+
+
 for item in skipped:
     if isinstance(item, str):
-        unchecked.setdefault(item, []).append("Semgrep skipped")
-    elif isinstance(item, dict) and item.get("path"):
-        unchecked.setdefault(item["path"], []).append("Semgrep skipped: " + str(item.get("reason", "no reason")))
+        path = coverage_path(item, "skip")
+        if path is not None:
+            unchecked.setdefault(path, []).append("Semgrep skipped")
+    elif isinstance(item, dict):
+        path = coverage_path(item.get("path"), "skip")
+        if path is not None:
+            unchecked.setdefault(path, []).append("Semgrep skipped: " + str(item.get("reason", "no reason")))
+    else:
+        coverage_path(None, "skip")
 for error in errors:
     if isinstance(error, dict):
         reason = error.get("type", "error")
         if isinstance(reason, list):
             reason = reason[0]
-        if error.get("path"):
-            unchecked.setdefault(error["path"], []).append("Semgrep " + str(reason))
-        for span in error.get("spans", []):
-            if isinstance(span, dict) and span.get("file"):
-                unchecked.setdefault(span["file"], []).append("Semgrep " + str(reason))
+        if "path" in error:
+            path = coverage_path(error["path"], "error")
+            if path is not None:
+                unchecked.setdefault(path, []).append("Semgrep " + str(reason))
+        spans = error.get("spans", [])
+        if not isinstance(spans, list):
+            coverage_path(None, "error span")
+            continue
+        if "path" not in error and not spans:
+            coverage_path(None, "error")
+        for span in spans:
+            path = coverage_path(span.get("file") if isinstance(span, dict) else None, "error span")
+            if path is not None:
+                unchecked.setdefault(path, []).append("Semgrep " + str(reason))
+    else:
+        coverage_path(None, "error")
 
 for path, reasons in sorted(unchecked.items()):
     if not in_scope(path):
@@ -290,40 +321,43 @@ for target in targets:
                 print(f"caps-gate: {name}:{line(source, match.start())}: forbidden Ox_caps_door access")
                 failed = True
 
-# Check direct dependencies in every real Dune file, not just directories passed
-# to Semgrep. Fixtures live under test/caps/gate and are checked in their own
-# temporary repository by the gate test.
-for directory, dirs, filenames in os.walk(root):
-    dirs[:] = [d for d in dirs if not d.startswith("_build") and d not in (".git", "node_modules", "_opam")]
-    if "dune" not in filenames:
-        continue
-    path = Path(directory) / "dune"
-    name = relative(path)
-    if name in ("lib/caps/dune", "lib/app/dune", "lib/test/dune") or name.startswith(("test/caps/gate/", "test/caps-gate/")):
-        continue
-    try:
-        text = path.read_text()
-    except (OSError, UnicodeError) as error:
-        print(f"caps-gate: {name}: cannot check dependencies: {error}", file=sys.stderr)
-        failed = True
-        continue
-    text = re.sub(r";[^\n]*", "", text)
-    # A small S-expression walk catches both direct and nested Dune dependency
-    # forms, without confusing a comment or another stanza with libraries.
-    stack = []
-    for token in re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text):
-        value = token.group()
-        if value == "(":
-            stack.append(None)
-        elif value == ")":
-            if stack:
-                stack.pop()
-        elif stack:
-            if stack[-1] is None:
-                stack[-1] = value
-            elif value == "ox_caps.door" and "libraries" in stack:
-                print(f"caps-gate: {name}:{line(text, token.start())}: forbidden dependency ox_caps.door (only lib/caps, lib/app and lib/test may depend on it)")
-                failed = True
+# Check direct dependencies only under the source paths passed to Semgrep.
+# Ignored historical source trees elsewhere in a consumer are not gate inputs.
+for target in targets:
+    for directory, dirs, filenames in os.walk(target):
+        dirs[:] = [d for d in dirs if not d.startswith("_build") and d not in (".git", "node_modules", "_opam")]
+        if "dune" not in filenames:
+            continue
+        path = Path(directory) / "dune"
+        name = relative(path)
+        if name is None:
+            print(f"caps-gate: skip out-of-repository Dune symlink {path}")
+            continue
+        if name in ("lib/caps/dune", "lib/app/dune", "lib/test/dune") or name.startswith(("test/caps/gate/", "test/caps-gate/")):
+            continue
+        try:
+            text = path.read_text()
+        except (OSError, UnicodeError) as error:
+            print(f"caps-gate: {name}: cannot check dependencies: {error}", file=sys.stderr)
+            failed = True
+            continue
+        text = re.sub(r";[^\n]*", "", text)
+        # A small S-expression walk catches both direct and nested Dune dependency
+        # forms, without confusing a comment or another stanza with libraries.
+        stack = []
+        for token in re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text):
+            value = token.group()
+            if value == "(":
+                stack.append(None)
+            elif value == ")":
+                if stack:
+                    stack.pop()
+            elif stack:
+                if stack[-1] is None:
+                    stack[-1] = value
+                elif value == "ox_caps.door" and "libraries" in stack:
+                    print(f"caps-gate: {name}:{line(text, token.start())}: forbidden dependency ox_caps.door (only lib/caps, lib/app and lib/test may depend on it)")
+                    failed = True
 
 sys.exit(1 if failed else 0)
 PY
