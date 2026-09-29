@@ -57,7 +57,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 46 | `ox-floor/01-ox-floor.md` | `eta`, `eta_app`, docs | 45 | rate limiter, select, resources, OxApp parity, Flow design | [x] |
 | 47 | `actor/01-actor.md` | `eta` | 45 | typed mailbox with state fold; Leash registry moves | [ ] |
 | 48 | `caps/01-caps.md` | `eta_caps`, `eta_app`, Leash | 45 | capabilities in signatures; Semgrep gate; Leash first | [ ] |
-| 49 | `ox-rename/01-ox-rename.md` | everything | 45 | the library is ox in a fresh private repository; consumers and nixos-config follow; Leash gets a remote | [ ] |
+| 49 | `ox-rename/01-ox-rename.md` | everything | 45 | the library is ox in a fresh private repository; consumers and nixos-config follow; Leash gets a remote | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).

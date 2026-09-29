@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: every package; the repository itself
 consumer: Leash, Pie, nema, inn, grip, nixos-config
 ---
@@ -71,11 +71,11 @@ Ticked as the ordered pass lands (story ^oxname-j9l3); every repository is clean
 - [x] **Repository.** `~/projects/ribelo/ocaml/ox`: 104 commits, no `.scratch/` path in any commit's tree, tree byte-identical to Eta's `master` minus `.scratch/`, commit messages/authors/dates identical to Eta's `v1..master`; `v1-boundary` tag on the root commit (`7b60acf0`) naming Eta `ad2ee1df` and Eta's `v1` (`5b3affc8`).
 - [x] **Remotes and push.** `origin` = `git@github.com:ribelo/ox.git`, `master` and `v1-boundary` pushed; `eta` = the Eta checkout, read-only (push URL disabled), fetching `refs/tags/v1` so `git show v1:…` keeps resolving.
 - [x] **The rename in ox.** 19 opam packages `eta*` → `ox*`, modules `Eta*` → `Ox*`, `lib/eta` → `lib/ox`, `ETA_*` → `OX_*`, `eta-opam-install-ox` → `ox-opam-install`, `docs/why-next.md` → `docs/why-ox.md` with the rename paragraph; applied by `scripts/rename-eta-to-ox.sh` and reviewed for false hits; gates green.
-- [ ] **Consumers.** Leash, Pie, nema, inn and grip renamed, flake input at `git+file:///home/ribelo/projects/ribelo/ocaml/ox?ref=master`, relocked, gates green, committed.
-- [ ] **Shared switch.** `5.4.0+ox`: `eta*` removed and `ox*` installed by `ox-opam-install`; `bin/pie` byte-identical before and after; nema runs from the Nix store, untouched.
-- [ ] **nixos-config.** `ETA_*` and the Eta path renamed; `nixosConfigurations.desktop` evaluates; committed.
-- [ ] **Remotes.** Leash pushed to `github.com/ribelo/leash`; the `leash` skill in dotfiles updated and committed.
-- [ ] **Eta archive.** One final commit adding `ARCHIVED.md` (36 worktrees, `wip/rows-46-47`); nothing else in Eta changed.
+- [x] **Consumers.** Leash `2345d05`, Pie `7cf7996`, nema `c40463b`, inn `c405450`, grip `a4973dd`: same script, flake input `git+file:///home/ribelo/projects/ribelo/ocaml/ox?ref=master`, only the `eta`→`ox` lock node relocked, story IDs untouched; gates green (Leash 23 suites/273 tests, Pie 36/566 with `EIO_BACKEND=posix`, nema 36/716, inn 2/52, grip 6/60; no `.ocamlformat` in nema, inn or grip). Only Leash was pushed, and only Leash's own copy is on GitHub. Hand fixes the rename needed: Pie's provenance filter compared three characters with "eta" (two with "ox") and named the real stub files; nema's two C mock fixtures matched 23 characters of a 22-character prefix; one `.gitignore` entry named an existing `.opam-eta-src/` directory.
+- [x] **Shared switch.** `5.4.0+ox`: the 19 `eta*`/conf-eta-oxcaml packages plus `pie` and the old `ppx_yojson_minimal` removed, 20 `ox*` packages installed by `ox-opam-install` at `fa3ea69`; `oxcaml-*` guards untouched; `bin/pie` sha256 identical before and after (`4c8e28e2…`), as are `bin/grip` and `bin/inn`; nema still runs `/nix/store/x3b3jv6zy…-nema-dev`; no service stopped or restarted.
+- [x] **nixos-config.** `bde763a`: `ox-opam-install`/`ox-oxcaml-test-shipped` and Ox prose in the OCaml setup script and the two requirement docs; no rebuild, `nix eval .#nixosConfigurations.desktop.config.system.build.toplevel.drvPath` = `/nix/store/iqq9pv49…-nixos-system-heisenbug-26.11.20260826.9fbb54b.drv`.
+- [x] **Remotes.** Leash's `origin` = `github.com/ribelo/leash`, `master` pushed; dotfiles `8732dcc4` (the OCaml skills that named the shared library; the `leash` skill itself has no rename-visible name and is unchanged).
+- [x] **Eta archive.** One commit, `d169a91e`, adding `ARCHIVED.md` (the 36 worktrees with their branches, the two parked `wip` branches); no other change to Eta, nothing pushed, nothing deleted.
 
 ## Further Notes
 
