@@ -5,8 +5,7 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | Public function | Callback decision and reason |
 | --- | --- |
 | `Eta.Result.Syntax.( let* ), ( let+ )` | **Global**; although applied immediately, OxCaml binding-operator elaboration rejects a mode-qualified closure parameter in existing `let*` syntax. |
-| `Eta.Retry.retry, repeat` | **Local**; invoke in the calling fiber. Top-level tail-recursive helpers accept the local callback explicitly rather than capture it in an escaping recursive closure. |
-| `Eta.Resource.acquire_release ~acquire` | **Local**; acquisition runs before registering release with Eio. `~release` remains **global**: registered on the switch for later invocation. |
+| `Eta.Retry.retry, repeat` | **Local**; invoke in the calling fiber. Top-level tail-recursive helpers accept the local callback explicitly rather than capture it in an escaping recursive closure. The `policy` record's callbacks (`is_success`, `is_worth_retrying`, `on_retry`) are **global** and run in place: they are fields of a plain record, and a record of local closures would need every caller to annotate it. |
 | `Eta_otel.Meter.create ~now_ms ~record` | **Global**; both callbacks are retained: `now_ms` by the meter, `record` for every measurement the instruments ever make. |
 | `Eta_otel.create ~on_error ~on_signal_error` | **Global**; both callbacks are retained by the exporter for later failures, including switch release. |
 | `Eta.Observability.Logger.span ~f` | **Global**; optional OTLP span IDs bind through `Context.with_fields` into `Eio.Fiber.with_binding`, which requires a global callback (nmodes-8t8v, nmodes-8y46). `~pp_err` remains **global**: passed through formatting and retained by the inner logging callback. |
@@ -14,7 +13,8 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Eta.Timeout.timeout` | **Global**; forwarded to `Eio.Time.with_timeout`, whose signature does not accept `local`. |
 | `Eta.Scope.run` | **Global**; forwarded to `Eio.Switch.run`, whose signature does not accept `local`. |
 | `Eta.Observability.Context.with_fields` | **Global**; forwarded to `Eio.Fiber.with_binding`, whose signature does not accept `local`. |
-| `Eta.Concurrent.race, par, all, with_background` | **Global**; tasks fork into Eio fibers, outliving the invocation of the spawning function. |
+| `Eta.Concurrent.race, race_first, par, both, all, for_each, with_background` | **Global**; tasks run in Eio fibers (`Fiber.both`/`all`/`any`, `Fiber.List.map`), which take unmoded closures, and outlive the invocation of the spawning function. |
+| `Eta.Scope.supervised_error, fork_error, fork, fork_daemon, fork_error_daemon, exit_on_error` | **Global**; `supervised_error`'s body is forwarded to `Eio.Switch.run` and every fork thunk to `Eio.Fiber.fork`, both unmoded; `exit_on_error`'s body receives a closure that forks are expected to keep. |
 | `Eta.Schedule.recur_until, modify_delay, while_output` | **Global**; predicates and delay transformation are stored inside the schedule for future steps. |
 | `Eta.Cause.pp, pp_compact; Eta.Exit.pp` | **Global**; printers flow through `Format` and recursively applied formatting callbacks; no locally-mode-qualified formatter contract. |
 | `Eta_json.array_map` | **Global**; passed to `Stdlib.List.map` (whose callback requires global). Replacing it with a naive recursive map would change stack behavior for large arrays. |
@@ -25,6 +25,12 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Supervised.start ~spawn` | **Global**; stored for supervised respawns in Eio fibers. |
 | `Correlator.create ~read/~write/~id/~set_id/~session` | **Global**; stored in correlator state. Reader runs in another Eio fiber; writer and matchers are invoked for future requests. |
 | `Listener.run ~decode/~encode/~handler/~error_response` | **Global**; forwarded to accepting fibers; handler can outlive the call that spawned it. |
+
+## Typed errors across a fork (nsup-hje5)
+
+A `handled_effect`-style local token — a `local` handler value that the mode system guarantees is handled — cannot cross `Fiber.fork`: Eio's fork closures are **global**, so a closure capturing a local value cannot escape into the new fiber, and a forked fiber would have to install a handler of its own, which is no longer the caller's. There is no way around this inside Eio as pinned, and the search is closed: `Scope.supervised_error` is the chosen answer. A typed `Error` returned by a forked fiber travels **by value**: `fork_error` resolves the fork's promise, records the first error in the scope's cell, and ends the scope with a private exception that `Eio.Switch.fail` uses to cancel and await the other forks; the boundary returns the recorded `Error`. The private exception never appears in an interface, and every other exception and every cancellation passes through untouched.
+
+The one upstream request that would change this: mark the body of `Eio.Switch.run` (and `Fiber.fork`) as safe for local capture — a `local` closure argument whose captured locals may not escape past the switch's lifetime — so that a handler value created outside a switch could be used inside its forks. Until Eio takes it, nobody re-opens the search. A second pinned quirk found by the same work: `Eio.Fiber.pair` documents fail-fast but forks its first side as a promise, so a failure there does not cancel the second side; `Concurrent.par` is built on `Fiber.both` instead.
 
 ## Portable functions and values (nmodes-6pqn)
 

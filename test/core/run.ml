@@ -220,7 +220,7 @@ let test_resource () =
       let outcome =
         Scope.run (fun sw ->
             let acquire n =
-              Resource.acquire_release ~sw
+              Support.acquire_release ~sw
                 ~acquire:(fun () -> Ok n)
                 ~release:(fun n -> order := n :: !order)
             in
@@ -231,14 +231,14 @@ let test_resource () =
       let failed_acquire = ref false in
       expect_fail "failed"
         (Scope.run (fun sw ->
-             Resource.acquire_release ~sw
+             Support.acquire_release ~sw
                ~acquire:(fun () -> Error "failed")
                ~release:(fun _ -> failed_acquire := true)));
       Alcotest.(check bool) "nothing acquired" false !failed_acquire;
       match
         Scope.run (fun sw ->
             let _ =
-              Resource.acquire_release ~sw
+              Support.acquire_release ~sw
                 ~acquire:(fun () -> Ok 1)
                 ~release:(fun _ -> failwith "cleanup")
             in
@@ -392,10 +392,22 @@ let test_race_cause () =
   Eio_main.run (fun _ ->
       Eio.Switch.run (fun sw ->
           (match
+             Concurrent.race ~sw
+               [
+                 (fun () -> Error "a");
+                 (fun () ->
+                   Eio.Fiber.yield ();
+                   Error "b");
+               ]
+           with
+          | Error (Cause.Concurrent [ Cause.Fail "a"; Cause.Fail "b" ]) -> ()
+          | _ -> Alcotest.fail "all-fail cause order");
+          (* nsup-i1zm: a defect is raised as it is, not collected as a Cause.Die *)
+          (match
              Concurrent.race ~sw [ (fun () -> Error "a"); (fun () -> failwith "boom") ]
            with
-          | Error (Cause.Concurrent [ Cause.Fail "a"; Cause.Die (Failure _, _) ]) -> ()
-          | _ -> Alcotest.fail "all-fail cause order");
+          | exception Failure msg when msg = "boom" -> ()
+          | _ -> Alcotest.fail "race must raise a branch defect unchanged");
           (match Concurrent.race ~sw [ (fun () -> Error "only") ] with
           | Error (Cause.Fail "only") -> ()
           | _ -> Alcotest.fail "single failing branch is not wrapped in Concurrent");
@@ -573,7 +585,6 @@ let test_package_contract () =
       "scope";
       "concurrent";
       "timeout";
-      "resource";
       "retry";
     ]
   in
@@ -594,7 +605,7 @@ let test_package_contract () =
 
 let () =
   Alcotest.run "eta core"
-    (Pure.tests @ V1_port.tests @ V1_more.tests @ V1_completion.tests
+    (Pure.tests @ V1_port.tests @ V1_more.tests @ V1_completion.tests @ Supervised.tests
     @ [
         ( "Core causes ncore-e8jg ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg \
            ncore-p30f",

@@ -73,30 +73,47 @@ val Scope.run : (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) exit
 
 Interruption identity is kept the same way v1 kept it — a private exception carrying an id is what a combinator cancels with — but now it is only ever *observed*, never *propagated by an interpreter*.
 
+### Two kinds of errors
+
+Ox's doctrine, adopted whole (ADR-0009):
+
+- **Unrecoverable errors** are exceptions, untyped on purpose so that nobody builds control flow on them. They mean a bug or a broken invariant; nothing in a signature mentions them, and a combinator that meets one raises exactly that exception, adds nothing and swallows nothing. `Scope.run` classifies them at the boundary as defects.
+- **Recoverable errors** are values: `('a, 'e) result` with a polymorphic variant for `'e`. They are the failures a caller is expected to handle, and Eta's combinators are made aware of them through their result type — a typed `Error` in one branch ends the computation the way an exception would, and comes back as that same `Error`.
+
+Two rules follow. A library converts I/O exceptions to `result` at its edge — once, where the operation is called — instead of letting them travel. And `try`/`with` stays as small as possible: around the one call that can raise the exception being converted, never around a region that also holds fibers, scopes or cancellation, because cancellation is an exception too (`Eio.Cancel.Cancelled`) and a wide handler turns an interruption into something else.
+
 ### Concurrency combinators
 
-Each is a function over Eio, returning `result` and classifying through `Scope`. There is no combinator that Eio does not need help with.
+Each is a thin wrapper over Eio's own structured concurrency (`Fiber.both`/`all`/`any`, `Fiber.List.map`). None owns a switch: they run in the caller's cancellation context, so cancelling the caller cancels every branch, and Eio cancels and awaits the losers. One law: a combinator raises exactly what a body raises, returns exactly the `result` a body returns, adds nothing and swallows nothing; the interruption of losers is suppressed onto the primary outcome.
 
 ```ocaml
-val race    : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, 'e Cause.t) result
-  (* first success wins; losers are cancelled and awaited; all-fail → Error (Concurrent causes), a lone failure unwrapped *)
-val timeout : clock:_ Eio.Time.clock -> Duration.t -> (unit -> ('a, [> `Timeout ] as 'e) result) -> ('a, 'e) result
 val par     : sw:Switch.t -> (unit -> ('a, 'e) result) -> (unit -> ('b, 'e) result) -> ('a * 'b, 'e) result
-  (* fail-fast: a failing side cancels the other and both are awaited *)
+val all     : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a list, 'e) result
+val for_each : sw:Switch.t -> concurrency:int -> 'a list -> ('a -> ('b, 'e) result) -> ('b list, 'e) result
+  (* fail-fast: the first typed Error or exception ends the computation; the rest are cancelled and awaited *)
+val race       : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, 'e Cause.t) result
+  (* first success wins; all-fail → Error (Concurrent causes) in input order, a lone failure unwrapped *)
+val race_first : sw:Switch.t -> (unit -> ('a, 'e) result) list -> ('a, 'e) result
+  (* first settled result of either kind *)
 val with_background : sw:Switch.t -> (unit -> (unit, 'e) result) -> (unit -> ('a, 'e) result) -> ('a, 'e) result
   (* background is cancelled and awaited when the body settles; its own failure wins if it comes first *)
-val acquire_release : sw:Switch.t -> acquire:(unit -> ('r, 'e) result) -> release:('r -> unit) -> ('r, 'e) result
-  (* release runs when the switch closes; Scope.run classifies failures then *)
+val Scope.supervised_error : sw:Switch.t -> ('e Scope.t -> ('a, 'e) result) -> ('a, 'e) result
+val Scope.fork_error       : 'e Scope.t -> (unit -> ('b, 'e) result) -> ('b, 'e) Scope.fork
+  (* the first Error from a fork or the body ends the scope with it *)
+val timeout : clock:_ Eio.Time.clock -> Duration.t -> (unit -> ('a, [> `Timeout ] as 'e) result) -> ('a, 'e) result
+  (* an alias of Eio.Time.with_timeout *)
 ```
 
-The Switch is passed explicitly, as Eio does. Deadlines use `timeout`, never `race` against a sleep: race selects the first *success*.
+`Scope.supervised_error` is Ox's `supervisedError`: a scope whose `fork_error` fibers return `result`s, where the first `Error e` ends the scope with `Error e` after every other fork was cancelled and awaited. It carries a typed error across forks by value, which is the direct-style answer to what `handled_effect` promised (`docs/modes.md`). Resources are Eio's: register the release with `Eio.Switch.on_release`; Eta has no resource module.
+
+The Switch is passed explicitly, as Eio does; here it is only checked, the combinator owning nothing on it. Deadlines use `timeout`, never `race` against a sleep: race selects the first *success*.
 
 ### Schedules, retry, repeat
 
 `Schedule.t` is pure data and survives from v1 unchanged; `Schedule.step` already takes `now_ms`. The drivers are ordinary loops over an explicit clock, so a mock clock makes them deterministic:
 
 ```ocaml
-val retry  : clock:_ Eio.Time.clock -> ('e, _) Schedule.t -> (unit -> ('a, 'e) result) -> ('a, 'e) result
+val retry  : clock:_ Eio.Time.clock -> ?policy:('a, 'e) Retry.policy -> (('a, 'e) result, _) Schedule.t -> (unit -> ('a, 'e) result) -> ('a, 'e) result
 val repeat : clock:_ Eio.Time.clock -> ('a, 'o) Schedule.t -> (unit -> ('a, 'e) result) -> ('o, 'e) result
 ```
 

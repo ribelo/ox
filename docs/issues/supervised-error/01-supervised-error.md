@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: eta (Scope, Concurrent, Retry, Schedule)
 consumer: every application; Pie (12 Concurrent sites), Leash drive/run loops, nema watcher
 ---
@@ -56,3 +56,9 @@ Streams (`Flow`), rate limiting, actors (separate specs); effect-row typing; any
 ## Further Notes
 
 Ox's `supervisedError` distinguishes user forks (the scope waits for them) from daemon forks (the scope ends when the body ends); Eio's `fork` vs `fork_daemon` is the same split and is exposed unchanged. Whether `fork_error` should also have a daemon variant is left to the implementer's first consumer.
+
+## Verification
+
+Verified 2026-09-29 on 5.4.0+ox: `nix develop -c dune build @install`, `dune test` (core suite 109 tests, every story cited by name in `test/core/supervised.ml`; the law of story 8 is checked exhaustively over every outcome pattern and settling order for 2–3 branches) and `dune build @fmt` are green. Leash, Pie and nema build and pass their suites against this tree (Leash 29 test cases, Pie 127, nema runtest) through a private install prefix; their edits need the Eta commit installed or re-locked before they compile.
+
+Decisions taken where the spec left room: `Concurrent` combinators keep `~sw` (checked, not owned), including `for_each ~sw ~concurrency`; `par` is built on `Fiber.both` because `Fiber.pair` does not cancel its second side when the first fails (recorded in `docs/modes.md`); a defect in a `race` branch is raised, no longer collected as `Cause.Die`; `Retry.retry`'s schedule takes the attempt's `result` as input so an unsuccessful `Ok` can be retried; `fork_error_daemon` was added for `with_background`, its first consumer; `with_initial_delay` replaces the delay of the first recurrence, not of the first attempt.

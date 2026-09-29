@@ -68,12 +68,52 @@ val modify_delay :
 
 val while_output : ('output -> bool) -> ('input, 'output) t -> ('input, 'output) t
 
-val jittered : ?min:float -> ?max:float -> ('input, 'output) t -> ('input, 'output) t
+type jitter =
+  | Full  (** a uniform draw in [[0, delay]] *)
+  | Equal  (** [delay / 2] plus a uniform draw in [[0, delay / 2]] *)
+  | Decorrelated
+      (** a uniform draw in [[base, 3 * previous]], where [base] is the first delay the inner
+          schedule produced and [previous] is the last delay this jitter produced (initially
+          [base]); the inner schedule's later delays are ignored, so cap the result with
+          {!max_interval} *)
+(** Ox's jitter kinds (the ones of the AWS backoff article). *)
+
+val jittered :
+  ?kind:jitter -> ?min:float -> ?max:float -> ('input, 'output) t -> ('input, 'output) t
 (** [jittered ~min ~max schedule] multiplies each continue delay by a draw in
     [[min, max]]. Bounds must be finite, nonnegative, and [min <= max]; defaults are [0.8]
-    and [1.2]. Equal bounds are valid. Construction does not step the inner schedule or
-    draw randomness.
-    @raise Invalid_argument if a bound is non-finite, negative, or reversed. *)
+    and [1.2]. Equal bounds are valid. [jittered ~kind schedule] instead applies one of
+    Ox's {!jitter} kinds to each continue delay; [~kind] excludes [~min] and [~max].
+    Construction does not step the inner schedule or draw randomness.
+    @raise Invalid_argument if a bound is non-finite, negative, or reversed, or if [~kind]
+    is combined with [~min] or [~max]. *)
+
+val decorrelated_jitter : min:Duration.t -> max:Duration.t -> ('input, Duration.t) t
+(** Ox's [decorrelatedJitter]: forever, each delay is a uniform draw in
+    [[min, 3 * previous]] capped at [max], starting from [previous = min]; the output is
+    the delay. Combine with {!recurs} through {!both} to bound the attempts.
+    @raise Invalid_argument if [min > max]. *)
+
+val max_interval : Duration.t -> ('input, 'output) t -> ('input, 'output) t
+(** Caps every continue delay at the given duration. *)
+
+val with_initial_delay : Duration.t -> ('input, 'output) t -> ('input, 'output) t
+(** Replaces the delay of the first recurrence (the first continue step) with the given
+    one; later delays are unchanged. *)
+
+val with_no_initial_delay : ('input, 'output) t -> ('input, 'output) t
+(** [with_initial_delay Duration.zero]: the first recurrence follows immediately. *)
+
+val intervals : Duration.t list -> ('input, Duration.t) t
+(** Explicit delays: one continue step per element, in order, each delaying by that
+    element and outputting it, then [Done] (with output [Duration.zero]). [intervals []]
+    is done at once. *)
+
+val max_retries_by_cumulative_delay :
+  Duration.t -> ('input, 'output) t -> ('input, 'output) t
+(** Ends the schedule at the first continue step whose delay would bring the sum of all
+    delays granted so far above the given duration; that step becomes [Done] and its delay
+    is not granted. *)
 
 val named : string -> ('input, 'output) t -> ('input, 'output) t
 (** Attach a label used by {!pp}. Naming does not change stepping and does not itself emit

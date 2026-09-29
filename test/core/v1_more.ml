@@ -31,7 +31,7 @@ let schedule_variants () =
       let seen = ref [] in
       let result =
         Retry.retry ~clock
-          (Schedule.recur_until (fun err -> err >= 1))
+          (Schedule.recur_until (function Error err -> err >= 1 | Ok _ -> false))
           (fun () ->
             let n = List.length !seen + 1 in
             seen := n :: !seen;

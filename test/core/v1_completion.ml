@@ -33,7 +33,7 @@ let retry_resource_cases () =
             match
               Scope.run (fun sw ->
                   ignore
-                    (Resource.acquire_release ~sw
+                    (Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
                        ~release:(fun () -> incr released));
                   if !attempts < 3 then Error !attempts else Ok !attempts)
@@ -77,7 +77,7 @@ let stress_compositions () =
         let worker sw n () =
           Eio.Switch.run (fun nested ->
               ignore
-                (Resource.acquire_release ~sw:nested
+                (Support.acquire_release ~sw:nested
                    ~acquire:(fun () ->
                      incr live;
                      incr acquired;
@@ -108,7 +108,7 @@ let bracket_cases () =
   Eio_main.run (fun _ ->
       let events = ref [] in
       let resource sw =
-        Resource.acquire_release ~sw
+        Support.acquire_release ~sw
           ~acquire:(fun () -> Ok 4)
           ~release:(fun value -> events := value :: !events)
       in
@@ -143,7 +143,7 @@ let bracket_cases () =
       let outcome =
         Scope.run (fun sw ->
             ignore
-              (Resource.acquire_release ~sw
+              (Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok ())
                  ~release:(fun () -> failwith "release after success"));
             Ok ())
@@ -154,7 +154,7 @@ let bracket_cases () =
       let bracket_release =
         Scope.run (fun sw ->
             ignore
-              (Resource.acquire_release ~sw
+              (Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok ())
                  ~release:(fun () -> failwith "bracket release after success"));
             Ok ())
@@ -172,7 +172,7 @@ let parallel_resource_cases () =
               Concurrent.all ~sw
                 (List.init size (fun n () ->
                      match
-                       Resource.acquire_release ~sw
+                       Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok n)
@@ -345,7 +345,7 @@ let resource_edge_cases () =
       let outcome =
         Scope.run (fun sw ->
             ignore
-              (Resource.acquire_release ~sw
+              (Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok 1)
                  ~release:(fun value -> released := value :: !released));
             Ok 1)
@@ -356,7 +356,7 @@ let resource_edge_cases () =
       let outcome =
         Scope.run (fun sw ->
             ignore
-              (Resource.acquire_release ~sw
+              (Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok 2)
                  ~release:(fun value -> released := value :: !released));
             Error "root")
@@ -366,7 +366,7 @@ let resource_edge_cases () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> failwith "release after body defect"));
              failwith "body defect")
@@ -383,7 +383,7 @@ let resource_edge_cases () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> failwith "bracket release"));
              failwith "bracket body")
@@ -403,7 +403,7 @@ let resource_edge_cases () =
             match
               Scope.run (fun sw ->
                   ignore
-                    (Resource.acquire_release ~sw
+                    (Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
                        ~release:(fun () -> incr released));
                   Ok 1)
@@ -425,7 +425,7 @@ let retry_race_stress () =
               match
                 Scope.run (fun sw ->
                     ignore
-                      (Resource.acquire_release ~sw
+                      (Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok ())
@@ -444,7 +444,7 @@ let retry_race_stress () =
                 [
                   (fun () ->
                     ignore
-                      (Resource.acquire_release ~sw
+                      (Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok ())
@@ -478,7 +478,7 @@ let parallel_resource_edges () =
                     Concurrent.all ~sw
                       (List.init 8 (fun _ () ->
                            ignore
-                             (Resource.acquire_release ~sw
+                             (Support.acquire_release ~sw
                                 ~acquire:(fun () ->
                                   incr live;
                                   Ok ())
@@ -499,7 +499,7 @@ let parallel_resource_edges () =
               [
                 (fun () ->
                   ignore
-                    (Resource.acquire_release ~sw
+                    (Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
                        ~release:(fun () -> failwith "parallel release"));
                   Eio.Fiber.yield ();
@@ -523,7 +523,7 @@ let parallel_resource_edges () =
               [
                 (fun () ->
                   ignore
-                    (Resource.acquire_release ~sw
+                    (Support.acquire_release ~sw
                        ~acquire:(fun () ->
                          incr live;
                          Ok ())
@@ -544,7 +544,7 @@ let parallel_resource_edges () =
               [
                 (fun () ->
                   ignore
-                    (Resource.acquire_release ~sw
+                    (Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
                        ~release:(fun () -> failwith "release diagnostic"));
                   Ok 1);
@@ -669,7 +669,7 @@ let supervisor_edges () =
             match
               Scope.run (fun child ->
                   ignore
-                    (Resource.acquire_release ~sw:child
+                    (Support.acquire_release ~sw:child
                        ~acquire:(fun () -> Ok ())
                        ~release:(fun () -> incr exited));
                   Ok 3)

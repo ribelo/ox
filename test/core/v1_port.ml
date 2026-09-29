@@ -58,7 +58,7 @@ let release_laws () =
       (match
          Scope.run (fun sw ->
              let acquire n =
-               Resource.acquire_release ~sw
+               Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok n)
                  ~release:(fun n -> add ("release" ^ string_of_int n))
              in
@@ -77,7 +77,7 @@ let release_laws () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Error "acquire")
                   ~release:(fun _ -> add "released"));
              Error "acquire")
@@ -88,7 +88,7 @@ let release_laws () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> add "released"));
              Error "body")
@@ -100,7 +100,7 @@ let release_laws () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> add "released"));
              failwith "body")
@@ -113,11 +113,11 @@ let release_laws () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 1)
                   ~release:(fun _ -> add "first"));
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 2)
                   ~release:(fun _ ->
                     add "second";
@@ -296,7 +296,7 @@ let cancellation_laws () =
                     Eio.Cancel.cancel ctx (Failure "external"));
                 Scope.run (fun sw ->
                     ignore
-                      (Resource.acquire_release ~sw
+                      (Support.acquire_release ~sw
                          ~acquire:(fun () -> Ok ())
                          ~release:(fun () -> released := true));
                     Fun.protect
@@ -320,7 +320,7 @@ let stress_laws () =
                 (List.init n (fun i () ->
                      if Random.State.bool random then Eio.Fiber.yield ();
                      match
-                       Resource.acquire_release ~sw
+                       Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok i)
@@ -417,7 +417,7 @@ let resource_repeat () =
                  incr acquired;
                  Scope.run (fun inner ->
                      ignore
-                       (Resource.acquire_release ~sw:inner
+                       (Support.acquire_release ~sw:inner
                           ~acquire:(fun () -> Ok ())
                           ~release:(fun () -> incr released));
                      Ok ())
@@ -433,11 +433,11 @@ let resource_repeat () =
       (match
          Scope.run (fun sw ->
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 1)
                   ~release:(fun n -> lifo := n :: !lifo));
              ignore
-               (Resource.acquire_release ~sw
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 2)
                   ~release:(fun n -> lifo := n :: !lifo));
              Ok ())
@@ -465,7 +465,7 @@ let nested_timeouts () =
          Scope.run (fun sw ->
              Timeout.timeout ~clock (Duration.ms 10) (fun () ->
                  ignore
-                   (Resource.acquire_release ~sw
+                   (Support.acquire_release ~sw
                       ~acquire:(fun () -> Ok ())
                       ~release:(fun () -> incr calls));
                  Eio.Time.sleep clock 1.;

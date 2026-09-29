@@ -1,193 +1,81 @@
-type 'a outcome = Value of 'a | Raised of exn * Printexc.raw_backtrace
+(* Thin wrappers over Eio's own structured concurrency. No Eta-owned switch: each
+   combinator runs in the caller's cancellation context and Eio cancels and awaits the
+   losers. A typed [Error] leaves a fiber as the boundary's private exception (see
+   [Scope.exit_on_error]) so that Eio's fail-fast machinery treats it like any exception;
+   the boundary turns it back into the [Error] the body returned. Anything else the body
+   raises propagates untouched. *)
 
-let capture f = try Value (f ()) with ex -> Raised (ex, Printexc.get_raw_backtrace ())
+let check ~sw = Eio.Switch.check sw
+let ok_or_end ended f = match f () with Ok value -> value | Error e -> raise (ended e)
 
-let unwrap = function
-  | Value v -> v
-  | Raised (ex, bt) -> Printexc.raise_with_backtrace ex bt
+(* [Eio.Fiber.pair] documents fail-fast but forks its first side as a promise, so a
+   failure there does not cancel the second side (found by the first run of this
+   rewrite: a blocked sibling hung the pair). [Fiber.both] reports through the switch and
+   does cancel, so [par] is [both] with the two results kept in cells. *)
+let par ~sw f g =
+  check ~sw;
+  let left = ref None and right = ref None in
+  Scope.exit_on_error (fun ended ->
+      Eio.Fiber.both
+        (fun () -> left := Some (ok_or_end ended f))
+        (fun () -> right := Some (ok_or_end ended g));
+      (Option.get !left, Option.get !right))
 
-let stopped id = function
-  | Eio.Cancel.Cancelled reason -> (
-      match Interrupt_id.of_exn reason with
-      | Some seen -> Interrupt_id.equal id seen
-      | None -> false)
-  | _ -> false
-
-(* The combinator's workers live on a child switch run in the CALLER's fiber, so they
-   share the caller's cancellation context: cancelling the caller cancels them, and the
-   child switch still awaits them before this returns. [sw] is checked, not forked on —
-   forking on a switch the caller doesn't run in left workers deaf to the caller's
-   cancellation (found by Pie's PTT loop, ncore-a6g1). *)
-let child_run ~sw fn =
-  Eio.Switch.check sw;
-  Eio.Switch.run fn
-
-let stop_other id contexts except =
-  Array.iteri
-    (fun i ctx ->
-      if i <> except then
-        Option.iter
-          (fun c ->
-            (* A branch may have completed before a later branch wins. Eio rejects
-               cancellation of a finished context, even though it was published. *)
-            match Eio.Cancel.get_error c with
-            | Some (Invalid_argument _) -> ()
-            | _ -> Eio.Cancel.cancel c (Interrupt_id.stop id))
-          !ctx)
-    contexts
-
-let race ~sw fs =
-  Eio.Switch.check sw;
-  let tasks = Array.of_list fs in
-  let n = Array.length tasks in
-  if n = 0 then Error (Cause.Concurrent [])
-  else
-    child_run ~sw (fun child ->
-        let result, resolve = Eio.Promise.create () in
-        let contexts = Array.init n (fun _ -> ref None) in
-        let failures = Array.make n None in
-        let remaining = ref n in
-        let settled = ref false in
-        let stop_id = Interrupt_id.create () in
-        let all_failed () =
-          settled := true;
-          let causes = Array.to_list (Array.map Option.get failures) in
-          Eio.Promise.resolve resolve
-            (Error
-               (match causes with
-               | [ cause ] -> cause
-               | causes -> Cause.Concurrent causes))
-        in
-        Array.iteri
-          (fun i f ->
-            if not !settled then
-              Eio.Fiber.fork ~sw:child (fun () ->
-                  Eio.Cancel.sub (fun ctx ->
-                      contexts.(i) := Some ctx;
-                      let outcome = capture f in
-                      match outcome with
-                      | Value (Ok value) when not !settled ->
-                          settled := true;
-                          Eio.Promise.resolve resolve (Ok value);
-                          stop_other stop_id contexts i
-                      | Value (Error error) when not !settled ->
-                          failures.(i) <- Some (Cause.Fail error);
-                          decr remaining;
-                          if !remaining = 0 then all_failed ()
-                      | Raised (ex, _) when !settled && stopped stop_id ex -> ()
-                      | Raised (ex, bt) when not !settled ->
-                          failures.(i) <- Some (Scope.classify ex bt);
-                          decr remaining;
-                          if !remaining = 0 then all_failed ()
-                      | Raised (ex, bt) -> Printexc.raise_with_backtrace ex bt
-                      | Value _ -> ())))
-          tasks;
-        Eio.Promise.await result)
+let both ~sw f g =
+  check ~sw;
+  Scope.exit_on_error (fun ended ->
+      Eio.Fiber.both (fun () -> ok_or_end ended f) (fun () -> ok_or_end ended g))
 
 let all ~sw fs =
-  Eio.Switch.check sw;
+  check ~sw;
   let tasks = Array.of_list fs in
-  let n = Array.length tasks in
-  let defect = ref None in
-  try
-    child_run ~sw (fun child ->
-        let completed, resolve = Eio.Promise.create () in
-        let contexts = Array.init n (fun _ -> ref None) in
-        let values = Array.make n None in
-        let remaining = ref n in
-        let first_failure = ref None in
-        let stop_id = Interrupt_id.create () in
-        let resolved = ref false in
-        let resolve_if_done () =
-          if !remaining = 0 && not !resolved then (
-            resolved := true;
-            Eio.Promise.resolve resolve
-              (match !first_failure with
-              | Some outcome -> outcome
-              | None -> Value (Ok (Array.to_list (Array.map Option.get values)))))
-        in
-        resolve_if_done ();
-        Array.iteri
-          (fun i f ->
-            if !first_failure <> None then (
-              decr remaining;
-              resolve_if_done ())
-            else
-              Eio.Fiber.fork ~sw:child (fun () ->
-                  Eio.Cancel.sub (fun ctx ->
-                      contexts.(i) := Some ctx;
-                      let outcome = capture f in
-                      (match outcome with
-                      | Raised (ex, bt) -> (
-                          match ex with
-                          | Eio.Cancel.Cancelled _ -> ()
-                          | _ -> defect := Some (ex, bt))
-                      | Value _ -> ());
-                      (match outcome with
-                      | Value (Ok value) -> values.(i) <- Some value
-                      | Value (Error error) when !first_failure = None ->
-                          first_failure := Some (Value (Error error));
-                          stop_other stop_id contexts i
-                      | Raised (ex, _) when !first_failure <> None && stopped stop_id ex
-                        ->
-                          ()
-                      | Raised (ex, bt) when !first_failure = None ->
-                          first_failure := Some (Raised (ex, bt));
-                          stop_other stop_id contexts i
-                      | Raised (ex, bt) -> Printexc.raise_with_backtrace ex bt
-                      | Value _ -> ());
-                      decr remaining;
-                      resolve_if_done ())))
-          tasks;
-        unwrap (Eio.Promise.await completed))
-  with Eio.Cancel.Cancelled _ as cancelled -> (
-    match !defect with
-    | Some (ex, bt) -> Printexc.raise_with_backtrace ex bt
-    | None -> raise cancelled)
+  let values = Array.make (Array.length tasks) None in
+  Scope.exit_on_error (fun ended ->
+      Eio.Fiber.all (List.mapi (fun i f () -> values.(i) <- Some (ok_or_end ended f)) fs);
+      Array.to_list (Array.map Option.get values))
 
-type ('a, 'b) side = Left of 'a | Right of 'b
+let for_each ~sw ~concurrency xs f =
+  check ~sw;
+  if concurrency < 1 then invalid_arg "Concurrent.for_each: concurrency must be positive";
+  Scope.exit_on_error (fun ended ->
+      Eio.Fiber.List.map ~max_fibers:concurrency
+        (fun x -> ok_or_end ended (fun () -> f x))
+        xs)
 
-let par ~sw f g =
-  match
-    all ~sw
-      [
-        (fun () -> Stdlib.Result.map (fun x -> Left x) (f ()));
-        (fun () -> Stdlib.Result.map (fun x -> Right x) (g ()));
-      ]
-  with
-  | Ok [ Left a; Right b ] -> Ok (a, b)
-  | Error e -> Error e
-  | Ok _ -> assert false
+let race ~sw fs =
+  check ~sw;
+  match fs with
+  | [] -> Error (Cause.Concurrent [])
+  | _ ->
+      let n = List.length fs in
+      let failures = Array.make n None in
+      let remaining = ref n in
+      Scope.exit_on_error (fun ended ->
+          Eio.Fiber.any
+            (List.mapi
+               (fun i f () ->
+                 match f () with
+                 | Ok value -> value
+                 | Error e ->
+                     failures.(i) <- Some (Cause.Fail e);
+                     decr remaining;
+                     if !remaining > 0 then Eio.Fiber.await_cancel ()
+                     else
+                       raise
+                         (ended
+                            (match Array.to_list (Array.map Option.get failures) with
+                            | [ cause ] -> cause
+                            | causes -> Cause.Concurrent causes)))
+               fs))
 
-let with_background ~sw bg body =
-  Eio.Switch.check sw;
-  child_run ~sw (fun child ->
-      let published, resolve = Eio.Promise.create () in
-      let contexts = Array.init 2 (fun _ -> ref None) in
-      let settled = ref false in
-      let stop_id = Interrupt_id.create () in
-      let publish i outcome =
-        if not !settled then (
-          settled := true;
-          Eio.Promise.resolve resolve outcome;
-          stop_other stop_id contexts i)
-      in
-      Eio.Fiber.fork ~sw:child (fun () ->
-          Eio.Cancel.sub (fun ctx ->
-              contexts.(0) := Some ctx;
-              match capture bg with
-              | Value (Ok ()) -> ()
-              | Value (Error e) -> publish 0 (Value (Error e))
-              | Raised (ex, _) when !settled && stopped stop_id ex -> ()
-              | Raised (ex, bt) when !settled -> Printexc.raise_with_backtrace ex bt
-              | Raised (ex, bt) -> publish 0 (Raised (ex, bt))));
-      if not !settled then
-        Eio.Fiber.fork ~sw:child (fun () ->
-            Eio.Cancel.sub (fun ctx ->
-                contexts.(1) := Some ctx;
-                match capture body with
-                | Value result -> publish 1 (Value result)
-                | Raised (ex, _) when !settled && stopped stop_id ex -> ()
-                | Raised (ex, bt) when !settled -> Printexc.raise_with_backtrace ex bt
-                | Raised (ex, bt) -> publish 1 (Raised (ex, bt))));
-      unwrap (Eio.Promise.await published))
+let race_first ~sw fs =
+  check ~sw;
+  if fs = [] then invalid_arg "Concurrent.race_first: no branches";
+  Eio.Fiber.any (List.map (fun f () -> f ()) fs)
+
+let with_background ~sw background body =
+  Scope.supervised_error ~sw (fun scope ->
+      Scope.fork_error_daemon scope background;
+      (* A background that failed before yielding has already ended the scope. *)
+      Eio.Switch.check (Scope.switch scope);
+      body ())

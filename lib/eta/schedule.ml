@@ -1,4 +1,5 @@
 type ('left, 'right) and_then_output = First_phase of 'left | Second_phase of 'right
+type jitter = Full | Equal | Decorrelated
 
 type (_, _) t =
   | Recurs : int -> ('input, int) t
@@ -23,6 +24,11 @@ type (_, _) t =
   | While_output : ('output -> bool) * ('input, 'output) t -> ('input, 'output) t
   | Jittered : ('input, 'output) t * float * float -> ('input, 'output) t
   | Named : ('input, 'output) t * string -> ('input, 'output) t
+  | Intervals : Duration.t list -> ('input, Duration.t) t
+  | Decorrelated_jitter : Duration.t * Duration.t -> ('input, Duration.t) t
+  | Initial_delay : Duration.t * ('input, 'output) t -> ('input, 'output) t
+  | Cumulative_delay_limit : Duration.t * ('input, 'output) t -> ('input, 'output) t
+  | Jitter_kind : jitter * ('input, 'output) t -> ('input, 'output) t
 
 type ('input, 'output) metadata = {
   input : 'input;
@@ -70,12 +76,30 @@ let and_then a b = And_then (a, b)
 let modify_delay f self = Modify_delay (f, self)
 let while_output f self = While_output (f, self)
 
-let jittered ?(min = 0.8) ?(max = 1.2) self =
-  require_finite_nonnegative ~where:"Schedule.jittered min" min;
-  require_finite_nonnegative ~where:"Schedule.jittered max" max;
-  if min > max then invalid_arg "Schedule.jittered: min exceeds max";
-  Jittered (self, min, max)
+let jittered ?kind ?min ?max self =
+  match kind with
+  | Some kind ->
+      if min <> None || max <> None then
+        invalid_arg "Schedule.jittered: ~kind excludes ~min and ~max";
+      Jitter_kind (kind, self)
+  | None ->
+      let min = Option.value min ~default:0.8 and max = Option.value max ~default:1.2 in
+      require_finite_nonnegative ~where:"Schedule.jittered min" min;
+      require_finite_nonnegative ~where:"Schedule.jittered max" max;
+      if min > max then invalid_arg "Schedule.jittered: min exceeds max";
+      Jittered (self, min, max)
 
+let intervals delays = Intervals delays
+
+let decorrelated_jitter ~min ~max =
+  if Duration.compare min max > 0 then
+    invalid_arg "Schedule.decorrelated_jitter: min exceeds max";
+  Decorrelated_jitter (min, max)
+
+let max_interval cap self = Modify_delay ((fun _ delay -> Duration.min delay cap), self)
+let with_initial_delay delay self = Initial_delay (delay, self)
+let with_no_initial_delay self = Initial_delay (Duration.zero, self)
+let max_retries_by_cumulative_delay limit self = Cumulative_delay_limit (limit, self)
 let named name s = Named (s, name)
 
 let rec pp : type input output. Format.formatter -> (input, output) t -> unit =
@@ -99,6 +123,24 @@ let rec pp : type input output. Format.formatter -> (input, output) t -> unit =
   | While_output (_, s) -> Format.fprintf ppf "WhileOutput(%a)" pp s
   | Jittered (s, lo, hi) -> Format.fprintf ppf "Jittered(%a,%g,%g)" pp s lo hi
   | Named (s, n) -> Format.fprintf ppf "Named(%a, %S)" pp s n
+  | Intervals ds ->
+      Format.fprintf ppf "Intervals(%a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+           Duration.pp)
+        ds
+  | Decorrelated_jitter (lo, hi) ->
+      Format.fprintf ppf "DecorrelatedJitter(%a, %a)" Duration.pp lo Duration.pp hi
+  | Initial_delay (d, s) -> Format.fprintf ppf "InitialDelay(%a, %a)" Duration.pp d pp s
+  | Cumulative_delay_limit (d, s) ->
+      Format.fprintf ppf "CumulativeDelayLimit(%a, %a)" Duration.pp d pp s
+  | Jitter_kind (kind, s) ->
+      Format.fprintf ppf "Jitter(%s, %a)"
+        (match kind with
+        | Full -> "full"
+        | Equal -> "equal"
+        | Decorrelated -> "decorrelated")
+        pp s
 
 let pow_factor f step = f ** float_of_int step
 
@@ -273,6 +315,34 @@ type (_, _) state =
       -> ('input, 'output) state
   | Driver_jittered : ('input, 'output) state * float * float -> ('input, 'output) state
   | Driver_named : ('input, 'output) state -> ('input, 'output) state
+  | Driver_intervals : {
+      remaining : Duration.t list;
+      meta : meta_state;
+    }
+      -> ('input, Duration.t) state
+  | Driver_decorrelated : {
+      min : Duration.t;
+      max : Duration.t;
+      previous : Duration.t;
+      meta : meta_state;
+    }
+      -> ('input, Duration.t) state
+  | Driver_initial_delay :
+      Duration.t * bool * ('input, 'output) state
+      -> ('input, 'output) state
+  | Driver_cumulative : {
+      limit : Duration.t;
+      total : Duration.t;
+      inner : ('input, 'output) state;
+    }
+      -> ('input, 'output) state
+  | Driver_jitter_kind : {
+      kind : jitter;
+      base : Duration.t option;
+      previous : Duration.t option;
+      inner : ('input, 'output) state;
+    }
+      -> ('input, 'output) state
 
 and (_, _) phase =
   | Active : ('input, 'output) state -> ('input, 'output) phase
@@ -305,6 +375,25 @@ let rec state_of_schedule : type input output. (input, output) t -> (input, outp
   | While_output (f, inner) -> Driver_while_output (f, state_of_schedule inner)
   | Jittered (inner, lo, hi) -> Driver_jittered (state_of_schedule inner, lo, hi)
   | Named (inner, _) -> Driver_named (state_of_schedule inner)
+  | Intervals remaining -> Driver_intervals { remaining; meta = initial_meta_state }
+  | Decorrelated_jitter (min, max) ->
+      Driver_decorrelated { min; max; previous = min; meta = initial_meta_state }
+  | Initial_delay (delay, inner) ->
+      Driver_initial_delay (delay, true, state_of_schedule inner)
+  | Cumulative_delay_limit (limit, inner) ->
+      Driver_cumulative { limit; total = Duration.zero; inner = state_of_schedule inner }
+  | Jitter_kind (kind, inner) ->
+      Driver_jitter_kind
+        { kind; base = None; previous = None; inner = state_of_schedule inner }
+
+(* A uniform draw from [lo, hi] milliseconds, both ends reachable. *)
+let uniform_ms random lo hi =
+  if hi <= lo then lo
+  else
+    let drawn =
+      lo + int_of_float (float_of_int (hi - lo) *. Random.State.float random 1.0)
+    in
+    Stdlib.max lo (Stdlib.min hi drawn)
 
 let current_metadata = function Continue metadata | Done metadata -> metadata
 let output_of_decision decision = (current_metadata decision).output
@@ -520,6 +609,60 @@ and step_state : type input output.
   | Driver_named inner ->
       let decision, inner = step_state random ~now_ms ~input inner in
       (decision, Driver_named inner)
+  | Driver_intervals { remaining; meta } -> (
+      let input_meta, meta = next_input_metadata ~now_ms ~input meta in
+      match remaining with
+      | [] ->
+          ( done_ input_meta ~output:Duration.zero,
+            Driver_intervals { remaining = []; meta } )
+      | delay :: rest ->
+          ( continue input_meta ~output:delay ~delay,
+            Driver_intervals { remaining = rest; meta } ))
+  | Driver_decorrelated { min; max; previous; meta } ->
+      let input_meta, meta = next_input_metadata ~now_ms ~input meta in
+      let lo = Duration.to_ms min in
+      let hi = Duration.to_ms (scale_capped previous 3.0) in
+      let drawn = uniform_ms random lo (Stdlib.max lo hi) in
+      let delay = Duration.ms (Stdlib.min drawn (Duration.to_ms max)) in
+      ( continue input_meta ~output:delay ~delay,
+        Driver_decorrelated { min; max; previous = delay; meta } )
+  | Driver_initial_delay (initial, first, inner) ->
+      let decision, inner = step_state random ~now_ms ~input inner in
+      let decision =
+        if first then map_continue_delay decision (fun _ -> initial) else decision
+      in
+      (decision, Driver_initial_delay (initial, false, inner))
+  | Driver_cumulative { limit; total; inner } -> (
+      let decision, inner = step_state random ~now_ms ~input inner in
+      match decision with
+      | Done _ -> (decision, Driver_cumulative { limit; total; inner })
+      | Continue metadata ->
+          let total_after = add_capped total metadata.delay in
+          if Duration.compare total_after limit > 0 then
+            ( Done { metadata with delay = Duration.zero },
+              Driver_cumulative { limit; total; inner } )
+          else (decision, Driver_cumulative { limit; total = total_after; inner }))
+  | Driver_jitter_kind { kind; base; previous; inner } -> (
+      let decision, inner = step_state random ~now_ms ~input inner in
+      match decision with
+      | Done _ -> (decision, Driver_jitter_kind { kind; base; previous; inner })
+      | Continue metadata ->
+          let delay_ms = Duration.to_ms metadata.delay in
+          let base = Option.value base ~default:metadata.delay in
+          let delay =
+            match kind with
+            | Full -> Duration.ms (uniform_ms random 0 delay_ms)
+            | Equal ->
+                let half = delay_ms / 2 in
+                Duration.ms (half + uniform_ms random 0 (delay_ms - half))
+            | Decorrelated ->
+                let lo = Duration.to_ms base in
+                let previous = Option.value previous ~default:base in
+                let hi = Duration.to_ms (scale_capped previous 3.0) in
+                Duration.ms (uniform_ms random lo (Stdlib.max lo hi))
+          in
+          ( Continue { metadata with delay },
+            Driver_jitter_kind { kind; base = Some base; previous = Some delay; inner } ))
 
 type ('input, 'output) driver = {
   random : Random.State.t;
