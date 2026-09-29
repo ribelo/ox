@@ -7,6 +7,27 @@
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
 
 (executable
+ (name wakeup_fixture)
+ (modules wakeup_fixture)
+ (libraries ox_app ox_observability cmdliner eio eio_main unix))
+
+(test
+ (name wakeup)
+ (modules wakeup)
+ (deps wakeup_fixture.exe)
+ (libraries
+  ox_app
+  ox
+  ox_test
+  ox_process
+  ox_observability
+  eio
+  eio_main
+  eio.mock
+  alcotest
+  unix))
+
+(executable
  (name simple_fixture)
  (modules simple_fixture)
  (libraries ox ox_app eio eio_main))

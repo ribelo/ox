@@ -864,7 +864,7 @@ let retry_policy () =
 
 (* ---- nsup-69fi: Schedule vocabulary ------------------------------------------------------ *)
 
-let run_schedule ?random schedule n =
+let run_schedule schedule n =
   let rec go driver i acc =
     if i = 0 then (List.rev acc, false)
     else
@@ -872,7 +872,7 @@ let run_schedule ?random schedule n =
       | Schedule.Continue m, next -> go next (i - 1) (Duration.to_ms m.delay :: acc)
       | Schedule.Done _, _ -> (List.rev acc, true)
   in
-  go (Schedule.start ?random schedule) n []
+  go (Schedule.start schedule) n []
 
 let ms = Duration.ms
 
@@ -906,8 +906,9 @@ let schedule_vocabulary () =
   (* decorrelated jitter: bounded by min and max, and by 3 * the previous delay *)
   let sample () =
     fst
-      (run_schedule ~random:(Random.State.make [| 42 |])
-         (Schedule.decorrelated_jitter ~min:(ms 100) ~max:(ms 1000))
+      (run_schedule
+         (Schedule.decorrelated_jitter ~random:(Random.State.make [| 42 |]) ~min:(ms 100)
+            ~max:(ms 1000))
          300)
   in
   let delays = sample () in
@@ -922,14 +923,18 @@ let schedule_vocabulary () =
       previous := delay)
     delays;
   check_bool "actually varies" true (List.length (List.sort_uniq compare delays) > 20);
-  (match Schedule.decorrelated_jitter ~min:(ms 5) ~max:(ms 1) with
+  (match
+     Schedule.decorrelated_jitter ~random:(Random.State.make [| 42 |]) ~min:(ms 5)
+       ~max:(ms 1)
+   with
   | exception Invalid_argument _ -> ()
   | _ -> Alcotest.fail "reversed decorrelated bounds accepted");
   (* jitter kinds *)
   let kind_samples ?(n = 400) kind base =
     fst
-      (run_schedule ~random:(Random.State.make [| 7 |])
-         (Schedule.jittered ~kind (Schedule.spaced (ms base)))
+      (run_schedule
+         (Schedule.jittered ~random:(Random.State.make [| 7 |]) ~kind
+            (Schedule.spaced (ms base)))
          n)
   in
   let full = kind_samples Schedule.Full 1000 in
@@ -950,13 +955,16 @@ let schedule_vocabulary () =
         (delay >= 100 && delay <= 3 * !previous);
       previous := delay)
     decorrelated;
-  (match Schedule.jittered ~kind:Schedule.Full ~min:0.5 (Schedule.spaced (ms 1)) with
+  (match
+     Schedule.jittered ~random:(Random.State.make [| 7 |]) ~kind:Schedule.Full ~min:0.5
+       (Schedule.spaced (ms 1))
+   with
   | exception Invalid_argument _ -> ()
   | _ -> Alcotest.fail "~kind with ~min accepted");
   (* a finished inner schedule stays finished under a jitter kind *)
   delays_ "jitter kind on a finite schedule" ([ 0 ], true)
-    (run_schedule ~random:(Random.State.make [| 1 |])
-       (Schedule.jittered ~kind:Schedule.Full
+    (run_schedule
+       (Schedule.jittered ~random:(Random.State.make [| 1 |]) ~kind:Schedule.Full
           (Schedule.both (Schedule.recurs 1) (Schedule.spaced (ms 0))))
        5)
 

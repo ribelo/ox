@@ -79,16 +79,18 @@ type jitter =
 (** Ox's jitter kinds (the ones of the AWS backoff article). *)
 
 val jittered :
+  random:Random.State.t ->
   ?kind:jitter -> ?min:float -> ?max:float -> ('input, 'output) t -> ('input, 'output) t
-(** [jittered ~min ~max schedule] multiplies each continue delay by a draw in
+(** [jittered ~random ~min ~max schedule] multiplies each continue delay by a draw in
     [[min, max]]. Bounds must be finite, nonnegative, and [min <= max]; defaults are [0.8]
-    and [1.2]. Equal bounds are valid. [jittered ~kind schedule] instead applies one of
+    and [1.2]. Equal bounds are valid. [jittered ~random ~kind schedule] instead applies one of
     Ox's {!jitter} kinds to each continue delay; [~kind] excludes [~min] and [~max].
     Construction does not step the inner schedule or draw randomness.
     @raise Invalid_argument if a bound is non-finite, negative, or reversed, or if [~kind]
     is combined with [~min] or [~max]. *)
 
-val decorrelated_jitter : min:Duration.t -> max:Duration.t -> ('input, Duration.t) t
+val decorrelated_jitter :
+  random:Random.State.t -> min:Duration.t -> max:Duration.t -> ('input, Duration.t) t
 (** Ox's [decorrelatedJitter]: forever, each delay is a uniform draw in
     [[min, 3 * previous]] capped at [max], starting from [previous = min]; the output is
     the delay. Combine with {!recurs} through {!both} to bound the attempts.
@@ -123,12 +125,13 @@ val pp : Format.formatter -> ('input, 'output) t -> unit
 
 type ('input, 'output) driver
 
-val start : ?random:Random.State.t -> ('input, 'output) t -> ('input, 'output) driver
-(** Start a stateful schedule driver. A jittered schedule ([jittered],
-    {!decorrelated_jitter}, or a {!jitter} kind) draws from [~random]; stepping one
-    without it raises [Invalid_argument]. A schedule that does not draw ignores
-    [~random]. No sleeps, cancellation, or finalizers are involved, and this module does
-    not seed from the system.
+val start : ('input, 'output) t -> ('input, 'output) driver
+(** Start a stateful schedule driver. Jitter constructors require [~random] and capture
+    the supplied state without drawing. Stepping draws from that state; drivers made
+    from the same schedule share it. Pass separate or copied states to constructors
+    when independent random streams are wanted. Missing randomness is a compile error.
+    No sleeps, cancellation, or finalizers are involved, and this module does not seed
+    from the system.
 
     Capabilities (^ncaps-x7z8 ^ncaps-21nk): seeding is [Ox_caps.Cap.random]. The caller
     that wants system randomness passes a state from

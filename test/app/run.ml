@@ -507,7 +507,8 @@ let test_default_path_absent () =
           let status = await child in
           let out = printed child and err = errors child in
           check_int "^napp-9x0s the real config check exits zero" 0 (code_of status);
-          check_string "no diagnostics" "" err;
+          (* ^nwake-y4cx: config/client commands start the ticker silently. *)
+          check_string "config check keeps stderr clean" "" err;
           expect_part out "\"port\":4242";
           (* An explicit --config that is not there is still an error naming it. *)
           let child = spawn [ fixture; "config"; "check"; "--config"; missing ] in

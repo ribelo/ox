@@ -328,9 +328,10 @@ let cadence_cases () =
       let start = Eio.Time.now clock in
       attempts := 0;
       let result =
-        Retry.retry ~clock ~random:(Random.State.make [| 1 |])
+        Retry.retry ~clock
           (Schedule.both (Schedule.recurs 4)
-             (Schedule.jittered ~min:0.5 ~max:1.5 (Schedule.spaced (Duration.ms 10))))
+             (Schedule.jittered ~random:(Random.State.make [| 1 |]) ~min:0.5 ~max:1.5
+                (Schedule.spaced (Duration.ms 10))))
           (fun () ->
             incr attempts;
             Error !attempts)

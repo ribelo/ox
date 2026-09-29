@@ -16,7 +16,6 @@ val default_policy : ('a, 'e) policy
 val retry :
   clock:_ Eio.Time.clock ->
   ?policy:('a, 'e) policy ->
-  ?random:Random.State.t ->
   (('a, 'e) result, 'o) Schedule.t ->
   (unit -> ('a, 'e) result) @ local ->
   ('a, 'e) result
@@ -24,12 +23,11 @@ val retry :
     [Error] returns at once; any other attempt asks the schedule (its input is the
     attempt's [result]) whether to continue, sleeps the schedule's delay on [clock] and
     runs again. When the schedule ends the last attempt's result is returned unchanged,
-    [Ok] included. [~random] is passed to {!Schedule.start}: a jittered schedule requires
-    it. Sleeping is promptly cancellable; no switch or finalizer is created. *)
+    [Ok] included. Jittered schedules capture their required random source when
+    constructed. Sleeping is promptly cancellable; no switch or finalizer is created. *)
 
 val repeat :
   clock:_ Eio.Time.clock ->
-  ?random:Random.State.t ->
   ('a, 'o) Schedule.t ->
   (unit -> ('a, 'e) result) @ local ->
   ('o, 'e) result

@@ -217,6 +217,7 @@ val run_for_test :
 *)
 
 val run_with_args :
+  ?wakeup_ms:int ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands_with_env:
@@ -268,9 +269,11 @@ val run_with_args :
     enforce regular-file and byte limits using {!Config.read_regular}. Reader failures
     must distinguish [`Missing] from [`Unreadable]. The application still owns live
     reload. Its CLI options and owned-code builder match {!run_for_test_with_args}.
-    ^napp-ytqk ^napp-x11e ^napp-ersz ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt *)
+    [wakeup_ms] selects the same outer-scope ticker as {!run}. ^napp-ytqk ^napp-x11e
+    ^napp-ersz ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt *)
 
 val run :
+  ?wakeup_ms:int ->
   ?commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
   ?exit_code:('err -> int) ->
@@ -314,17 +317,51 @@ val run :
     [exit_code] maps a typed failure of the program to the process's exit code (default
     [(fun _ -> 1)]): Ox's `OxApp.WithEitherErrors.handleError`. A defect, a foreign
     interruption or a release failure still exits 2, and a stop the Door requested
-    (SIGINT, SIGTERM) exits 0, Ox's default `interruptedExitCode`. ^nfloor-6n2e *)
+    (SIGINT, SIGTERM) exits 0, Ox's default `interruptedExitCode`. ^nfloor-6n2e
+
+    [wakeup_ms] selects the posix wake-up interval, ahead of [OX_POSIX_WAKEUP_MS] and the
+    50 ms default. Zero disables it; negative or malformed values are rejected.
+    {!Eio.Stdenv.backend_id} detects the actual backend, including automatic fallback:
+    other backends never start a ticker. The service program logs the backend and
+    effective interval once through its journal logger, subject to [log_level] and
+    [journal_level]. Owned/client commands start the ticker silently and keep stderr
+    clean. Its outer switch outlives the program's cancellation and all protected cleanup
+    (^nwake-27rc, ^nwake-y4cx). *)
+
+val posix_wakeup :
+  sw:Eio.Switch.t ->
+  ?interval_ms:int ->
+  ?logger:Ox_observability.Logger.t ->
+  < backend_id : string
+  ; clock : _ Eio.Time.clock
+  ; mono_clock : _ Eio.Time.Mono.t
+  ; stderr : _ Eio.Flow.sink
+  ; .. > ->
+  unit
+(** Start a switch-owned daemon only when {!Eio.Stdenv.backend_id} is ["posix"].
+    [interval_ms] overrides [OX_POSIX_WAKEUP_MS]; the default is 50 ms and zero disables
+    the daemon. Negative or malformed intervals raise [Invalid_argument]. When [logger] is
+    supplied, log the actual backend and effective interval once through it, subject to
+    its filters; other backends log an interval of zero. Without [logger], start silently
+    and leave stderr untouched.
+
+    The Door uses this on its outer switch. Callers with their own Eio runtime must
+    likewise start it before the inner program/cancellation scope and close its switch
+    only after that scope's protected cleanups return. ^nwake-27rc ^nwake-y4cx *)
 
 val with_powerbox : (Ox_caps.Cap.all_caps -> 'a) -> 'a
 (** Mint this process's powerbox and pass it to [f]. For an entry that already owns its
     CLI and runtime, and so does not use {!run}: grip's commands stay grip's parser, and
     its OTLP worker keeps its own [Eio_main] on a systhread (^grpcap-4kdm). Does not start
-    Eio, parse arguments, or install signal handlers. Call it once, from the process entry
-    ([exit (Ox_app.with_powerbox ...)] is the entry form the gate allows), and pass the
-    result down. A library does not mint. ^ncaps-0mvw *)
+    Eio, parse arguments, install signal handlers, or start a wake-up ticker. A caller
+    that starts its own Eio runtime and spawns processes on posix must use {!posix_wakeup}
+    on an outer switch that outlives its program's cancellation and protected cleanup.
+    Call it once, from the process entry ([exit (Ox_app.with_powerbox ...)] is the entry
+    form the gate allows), and pass the result down. A library does not mint. ^ncaps-0mvw
+*)
 
 val run_simple :
+  ?wakeup_ms:int ->
   ?exit_code:('err -> int) ->
   ?log_level:Ox_observability.Logger.level ->
   ?journal_level:Ox_observability.Logger.level ->
@@ -340,4 +377,5 @@ val run_simple :
     run in reverse order and the Door returns only afterwards. A typed failure exits
     through [exit_code] (default 1); a defect is rendered as a full [Cause] on stderr and
     exits 2 where Ox's [Simple] prints a stack trace and exits 1, so that a defect can be
-    told from a typed failure. ^nfloor-6n2e *)
+    told from a typed failure. [wakeup_ms] follows the selection and outer-scope lifetime
+    of {!run}. ^nfloor-6n2e *)

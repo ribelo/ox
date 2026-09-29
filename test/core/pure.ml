@@ -4,14 +4,14 @@ let dur_ms = Duration.ms
 let some_dur = Alcotest.option (Alcotest.testable Duration.pp Duration.equal)
 let dur = Alcotest.testable Duration.pp Duration.equal
 
-let next_delay ?random ?(now_ms = 0) ?(input = ()) schedule ~step =
+let next_delay ?(now_ms = 0) ?(input = ()) schedule ~step =
   let rec advance driver remaining =
     match Schedule.next ~now_ms ~input driver with
     | None -> None
     | Some (metadata, driver) ->
         if remaining <= 0 then Some metadata.delay else advance driver (remaining - 1)
   in
-  advance (Schedule.start ?random schedule) step
+  advance (Schedule.start schedule) step
 
 let next_continue ?(now_ms = 0) ?(input = ()) driver =
   match Schedule.next ~now_ms ~input driver with
@@ -267,13 +267,14 @@ let test_exponential_accepts_zero_signed_zero_unit_decay () =
 
 let test_jittered_rejects_invalid_bounds_at_construction () =
   let inner = Schedule.spaced (Duration.ms 10) in
+  let random = Random.State.make [| 17 |] in
   let reject_min label min =
     Alcotest.check_raises label jitter_min_exn (fun () ->
-        ignore (Schedule.jittered ~min ~max:1.0 inner))
+        ignore (Schedule.jittered ~random ~min ~max:1.0 inner))
   in
   let reject_max label max =
     Alcotest.check_raises label jitter_max_exn (fun () ->
-        ignore (Schedule.jittered ~min:0.0 ~max inner))
+        ignore (Schedule.jittered ~random ~min:0.0 ~max inner))
   in
   reject_min "min nan" nan;
   reject_min "min +inf" infinity;
@@ -284,55 +285,40 @@ let test_jittered_rejects_invalid_bounds_at_construction () =
   reject_max "max -inf" neg_infinity;
   reject_max "max negative" (-0.1);
   Alcotest.check_raises "reversed" jitter_reversed_exn (fun () ->
-      ignore (Schedule.jittered ~min:1.2 ~max:0.8 inner))
+      ignore (Schedule.jittered ~random ~min:1.2 ~max:0.8 inner))
 
 let test_jittered_accepts_equal_signed_zero_and_defaults () =
   let inner = Schedule.spaced (Duration.ms 100) in
+  let random = Random.State.make [| 17 |] in
   Alcotest.(check some_dur)
     "equal bounds"
     (Some (Duration.ms 100))
-    (next_delay ~random:(Random.State.make [| 0 |])
-       (Schedule.jittered ~min:1.0 ~max:1.0 inner)
-       ~step:0);
+    (next_delay (Schedule.jittered ~random ~min:1.0 ~max:1.0 inner) ~step:0);
   Alcotest.(check some_dur)
     "signed zero bounds" (Some Duration.zero)
-    (next_delay ~random:(Random.State.make [| 0 |])
-       (Schedule.jittered ~min:(-0.0) ~max:(-0.0) inner)
-       ~step:0);
-  let random = (fun seed -> Stdlib.Random.State.make [| seed |]) 17 in
+    (next_delay (Schedule.jittered ~random ~min:(-0.0) ~max:(-0.0) inner) ~step:0);
   Alcotest.(check bool)
     "defaults construct" true
-    (match next_delay ~random (Schedule.jittered inner) ~step:0 with
+    (match next_delay (Schedule.jittered ~random inner) ~step:0 with
     | Some _ -> true
     | None -> false)
 
 let test_jittered_omitted_bounds_match_explicit_defaults () =
   let inner = Schedule.spaced (Duration.ms 100) in
-  let delay seed schedule =
-    next_delay
-      ~random:((fun seed -> Stdlib.Random.State.make [| seed |]) seed)
-      schedule ~step:0
+  let delay ?min ?max () =
+    let random = Random.State.make [| 17 |] in
+    next_delay (Schedule.jittered ~random ?min ?max inner) ~step:0
   in
-  let seed = 17 in
-  let explicit = Schedule.jittered ~min:0.8 ~max:1.2 inner in
-  let explicit_delay = delay seed explicit in
-  Alcotest.(check (option dur))
-    "both omitted" explicit_delay
-    (delay seed (Schedule.jittered inner));
-  Alcotest.(check (option dur))
-    "min omitted uses 0.8" explicit_delay
-    (delay seed (Schedule.jittered ~max:1.2 inner));
-  Alcotest.(check (option dur))
-    "max omitted uses 1.2" explicit_delay
-    (delay seed (Schedule.jittered ~min:0.8 inner));
+  let explicit_delay = delay ~min:0.8 ~max:1.2 () in
+  Alcotest.(check (option dur)) "both omitted" explicit_delay (delay ());
+  Alcotest.(check (option dur)) "min omitted uses 0.8" explicit_delay (delay ~max:1.2 ());
+  Alcotest.(check (option dur)) "max omitted uses 1.2" explicit_delay (delay ~min:0.8 ());
   Alcotest.(check bool)
     "omitted min ≠ wrong min 0.0" true
-    (delay seed (Schedule.jittered ~max:1.2 inner)
-    <> delay seed (Schedule.jittered ~min:0.0 ~max:1.2 inner));
+    (delay ~max:1.2 () <> delay ~min:0.0 ~max:1.2 ());
   Alcotest.(check bool)
     "omitted max ≠ wrong max 2.0" true
-    (delay seed (Schedule.jittered ~min:0.8 inner)
-    <> delay seed (Schedule.jittered ~min:0.8 ~max:2.0 inner))
+    (delay ~min:0.8 () <> delay ~min:0.8 ~max:2.0 ())
 
 let test_jittered_construction_does_not_run_pipeline () =
   let calls = ref 0 in
@@ -342,23 +328,30 @@ let test_jittered_construction_does_not_run_pipeline () =
         incr calls;
         output < 10)
   in
+  let random = Random.State.make [| 17 |] in
   Alcotest.check_raises "nan min skips inner" jitter_min_exn (fun () ->
-      ignore (Schedule.jittered ~min:nan ~max:1.0 inner));
+      ignore (Schedule.jittered ~random ~min:nan ~max:1.0 inner));
   Alcotest.(check int) "callback unused at construction" 0 !calls;
-  let random = (fun seed -> Stdlib.Random.State.make [| seed |]) 17 in
   Alcotest.check_raises "nan max skips random" jitter_max_exn (fun () ->
-      ignore (Schedule.jittered ~min:0.5 ~max:nan inner));
-  let after_reject = Stdlib.Random.State.float random 1.0 in
-  let fresh =
-    Stdlib.Random.State.float ((fun seed -> Stdlib.Random.State.make [| seed |]) 17) 1.0
-  in
-  Alcotest.(check (float 0.0)) "construction did not draw" fresh after_reject;
-  let valid = Schedule.jittered ~min:1.0 ~max:2.0 inner in
-  let random = (fun seed -> Stdlib.Random.State.make [| seed |]) 17 in
-  ignore (next_delay ~random valid ~step:0);
+      ignore (Schedule.jittered ~random ~min:0.5 ~max:nan inner));
+  let fresh = Random.State.float (Random.State.make [| 17 |]) 1.0 in
+  Alcotest.(check (float 0.0))
+    "rejected construction did not draw" fresh
+    (Random.State.float random 1.0);
+  let random = Random.State.make [| 17 |] in
+  let expected = Random.State.copy random in
+  let valid = Schedule.jittered ~random ~min:1.0 ~max:2.0 inner in
+  (* nwake-8qx5: construction and starting do not consume the required state. *)
+  let driver = Schedule.start valid in
+  Alcotest.(check (float 0.0))
+    "valid construction and start did not draw"
+    (Random.State.float expected 1.0)
+    (Random.State.float random 1.0);
+  ignore (Schedule.next ~now_ms:0 ~input:() driver);
   Alcotest.(check bool) "valid step invoked callback" true (!calls > 0);
-  let after_step = Stdlib.Random.State.float random 1.0 in
-  Alcotest.(check bool) "valid step drew random" true (after_step <> fresh)
+  Alcotest.(check bool)
+    "valid step drew random" true
+    (Random.State.float random 1.0 <> Random.State.float expected 1.0)
 
 let collect_with_now schedule nows =
   let rec loop driver acc = function
@@ -752,23 +745,19 @@ let test_schedule_and_then_offsets_second_phase () =
   let jittered =
     Schedule.and_then (Schedule.recurs 2)
       (Schedule.exponential ~factor:2.0 (Duration.ms 100))
-    |> Schedule.jittered ~min:1.0 ~max:1.0
+    |> Schedule.jittered ~random:(Random.State.make [| 0 |]) ~min:1.0 ~max:1.0
   in
   Alcotest.(check some_dur)
     "jittered wraps second phase step 0"
     (Some (Duration.ms 100))
-    (next_delay ~random:(Random.State.make [| 0 |]) jittered ~step:2)
+    (next_delay jittered ~step:2)
 
 let test_schedule_jittered_stays_inside_multiplier_bounds () =
   let schedule =
-    Schedule.spaced (Duration.ms 100) |> Schedule.jittered ~min:0.5 ~max:1.5
+    Schedule.spaced (Duration.ms 100)
+    |> Schedule.jittered ~random:(Random.State.make [| 23 |]) ~min:0.5 ~max:1.5
   in
-  let driver =
-    ref
-      (Schedule.start
-         ~random:((fun seed -> Stdlib.Random.State.make [| seed |]) 23)
-         schedule)
-  in
+  let driver = ref (Schedule.start schedule) in
   for step = 0 to 99 do
     match Schedule.next ~now_ms:0 ~input:() !driver with
     | None -> Alcotest.fail "jittered spaced schedule terminated"
@@ -786,14 +775,11 @@ let test_schedule_jittered_stays_inside_multiplier_bounds () =
 
 let test_schedule_jittered_exponential_does_not_raise () =
   let schedule =
-    Schedule.(jittered ~min:1.1 ~max:1.2 (exponential ~factor:2.0 (Duration.seconds 1)))
+    Schedule.(
+      jittered ~random:(Random.State.make [| 7 |]) ~min:1.1 ~max:1.2
+        (exponential ~factor:2.0 (Duration.seconds 1)))
   in
-  let driver =
-    ref
-      (Schedule.start
-         ~random:((fun seed -> Stdlib.Random.State.make [| seed |]) 7)
-         schedule)
-  in
+  let driver = ref (Schedule.start schedule) in
   for _ = 1 to 80 do
     match Schedule.next ~now_ms:0 ~input:() !driver with
     | Some (_, next_driver) -> driver := next_driver
@@ -802,12 +788,29 @@ let test_schedule_jittered_exponential_does_not_raise () =
   Alcotest.(check bool) "advancing the schedule never raised" true true
 
 let test_schedule_jittered_uses_explicit_random () =
-  let schedule = Schedule.jittered (Schedule.spaced (Duration.ms 100)) in
-  let seed () = Stdlib.Random.State.make [| 17 |] in
-  Alcotest.(check some_dur)
-    "seed repeatable"
-    (next_delay ~random:(seed ()) schedule ~step:0)
-    (next_delay ~random:(seed ()) schedule ~step:0)
+  let delay () =
+    let random = Random.State.make [| 17 |] in
+    next_delay (Schedule.jittered ~random (Schedule.spaced (Duration.ms 100))) ~step:0
+  in
+  Alcotest.(check some_dur) "seed repeatable nwake-8qx5" (delay ()) (delay ());
+  let make () =
+    Schedule.jittered ~random:(Random.State.make [| 17 |])
+      (Schedule.spaced (Duration.ms 100))
+  in
+  let advance driver =
+    match Schedule.next ~now_ms:0 ~input:() driver with
+    | Some (meta, driver) -> (meta.delay, driver)
+    | None -> Alcotest.fail "jittered spaced schedule terminated"
+  in
+  let shared = make () in
+  let first = Schedule.start shared and second = Schedule.start shared in
+  let expected_first, expected = advance (Schedule.start (make ())) in
+  let expected_second, _ = advance expected in
+  let actual_first, _ = advance first in
+  let actual_second, _ = advance second in
+  Alcotest.(check dur) "first driver uses captured source" expected_first actual_first;
+  Alcotest.(check dur)
+    "second driver shares captured source" expected_second actual_second
 
 let tests =
   [

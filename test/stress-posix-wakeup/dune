@@ -1,0 +1,21 @@
+(executable
+ (name reap)
+ (modules reap)
+ (libraries ox_app eio eio_main))
+
+(executable
+ (name plain)
+ (modules plain)
+ (libraries eio_main))
+
+(rule
+ (alias stress-posix-wakeup)
+ (deps stress.sh)
+ (action
+  (run sh %{dep:stress.sh} %{exe:reap.exe} 50 50)))
+
+(rule
+ (alias stress-posix-wakeup-disabled)
+ (deps stress.sh)
+ (action
+  (run sh %{dep:stress.sh} %{exe:reap.exe} 50 0)))

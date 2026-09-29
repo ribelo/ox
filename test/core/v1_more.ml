@@ -7,10 +7,10 @@ let check_float = Alcotest.(check (float 0.00001))
 let schedule_variants () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
-      let check ?random name schedule expected_time =
+      let check name schedule expected_time =
         let start = Eio.Time.now clock and tries = ref 0 in
         let result =
-          Retry.retry ~clock ?random
+          Retry.retry ~clock
             (Schedule.both (Schedule.recurs 3) schedule)
             (fun () ->
               incr tries;
@@ -25,9 +25,9 @@ let schedule_variants () =
         0.04;
       check "retry uses windowed boundaries" (Schedule.windowed (Duration.ms 10)) 0.03;
       check "retry uses fixed cadence" (Schedule.fixed (Duration.ms 10)) 0.03;
-      check ~random:(Random.State.make [| 1 |])
-        "retry jittered schedule with fixed bounds"
-        (Schedule.jittered ~min:1. ~max:1. (Schedule.spaced (Duration.ms 10)))
+      check "retry jittered schedule with fixed bounds"
+        (Schedule.jittered ~random:(Random.State.make [| 1 |]) ~min:1. ~max:1.
+           (Schedule.spaced (Duration.ms 10)))
         0.03;
       let seen = ref [] in
       let result =

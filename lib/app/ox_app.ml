@@ -257,75 +257,137 @@ let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?doc ?validati
     ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
       program env settings sw)
 
-let run_with_args ?commands ?config_commands ?config_commands_with_env ?commands_with_env
-    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?interrupt_exit ?doc ?version
-    ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
-    ?read_file ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name
-    ~config ~pp_err program =
+(* ^nwake-27rc ^nwake-y4cx: inspect the environment returned by the backend, not
+   EIO_BACKEND, which may be absent when Eio_main falls back from linux to posix. *)
+let posix_wakeup_choice ?interval_ms env =
+  let interval_ms =
+    match interval_ms with
+    | Some interval -> interval
+    | None -> (
+        match Sys.getenv_opt "OX_POSIX_WAKEUP_MS" with
+        | None -> 50
+        | Some raw -> (
+            match int_of_string_opt raw with
+            | Some interval -> interval
+            | None ->
+                invalid_arg "Ox_app: OX_POSIX_WAKEUP_MS must be a nonnegative integer"))
+  in
+  if interval_ms < 0 then invalid_arg "Ox_app: wakeup interval must be nonnegative";
+  let backend = Eio.Stdenv.backend_id env in
+  (backend, if backend = "posix" then interval_ms else 0)
+
+let log_posix_wakeup logger (backend, interval_ms) =
+  Ox_observability.Logger.info logger
+    ~fields:
+      [
+        ("backend", Ox_observability.Logger.String backend);
+        ("wakeup_ms", Ox_observability.Logger.Int interval_ms);
+      ]
+    "posix wakeup"
+
+let posix_wakeup ~sw ?interval_ms ?logger env =
+  let choice = posix_wakeup_choice ?interval_ms env in
+  Option.iter (fun logger -> log_posix_wakeup logger choice) logger;
+  let _, interval_ms = choice in
+  if interval_ms > 0 then
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        let rec tick () =
+          Eio.Time.sleep env#clock (float_of_int interval_ms /. 1000.);
+          tick ()
+        in
+        tick ())
+
+let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_env
+    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
+    ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
+    ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err program =
   Eio_main.run (fun env ->
-      let signal = Atomic.make 0 in
-      let signal_changed = Eio.Condition.create () in
-      let on_signal signo =
-        Atomic.set signal signo;
-        Eio.Condition.broadcast signal_changed
-      in
-      (* Eio condition variables are domain-local, so this single-domain Door
+      (* The daemon belongs to this OUTER switch. SIGTERM fails only the inner
+         program switch: its Cancel.protect cleanups can still await children
+         while this timer keeps ppoll bounded. *)
+      Eio.Switch.run (fun wakeup_sw ->
+          let choice = posix_wakeup_choice ?interval_ms:wakeup_ms env in
+          posix_wakeup ~sw:wakeup_sw ~interval_ms:(snd choice) env;
+          let journal = Ox_observability.Logger.Reporter.journal env#stderr in
+          let wakeup_journal =
+            match journal_level with
+            | None -> journal
+            | Some level -> Ox_observability.Logger.Reporter.at_least level journal
+          in
+          let wakeup_logger =
+            Ox_observability.Logger.create ~service:name ~clock:env#clock
+              ~mono_clock:env#mono_clock ?level:log_level ~reporter:wakeup_journal ()
+          in
+          (* ^nwake-27rc: only the service program logs its startup choice, through
+             the filtered journal alone. Owned/client verbs keep stderr clean. *)
+          let program door_env source settings args sw =
+            log_posix_wakeup wakeup_logger choice;
+            program door_env source settings args sw
+          in
+          let signal = Atomic.make 0 in
+          let signal_changed = Eio.Condition.create () in
+          let on_signal signo =
+            Atomic.set signal signo;
+            Eio.Condition.broadcast signal_changed
+          in
+          (* Eio condition variables are domain-local, so this single-domain Door
        installs its handler with Sys.signal rather than Sys.Safe.signal, which
        requires a portable callback. *)
-      let set_signal = (Sys.signal [@alert "-unsafe_multidomain"]) in
-      let old_int = set_signal Sys.sigint (Sys.Signal_handle on_signal) in
-      let old_term = set_signal Sys.sigterm (Sys.Signal_handle on_signal) in
-      Fun.protect
-        ~finally:(fun () ->
-          ignore (set_signal Sys.sigint old_int);
-          ignore (set_signal Sys.sigterm old_term))
-        (fun () ->
-          let on_switch sw =
-            let sigint_id = Interrupt_id.create ()
-            and sigterm_id = Interrupt_id.create () in
-            Eio.Fiber.fork_daemon ~sw (fun () ->
-                (* loop_no_mutex guards the atomic check / await_no_mutex boundary
+          let set_signal = (Sys.signal [@alert "-unsafe_multidomain"]) in
+          let old_int = set_signal Sys.sigint (Sys.Signal_handle on_signal) in
+          let old_term = set_signal Sys.sigterm (Sys.Signal_handle on_signal) in
+          Fun.protect
+            ~finally:(fun () ->
+              ignore (set_signal Sys.sigint old_int);
+              ignore (set_signal Sys.sigterm old_term))
+            (fun () ->
+              let on_switch sw =
+                let sigint_id = Interrupt_id.create ()
+                and sigterm_id = Interrupt_id.create () in
+                Eio.Fiber.fork_daemon ~sw (fun () ->
+                    (* loop_no_mutex guards the atomic check / await_no_mutex boundary
              against a signal arriving just before the fiber suspends. *)
-                let signo =
-                  Eio.Condition.loop_no_mutex signal_changed (fun () ->
-                      match Atomic.get signal with 0 -> None | signo -> Some signo)
-                in
-                request_stop ~sw (if signo = Sys.sigint then sigint_id else sigterm_id);
-                `Stop_daemon)
-          in
-          (* ^napp-9x0s: nothing at a path is a read outcome, not a message, because the
+                    let signo =
+                      Eio.Condition.loop_no_mutex signal_changed (fun () ->
+                          match Atomic.get signal with 0 -> None | signo -> Some signo)
+                    in
+                    request_stop ~sw
+                      (if signo = Sys.sigint then sigint_id else sigterm_id);
+                    `Stop_daemon)
+              in
+              (* ^napp-9x0s: nothing at a path is a read outcome, not a message, because the
              Door's own default path may be absent — Config.load decodes it as the empty
              document — while a file that is there and cannot be read is an error at
              either path. *)
-          let read path =
-            match read_file with
-            | Some reader -> reader env path
-            | None -> (
-                try Ok (Eio.Path.load Eio.Path.(env#fs / path)) with
-                | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
-                | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn)))
-          in
-          run_for_test_with_args ?commands ?config_commands ?config_commands_with_env
-            ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
-            ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
-            ?service_command ?config_file ?missing ?validate ?validate_source ?telemetry
-            ?telemetry_result ~service_args ~on_switch ~env
-            ~journal:(Ox_observability.Logger.Reporter.journal env#stderr)
-            ~name ~config ~pp_err ~getenv:Sys.getenv_opt ~read
-            ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
-            ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
-            ~argv:Sys.argv program))
+              let read path =
+                match read_file with
+                | Some reader -> reader env path
+                | None -> (
+                    try Ok (Eio.Path.load Eio.Path.(env#fs / path)) with
+                    | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
+                    | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn)))
+              in
+              run_for_test_with_args ?commands ?config_commands ?config_commands_with_env
+                ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
+                ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
+                ?service_command ?config_file ?missing ?validate ?validate_source
+                ?telemetry ?telemetry_result ~service_args ~on_switch ~env ~journal ~name
+                ~config ~pp_err ~getenv:Sys.getenv_opt ~read
+                ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
+                ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
+                ~argv:Sys.argv program)))
 
-let run ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
+let run ?wakeup_ms ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
     ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
     ?validate_source ?telemetry ?telemetry_result ~name ~config ~pp_err program =
-  run_with_args ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
-    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
+  run_with_args ?wakeup_ms ?commands ?config_commands ?exit_code ?doc ?validation_exit
+    ?log_level ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
     ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
     ~name ~config ~pp_err (fun env _source settings () sw -> program env settings sw)
 
 let with_powerbox f = f ((Ox_caps_door.powerbox [@alert "-mint"]) ())
 
-let run_simple ?exit_code ?log_level ?journal_level ~name ~pp_err program =
-  run ?exit_code ?log_level ?journal_level ~name ~config:Config.none ~pp_err
+let run_simple ?wakeup_ms ?exit_code ?log_level ?journal_level ~name ~pp_err program =
+  run ?wakeup_ms ?exit_code ?log_level ?journal_level ~name ~config:Config.none ~pp_err
     (fun env () sw -> program env sw)
