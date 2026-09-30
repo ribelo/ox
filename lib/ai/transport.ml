@@ -112,11 +112,12 @@ let status_error ~max_request_bytes ~length ~retry_after status =
         status = Some status;
       }
 
-let attempt ~http ~url ~authorization ~body ~deadline ~max_response_bytes =
+let attempt ~http ~url ~authorization ~body ~deadline ?response_idle ~max_response_bytes
+    () =
   match
     Ox_http.Client.request http ~method_:"POST" ~url
       ~headers:(("Content-Type", "application/json") :: authorization)
-      ~body ~deadline ~max_body_bytes:max_response_bytes ()
+      ~body ~deadline ?response_idle ~max_body_bytes:max_response_bytes ()
   with
   | Ok response -> Ok (response.Ox_http.Client.status, response.headers, response.body)
   | Error error -> Error (map_error ~max_response_bytes error)
@@ -142,11 +143,12 @@ type verdict = Reply of response | Retry of Error.t | Final of Error.t
    {!Ox.Timeout.timeout}. [timeout] caps one attempt's read so a hung peer cannot eat the
    whole budget. *)
 let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-    ~max_request_bytes ~max_response_bytes ~length ~attempts =
+    ?response_idle ~max_request_bytes ~max_response_bytes ~length ~attempts () =
   let verdict =
     match
       attempt ~http ~url:endpoint ~authorization ~body ~max_response_bytes
         ~deadline:(Ox.Duration.min deadline timeout)
+        ?response_idle ()
     with
     | Ok (status, _, body) when status >= 200 && status < 300 -> Reply { status; body }
     | Ok (status, headers, _) ->
@@ -172,9 +174,10 @@ let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeo
         wait ~clock ~logger backoff;
         run ~http ~clock ~logger ~endpoint ~authorization ~body
           ~deadline:(Ox.Duration.subtract deadline backoff)
-          ~timeout ~max_request_bytes ~max_response_bytes ~length ~attempts:(attempts - 1))
+          ~timeout ?response_idle ~max_request_bytes ~max_response_bytes ~length
+          ~attempts:(attempts - 1) ())
 
-let post_json ~http ~clock ~logger ?(timeout = default_timeout)
+let post_json ~http ~clock ~logger ?(timeout = default_timeout) ?response_idle
     ?(max_request_bytes = default_max_request_bytes)
     ?(max_response_bytes = default_max_response_bytes) ?(max_attempts = max_attempts)
     ~endpoint ~authorization ~body ~deadline () =
@@ -188,4 +191,5 @@ let post_json ~http ~clock ~logger ?(timeout = default_timeout)
   else
     Ox.Timeout.timeout ~clock deadline (fun () ->
         run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-          ~max_request_bytes ~max_response_bytes ~length ~attempts:max_attempts)
+          ?response_idle ~max_request_bytes ~max_response_bytes ~length
+          ~attempts:max_attempts ())

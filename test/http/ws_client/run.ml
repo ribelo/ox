@@ -221,18 +221,87 @@ let test_bad_accept () =
       | _ -> Alcotest.fail "expected invalid accept rejection")
 
 let test_timeout () =
-  (* ^nws-b9q4: timeout spans the response wait. *)
+  (* ^nws-b9q4 ^oxpie-g2x6: a stalled HTTP upgrade times out and closes its socket. *)
+  let peer_closed = ref false in
   serve
     (fun env flow ->
       ignore (request flow);
-      Eio.Time.sleep env#clock 0.15)
+      Eio.Time.with_timeout_exn env#clock 1. (fun () ->
+          try ignore (Eio.Flow.single_read flow (Cstruct.create 1))
+          with End_of_file -> peer_closed := true))
     (fun env sw url ->
       match
         W.connect ~sw ~net:env#net ~clock:env#clock
-          ~establishment_timeout:(Ox.Duration.ms 20) url
+          ~establishment_timeout:(Ox.Duration.ms 60) url
       with
       | Error `Timeout -> ()
-      | _ -> Alcotest.fail "upgrade timeout expected")
+      | _ -> Alcotest.fail "upgrade timeout expected");
+  Alcotest.(check bool) "upgrade timeout closed peer socket" true !peer_closed
+
+let test_dial_timeout () =
+  (* ^oxpie-g2x6: the same establishment budget includes DNS and TCP, not just upgrade. *)
+  List.iter
+    (fun stall_dns ->
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let net = Eio_mock.Net.make "establishment" in
+              let cancelled = ref false in
+              let stall () =
+                Fun.protect ~finally:(fun () -> cancelled := true) Eio.Fiber.await_cancel
+              in
+              if stall_dns then Eio_mock.Net.on_getaddrinfo net [ `Run stall ]
+              else (
+                Eio_mock.Net.on_getaddrinfo net [ `Return [ `Tcp (local, 80) ] ];
+                Eio_mock.Net.on_connect net [ `Run stall ]);
+              (match
+                 W.connect ~sw ~net ~clock:env#clock
+                   ~establishment_timeout:(Ox.Duration.ms 20) "ws://localhost/realtime"
+               with
+              | Error `Timeout -> ()
+              | _ -> Alcotest.fail "dial timeout expected");
+              Alcotest.(check bool) "dial work cancelled" true !cancelled)))
+    [ true; false ]
+
+let test_tls_timeout () =
+  (* ^oxpie-g2x6: a TCP peer that never answers ClientHello cannot escape establishment. *)
+  let peer_closed = ref false in
+  serve
+    (fun env flow ->
+      Eio.Time.with_timeout_exn env#clock 1. (fun () ->
+          let rec drain () =
+            try
+              ignore (Eio.Flow.single_read flow (Cstruct.create 4096));
+              drain ()
+            with End_of_file -> peer_closed := true
+          in
+          drain ()))
+    (fun env sw url ->
+      let url = "wss" ^ String.sub url 2 (String.length url - 2) in
+      match
+        W.connect ~sw ~net:env#net ~clock:env#clock ~ca_file:"../localhost.crt"
+          ~establishment_timeout:(Ox.Duration.ms 60) url
+      with
+      | Error `Timeout -> ()
+      | _ -> Alcotest.fail "TLS handshake timeout expected");
+  Alcotest.(check bool) "TLS timeout closed peer socket" true !peer_closed
+
+let test_established_lifetime () =
+  (* ^oxpie-g2x6: establishment timeout ends at upgrade, not after a stream lifetime. *)
+  serve
+    (fun env flow ->
+      let _, headers, _ = request flow in
+      upgrade flow headers;
+      Eio.Time.sleep env#clock 0.2;
+      Eio.Flow.copy_string (frame C.Text "after establishment budget") flow)
+    (fun env sw url ->
+      let ws =
+        W.connect ~sw ~net:env#net ~clock:env#clock
+          ~establishment_timeout:(Ox.Duration.ms 100) url
+        |> expect_ok
+      in
+      match W.receive ws with
+      | Ok (`Text "after establishment budget") -> ()
+      | _ -> Alcotest.fail "establishment timeout leaked into receive")
 
 let test_limit () =
   (* ^nws-e6t9: declared payload over limit rejected before allocation. *)
@@ -311,7 +380,7 @@ let test_switch_ownership () =
   Alcotest.(check bool) "switch closed peer socket" true !peer_closed
 
 let test_cancel_upgrade () =
-  (* ^nws-b9q4 ^nws-e6t9: cancellation during upgrade closes the pending socket. *)
+  (* ^nws-b9q4 ^nws-e6t9 ^oxpie-g2x6: cancellation closes the pending socket. *)
   let peer_closed = ref false in
   serve
     (fun _ flow ->
@@ -344,7 +413,13 @@ let () =
           Alcotest.test_case "^nws-b9q4 untrusted TLS" `Quick test_tls_untrusted;
           Alcotest.test_case "^nws-b9q4 401 upgrade" `Quick test_reject;
           Alcotest.test_case "^nws-b9q4 invalid accept" `Quick test_bad_accept;
-          Alcotest.test_case "^nws-b9q4 establishment timeout" `Quick test_timeout;
+          Alcotest.test_case "^nws-b9q4 ^oxpie-g2x6 upgrade timeout cleanup" `Quick
+            test_timeout;
+          Alcotest.test_case "^oxpie-g2x6 DNS/TCP timeout" `Quick test_dial_timeout;
+          Alcotest.test_case "^oxpie-g2x6 TLS establishment timeout" `Quick
+            test_tls_timeout;
+          Alcotest.test_case "^oxpie-g2x6 established lifetime" `Quick
+            test_established_lifetime;
           Alcotest.test_case "^nws-e6t9 frame budget" `Quick test_limit;
           Alcotest.test_case "^nws-c3m8 fragmented frames" `Quick test_fragmented;
           Alcotest.test_case "^nws-e6t9 bad UTF-8" `Quick test_bad_utf8;

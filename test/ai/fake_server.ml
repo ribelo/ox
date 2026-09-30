@@ -11,6 +11,8 @@
 
 type response =
   | Response of string  (** Raw HTTP bytes, written after the script's delay. *)
+  | Chunks of (Ox.Duration.t * string) list
+      (** Response fragments, each written after its delay; exercises idle progress. *)
   | Silent
       (** The connection is closed with no reply at all: a transport failure for the
           client, after the script's delay so a test can make the client's deadline the
@@ -102,6 +104,13 @@ let start ~clock ~sw listener scripts =
               | Silent -> Eio.Flow.shutdown flow `Send
               | Response bytes ->
                   Eio.Flow.copy_string bytes flow;
+                  Eio.Flow.shutdown flow `Send
+              | Chunks chunks ->
+                  List.iter
+                    (fun (delay, bytes) ->
+                      Eio.Time.sleep clock (Ox.Duration.to_seconds_float delay);
+                      Eio.Flow.copy_string bytes flow)
+                    chunks;
                   Eio.Flow.shutdown flow `Send
             with Eio.Io _ | End_of_file -> ());
            accept ()

@@ -24,8 +24,10 @@ val connect :
   ?max_message_bytes:int ->
   string ->
   (t, error) result
-(** The switch owns the socket. The timeout bounds DNS, TCP, TLS and upgrade only;
-    cancellation propagates to the caller. Headers cannot override upgrade fields. *)
+(** The switch owns the socket. [establishment_timeout] defaults to ten seconds and bounds
+    DNS, TCP, TLS and HTTP upgrade together, never the established stream (^oxpie-g2x6).
+    Expiry returns [`Timeout] and releases any pending socket; cancellation propagates to
+    the caller and also releases it. Headers cannot override upgrade fields. *)
 
 val selected_protocol : t -> string option
 val send_text : t -> string -> (unit, error) result

@@ -42,6 +42,7 @@ val post_json :
   clock:_ Eio.Time.clock ->
   logger:Ox_observability.Logger.t ->
   ?timeout:Ox.Duration.t ->
+  ?response_idle:Ox.Duration.t ->
   ?max_request_bytes:int ->
   ?max_response_bytes:int ->
   ?max_attempts:int ->
@@ -71,6 +72,10 @@ val post_json :
     connection that closed mid-reply. Those two, and a 429/529, consume the second
     attempt; a body over the response bound is [`Invalid_response] and does not, exactly
     as the reference's bound read ends its call after one attempt.
+
+    [response_idle], when supplied, resets on each incoming response read within each
+    attempt. It is independent of [timeout] and [deadline]; an idle expiry is [`Timeout]
+    and follows the unchanged retry policy (^oxpie-e5v1).
 
     A negative [max_request_bytes] refuses every request.
 

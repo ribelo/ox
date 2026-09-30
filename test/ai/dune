@@ -81,6 +81,22 @@
   yojson))
 
 (test
+ (name test_pie_api)
+ (modules test_pie_api test_helpers fake_server)
+ (libraries
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_ai_openrouter
+  ox_http
+  ox_json
+  ox_observability
+  eio
+  eio_main
+  alcotest
+  yojson))
+
+(test
  (name test_openrouter)
  (modules test_openrouter test_helpers fake_server)
  (libraries

@@ -13,6 +13,8 @@ val post :
   ?timeout:Ox.Duration.t ->
   ?max_response_bytes:int ->
   ?max_attempts:int ->
+  ?max_request_bytes:int ->
+  ?response_idle:Ox.Duration.t ->
   deadline:Ox.Duration.t ->
   Ox_json.t ->
   (Ox_json.t, Ox_ai.Error.t) result

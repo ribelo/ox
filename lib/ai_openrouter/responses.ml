@@ -26,6 +26,17 @@ type header = {
 }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 
+type audio_format = Wav | Mp3
+
+type text_request = {
+  model : string;
+  instructions : string;
+  input : string;
+  temperature : float option;
+  text_format : format option;
+  reasoning_effort : string option;
+}
+
 type function_call = { name : string option; call_id : string option }
 
 type output =
@@ -83,34 +94,50 @@ let format_json = function
           ("strict", Option.map Ox_json.bool strict);
         ]
 
-let encode (request : request) =
+let input_message parts =
+  Ox_json.array [ obj [ ("role", s "user"); ("content", Some (Ox_json.array parts)) ] ]
+
+let input_text text = obj [ ("type", s "input_text"); ("text", s text) ]
+
+let encode_input ~model ?instructions ~input ~temperature ~text_format ~reasoning_effort
+    () =
+  obj
+    [
+      ("model", s model);
+      ("instructions", Option.map Ox_json.string instructions);
+      ("input", Some input);
+      ("stream", Some (Ox_json.bool false));
+      ("temperature", Option.bind temperature Ox_json.float);
+      ( "text",
+        Option.map
+          (fun format -> obj [ ("format", Some (format_json format)) ])
+          text_format );
+      ( "reasoning",
+        Option.map (fun effort -> obj [ ("effort", s effort) ]) reasoning_effort );
+    ]
+
+(* ^oxpie-a4m7: the record's legacy [wav] field remains source-compatible. *)
+let encode ?(audio_format = Wav) ?instructions (request : request) =
+  let format = match audio_format with Wav -> "wav" | Mp3 -> "mp3" in
   let audio =
     obj
       [
         ("type", s "input_audio");
         ( "input_audio",
-          Some (obj [ ("data", s (base64 request.wav)); ("format", s "wav") ]) );
+          Some (obj [ ("data", s (base64 request.wav)); ("format", s format) ]) );
       ]
   in
-  let text = obj [ ("type", s "input_text"); ("text", s request.prompt) ] in
-  let input =
-    Ox_json.array
-      [ obj [ ("role", s "user"); ("content", Some (Ox_json.array [ text; audio ])) ] ]
-  in
-  obj
-    [
-      ("model", s request.model);
-      ("input", Some input);
-      ("stream", Some (Ox_json.bool false));
-      ("temperature", Option.bind request.temperature Ox_json.float);
-      ( "text",
-        Option.map
-          (fun format -> obj [ ("format", Some (format_json format)) ])
-          request.text_format );
-      ( "reasoning",
-        Option.map (fun effort -> obj [ ("effort", s effort) ]) request.reasoning_effort
-      );
-    ]
+  encode_input ~model:request.model ?instructions
+    ~input:(input_message [ input_text request.prompt; audio ])
+    ~temperature:request.temperature ~text_format:request.text_format
+    ~reasoning_effort:request.reasoning_effort ()
+
+(* ^oxpie-d3t9: text and audio calls share framing, decoding and delivery. *)
+let encode_text (request : text_request) =
+  encode_input ~model:request.model ~instructions:request.instructions
+    ~input:(input_message [ input_text request.input ])
+    ~temperature:request.temperature ~text_format:request.text_format
+    ~reasoning_effort:request.reasoning_effort ()
 
 (* v1:openai_codec/responses.ml reads only message text. This decoder reports every item
    and every message content part with the kind the provider named, so a disqualifying
@@ -194,20 +221,39 @@ let deliverable response =
       | Output_text _ :: rest -> verdict rest
       | Function_call call :: _ -> Error (`Tool_continuation call)
       | Refusal text :: _ -> Error (`Refusal text)
+      | Other "reasoning" :: rest -> verdict rest (* ^oxpie-c8r5 *)
       | Other kind :: _ -> Error (`Other kind)
     in
     verdict response.output
 
-let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ~deadline
+let post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_request_bytes
+    ?max_response_bytes ?response_idle ~deadline ~temperature body =
+  match temperature with
+  | Some f when not (Float.is_finite f) -> Common.invalid "non-finite temperature" `Null
+  | _ -> (
+      match
+        Common.post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_request_bytes
+          ?max_response_bytes ?response_idle ~deadline body
+      with
+      | Error _ as error -> error
+      | Ok json -> decode json)
+
+let create ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ?audio_format
+    ?instructions ?timeout ?max_request_bytes ?max_response_bytes ?response_idle ~deadline
     (request : request) =
+  let body = encode ?audio_format ?instructions request in
   if request.model = "" || request.prompt = "" || Bytes.length request.wav = 0 then
-    Common.invalid "model, prompt and WAV must be nonempty" (encode request)
+    Common.invalid "model, prompt and audio must be nonempty" body
   else
-    match request.temperature with
-    | Some f when not (Float.is_finite f) -> Common.invalid "non-finite temperature" `Null
-    | _ -> (
-        match
-          Common.post ~http ~clock ~logger ~api_key ~endpoint ~deadline (encode request)
-        with
-        | Error _ as error -> error
-        | Ok json -> decode json)
+    post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_request_bytes
+      ?max_response_bytes ?response_idle ~deadline ~temperature:request.temperature body
+
+let create_text ~http ~clock ~logger ~api_key ?(endpoint = default_endpoint) ?timeout
+    ?max_request_bytes ?max_response_bytes ?response_idle ~deadline
+    (request : text_request) =
+  let body = encode_text request in
+  if request.model = "" || request.instructions = "" || request.input = "" then
+    Common.invalid "model, instructions and input must be nonempty" body
+  else
+    post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_request_bytes
+      ?max_response_bytes ?response_idle ~deadline ~temperature:request.temperature body

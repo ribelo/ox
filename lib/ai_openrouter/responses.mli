@@ -1,6 +1,6 @@
 type schema = { name : string; schema : Ox_json.t; strict : bool option }
-(** Pie Responses text plus input_audio/WAV. The call is bounded by the supplied deadline;
-    cancellation closes the HTTP socket, with no additional finalizer. *)
+(** Pie Responses with audio or text input. Each call is bounded by its supplied total
+    deadline; cancellation closes the HTTP socket, with no additional finalizer. *)
 
 type format = Text | Json_object | Json_schema of schema
 
@@ -8,6 +8,22 @@ type request = {
   model : string;
   prompt : string;
   wav : bytes;
+  temperature : float option;
+  text_format : format option;
+  reasoning_effort : string option;
+}
+
+type audio_format =
+  | Wav
+  | Mp3
+      (** Supported Responses audio formats. OGG is not accepted by this endpoint. The
+          bytes retain the [request.wav] field name for source compatibility
+          (^oxpie-a4m7). *)
+
+type text_request = {
+  model : string;
+  instructions : string;
+  input : string;
   temperature : float option;
   text_format : format option;
   reasoning_effort : string option;
@@ -59,7 +75,14 @@ type rejection =
     (** An output item kind this endpoint cannot deliver; the string is its [type]. *) ]
 
 val default_endpoint : string
-val encode : request -> Ox_json.t
+
+val encode : ?audio_format:audio_format -> ?instructions:string -> request -> Ox_json.t
+(** [audio_format] defaults to [Wav]. [instructions], when supplied, is separate from the
+    user message's [prompt] text. Pure; performs no I/O. *)
+
+val encode_text : text_request -> Ox_json.t
+(** Rendered [instructions] plus exactly one user message containing [input], with no
+    audio part. Pure; performs no I/O (^oxpie-d3t9). *)
 
 val decode : Ox_json.t -> (response, Ox_ai.Error.t) result
 (** [decode json] is the reply's status, identity, concatenated text and every output
@@ -74,8 +97,10 @@ val decode : Ox_json.t -> (response, Ox_ai.Error.t) result
 
 val deliverable : response -> (string, rejection) result
 (** [deliverable response] is [Ok text] only when [status] is ["completed"] and every
-    output item is {!Output_text}: the verdict a text consumer must obey, so that a
-    completed reply carrying a function call is never delivered as text (^nor-pn0b).
+    output item is {!Output_text} or [Other "reasoning"]: the verdict a text consumer must
+    obey, so that a completed reply carrying a function call is never delivered as text
+    (^nor-pn0b). Reasoning items remain in [response.output] for inspection but contribute
+    no delivered text and do not disqualify the reply (^oxpie-c8r5).
 
     [Error rejection] names the first disqualifying finding in the provider's item order,
     after the status: [`Not_completed status], [`Tool_continuation call], [`Refusal text]
@@ -89,8 +114,40 @@ val create :
   logger:Ox_observability.Logger.t ->
   api_key:Ox_observability.Redact.t ->
   ?endpoint:string ->
+  ?audio_format:audio_format ->
+  ?instructions:string ->
+  ?timeout:Ox.Duration.t ->
+  ?max_request_bytes:int ->
+  ?max_response_bytes:int ->
+  ?response_idle:Ox.Duration.t ->
   deadline:Ox.Duration.t ->
   request ->
   (response, Ox_ai.Error.t) result
-(** One non-streaming call to [endpoint]. The caller's [deadline] bounds the whole call;
-    cancellation closes the HTTP socket and no finalizer is registered. *)
+(** One non-streaming audio call to [endpoint]. [max_request_bytes] bounds the complete
+    encoded JSON, including base64 and framing, before any I/O (default 4 MiB); provider
+    413 reports the effective bound (^oxpie-b6q2). [max_response_bytes] bounds the reply
+    (default 1 MiB). [timeout] caps each attempt (ten seconds by default); [response_idle]
+    resets on each incoming response read and bounds silence (^oxpie-e5v1). Both remain
+    separate from the total [deadline], which includes retries and backoff: the earliest
+    budget wins, returning [`Timeout]. Raise [timeout] with a longer idle policy to permit
+    long progressing replies. Defaults and retries otherwise stay those of
+    {!Ox_ai.Transport.post_json}. Cancellation closes the socket and no finalizer is
+    registered. *)
+
+val create_text :
+  http:Ox_http.Client.t ->
+  clock:_ Eio.Time.clock ->
+  logger:Ox_observability.Logger.t ->
+  api_key:Ox_observability.Redact.t ->
+  ?endpoint:string ->
+  ?timeout:Ox.Duration.t ->
+  ?max_request_bytes:int ->
+  ?max_response_bytes:int ->
+  ?response_idle:Ox.Duration.t ->
+  deadline:Ox.Duration.t ->
+  text_request ->
+  (response, Ox_ai.Error.t) result
+(** One non-streaming text-only call with the same transport bounds, decoder and
+    {!deliverable} verdict as {!create}. Model, instructions and input must be nonempty;
+    non-finite temperature is [`Invalid_response] before I/O. Cancellation closes the
+    socket and no finalizer is registered (^oxpie-d3t9). *)

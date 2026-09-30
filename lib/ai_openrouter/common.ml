@@ -8,11 +8,11 @@ let decode raw =
   | Error (`Too_large bound) -> Error (`Input_too_large bound)
 
 let post ~http ~clock ~logger ~api_key ~endpoint ?timeout ?max_response_bytes
-    ?max_attempts ~deadline body =
+    ?max_attempts ?max_request_bytes ?response_idle ~deadline body =
   let body = Ox_ai.Transport.bytes_of_json body in
   match
     Ox_ai.Transport.post_json ~http ~clock ~logger ~endpoint ?timeout ?max_response_bytes
-      ?max_attempts
+      ?max_attempts ?max_request_bytes ?response_idle
       ~authorization:(Ox_ai.Bearer.header ~api_key)
       ~body ~deadline ()
   with

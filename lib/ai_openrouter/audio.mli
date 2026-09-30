@@ -33,6 +33,7 @@ val create :
   api_key:Ox_observability.Redact.t ->
   ?endpoint:string ->
   ?max_request_bytes:int ->
+  ?response_idle:Ox.Duration.t ->
   deadline:Ox.Duration.t ->
   request ->
   (string, Ox_ai.Error.t) result
@@ -41,6 +42,8 @@ val create :
 
     A body over the bound is [`Input_too_large] before any network I/O; a provider 413 is
     the same typed error carrying the effective bound. The call is bounded by [deadline];
-    cancellation closes its HTTP socket and no finalizer is registered.
+    cancellation closes its HTTP socket and no finalizer is registered. [response_idle]
+    optionally bounds each incoming response read, resetting with progress rather than
+    limiting the total response duration; expiry is [`Timeout] (^oxpie-f7w4).
 
     @raise Invalid_argument when the supplied bound is not positive (see {!body}). *)

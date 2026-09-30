@@ -373,7 +373,8 @@ let test_response_kinds () =
   check_outputs "unmodelled item reported"
     [ R.Other "reasoning"; R.Output_text "hi" ]
     reasoning;
-  check_refused "unmodelled item refused" "other item reasoning" (R.deliverable reasoning);
+  check_delivered "reasoning does not disqualify ^oxpie-c8r5" "hi"
+    (R.deliverable reasoning);
   let incomplete =
     decoded
       {|{"status":"incomplete","output":[{"type":"message","content":[{"type":"output_text","text":"hi"}]}]}|}

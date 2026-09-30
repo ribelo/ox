@@ -60,8 +60,8 @@ let decode json =
   | Ok { text = Some text } when String.trim text <> "" -> Ok (String.trim text)
   | Ok _ -> Common.invalid ~path:"text" "missing transcription text" json
 
-let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~deadline
-    request =
+let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ?response_idle
+    ~deadline request =
   let limit = Option.value ~default:default_max_request_bytes max_request_bytes in
   match body ?max_request_bytes request with
   | Error _ as error -> error
@@ -72,7 +72,7 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ~dea
       in
       match
         Ox_http.Client.request http ~method_:"POST" ~url:endpoint ~headers ~body ~deadline
-          ~max_body_bytes:Ox_ai.Transport.default_max_response_bytes ()
+          ?response_idle ~max_body_bytes:Ox_ai.Transport.default_max_response_bytes ()
       with
       | Error (`Timeout | `Idle_timeout) -> Error `Timeout
       | Error `Body_too_large ->
