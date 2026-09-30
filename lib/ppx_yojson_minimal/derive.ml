@@ -400,24 +400,25 @@ and decode_tuple env tys ~path j =
     (error_at ~path (Printf.sprintf "array of %d" n) j)
 (* ---------- Records and variants ---------- *)
 
-let decode_record_field env parent_path (field : field_info) rest =
+(** One field, decoded once. A missing key applies [@json.default], or [None] for an
+    option with no default; a required field is the missing-field error. The expression
+    does not contain the remaining decoder. The previous form spliced the continuation
+    into both the missing branch and the success branch of every defaulted or optional
+    field, so generated size was exponential in those fields (lindec-ho00). *)
+let decode_one_field env parent_path (field : field_info) =
   let sub = Printf.sprintf "(%s ^ %S)" parent_path ("." ^ field.key) in
   let missing =
     match field.default with
-    | Some expr ->
-        Printf.sprintf "(let _ppx_yojson_v_%s = (%s) in %s)" field.fname expr rest
-    | None when is_option_type field.fty ->
-        Printf.sprintf "(let _ppx_yojson_v_%s = None in %s)" field.fname rest
+    | Some expr -> Printf.sprintf "(Ok (%s))" expr
+    | None when is_option_type field.fty -> "(Ok None)"
     | None ->
         Printf.sprintf "(Error (%s ^ \": missing field \" ^ %S))" parent_path field.key
   in
   Printf.sprintf
     "(match Stdlib.List.assoc_opt %S _ppx_yojson_fields with None -> %s | Some \
-     _ppx_yojson_j -> (match %s with Ok _ppx_yojson_v_%s -> %s | Error _ppx_yojson_e -> \
-     Error _ppx_yojson_e))"
+     _ppx_yojson_j -> %s)"
     field.key missing
     (decode env field.fty ~path:sub "_ppx_yojson_j")
-    field.fname rest
 
 let encode_record env fields v =
   let parts =
@@ -458,7 +459,17 @@ let decode_record env ~allow_extra_fields fields =
         in
         let record = Printf.sprintf "(Ok { %s })" (String.concat "; " parts) in
         if allow_extra_fields then record else reject_unknown_fields fields record
-    | field :: rest -> decode_record_field env parent_path field (chain parent_path rest)
+    | field :: rest ->
+        (* Bind this field, then decode the next. The continuation occurs once, in the
+           [Ok] branch, so a default or an absent option cannot duplicate it. Earlier
+           [_ppx_yojson_v_*] bindings stay in scope, which is where a later default
+           expression already ran (lindec-ho00 lindec-nt5k). *)
+        Printf.sprintf
+          "(let _ppx_yojson_r_%s = %s in match _ppx_yojson_r_%s with Error _ppx_yojson_e \
+           -> Error _ppx_yojson_e | Ok _ppx_yojson_v_%s -> %s)"
+          field.fname
+          (decode_one_field env parent_path field)
+          field.fname field.fname (chain parent_path rest)
   in
   Printf.sprintf
     "(match _ppx_yojson_json with `Assoc _ppx_yojson_fields -> %s | _ -> Error %s)"

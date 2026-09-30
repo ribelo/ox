@@ -101,6 +101,18 @@ let expect_error_contains label needles = function
             Alcotest.failf "%s: error %S does not contain %S" label error needle)
         needles
 
+let expect_error_exact label expected = function
+  | Ok _ -> Alcotest.failf "%s: expected error %S" label expected
+  | Error error -> Alcotest.(check string) label expected error
+
+(** The same truncation the generated [ppx_yojson_minimal__error] applies. *)
+let truncated_json json =
+  let text = Yojson.Safe.to_string json in
+  if String.length text > 200 then String.sub text 0 200 ^ "..." else text
+
+let expected_type_error path expected json =
+  path ^ ": expected " ^ expected ^ ", got " ^ truncated_json json
+
 (* ^nppx-mao8 ^nppx-h4gz: the contract, case by case. *)
 
 let home = { city = "Krakow"; zip = 30001; coords = (50.0, 19.9) }
@@ -411,6 +423,56 @@ let test_qualified_module_path () =
     [ "marked.mark"; "mark:"; "7" ]
     (marked_of_yojson (`Assoc [ ("mark", `Int 7); ("nested", `List []) ]))
 
+(* lindec-nt5k lindec-48sm: a default expression is an enclosing binding, evaluated
+   only when the key is absent and only after earlier fields have succeeded. *)
+let fallback_n = 9
+let default_evals = ref 0
+
+let count_default () =
+  incr default_evals;
+  4
+
+type fallback_field = { n : int [@json.default fallback_n] } [@@deriving yojson]
+
+type effectful = { first : int; [@json.default count_default ()] required : int }
+[@@deriving yojson]
+
+type effectful_later = { required : int; later : int [@json.default count_default ()] }
+[@@deriving yojson]
+
+type option_default = { name : string option [@json.default Some "x"] }
+[@@deriving yojson]
+
+type tolerant_default = { n : int; [@json.default 3] m : int [@json.default 4] }
+[@@deriving yojson] [@@yojson.allow_extra_fields]
+
+(* lindec-ho00 lindec-1szx: twenty defaulted fields, each binding keeping its own
+   value. The size of this expansion is measured by [size_bound] on
+   [fixtures/wide_defaults.ml]. *)
+type wide = {
+  f00 : int; [@json.default 0]
+  f01 : int; [@json.default 1]
+  f02 : int; [@json.default 2]
+  f03 : int; [@json.default 3]
+  f04 : int; [@json.default 4]
+  f05 : int; [@json.default 5]
+  f06 : int; [@json.default 6]
+  f07 : int; [@json.default 7]
+  f08 : int; [@json.default 8]
+  f09 : int; [@json.default 9]
+  f10 : int; [@json.default 10]
+  f11 : int; [@json.default 11]
+  f12 : int; [@json.default 12]
+  f13 : int; [@json.default 13]
+  f14 : int; [@json.default 14]
+  f15 : int; [@json.default 15]
+  f16 : int; [@json.default 16]
+  f17 : int; [@json.default 17]
+  f18 : int; [@json.default 18]
+  f19 : int; [@json.default 19]
+}
+[@@deriving yojson]
+
 (* ^nppx-mao8: the preprocessor itself is pinned as a pure function. *)
 
 let process filename source = Ppx_yojson_minimal.Derive.process ~filename ~source
@@ -535,6 +597,160 @@ let test_interface_generates_vals () =
     (contains_substring "val yojson_of_t : t -> Yojson.Safe.t" output);
   Alcotest.(check bool) "decoder val" true (contains_substring "val t_of_yojson" output)
 
+(* lindec-e5n0 lindec-4t98: exact messages, paths and redaction of the fixtures
+   already in this file. A sequential binding must not change which error wins.
+   lindec-nt5k lindec-48sm: a default runs only when its key is absent, and only after
+   earlier fields have succeeded. *)
+let test_existing_fixture_messages () =
+  expect_error_exact "missing name" "user: missing field name"
+    (user_of_yojson (user_json (List.remove_assoc "name" (base_fields ()))));
+  expect_error_exact "missing tags" "user: missing field tags"
+    (user_of_yojson (user_json (List.remove_assoc "tags" (base_fields ()))));
+  let bad_age = `String "old" in
+  expect_error_exact "bad age"
+    (expected_type_error "user.age" "int" bad_age)
+    (user_of_yojson
+       (user_json (("age", bad_age) :: List.remove_assoc "age" (base_fields ()))));
+  let null_age = `Null in
+  expect_error_exact "null is not a default"
+    (expected_type_error "user.age" "int" null_age)
+    (user_of_yojson
+       (user_json (("age", null_age) :: List.remove_assoc "age" (base_fields ()))));
+  expect_error_exact "type error before unknown key"
+    (expected_type_error "user.age" "int" bad_age)
+    (user_of_yojson
+       (user_json
+          (("nope", `Int 1)
+          :: ("age", bad_age)
+          :: List.remove_assoc "age" (base_fields ()))));
+  let overflow = `Intlit "99999999999999999999999" in
+  expect_error_exact "overflowing int"
+    (expected_type_error "user.age" "int" overflow)
+    (user_of_yojson
+       (user_json (("age", overflow) :: List.remove_assoc "age" (base_fields ()))));
+  expect_error_exact "unknown field" "strict_record: unknown field surprise"
+    (strict_record_of_yojson (`Assoc [ ("kept", `Int 1); ("surprise", `Bool true) ]));
+  expect_error_exact "nested unknown"
+    "wrapper.inner: strict_record: unknown field surprise"
+    (wrapper_of_yojson
+       (`Assoc [ ("inner", `Assoc [ ("kept", `Int 1); ("surprise", `Bool true) ]) ]));
+  expect_error_exact "empty unknown" "empty_args: unknown field x"
+    (empty_args_of_yojson (`Assoc [ ("x", `Int 1) ]));
+  expect_error_exact "empty not an object" "empty_args: expected object, got null"
+    (empty_args_of_yojson `Null);
+  expect_error_exact "defaults then unknown" "json_attributes: unknown field extra"
+    (json_attributes_of_yojson (`Assoc [ ("extra", `Int 1) ]));
+  expect_error_exact "ocaml name is not the wire key"
+    "json_attributes: unknown field kept"
+    (json_attributes_of_yojson (`Assoc [ ("kept", `Int 3) ]));
+  let bad_coords = `List [ `Float 1.0; `Float 2.0; `Float 3.0 ] in
+  expect_error_exact "tuple arity"
+    (expected_type_error "address.coords" "array of 2" bad_coords)
+    (address_of_yojson
+       (`Assoc [ ("city", `String "c"); ("zipCode", `Int 1); ("coords", bad_coords) ]));
+  let bad_tags = `List [ `String "ok"; `Int 5 ] in
+  expect_error_exact "list index"
+    ("user.tags: " ^ expected_type_error "tag_list.[1]" "string" (`Int 5))
+    (user_of_yojson
+       (user_json (("tags", bad_tags) :: List.remove_assoc "tags" (base_fields ()))));
+  expect_error_exact "qualified failure" "marked.mark: mark: expected string, got 7"
+    (marked_of_yojson (`Assoc [ ("mark", `Int 7); ("nested", `List []) ]));
+  let long = `String (String.make 300 'a') in
+  let error =
+    match
+      user_of_yojson
+        (user_json (("age", long) :: List.remove_assoc "age" (base_fields ())))
+    with
+    | Error message -> message
+    | Ok _ -> Alcotest.fail "long payload should not decode as an int"
+  in
+  Alcotest.(check string)
+    "long payload is redacted"
+    (expected_type_error "user.age" "int" long)
+    error;
+  Alcotest.(check bool)
+    "the full payload is not in the error" false
+    (contains_substring (String.make 300 'a') error);
+  Alcotest.(check bool)
+    "redaction keeps an ellipsis" true
+    (contains_substring "..." error)
+
+let test_default_evaluation_order () =
+  default_evals := 0;
+  let present =
+    expect_ok "present skips the default"
+      (effectful_of_yojson (`Assoc [ ("first", `Int 1); ("required", `Int 2) ]))
+  in
+  Alcotest.(check int) "a present field does not run its default" 0 !default_evals;
+  Alcotest.(check int) "present value" 1 present.first;
+  default_evals := 0;
+  expect_error_exact "wrong type is not a default"
+    (expected_type_error "effectful.first" "int" (`String "no"))
+    (effectful_of_yojson (`Assoc [ ("first", `String "no"); ("required", `Int 2) ]));
+  Alcotest.(check int) "a present wrong type does not run the default" 0 !default_evals;
+  default_evals := 0;
+  let missing_first =
+    expect_ok "missing first" (effectful_of_yojson (`Assoc [ ("required", `Int 2) ]))
+  in
+  Alcotest.(check int) "a missing key runs its default once" 1 !default_evals;
+  Alcotest.(check int) "default value" 4 missing_first.first;
+  Alcotest.(check int) "required value" 2 missing_first.required;
+  default_evals := 0;
+  expect_error_exact "later required field" "effectful: missing field required"
+    (effectful_of_yojson (`Assoc []));
+  Alcotest.(check int) "an earlier default still ran" 1 !default_evals;
+  default_evals := 0;
+  expect_error_exact "earlier required field" "effectful_later: missing field required"
+    (effectful_later_of_yojson (`Assoc []));
+  Alcotest.(check int) "a later default does not run" 0 !default_evals;
+  default_evals := 0;
+  let later =
+    expect_ok "later default"
+      (effectful_later_of_yojson (`Assoc [ ("required", `Int 1) ]))
+  in
+  Alcotest.(check int) "the later default ran once" 1 !default_evals;
+  Alcotest.(check int) "later value" 4 later.later;
+  let fallback = expect_ok "fallback" (fallback_field_of_yojson (`Assoc [])) in
+  Alcotest.(check int) "default sees an enclosing binding" 9 fallback.n;
+  let explicit = expect_ok "option default" (option_default_of_yojson (`Assoc [])) in
+  Alcotest.(check (option string)) "explicit option default" (Some "x") explicit.name;
+  let null_option =
+    expect_ok "null option" (option_default_of_yojson (`Assoc [ ("name", `Null) ]))
+  in
+  Alcotest.(check (option string)) "null is not the default" None null_option.name;
+  let tolerant =
+    expect_ok "tolerant"
+      (tolerant_default_of_yojson (`Assoc [ ("extra", `Bool true); ("m", `Int 8) ]))
+  in
+  Alcotest.(check int) "tolerant default" 3 tolerant.n;
+  Alcotest.(check int) "tolerant present" 8 tolerant.m
+
+let test_wide_record () =
+  let decoded = expect_ok "all defaults" (wide_of_yojson (`Assoc [])) in
+  Alcotest.(check int) "first default" 0 decoded.f00;
+  Alcotest.(check int) "middle default" 7 decoded.f07;
+  Alcotest.(check int) "last default" 19 decoded.f19;
+  let overridden =
+    expect_ok "override" (wide_of_yojson (`Assoc [ ("f07", `Int 70); ("f19", `Int 1) ]))
+  in
+  Alcotest.(check int) "overridden middle keeps its binding" 70 overridden.f07;
+  Alcotest.(check int) "overridden last" 1 overridden.f19;
+  Alcotest.(check int) "a sibling default is untouched" 0 overridden.f00;
+  expect_error_exact "wide unknown" "wide: unknown field extra"
+    (wide_of_yojson (`Assoc [ ("extra", `Bool true) ]));
+  let bad = `String "no" in
+  expect_error_exact "wide type error"
+    (expected_type_error "wide.f07" "int" bad)
+    (wide_of_yojson (`Assoc [ ("f07", bad) ]));
+  let back = expect_ok "wide round-trip" (wide_of_yojson (yojson_of_wide decoded)) in
+  Alcotest.(check bool) "encoder still round-trips" true (back = decoded);
+  match yojson_of_wide decoded with
+  | `Assoc fields ->
+      Alcotest.(check (list string))
+        "encoder field order" [ "f00"; "f07"; "f19" ]
+        [ List.nth fields 0 |> fst; List.nth fields 7 |> fst; List.nth fields 19 |> fst ]
+  | _ -> Alcotest.fail "encoder should emit an object"
+
 let () =
   Alcotest.run "ppx_yojson_minimal"
     [
@@ -575,6 +791,12 @@ let () =
             test_qualified_module_path;
           Alcotest.test_case "nppx-h4gz ^nnoschema-zi2m unknown fields" `Quick
             test_unknown_fields;
+          Alcotest.test_case "lindec-e5n0 lindec-4t98 existing fixture messages" `Quick
+            test_existing_fixture_messages;
+          Alcotest.test_case "lindec-nt5k lindec-48sm default evaluation order" `Quick
+            test_default_evaluation_order;
+          Alcotest.test_case "lindec-ho00 lindec-1szx wide defaulted record" `Quick
+            test_wide_record;
         ] );
       ( "preprocessor",
         [

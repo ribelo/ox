@@ -50,11 +50,15 @@
     [[@@yojson.allow_extra_fields]] opts out and ignores the fields it does not know —
     what a shape we do not own (a peer's payload, a forward-compatible reply) needs. The
     attribute applies to that declaration only, takes no payload, and is blanked like the
-    deriving attribute, so the compiler never sees either. Anything else — type
-    parameters, functions, objects, polymorphic variants, GADTs, inline record
-    constructors, [@@deriving] anything but [yojson] on a top-level type, a
-    [@@deriving yojson] below the top level — is a loud [Error], never a silent
-    pass-through, because the compiler itself silently ignores unknown derivers.
+    deriving attribute, so the compiler never sees either. Each record field is bound
+    once, in declaration order, and a missing-key default is applied in that binding
+    rather than by copying the rest of the decoder, so generated size is linear in the
+    number of fields (lindec-ho00). The unknown-key check still runs only after every
+    field binding has succeeded (lindec-e5n0). Anything else — type parameters, functions,
+    objects, polymorphic variants, GADTs, inline record constructors, [@@deriving]
+    anything but [yojson] on a top-level type, a [@@deriving yojson] below the top level —
+    is a loud [Error], never a silent pass-through, because the compiler itself silently
+    ignores unknown derivers.
 
     Generated identifiers all carry the [ppx_yojson_] prefix. Generated code refers to
     [Yojson.Safe], which must be visible where the attribute is used, and to
@@ -67,7 +71,10 @@
 
     ^nppx-h4gz: this module is the yojson deriver the row delivers. ^nppx-mao8 and
     ^nderive-mmnx ^nderive-0wzg ^nderive-fpd4 ^nderive-q2om ^nderive-qk91 ^nderive-ze85:
-    its contract is pinned by [test/ppx/run.ml]. *)
+    its contract is pinned by [test/ppx/run.ml]. ^lindec-ho00 ^lindec-nt5k ^lindec-48sm
+    ^lindec-e5n0 ^lindec-1szx ^lindec-4t98: a record with many [@json.default] fields
+    stays linear, and the existing fixtures keep their messages; [test/ppx/size_bound.ml]
+    measures the driver output. *)
 
 val process : filename:string -> source:string -> (string, string) result
 (** [process ~filename ~source] is [Ok output] with the converters spliced in, or

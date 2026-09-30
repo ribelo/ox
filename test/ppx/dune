@@ -1,6 +1,24 @@
 (test
  (name run)
+ (modules run)
  (libraries ppx_yojson_minimal yojson alcotest)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
+
+; lindec-4t98: run the preprocessor binary on the fixture and keep the output.
+
+(rule
+ (targets wide_defaults.pp.ml)
+ (deps fixtures/wide_defaults.ml)
+ (action
+  (with-stdout-to
+   wide_defaults.pp.ml
+   (run %{bin:ppx-yojson-minimal} %{dep:fixtures/wide_defaults.ml}))))
+
+(test
+ (name size_bound)
+ (modules size_bound)
+ (deps wide_defaults.pp.ml)
+ (action
+  (run ./size_bound.exe %{dep:wide_defaults.pp.ml})))
