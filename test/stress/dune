@@ -1,0 +1,80 @@
+; ^nstress-xn75: executables deliberately have no runtest rules.
+
+; ^nstress-ttto: Actor/Channel cancellation and accounting.
+
+(executable
+ (name actor_storm)
+ (modules actor_storm)
+ (libraries stress_support ox eio eio_main))
+
+(rule
+ (alias stress)
+ (deps
+  (env_var OX_STRESS_SEED))
+ (action
+  (run timeout 60 ./%{exe:actor_storm.exe} --seed 6060)))
+
+(library
+ (name stress_support)
+ (modules stress_support)
+ (libraries ox_app ox_caps))
+
+(executable
+ (name core_properties)
+ (modules core_properties)
+ (libraries
+  stress_support
+  ox
+  eio
+  eio_main
+  eio.mock
+  qcheck-core
+  qcheck-core.runner))
+
+(rule
+ (alias stress)
+ (deps
+  (env_var OX_STRESS_SEED))
+ (action
+  (run timeout 60 ./%{exe:core_properties.exe} --seed 6075)))
+
+; ^nstress-0uv9 / ^nstress-kcr6: live transport storm executables.
+
+(executable
+ (name ws_storm)
+ (modules ws_storm)
+ (libraries stress_support ox_http ox_test eio eio_main eio.mock unix))
+
+(executable
+ (name ipc_storm)
+ (modules ipc_storm)
+ (libraries stress_support ox ox_ipc ox_test eio eio_main unix))
+
+(rule
+ (alias stress)
+ (deps
+  (env_var OX_STRESS_SEED))
+ (action
+  (run timeout 60 ./%{exe:ws_storm.exe} --seed 60057)))
+
+(rule
+ (alias stress)
+ (deps
+  (env_var OX_STRESS_SEED))
+ (action
+  (run timeout 60 ./%{exe:ipc_storm.exe} --seed 60036)))
+
+; ^nstress-ln4z: parser fuzzing and writer agreement.
+
+(executable
+ (name parser_fuzz)
+ (modules parser_fuzz)
+ (libraries stress_support ox_http ox eio eio_main qcheck-core cstruct unix))
+
+(rule
+ (alias stress)
+ (deps
+  (source_tree corpus)
+  (env_var OX_STRESS_SEED))
+ (action
+  (run timeout 60 ./%{exe:parser_fuzz.exe} --seed 6060)))

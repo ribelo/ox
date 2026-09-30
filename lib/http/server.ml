@@ -348,8 +348,11 @@ let request_body r config method_ target length chunked =
               | Some n when n >= 0 -> n
               | _ -> invalid 400 "invalid chunk size"
             in
-            if size > config.max_request_body_bytes - !total then
-              raise (Request_limit (config.max_request_body_bytes, !total + size));
+            (if size > config.max_request_body_bytes - !total then
+               (* ^nstress-ln4z: keep the typed length diagnostic non-negative even
+                 when the claimed chunk plus bytes already read exceeds max_int. *)
+               let length = if size > max_int - !total then max_int else !total + size in
+               raise (Request_limit (config.max_request_body_bytes, length)));
             if size = 0 then (
               let rec trailers bytes =
                 let text = line r ~limit:config.max_request_header_bytes in

@@ -152,7 +152,8 @@ let server_exchange () =
           Eio.Flow.close flow;
           Eio.Promise.resolve resolve ()))
 
-let bad_request_exchange ~config wire expected =
+let bad_request_exchange ?(handler = fun _ -> Ok (S.Response.text "unexpected handler"))
+    ~config wire expected =
   (* ^hserv-f4r0: malformed framing and bounded headers/body close the flow. *)
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
@@ -163,7 +164,7 @@ let bad_request_exchange ~config wire expected =
           let stop, resolve = Eio.Promise.create () in
           Eio.Fiber.fork ~sw (fun () ->
               S.run_h1_on_socket ~sw ~clock:env#clock ~stop ~config ~socket:listener
-                (fun _ -> Ok (S.Response.text "unexpected handler")));
+                handler);
           Fun.protect
             ~finally:(fun () -> Eio.Promise.resolve resolve ())
             (fun () ->
@@ -201,6 +202,29 @@ let malformed_and_limits () =
     (host ^ "X-Long: " ^ String.make 100 'a' ^ "\r\n\r\n")
     "HTTP/1.1 431"
 
+let chunk_length_overflow () =
+  (* ^nstress-ln4z: an oversized chunk after one consumed byte must not wrap the
+     typed Request_body_too_large diagnostic to a negative length. *)
+  let captured = ref None in
+  let handler request =
+    match S.Body.read_all request.S.Request.body with
+    | Ok _ -> Ok (S.Response.empty ~status:204 ())
+    | Error error ->
+        captured := Some error;
+        Ok (S.Response.empty ~status:400 ())
+  in
+  let wire =
+    "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n"
+    ^ Printf.sprintf "%x" max_int ^ "\r\n"
+  in
+  bad_request_exchange ~handler ~config:S.Config.default wire "HTTP/1.1 400";
+  match !captured with
+  | Some { S.Error.kind = Request_body_too_large { limit; length }; _ } ->
+      Alcotest.(check int)
+        "configured body limit" S.Config.default.max_request_body_bytes limit;
+      Alcotest.(check int) "saturating oversized length" max_int length
+  | _ -> Alcotest.fail "expected typed oversized chunk rejection"
+
 let stop_idle () =
   (* ^hserv-a7k2 ^hserv-f4r0: stop interrupts idle keep-alive. *)
   Eio_main.run (fun env ->
@@ -235,6 +259,8 @@ let () =
         [
           Alcotest.test_case "keep-alive and chunked body" `Quick server_exchange;
           Alcotest.test_case "malformed and oversized" `Quick malformed_and_limits;
+          Alcotest.test_case "nstress-ln4z oversized chunk diagnostic cannot overflow"
+            `Quick chunk_length_overflow;
           Alcotest.test_case "stop idle connection" `Quick stop_idle;
         ] );
     ]

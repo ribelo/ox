@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: completed
 package: ox (Concurrent, Scope, Actor, Channel), ox_http (h1, ws, tls), ox_ipc, ox_rpc
 consumer: every consumer; the bug class found in rows 45, 55, 57, 59
 ---
@@ -8,7 +8,7 @@ consumer: every consumer; the bug class found in rows 45, 55, 57, 59
 
 ## Problem Statement
 
-Every bug found in ox since the master switch was in the same class — cancellation, lost wakeups, half frames, keepalive floods — and lived in the code with the thinnest tests: `Concurrent`, `Scope`, the WebSocket and TLS layers, the IPC listener. Rows 57 and 59 added transport behaviour with tests written by the same agent that wrote the code. ox has a twelfth of v1's test volume; v1's stress suites under `test/stress` exercised exactly these seams and were not ported.
+Every bug found in ox since the master switch was in the same class — cancellation, lost wakeups, half frames, keepalive floods — and lived in the code with the thinnest tests: `Concurrent`, `Scope`, the WebSocket and TLS layers, the IPC listener. Rows 57 and 59 added transport behaviour with tests written by the same agent that wrote the code. ox has a twelfth of v1's test volume; v1's core stress and HTTP fuzz registries exercised these seams, but the direct-style tree lacks a consolidated opt-in stress layer.
 
 ## Solution
 
@@ -26,8 +26,10 @@ A stress layer behind a dune alias (not the default run): property tests over `C
 
 ## Implementation Decisions
 
-- QCheck and Crowbar are already in the switch; no new dependency. Fuzz corpora committed under `test/stress/corpus`.
-- Every stress suite has a fixed seed in the alias and accepts `OX_STRESS_SEED` for exploration.
+- QCheck is installed but Crowbar is absent from the existing switch. Under the no-new-dependency ruling, parser fuzzing uses `qcheck-core` generators with integrated shrinking, mutated valid corpora, and deterministic every-byte truncation loops; no Crowbar/AFL dependency is added. Fuzz corpora live under `test/stress/corpus`.
+- Every stress suite has a fixed seed in the alias and accepts `OX_STRESS_SEED` for exploration; Dune tracks the variable and `--force` repeats fixed campaigns. OS `timeout 60` bounds each suite independently of Eio.
+- The request parser remains private; fuzzing drives the real loopback server and asserts its public typed rejection boundary through 4xx responses.
+- [The stress inventory](../../../test/stress/README.md) records every case in the actual v1 core stress and HTTP fuzz registries. The literal `v1:test/stress` tree is absent. The existing long-running posix wake-up enabled/disabled comparison remains on its separate aliases, outside the one-minute budget.
 
 ## Testing Decisions
 
