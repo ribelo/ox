@@ -8,6 +8,11 @@ val create : raw:ty Eio.Resource.t -> ssl:Ox_http_tls_openssl.ssl -> ty Eio.Reso
     close_notify or TCP EOF at a complete-record boundary, but a truncated or corrupted
     record raises [Tls_failure] (nhttp-7pp8).
 
+    One fiber may read while other fibers write. In-flight ciphertext uses disjoint
+    buffers, writers are serialized so records stay intact, and a send does not take a
+    lock held across a parked raw read (wsduplex-j4rn). OpenSSL calls are serialized with
+    each other and are not overlapped with socket I/O.
+
     [Eio.Flow.close] sends close_notify, then closes [raw] without waiting for the peer's
     reply. It is idempotent and closes [raw] even if sending fails or is cancelled
     (nhttp-rs5p). The caller still owns [raw]'s switch lifetime; use the returned flow's

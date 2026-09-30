@@ -335,6 +335,7 @@ let () =
   Alcotest.run "WebSocket client"
     [
       ("copied codec", Test_ws_codec.cases);
+      ("transport regressions", Test_regressions.cases);
       ( "direct transport",
         [
           Alcotest.test_case "^nws-a7k2 ^nws-c3m8 plain flow" `Quick test_plain;

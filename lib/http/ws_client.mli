@@ -32,7 +32,13 @@ val send_text : t -> string -> (unit, error) result
 val send_binary : t -> bytes -> (unit, error) result
 
 val receive : t -> (message, error) result
-(** Receives the next complete message; automatically answers pings and skips pongs. *)
+(** Receives the next complete message; automatically answers pings and skips pongs.
+    Keepalives have no lifetime limit. A connection-wide control-frame bucket allows a
+    burst of 32 frames and replenishes 32 frames per second using [connect]'s clock. One
+    receiver and concurrent senders are supported within one Eio domain. A terminal
+    transport failure is retained before shutdown: subsequent receives and sends return
+    that cause, even while shutdown is suspended. Cancellation propagates without being
+    recorded as a transport failure. *)
 
 val close : ?code:int -> ?reason:string -> t -> (unit, error) result
 (** Sends one close control frame and releases the transport. *)

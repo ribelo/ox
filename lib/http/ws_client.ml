@@ -21,7 +21,10 @@ type t = {
   flow : Eio.Flow.two_way_ty Eio.Resource.t;
   shutdown : unit -> unit;
   lock : Eio.Mutex.t;
-  mutable closed : bool;
+  mutable terminal : error option;
+  now : unit -> float;
+  mutable control_tokens : float;
+  mutable control_updated : float;
   selected : string option;
   max_message_bytes : int;
 }
@@ -259,7 +262,10 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
               flow :> Eio.Flow.two_way_ty Eio.Resource.t;
               shutdown = !cleanup;
               lock = Eio.Mutex.create ();
-              closed = false;
+              terminal = None;
+              now = (fun () -> Eio.Time.now clock);
+              control_tokens = 32.;
+              control_updated = Eio.Time.now clock;
               selected;
               max_message_bytes;
             }
@@ -277,13 +283,22 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
   in
   Ox.Timeout.timeout ~clock establishment_timeout perform
 
+(* wsduplex-v8mq: publish the first failure before shutdown can suspend. *)
+let finish t error =
+  match t.terminal with
+  | Some original -> Error original
+  | None ->
+      t.terminal <- Some error;
+      t.shutdown ();
+      Error error
+
 let writing t fn =
   try
     Eio.Mutex.use_ro t.lock (fun () ->
-        if t.closed then Error (`Closed (1000, "closed")) else fn ())
+        match t.terminal with Some error -> Error error | None -> fn ())
   with
-  | Tls_flow.Tls_failure s -> Error (`Tls s)
-  | Eio.Io _ | End_of_file -> Error (`Closed (1006, "write failed"))
+  | Tls_flow.Tls_failure s -> finish t (`Tls s)
+  | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "write failed"))
 
 let send_frame t frame =
   writing t (fun () ->
@@ -305,25 +320,28 @@ let close ?(code = 1000) ?(reason = "") t =
   then invalid_arg "Ws_client.close: invalid close code";
   if String.length reason > 123 then invalid_arg "Ws_client.close: reason too long";
   Eio.Mutex.use_ro t.lock (fun () ->
-      if t.closed then Ok ()
-      else (
-        t.closed <- true;
-        let payload = Bytes.create (2 + String.length reason) in
-        Bytes.set_int16_be payload 0 code;
-        Bytes.blit_string reason 0 payload 2 (String.length reason);
-        let result =
-          try
-            Eio.Flow.copy_string
-              (Bytes.to_string
-                 (C.encode ~mask:(Ssl.random_bytes 4)
-                    { C.fin = true; opcode = Close; payload }))
-              t.flow;
-            Ok ()
-          with Eio.Io _ | End_of_file | Tls_flow.Tls_failure _ ->
-            Error (`Closed (1006, "close failed"))
-        in
-        t.shutdown ();
-        result))
+      match t.terminal with
+      | Some (`Closed (1006, _) as error) -> Error error
+      | Some (`Closed _) -> Ok ()
+      | Some error -> Error error
+      | None ->
+          t.terminal <- Some (`Closed (code, reason));
+          let payload = Bytes.create (2 + String.length reason) in
+          Bytes.set_int16_be payload 0 code;
+          Bytes.blit_string reason 0 payload 2 (String.length reason);
+          let result =
+            try
+              Eio.Flow.copy_string
+                (Bytes.to_string
+                   (C.encode ~mask:(Ssl.random_bytes 4)
+                      { C.fin = true; opcode = Close; payload }))
+                t.flow;
+              Ok ()
+            with Eio.Io _ | End_of_file | Tls_flow.Tls_failure _ ->
+              Error (`Closed (1006, "close failed"))
+          in
+          t.shutdown ();
+          result)
 
 let read_frame t =
   let h = read_exact t.flow 2 in
@@ -372,19 +390,31 @@ let valid_utf8 text =
   in
   go 0
 
+(* wsduplex-h6pk: elapsed-time budget, shared across receive calls. A backwards
+   wall-clock adjustment cannot refill the bucket. Normal keepalives never
+   consume a lifetime budget; pongs are bounded too. *)
+let control_frame t =
+  let now = max t.control_updated (t.now ()) in
+  let tokens = min 32. (t.control_tokens +. ((now -. t.control_updated) *. 32.)) in
+  t.control_updated <- now;
+  if tokens < 1. then fail (`Protocol "too many control frames per second");
+  t.control_tokens <- tokens -. 1.
+
 let receive t =
   try
-    if t.closed then fail (`Closed (1000, "closed"));
+    (match t.terminal with Some error -> fail error | None -> ());
     let output = Buffer.create 256 in
-    let rec loop kind pings =
+    let rec loop kind =
       let frame = read_frame t in
       match frame.C.opcode with
       | Ping -> (
-          if pings >= 32 then fail (`Protocol "too many consecutive pings");
+          control_frame t;
           match send_frame t { C.fin = true; opcode = Pong; payload = frame.payload } with
           | Error e -> fail e
-          | Ok () -> loop kind (pings + 1))
-      | Pong -> loop kind (pings + 1)
+          | Ok () -> loop kind)
+      | Pong ->
+          control_frame t;
+          loop kind
       | Close ->
           let code, reason =
             if Bytes.length frame.payload < 2 then (1000, "")
@@ -393,7 +423,7 @@ let receive t =
                 Bytes.sub_string frame.payload 2 (Bytes.length frame.payload - 2) )
           in
           if not (valid_utf8 reason) then fail (`Protocol "invalid close reason UTF-8");
-          ignore (close ~code:(if code = 1000 then 1000 else code) t);
+          ignore (close ~code ~reason t);
           fail (`Closed (code, reason))
       | (Text | Binary | Continuation) as op ->
           let kind =
@@ -414,22 +444,10 @@ let receive t =
             if kind = `Text && not (valid_utf8 data) then
               fail (`Protocol "invalid text UTF-8");
             Ok (if kind = `Text then `Text data else `Binary (Bytes.of_string data)))
-          else loop (Some kind) 0
+          else loop (Some kind)
     in
-    loop None 0
+    loop None
   with
-  | Failure e ->
-      if not t.closed then (
-        t.closed <- true;
-        t.shutdown ());
-      Error e
-  | Tls_flow.Tls_failure s ->
-      if not t.closed then (
-        t.closed <- true;
-        t.shutdown ());
-      Error (`Tls s)
-  | Eio.Io _ | End_of_file ->
-      if not t.closed then (
-        t.closed <- true;
-        t.shutdown ());
-      Error (`Closed (1006, "read failed"))
+  | Failure error -> finish t error
+  | Tls_flow.Tls_failure s -> finish t (`Tls s)
+  | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "read failed"))
