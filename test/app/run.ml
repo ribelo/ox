@@ -11,7 +11,8 @@
    author, so a program can use `run` for a verb of its own). ^napp-yplu's unknown-key
    refusal stands
    (^nnoschema-zi2m carries it into the derived decoder); ^napp-tuvw's
-   schema-declared overrides are superseded. *)
+   schema-declared overrides are superseded. Door 5: ^napp-5u8d ^napp-5c2v ^napp-5d7f
+   ^napp-5h4m ^napp-5b9o ^napp-5e3x ^napp-5w6t. *)
 open Ox_app
 
 let check_int = Alcotest.(check int)
@@ -1807,11 +1808,592 @@ let test_door4_journal_level () =
     [ "info span"; "info span"; "program error" ]
     telemetry
 
+(* ^napp-5u8d ^napp-5c2v ^napp-5d7f ^napp-5h4m ^napp-5b9o ^napp-5e3x: one hook sees each
+   complete Door diagnostic, man and exits reach every Door-built command, a bare
+   invocation can run an orientation term, and defects exit [defect_exit]. *)
+
+type door5_kind = [ `Usage | `Config | `Validation | `Defect ]
+
+let door5_kind_name = function
+  | `Usage -> "usage"
+  | `Config -> "config"
+  | `Validation -> "validation"
+  | `Defect -> "defect"
+
+let door5_json ~kind ~message =
+  Yojson.Safe.to_string
+    (`Assoc [ ("kind", `String (door5_kind_name kind)); ("message", `String message) ])
+  ^ "\n"
+
+let door5_show calls =
+  String.concat "; "
+    (List.map
+       (fun (kind, message) -> door5_kind_name kind ^ "=" ^ String.escaped message)
+       calls)
+
+let door5 ?(argv = [| "demo" |]) ?(text = good) ?read ?validate ?telemetry
+    ?telemetry_result ?bare ?doc ?man ?exits ?defect_exit ?usage_exit ?exit_code
+    ?interrupt_exit ?validation_exit ?version ?commands ?commands_with_env
+    ?commands_with_env_code ?render ?(program = fun _ _ _ () _ -> Ok ()) () =
+  Ox_test.run (fun env _ ->
+      let output = Buffer.create 256 and errors = Buffer.create 256 in
+      let calls = ref [] in
+      let diagnostic ~kind ~message =
+        calls := (kind, message) :: !calls;
+        match render with
+        | None -> door5_json ~kind ~message
+        | Some render -> render ~kind ~message
+      in
+      let code =
+        run_for_test_with_args ?bare ?doc ?man ?exits ?defect_exit ?usage_exit ?exit_code
+          ?interrupt_exit ?validation_exit ?version ?commands ?commands_with_env
+          ?commands_with_env_code ?validate ?telemetry ?telemetry_result ~diagnostic
+          ~service_args:(Cmdliner.Term.const ()) ~env ~name:"demo" ~config ~pp_err ~getenv
+          ~journal:
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
+          ~read:(fun path -> match read with Some read -> read path | None -> Ok text)
+          ~stdout:(fun text -> Buffer.add_string output text)
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~argv program
+      in
+      (code, Buffer.contents output, Buffer.contents errors, List.rev !calls))
+
+let door5_sole where calls =
+  match calls with
+  | [ call ] -> call
+  | _ -> Alcotest.failf "%s: %s" where (door5_show calls)
+
+let door5_written ~kind ~message err =
+  check_string "hook result is written exactly" (door5_json ~kind ~message) err;
+  Alcotest.(check bool)
+    "raw diagnostic is not written beside the hook" false (err = message)
+
+let test_door5_usage () =
+  let code, _, err, calls =
+    door5 ~defect_exit:70 ~usage_exit:124 ~argv:[| "demo"; "--not-an-option" |] ()
+  in
+  check_int "^napp-5u8d ^napp-5e3x usage exit ignores defect_exit" 124 code;
+  let kind, message = door5_sole "^napp-5u8d one usage call" calls in
+  check_string "usage kind" "usage" (door5_kind_name kind);
+  Alcotest.(check bool)
+    "^napp-5u8d complete message keeps its newline" true
+    (String.ends_with ~suffix:"\n" message);
+  expect_part message "not-an-option";
+  door5_written ~kind ~message err;
+  let code, _, err, calls = door5 ~argv:[| "demo"; "run"; "--not-an-option" |] () in
+  check_int "^napp-5u8d named usage exit" 2 code;
+  let kind, message = door5_sole "^napp-5u8d named command, one call" calls in
+  check_string "named usage kind" "usage" (door5_kind_name kind);
+  expect_part message "not-an-option";
+  door5_written ~kind ~message err;
+  let open Cmdliner in
+  let ran = ref false in
+  let code, _, _, calls =
+    door5
+      ~argv:[| "demo"; "owned"; "--not-an-option" |]
+      ~commands_with_env:(fun _ run_owned ->
+        [
+          Cmd.v (Cmd.info "owned")
+            (Term.const (fun () ->
+                 ran := true;
+                 run_owned (fun _ -> Ok ())));
+        ])
+      ()
+  in
+  check_int "^napp-5u8d owned parse error" 2 code;
+  Alcotest.(check bool) "^napp-5u8d owned body did not run" false !ran;
+  let kind, _ = door5_sole "^napp-5u8d owned parse is usage" calls in
+  check_string "owned usage kind" "usage" (door5_kind_name kind);
+  let code, out, err, calls = door5 ~argv:[| "demo"; "--help" |] () in
+  check_int "^napp-5u8d help is not a diagnostic" 0 code;
+  check_string "help writes no stderr" "" err;
+  Alcotest.(check int) "help does not call the hook" 0 (List.length calls);
+  expect_part out "run";
+  let code, out, err, calls = door5 ~version:"9.9.9" ~argv:[| "demo"; "--version" |] () in
+  check_int "^napp-5u8d version is not a diagnostic" 0 code;
+  check_string "version writes no stderr" "" err;
+  Alcotest.(check int) "version does not call the hook" 0 (List.length calls);
+  expect_part out "9.9.9";
+  let code, _, err, calls = door5 () in
+  check_int "^napp-5u8d success is not a diagnostic" 0 code;
+  check_string "success writes no stderr" "" err;
+  Alcotest.(check int) "success does not call the hook" 0 (List.length calls);
+  let renders = ref 0 in
+  Alcotest.check_raises "^napp-5u8d renderer exceptions propagate"
+    (Failure "renderer defect") (fun () ->
+      ignore
+        (door5
+           ~argv:[| "demo"; "--not-an-option" |]
+           ~render:(fun ~kind:_ ~message:_ ->
+             incr renders;
+             failwith "renderer defect")
+           ()));
+  check_int "^napp-5u8d renderer is not called recursively" 1 !renders
+
+let test_door5_config () =
+  let paths = [ [| "demo" |]; [| "demo"; "config"; "check" |] ] in
+  List.iter
+    (fun argv ->
+      let code, _, err, calls =
+        door5 ~defect_exit:70 ~validation_exit:64 ~argv ~text:"port = \"bad\"\n[models]\n"
+          ()
+      in
+      check_int "^napp-5c2v ^napp-5e3x decode keeps validation_exit" 64 code;
+      let kind, message = door5_sole "^napp-5c2v one decode diagnostic" calls in
+      check_string "decode kind" "config" (door5_kind_name kind);
+      expect_part message "settings.port";
+      Alcotest.(check bool)
+        "decode message keeps one trailing newline" true
+        (String.ends_with ~suffix:"\n" message
+        && not (String.ends_with ~suffix:"\n\n" message));
+      door5_written ~kind ~message err)
+    paths;
+  let errors =
+    [
+      { Config.pointer = "/port"; message = "port is reserved" };
+      { Config.pointer = "/models/api_key"; message = "models are required" };
+    ]
+  in
+  let expected = Config.render_validation_errors errors ^ "\n" in
+  List.iter
+    (fun argv ->
+      let code, _, err, calls =
+        door5 ~defect_exit:70 ~validation_exit:64 ~argv
+          ~validate:(fun _ _ -> Error errors)
+          ()
+      in
+      check_int "^napp-5c2v ^napp-5e3x validation keeps its exit" 64 code;
+      let kind, message = door5_sole "^napp-5c2v one validation diagnostic" calls in
+      check_string "validation kind" "validation" (door5_kind_name kind);
+      check_string "^napp-5c2v complete rejection list" expected message;
+      door5_written ~kind ~message err)
+    paths;
+  let code, _, err, calls =
+    door5 ~validation_exit:64
+      ~argv:[| "demo"; "--config"; "/no/such.toml" |]
+      ~read:(fun _ -> Error `Missing)
+      ()
+  in
+  check_int "^napp-5c2v missing file" 64 code;
+  let kind, message = door5_sole "^napp-5c2v one load diagnostic" calls in
+  check_string "load kind" "config" (door5_kind_name kind);
+  expect_part message "/no/such.toml";
+  expect_part message "no such file";
+  door5_written ~kind ~message err;
+  let _, _, _, calls =
+    door5
+      ~argv:[| "demo"; "--config"; "/secret.toml" |]
+      ~read:(fun _ -> Error (`Unreadable "permission denied"))
+      ()
+  in
+  let kind, message = door5_sole "^napp-5c2v one unreadable diagnostic" calls in
+  check_string "unreadable kind" "config" (door5_kind_name kind);
+  expect_part message "permission denied";
+  let code, out, err, calls = door5 ~argv:[| "demo"; "config"; "check" |] () in
+  check_int "^napp-5c2v accepted check is not a diagnostic" 0 code;
+  check_string "check writes no stderr" "" err;
+  Alcotest.(check int) "check does not call the hook" 0 (List.length calls);
+  expect_part out "port"
+
+let test_door5_reports () =
+  let open Cmdliner in
+  let assert_defect where code calls err needle =
+    check_int where 70 code;
+    let kind, message = door5_sole where calls in
+    check_string (where ^ " kind") "defect" (door5_kind_name kind);
+    expect_part message "Die(";
+    expect_part message needle;
+    Alcotest.(check bool)
+      (where ^ " keeps its newline")
+      true
+      (String.ends_with ~suffix:"\n" message);
+    door5_written ~kind ~message err
+  in
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~exit_code:(function `Problem _ -> 65)
+      ~program:(fun _ _ _ () _ -> failwith "service defect")
+      ()
+  in
+  assert_defect "^napp-5d7f ^napp-5e3x program defect" code calls err "service defect";
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~exit_code:(function `Problem _ -> 65)
+      ~program:(fun _ _ _ () _ -> Error (`Problem "typed example"))
+      ()
+  in
+  check_int "^napp-5d7f ^napp-5e3x typed failure keeps exit_code" 65 code;
+  let kind, message = door5_sole "^napp-5d7f one typed diagnostic" calls in
+  check_string "typed kind" "validation" (door5_kind_name kind);
+  check_string "^napp-5d7f plain typed text, not a Cause report" "typed example\n" message;
+  door5_written ~kind ~message err;
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~exit_code:(function `Problem _ -> 65)
+      ~argv:[| "demo"; "owned-defect" |]
+      ~commands_with_env:(fun _ run_owned ->
+        [
+          Cmd.v (Cmd.info "owned-defect")
+            (Term.const (fun () -> run_owned (fun _ -> failwith "owned defect")));
+        ])
+      ()
+  in
+  assert_defect "^napp-5d7f ^napp-5e3x owned defect" code calls err "owned defect";
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~exit_code:(function `Problem _ -> 65)
+      ~argv:[| "demo"; "owned-typed" |]
+      ~commands_with_env:(fun _ run_owned ->
+        [
+          Cmd.v (Cmd.info "owned-typed")
+            (Term.const (fun () -> run_owned (fun _ -> Error (`Problem "owned typed"))));
+        ])
+      ()
+  in
+  check_int "^napp-5d7f owned typed keeps exit_code" 65 code;
+  let kind, message = door5_sole "^napp-5d7f owned typed" calls in
+  check_string "owned typed kind" "validation" (door5_kind_name kind);
+  check_string "owned typed text" "owned typed\n" message;
+  door5_written ~kind ~message err;
+  let code, _, err, calls =
+    door5 ~defect_exit:70 ~argv:[| "demo"; "code-defect" |]
+      ~commands_with_env_code:(fun _ _ run_owned_code ->
+        [
+          Cmd.v (Cmd.info "code-defect")
+            (Term.const (fun () -> run_owned_code (fun _ -> failwith "code defect")));
+        ])
+      ()
+  in
+  assert_defect "^napp-5e3x owned-code defect" code calls err "code defect";
+  let started = ref false in
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~telemetry:(fun ~sw:_ _ _ -> failwith "exporter exploded")
+      ~program:(fun _ _ _ () _ ->
+        started := true;
+        Ok ())
+      ()
+  in
+  assert_defect "^napp-5d7f ^napp-5e3x telemetry defect" code calls err
+    "exporter exploded";
+  Alcotest.(check bool) "^napp-5d7f program never ran" false !started;
+  List.iter
+    (fun argv ->
+      let code, _, err, calls =
+        door5 ~defect_exit:70 ~argv ~validate:(fun _ _ -> failwith "validator defect") ()
+      in
+      assert_defect "^napp-5d7f ^napp-5e3x validator defect" code calls err
+        "validator defect")
+    [ [| "demo" |]; [| "demo"; "config"; "check" |] ];
+  let code, _, err, calls =
+    door5 ~defect_exit:70
+      ~exit_code:(function `Problem _ -> 65)
+      ~telemetry_result:(fun ~sw:_ _ _ -> Error (`Problem "exporter endpoint refused"))
+      ()
+  in
+  check_int "^napp-5d7f ^napp-5e3x typed telemetry keeps exit_code" 65 code;
+  let kind, message = door5_sole "^napp-5d7f typed telemetry" calls in
+  check_string "telemetry result kind" "validation" (door5_kind_name kind);
+  check_string "telemetry result text" "exporter endpoint refused\n" message;
+  door5_written ~kind ~message err;
+  let code, _, err, calls =
+    door5 ~defect_exit:70 ~interrupt_exit:130 ~argv:[| "demo"; "stop" |]
+      ~commands_with_env_code:(fun _ _ run_owned_code ->
+        [
+          Cmd.v (Cmd.info "stop")
+            (Term.const (fun () ->
+                 run_owned_code (fun sw ->
+                     let id = Ox.Interrupt_id.create () in
+                     request_stop ~sw id;
+                     Eio.Fiber.await_cancel ())));
+        ])
+      ()
+  in
+  check_int "^napp-5e3x requested stop keeps interrupt_exit" 130 code;
+  check_string "^napp-5e3x requested stop stays silent" "" err;
+  Alcotest.(check int) "stop does not call the hook" 0 (List.length calls)
+
+let test_door5_man_exits () =
+  let open Cmdliner in
+  let man = [ `S "EXAMPLES"; `P "demo run --config FILE" ] in
+  let exits =
+    [
+      Cmd.Exit.info 64 ~doc:"on a configuration error.";
+      Cmd.Exit.info 70 ~doc:"on an internal error.";
+    ]
+  in
+  let expect_page where output markers =
+    List.iter (expect_part output) markers;
+    Alcotest.(check bool)
+      (where ^ " replaces Cmdliner default exits")
+      false
+      (contains output "on command line parsing errors.")
+  in
+  let pages =
+    [
+      ([| "demo"; "--help" |], [ "Door five program."; "EXAMPLES" ]);
+      ([| "demo"; "run"; "--help" |], [ "Start the program."; "EXAMPLES" ]);
+      ([| "demo"; "config"; "--help" |], [ "Inspect configuration."; "EXAMPLES" ]);
+      ([| "demo"; "config"; "check"; "--help" |], [ "Validate and print"; "EXAMPLES" ]);
+    ]
+  in
+  List.iter
+    (fun (argv, markers) ->
+      let code, out, err, calls = door5 ~doc:"Door five program." ~man ~exits ~argv () in
+      check_int "^napp-5h4m help succeeds" 0 code;
+      check_string "help writes no diagnostic" "" err;
+      Alcotest.(check int) "help does not call the hook" 0 (List.length calls);
+      expect_page "door help" out
+        ("demo run --config FILE" :: "on a configuration error."
+       :: "on an internal error." :: markers))
+    pages;
+  let code, out, _, calls =
+    door5 ~bare:`Help ~doc:"Door five program." ~man ~exits ~argv:[| "demo" |] ()
+  in
+  check_int "^napp-5h4m bare help succeeds" 0 code;
+  Alcotest.(check int) "bare help does not call the hook" 0 (List.length calls);
+  expect_page "bare help" out
+    [ "Door five program."; "EXAMPLES"; "on an internal error." ];
+  let _, out, _, _ = door5 ~argv:[| "demo"; "--help" |] () in
+  expect_part out "on command line parsing errors.";
+  let code, out, _, _ =
+    door5 ~man ~exits
+      ~commands:
+        [ Cmd.v (Cmd.info "extra" ~doc:"Consumer verb.") (Term.const (fun () -> 0)) ]
+      ~argv:[| "demo"; "extra"; "--help" |]
+      ()
+  in
+  check_int "^napp-5h4m consumer help succeeds" 0 code;
+  expect_part out "Consumer verb.";
+  expect_part out "on command line parsing errors.";
+  Alcotest.(check bool)
+    "^napp-5h4m consumer man is left alone" false (contains out "EXAMPLES");
+  Alcotest.(check bool)
+    "^napp-5h4m consumer exits are left alone" false
+    (contains out "on an internal error.");
+  let code, _, _, _ = door5 ~man ~exits ~usage_exit:124 ~argv:[| "demo"; "--nope" |] () in
+  check_int "^napp-5h4m exits change help, not evaluation" 124 code
+
+let test_door5_bare_command () =
+  let open Cmdliner in
+  Ox_test.run (fun base _ ->
+      let orientation_runs = ref 0 and service_runs = ref 0 and reads = ref 0 in
+      let calls = ref 0 and orientation_code = ref 17 and saw_env = ref false in
+      let journal = Ox_observability.Logger.Memory.create () in
+      let output = Buffer.create 128 in
+      let term env =
+        saw_env := env.Env.base == base;
+        ignore env.Env.caps;
+        Ox_observability.Logger.info env.Env.logger "pre-config";
+        Term.const (fun () ->
+            incr orientation_runs;
+            !orientation_code)
+      in
+      let invoke argv =
+        run_for_test_with_args ~bare:(`Command term) ~defect_exit:70
+          ~exit_code:(function `Problem _ -> 65)
+          ~diagnostic:(fun ~kind:_ ~message:_ ->
+            incr calls;
+            "should-not-run\n")
+          ~service_args:(Term.const ()) ~env:base ~name:"demo" ~config ~pp_err ~getenv
+          ~journal:(Ox_observability.Logger.Memory.reporter journal)
+          ~read:(fun _ ->
+            incr reads;
+            Ok good)
+          ~stdout:(fun text -> Buffer.add_string output text)
+          ~stderr:(fun text -> Buffer.add_string output text)
+          ~argv
+          (fun _ _ _ () _ ->
+            incr service_runs;
+            Ok ())
+      in
+      check_int "^napp-5b9o orientation code is preserved" 17 (invoke [| "demo" |]);
+      check_int "^napp-5b9o orientation ran" 1 !orientation_runs;
+      check_int "^napp-5b9o service did not start" 0 !service_runs;
+      check_int "^napp-5b9o config was not loaded" 0 !reads;
+      Alcotest.(check bool) "^napp-5b9o term got the pre-config env" true !saw_env;
+      check_int "^napp-5b9o journal is not a diagnostic" 0 !calls;
+      let messages =
+        List.map
+          (fun (record : Ox_observability.Logger.record) -> record.msg)
+          (Ox_observability.Logger.Memory.records journal)
+      in
+      Alcotest.(check bool)
+        "^napp-5b9o pre-config logger wrote" true
+        (List.mem "pre-config" messages);
+      orientation_runs := 0;
+      Buffer.clear output;
+      check_int "^napp-5b9o help does not run the thunk" 0 (invoke [| "demo"; "--help" |]);
+      check_int "^napp-5b9o help left the thunk unrun" 0 !orientation_runs;
+      check_int "^napp-5b9o help did not load config" 0 !reads;
+      check_int "^napp-5b9o help did not call the hook" 0 !calls;
+      expect_part (Buffer.contents output) "demo";
+      orientation_code := 64;
+      check_int "^napp-5b9o a non-door code is preserved" 64 (invoke [| "demo" |]);
+      check_int "^napp-5b9o named service still starts" 0 (invoke [| "demo"; "run" |]);
+      check_int "^napp-5b9o named service entered the program" 1 !service_runs;
+      check_int "^napp-5b9o named service loaded config" 1 !reads)
+
+(* ^napp-5w6t: a supplied decoder replaces of_yojson on every Door decode, sees the
+   minted Env, and leaves environment overrides and load errors alone. *)
+let test_door5_decode_with_env () =
+  let open Cmdliner in
+  Ox_test.run (fun base _ ->
+      let derived = ref 0 in
+      let spec =
+        {
+          config with
+          of_yojson =
+            (fun json ->
+              incr derived;
+              config.of_yojson json);
+        }
+      in
+      let saw_env = ref false and decoded = ref 0 in
+      let decode_with_env env _json =
+        incr decoded;
+        saw_env := env.Env.base == base;
+        ignore env.Env.caps;
+        Ok { models = { api_key = None }; port = 99 }
+      in
+      let errors = Buffer.create 64 and output = Buffer.create 64 and calls = ref [] in
+      let diagnostic ~kind ~message =
+        calls := (kind, message) :: !calls;
+        door5_json ~kind ~message
+      in
+      let invoke ?decode_with_env ?(getenv = getenv) ?(argv = [| "demo" |])
+          ?(read = fun _ -> Ok good) ?(program = fun _ _ _ () _ -> Ok ()) () =
+        calls := [];
+        Buffer.clear errors;
+        Buffer.clear output;
+        run_for_test_with_args ?decode_with_env ~diagnostic ~validation_exit:64
+          ~service_args:(Term.const ()) ~env:base ~name:"demo" ~config:spec ~pp_err
+          ~getenv
+          ~journal:
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
+          ~read
+          ~stdout:(fun text -> Buffer.add_string output text)
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~argv program
+      in
+      let seen = ref 0 in
+      check_int "^napp-5w6t startup uses the env decoder" 0
+        (invoke ~decode_with_env
+           ~program:(fun _ _ settings () _ ->
+             incr seen;
+             check_int "^napp-5w6t decoded port reaches the program" 99 settings.port;
+             Ok ())
+           ());
+      check_int "^napp-5w6t program ran" 1 !seen;
+      Alcotest.(check bool) "^napp-5w6t decoder saw the minted env" true !saw_env;
+      check_int "^napp-5w6t derived decoder was not used" 0 !derived;
+      check_int "^napp-5w6t config check uses the same decoder" 0
+        (invoke ~decode_with_env ~argv:[| "demo"; "config"; "check" |] ());
+      expect_part (Buffer.contents output) "\"port\":99";
+      check_int "^napp-5w6t check did not use of_yojson" 0 !derived;
+      let with_port = function
+        | "HOME" -> Some "/home/demo"
+        | "PORT" -> Some "7"
+        | _ -> None
+      in
+      check_int "^napp-5w6t environment overrides still apply" 0
+        (invoke ~decode_with_env ~getenv:with_port
+           ~program:(fun _ _ settings () _ ->
+             check_int "^napp-5w6t PORT overrides the decoder" 7 settings.port;
+             Ok ())
+           ());
+      let failing _ _ = Error "referenced file is missing" in
+      List.iter
+        (fun argv ->
+          let started = ref false in
+          let code =
+            invoke ~decode_with_env:failing ~argv
+              ~program:(fun _ _ _ () _ ->
+                started := true;
+                Ok ())
+              ()
+          in
+          check_int "^napp-5w6t decode error keeps validation_exit" 64 code;
+          Alcotest.(check bool) "^napp-5w6t decode error does not start" false !started;
+          let kind, message =
+            door5_sole "^napp-5w6t one config diagnostic" (List.rev !calls)
+          in
+          check_string "decode error kind" "config" (door5_kind_name kind);
+          expect_part message "referenced file is missing";
+          door5_written ~kind ~message (Buffer.contents errors))
+        [ [| "demo" |]; [| "demo"; "config"; "check" |] ];
+      decoded := 0;
+      let code =
+        invoke ~decode_with_env
+          ~argv:[| "demo"; "--config"; "/no/such.toml" |]
+          ~read:(fun _ -> Error `Missing)
+          ()
+      in
+      check_int "^napp-5w6t missing file is a load error" 64 code;
+      check_int "^napp-5w6t missing file does not decode" 0 !decoded;
+      let kind, message =
+        door5_sole "^napp-5w6t missing file diagnostic" (List.rev !calls)
+      in
+      check_string "missing kind" "config" (door5_kind_name kind);
+      expect_part message "no such file";
+      let forwarded = ref 0 in
+      check_int "^napp-5w6t run_for_test forwards the decoder" 0
+        (run_for_test
+           ~decode_with_env:(fun env json ->
+             incr forwarded;
+             decode_with_env env json)
+           ~env:base ~name:"demo" ~config:spec ~pp_err ~getenv
+           ~journal:
+             (Ox_observability.Logger.Memory.reporter
+                (Ox_observability.Logger.Memory.create ()))
+           ~read:(fun _ -> Ok good)
+           ~stderr:ignore ~stdout:ignore ~argv:[| "demo" |]
+           (fun _ settings _ ->
+             check_int "^napp-5w6t forwarded decoder's port" 99 settings.port;
+             Ok ()));
+      check_int "^napp-5w6t run_for_test called the decoder" 1 !forwarded)
+
+let test_door5_run_for_test_forwards () =
+  Ox_test.run (fun env _ ->
+      let calls = ref 0 in
+      let errors = Buffer.create 80 in
+      let code =
+        run_for_test ~defect_exit:70
+          ~diagnostic:(fun ~kind ~message ->
+            incr calls;
+            check_string "forwarded kind" "usage" (door5_kind_name kind);
+            door5_json ~kind ~message)
+          ~env ~name:"demo" ~config ~pp_err ~getenv
+          ~journal:
+            (Ox_observability.Logger.Memory.reporter
+               (Ox_observability.Logger.Memory.create ()))
+          ~read:(fun _ -> Ok good)
+          ~stderr:(fun text -> Buffer.add_string errors text)
+          ~stdout:ignore
+          ~argv:[| "demo"; "--not-an-option" |]
+          (fun _ _ _ -> Alcotest.fail "run_for_test must not start")
+      in
+      check_int "^napp-5u8d ^napp-5e3x run_for_test keeps usage exit" 2 code;
+      check_int "^napp-5u8d run_for_test calls the hook once" 1 !calls;
+      expect_part (Buffer.contents errors) "\"kind\":\"usage\"")
+
 let () =
   Alcotest.run "ox_app"
     [
       ( "door",
         [
+          Alcotest.test_case "^napp-5u8d diagnostic hook" `Quick test_door5_usage;
+          Alcotest.test_case "^napp-5c2v config and validation diagnostics" `Quick
+            test_door5_config;
+          Alcotest.test_case "^napp-5d7f ^napp-5e3x reports and defect exit" `Quick
+            test_door5_reports;
+          Alcotest.test_case "^napp-5h4m man and exits" `Quick test_door5_man_exits;
+          Alcotest.test_case "^napp-5b9o bare command" `Quick test_door5_bare_command;
+          Alcotest.test_case "^napp-5w6t env decoder" `Quick test_door5_decode_with_env;
+          Alcotest.test_case "^napp-5u8d ^napp-5e3x run_for_test forwards" `Quick
+            test_door5_run_for_test_forwards;
           Alcotest.test_case "^napp-fsxf custom help" `Quick test_door4_doc;
           Alcotest.test_case "^napp-7hvu validation exit" `Quick
             test_door4_validation_exit;

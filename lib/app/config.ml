@@ -126,7 +126,7 @@ and table_json path table =
   in
   loop [] (Toml.Types.Table.bindings table)
 
-let decode ~spec ~getenv text =
+let decode_with ~of_yojson ~spec ~getenv text =
   let* parsed =
     match Toml.Parser.from_string text with
     | `Ok table -> table_json [] table
@@ -137,7 +137,7 @@ let decode ~spec ~getenv text =
                 message))
   in
   let* settings =
-    match spec.of_yojson parsed with
+    match of_yojson parsed with
     | Ok settings -> Ok settings
     | Error message -> Error (`Config message)
   in
@@ -147,14 +147,14 @@ let decode ~spec ~getenv text =
    A config type whose fields all carry defaults then starts a fresh install with no file;
    an absent --config path, and a file that is there and cannot be read at either path,
    stay errors naming the path. *)
-let load_with ~missing ~spec ~getenv ~read ~(source : source) =
+let load_decoding ~of_yojson ~missing ~spec ~getenv ~read ~(source : source) =
   let path = match source with `Explicit path | `Default path -> path in
   match read path with
-  | Ok text -> decode ~spec ~getenv text
+  | Ok text -> decode_with ~of_yojson ~spec ~getenv text
   | Error (`Unreadable message) -> Error (`Config (Printf.sprintf "%s: %s" path message))
   | Error `Missing -> (
       match source with
-      | `Default _ when missing = `Defaults -> decode ~spec ~getenv ""
+      | `Default _ when missing = `Defaults -> decode_with ~of_yojson ~spec ~getenv ""
       | `Default _ -> Error (`Config (Printf.sprintf "%s: no such file" path))
       | `Explicit _ -> Error (`Config (Printf.sprintf "%s: no such file" path)))
 
@@ -180,6 +180,11 @@ let read_regular ~max_bytes path =
   with
   | Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) -> Error `Missing
   | Eio.Io _ as exn -> Error (`Unreadable (Printexc.to_string exn))
+
+let decode ~spec ~getenv text = decode_with ~of_yojson:spec.of_yojson ~spec ~getenv text
+
+let load_with ~missing ~spec ~getenv ~read ~source =
+  load_decoding ~of_yojson:spec.of_yojson ~missing ~spec ~getenv ~read ~source
 
 let load ~spec ~getenv ~read ~source =
   load_with ~missing:`Defaults ~spec ~getenv ~read ~source

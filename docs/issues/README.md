@@ -64,6 +64,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 49 | `ox-rename/01-ox-rename.md` | everything | 45 | the library is ox in a fresh private repository; consumers and nixos-config follow; Leash gets a remote | [x] |
 | 54 | `caps-gate-2/01-caps-gate-2.md` | `ox_caps`, gate | 48 | no silent skips; minting only at the Door; Leash live run after caps | [x] |
 | 55 | `posix-wakeup/01-posix-wakeup.md` | `ox_app`, `ox` | 48 | bounded SIGCHLD wakeup on posix; Pie swap precondition; jitter compile-time again | [x] |
+| 56 | `door-5/01-door-5.md` | `ox_app` | 43, 55 | Leash L41: JSON diagnostics, grouped help with real exits, bare orientation | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).

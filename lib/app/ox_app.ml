@@ -32,43 +32,52 @@ module type SERVICE = sig
   val status : t -> Status.t
 end
 
-let render ~stop_ids ~interrupt_exit ~exit_code ~success stderr pp_err = function
+(* ^napp-5d7f: render a whole report before the consumer's diagnostic hook. *)
+let render ~stop_ids ~interrupt_exit ~exit_code ~defect_exit ~success diagnose pp_err =
+  function
   | Exit.Success value -> success value
   | Exit.Failure (Cause.Interrupt (Some id))
     when List.exists (Interrupt_id.equal id) !stop_ids ->
       interrupt_exit
   | Exit.Failure (Cause.Fail err) ->
-      stderr (Format.asprintf "%a\n" pp_err err);
+      diagnose ~kind:`Validation (Format.asprintf "%a\n" pp_err err);
       exit_code err
   | Exit.Failure cause ->
-      stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
-      2
+      diagnose ~kind:`Defect (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
+      defect_exit
 
 (* Runs after decoding and before the program's switch exists. A raise is a defect: it is
    rendered with Cause.pp, and [pp_err] renders any typed payload as it would for a program
    failure. [None] means the validator accepted the configuration. *)
-let validation_failure ~validation_exit ~validate ~pp_err ~stderr env settings =
+let validation_failure ~validation_exit ~defect_exit ~validate ~pp_err ~diagnose env
+    settings =
   match validate env settings with
   | Ok () -> None
   | Error errors ->
       Some
-        (stderr (Config.render_validation_errors errors ^ "\n");
+        (diagnose ~kind:`Validation (Config.render_validation_errors errors ^ "\n");
          validation_exit)
   | exception exn ->
       let cause = Cause.Die (exn, Printexc.get_raw_backtrace ()) in
       Some
-        (stderr (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
-         2)
+        (diagnose ~kind:`Defect (Format.asprintf "%a\n" (Cause.pp pp_err) cause);
+         defect_exit)
 
 let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     ?config_commands_with_env ?commands_with_env ?commands_with_env_code
-    ?(bare = `Service) ?(usage_exit = 2) ?(exit_code = fun _ -> 1) ?(interrupt_exit = 130)
-    ?(doc = "Run the service.") ?version ?(validation_exit = 2)
-    ?(log_level = Ox_observability.Logger.Info) ?journal_level ?(service_command = "run")
-    ?(config_file = "config.toml") ?(missing = `Defaults) ?(validate = fun _ _ -> Ok ())
-    ?validate_source ?telemetry ?telemetry_result ~service_args ~env ~journal ~name
-    ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv program =
+    ?(bare = `Service) ?(usage_exit = 2) ?(exit_code = fun _ -> 1) ?(defect_exit = 2)
+    ?(interrupt_exit = 130) ?(doc = "Run the service.") ?version ?man ?exits ?diagnostic
+    ?(validation_exit = 2) ?(log_level = Ox_observability.Logger.Info) ?journal_level
+    ?(service_command = "run") ?(config_file = "config.toml") ?(missing = `Defaults)
+    ?decode_with_env ?(validate = fun _ _ -> Ok ()) ?validate_source ?telemetry
+    ?telemetry_result ~service_args ~env ~journal ~name ~config ~pp_err ~getenv ~read
+    ~stderr ~stdout ~argv program =
   let open Cmdliner in
+  (* ^napp-5u8d ^napp-5c2v ^napp-5d7f: one write per complete diagnostic. *)
+  let diagnose ~kind message =
+    stderr
+      (match diagnostic with None -> message | Some render -> render ~kind ~message)
+  in
   let journal =
     match journal_level with
     | None -> journal
@@ -90,9 +99,9 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
               Option.iter (fun f -> f sw) on_switch;
               task sw))
     in
-    render ~stop_ids:requested ~interrupt_exit:0 ~exit_code
+    render ~stop_ids:requested ~interrupt_exit:0 ~exit_code ~defect_exit
       ~success:(fun () -> 0)
-      stderr pp_err outcome
+      diagnose pp_err outcome
   in
   let run_owned_code task =
     let requested = ref [] in
@@ -102,8 +111,8 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
               Option.iter (fun f -> f sw) on_switch;
               Ok (task sw)))
     in
-    render ~stop_ids:requested ~interrupt_exit ~exit_code ~success:Fun.id stderr pp_err
-      outcome
+    render ~stop_ids:requested ~interrupt_exit ~exit_code ~defect_exit ~success:Fun.id
+      diagnose pp_err outcome
   in
   let config_arg =
     Arg.(
@@ -113,24 +122,29 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   in
   let prepare file =
     let source = Config.resolve_with ~file_name:config_file ~name ~config:file ~getenv in
-    match Config.load_with ~missing ~spec:config ~getenv ~read ~source with
+    let of_yojson =
+      match decode_with_env with
+      | None -> (config : _ Config.t).of_yojson
+      | Some decode -> decode door_env
+    in
+    match Config.load_decoding ~of_yojson ~missing ~spec:config ~getenv ~read ~source with
     | Error (`Config message) ->
-        stderr (message ^ "\n");
+        diagnose ~kind:`Config (message ^ "\n");
         Error validation_exit
     | Ok settings -> (
         let failure =
           match
-            validation_failure ~validation_exit ~validate ~pp_err ~stderr door_env
-              settings
+            validation_failure ~validation_exit ~defect_exit ~validate ~pp_err ~diagnose
+              door_env settings
           with
           | Some _ as failure -> failure
           | None -> (
               match validate_source with
               | None -> None
               | Some validate ->
-                  validation_failure ~validation_exit
+                  validation_failure ~validation_exit ~defect_exit
                     ~validate:(fun env cfg -> validate env source cfg)
-                    ~pp_err ~stderr door_env settings)
+                    ~pp_err ~diagnose door_env settings)
         in
         match failure with Some code -> Error code | None -> Ok (source, settings))
   in
@@ -180,9 +194,9 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
                       Option.iter (fun f -> f sw) on_switch;
                       program program_env source settings args sw))
         in
-        render ~stop_ids:requested ~interrupt_exit:0 ~exit_code
+        render ~stop_ids:requested ~interrupt_exit:0 ~exit_code ~defect_exit
           ~success:(fun () -> 0)
-          stderr pp_err outcome
+          diagnose pp_err outcome
   in
   let run_term = Term.(const execute $ config_arg $ service_args) in
   let check file () =
@@ -197,10 +211,14 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   (* ^napp-d5e4: the command that starts the program carries the service author's name,
      so a consumer can use `run` for a verb of its own. The group's default term is the
      same term, so a bare invocation starts the program whatever that command is called. *)
-  let run_cmd = Cmd.v (Cmd.info service_command ~doc:"Start the program.") run_term in
+  (* ^napp-5h4m: consumer metadata on every command info the Door constructs. *)
+  let run_cmd =
+    Cmd.v (Cmd.info service_command ~doc:"Start the program." ?man ?exits) run_term
+  in
   let check_cmd =
     Cmd.v
-      (Cmd.info "check" ~doc:"Validate and print redacted effective configuration.")
+      (Cmd.info "check" ~doc:"Validate and print redacted effective configuration." ?man
+         ?exits)
       check_term
   in
   (* ^napp-wf22: the group is the Door's, so a consumer's `config init` is added to it
@@ -210,7 +228,7 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
       match config_commands_with_env with None -> [] | Some build -> build door_env
     in
     Cmd.group
-      (Cmd.info "config" ~doc:"Inspect configuration.")
+      (Cmd.info "config" ~doc:"Inspect configuration." ?man ?exits)
       ((check_cmd :: config_commands) @ with_env)
   in
   let owned_commands =
@@ -221,9 +239,16 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
     | None -> []
     | Some build -> build door_env run_owned run_owned_code
   in
-  let default = match bare with `Service -> Some run_term | `Help -> None in
+  (* ^napp-5b9o: orientation gets the pre-config Env, not a service scope. *)
+  let default =
+    match bare with
+    | `Service -> Some run_term
+    | `Help -> None
+    | `Command command -> Some (command door_env)
+  in
   let cmd =
-    Cmd.group ?default (Cmd.info name ~doc ?version)
+    Cmd.group ?default
+      (Cmd.info name ~doc ?version ?man ?exits)
       ((run_cmd :: config_cmd :: commands) @ owned_commands @ owned_code_commands)
   in
   let out_buffer = Buffer.create 256 and err_buffer = Buffer.create 256 in
@@ -240,22 +265,23 @@ let run_for_test_with_args ?on_switch ?(commands = []) ?(config_commands = [])
   Format.pp_print_flush out_fmt ();
   Format.pp_print_flush err_fmt ();
   if Buffer.length out_buffer > 0 then stdout (Buffer.contents out_buffer);
-  if Buffer.length err_buffer > 0 then stderr (Buffer.contents err_buffer);
+  if Buffer.length err_buffer > 0 then diagnose ~kind:`Usage (Buffer.contents err_buffer);
   match parsed with
   | Ok `Help | Ok `Version -> 0
   | Error _ -> usage_exit
   | Ok (`Ok f) -> f ()
 
-let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?doc ?validation_exit
-    ?log_level ?journal_level ?service_command ?config_file ?missing ?validate
-    ?validate_source ?telemetry ?telemetry_result ~env ~journal ~name ~config ~pp_err
-    ~getenv ~read ~stderr ~stdout ~argv program =
-  run_for_test_with_args ?on_switch ?commands ?config_commands ?exit_code ?doc
-    ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
-    ?validate ?validate_source ?telemetry ?telemetry_result
-    ~service_args:(Cmdliner.Term.const ()) ~env ~journal ~name ~config ~pp_err ~getenv
-    ~read ~stderr ~stdout ~argv (fun env _source settings () sw ->
-      program env settings sw)
+let run_for_test ?on_switch ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc
+    ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level ?service_command
+    ?config_file ?missing ?decode_with_env ?validate ?validate_source ?telemetry
+    ?telemetry_result ~env ~journal ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout
+    ~argv program =
+  run_for_test_with_args ?on_switch ?commands ?config_commands ?exit_code ?defect_exit
+    ?bare ?doc ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?decode_with_env ?validate ?validate_source
+    ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~env ~journal
+    ~name ~config ~pp_err ~getenv ~read ~stderr ~stdout ~argv
+    (fun env _source settings () sw -> program env settings sw)
 
 (* ^nwake-27rc ^nwake-y4cx: inspect the environment returned by the backend, not
    EIO_BACKEND, which may be absent when Eio_main falls back from linux to posix. *)
@@ -298,10 +324,11 @@ let posix_wakeup ~sw ?interval_ms ?logger env =
         tick ())
 
 let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_env
-    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
-    ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
-    ?service_command ?config_file ?missing ?read_file ?validate ?validate_source
-    ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err program =
+    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit
+    ?interrupt_exit ?doc ?version ?man ?exits ?diagnostic ?validation_exit ?log_level
+    ?journal_level ?service_command ?config_file ?missing ?decode_with_env ?read_file
+    ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config
+    ~pp_err program =
   Eio_main.run (fun env ->
       (* The daemon belongs to this OUTER switch. SIGTERM fails only the inner
          program switch: its Cancel.protect cleanups can still await children
@@ -370,21 +397,24 @@ let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_en
               in
               run_for_test_with_args ?commands ?config_commands ?config_commands_with_env
                 ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code
-                ?interrupt_exit ?doc ?version ?validation_exit ?log_level ?journal_level
-                ?service_command ?config_file ?missing ?validate ?validate_source
-                ?telemetry ?telemetry_result ~service_args ~on_switch ~env ~journal ~name
-                ~config ~pp_err ~getenv:Sys.getenv_opt ~read
+                ?interrupt_exit ?defect_exit ?doc ?version ?man ?exits ?diagnostic
+                ?validation_exit ?log_level ?journal_level ?service_command ?config_file
+                ?missing ?decode_with_env ?validate ?validate_source ?telemetry
+                ?telemetry_result ~service_args ~on_switch ~env ~journal ~name ~config
+                ~pp_err ~getenv:Sys.getenv_opt ~read
                 ~stderr:(fun text -> Eio.Flow.copy_string text env#stderr)
                 ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
                 ~argv:Sys.argv program)))
 
-let run ?wakeup_ms ?commands ?config_commands ?exit_code ?doc ?validation_exit ?log_level
-    ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
-    ?validate_source ?telemetry ?telemetry_result ~name ~config ~pp_err program =
-  run_with_args ?wakeup_ms ?commands ?config_commands ?exit_code ?doc ?validation_exit
-    ?log_level ?journal_level ?service_command ?config_file ?missing ?read_file ?validate
-    ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
-    ~name ~config ~pp_err (fun env _source settings () sw -> program env settings sw)
+let run ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc ?man
+    ?exits ?diagnostic ?validation_exit ?log_level ?journal_level ?service_command
+    ?config_file ?missing ?decode_with_env ?read_file ?validate ?validate_source
+    ?telemetry ?telemetry_result ~name ~config ~pp_err program =
+  run_with_args ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc
+    ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level ?service_command
+    ?config_file ?missing ?decode_with_env ?read_file ?validate ?validate_source
+    ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~name ~config
+    ~pp_err (fun env _source settings () sw -> program env settings sw)
 
 let with_powerbox f = f ((Ox_caps_door.powerbox [@alert "-mint"]) ())
 

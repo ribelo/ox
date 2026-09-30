@@ -78,6 +78,17 @@ val decode :
     [spec.env]. TOML dates and non-finite floats are refused with the JSON pointer of the
     value; a decode failure is the deriver's message unchanged. *)
 
+val load_decoding :
+  of_yojson:(Yojson.Safe.t -> ('cfg, string) result) ->
+  missing:missing ->
+  spec:'cfg t ->
+  getenv:(string -> string option) ->
+  read:(string -> (string, read_error) result) ->
+  source:source ->
+  ('cfg, error) result
+(** {!load_with} with [of_yojson] in place of [spec.of_yojson]. [spec.env] still applies.
+    The Door uses this for [?decode_with_env]. ^napp-5w6t *)
+
 val load_with :
   missing:missing ->
   spec:'cfg t ->
