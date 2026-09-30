@@ -209,6 +209,11 @@ let test_fd_and_output () =
                      ~fds:[ (3, fd read3); (4, fd write4) ]
                      ())
               in
+              (* daily-c4cl: the child's OS pid is reported. *)
+              Alcotest.(check bool)
+                "pid is a live process" true
+                (let pid = C.pid child in
+                 pid > 0 && Sys.file_exists (Printf.sprintf "/proc/%d" pid));
               Eio.Resource.close read3;
               Eio.Resource.close write4;
               Eio.Flow.copy_string "hello\n" write3;

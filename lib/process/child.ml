@@ -12,6 +12,7 @@ type t = {
 }
 
 let stdout t = t.stdout
+let pid t = Eio.Process.pid t.process
 let stderr t = t.stderr
 let status = function `Exited n -> Exited n | `Signaled n -> Signaled n
 

@@ -35,6 +35,10 @@ val spawn :
     so a service that launches a program shows [< Cap.fork; Cap.exec; .. >] in its own
     type. It is only looked at, never kept. *)
 
+val pid : t -> int
+(** [pid t] is the child's operating-system process id, for status reports and
+    diagnostics. Signal it through {!signal}, not with the raw id. ^daily-c4cl *)
+
 val stdout : t -> Eio.Flow.source_ty Eio.Resource.t option
 
 val stderr : t -> Eio.Flow.source_ty Eio.Resource.t option
