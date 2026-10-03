@@ -26,6 +26,7 @@ Every build takes upstream Eio's own release. The shared switch pins `eio`, `eio
 - Eio 1.4 made `Net.getaddrinfo` raise instead of returning `[]`; `Ox_http.Client` and `Ws_client` already convert `Eio.Io` to `` `Connect ``, so no change.
 - Eio 1.4 prefers returning `Fiber.any`'s value over cancelling quickly; `Concurrent.race`/`race_first` are built on it, so the `@stress` properties were run.
 - `eio_linux` 1.6 needs `uring >= 2.15`, available from opam.ocaml.org and the pinned opam-repository.
+- The OxCaml switch invariant (`ocaml-variants 5.4.0+ox` → `oxcaml-patch-guards`) admits only "no eio" or `eio = 1.3+ox` through `oxcaml-eio*-patches`. `ox-opam-install` pins each of the four guards to its own opam file with only that constraint changed to `>= 1.6` (kept under the switch in `.opam-switch/ox-upstream-eio/`), and refuses if a guard does not have the expected shape. Nix resolutions do not use the guards.
 
 ## Testing Decisions
 

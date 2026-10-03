@@ -519,7 +519,27 @@
               # (an unmaintained oxcaml/eio snapshot). dune-project requires
               # eio >= 1.6; eio_linux 1.6 brings uring >= 2.15 from opam.ocaml.org
               # (^neio-k3vq).
+              #
+              # The OxCaml compiler's switch invariant (ocaml-variants 5.4.0+ox ->
+              # oxcaml-patch-guards) admits only "no eio" or eio = 1.3+ox through
+              # oxcaml-<pkg>-patches. Each guard is pinned to its own opam file
+              # with that one constraint changed to >= 1.6, kept under the switch;
+              # the guards' other dependencies and conflicts are untouched.
+              guard_root="$switch_prefix/.opam-switch/ox-upstream-eio"
               for package in eio eio_posix eio_linux eio_main; do
+                guard="oxcaml-$package-patches"
+                mkdir -p "$guard_root/$guard"
+                opam show "$guard.enabled" --raw \
+                  | sed -E 's/\(= "1\.3\+ox"\)/(>= "1.6")/' > "$guard_root/$guard/opam.new"
+                if grep -q '1\.3+ox' "$guard_root/$guard/opam.new" \
+                  || ! grep -q '>= "1.6"' "$guard_root/$guard/opam.new"; then
+                  echo "Unexpected $guard definition; refusing to pin it:" >&2
+                  cat "$guard_root/$guard/opam.new" >&2
+                  exit 1
+                fi
+                mv -f "$guard_root/$guard/opam.new" "$guard_root/$guard/opam"
+                opam pin add "$guard.enabled" "$guard_root/$guard" --kind=path \
+                  --no-action --yes
                 opam pin add "$package.1.6" \
                   https://github.com/ocaml-multicore/eio/releases/download/v1.6/eio-1.6.tbz \
                   --no-action --yes
