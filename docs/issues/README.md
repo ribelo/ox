@@ -69,6 +69,19 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 58 | `linear-defaults/01-linear-defaults.md` | `ppx_yojson_minimal` | 15, 17 | Pie: a wide defaulted config record derives in linear code | [x] |
 | 59 | [pie-api-gaps/01-pie-api-gaps.md](pie-api-gaps/01-pie-api-gaps.md) | `ox_ai`, `ox_ai_openrouter`, `ox_http` | 25, 35, 40, 57 | Pie: audio/text Responses and precise transport deadlines | [x] |
 | 60 | `stress/01-stress.md` | `ox`, `ox_http`, `ox_ipc` | 45, 57 | stress and fuzz under the seams where every ox bug has lived | [x] |
+| 61 | [once-forks/01-once-forks.md](once-forks/01-once-forks.md) (P1) | `ox` | 45 | ownership: a value moved into one fiber or one release; ADR-0010 | [ ] |
+| 62 | [owned-handles/01-owned-handles.md](owned-handles/01-owned-handles.md) (P2) | `ox_process`, `ox_http`, `ox_sql` | 61 | no use after close, wait or shutdown | [ ] |
+| 63 | [duplex-halves/01-duplex-halves.md](duplex-halves/01-duplex-halves.md) (P3) | `ox_http` | 57, 61, 62 | the row-57 class refused by the compiler; buffer mutexes go | [ ] |
+| 64 | [spawner/01-spawner.md](spawner/01-spawner.md) (P5) | `ox`, `ox_ipc`, `ox_http`, `ox_rpc`, `ox_app` | 61 | forking after `create` is declared in `deps` | [ ] |
+| 65 | [ox-mutex/01-ox-mutex.md](ox-mutex/01-ox-mutex.md) (P7) | `ox` | 61 | branded guarded data; `Ox.Cancel.protect`; replacements for row 66 | [ ] |
+| 66 | [raw-concurrency-gate/01-raw-concurrency-gate.md](raw-concurrency-gate/01-raw-concurrency-gate.md) (P6) | gate rules, `ox_sql`, `ox_sql_dsl`, `ox_http` | 54, 61, 64, 65 | no raw Eio concurrency or Stdlib mutex; catch-all, `Fun.protect`, discarded result, public exception, `Obj.magic*` rules | [ ] |
+| 67 | [ws-typestate/01-ws-typestate.md](ws-typestate/01-ws-typestate.md) (P8) | `ox_http` | 62, 63 | close codes, reasons and phases typed | [ ] |
+| 68 | [parse-dont-validate/01-parse-dont-validate.md](parse-dont-validate/01-parse-dont-validate.md) (P9) | `ox`, `ox_app`, `ox_http`, `ox_observability`, `ox_ai`, `ox_json`, `ox_blocking` | — | ADR-0008 applied to the kernel; one Door spec record | [ ] |
+| 69 | [ppx-let/01-ppx-let.md](ppx-let/01-ppx-let.md) | `ppx_ox_let` (new), `ox` | 15 | `local`/`yielding` values usable after a bind; unblocks 70 and 71 | [ ] |
+| 70 | [local-scope/01-local-scope.md](local-scope/01-local-scope.md) (P4) | `ox` | 61, 64, 69 | **postponed** (2026-10-03): scope handles cannot escape; waits for row 69 | [ ] |
+| 71 | [suspend-token/01-suspend-token.md](suspend-token/01-suspend-token.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_blocking` | 65, 66, 69 | suspending inside a critical section is a compile error | [ ] |
+| 72 | [read-only-status/01-read-only-status.md](read-only-status/01-read-only-status.md) | `ox_app`, `ox` | — | `status : t @ read`; decides `SERVICE` | [ ] |
+| 73 | [cancellation-value/01-cancellation-value.md](cancellation-value/01-cancellation-value.md) | spike, docs | 71 | decide cancellation as a value vs exception (ADR) | [ ] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism stays deferred until a consumer pulls it (ADR-0003).
@@ -76,6 +89,8 @@ Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are indep
 Running alongside, not blocking: the local-handler spike in `../../.scratch/research/handled-pattern/` decides whether ADR-0002's error channel is revisited. Rows do not wait for it; if it wins, the change is a new spec.
 
 Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. Row 32 landed on 2026-09-28; `eta-next` became `master` on 2026-09-29 (`5b09ee47`), and `v1` stays a tag (`5b3affc8`) for taumel and p-doom. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
+
+Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the one trusted cast). P1–P9 are the proposals accepted on 2026-10-03; 69, 71, 72 and 73 came out of the same night's check of what OxCaml and Jane Street's `await`/`capsule` already solve. Order: 61, then 62–65 in parallel, then 66 (it needs their replacements), 67 after 63; 68 and 72 are independent; 69 unblocks 70 (postponed by decision) and 71.
 
 Rows 45–48 implement ADR-0009 (Ox is the floor). Order: 45 first (it changes `Concurrent` that the others build on), then **49 (the ox rename) before anything else**, so that 46–48 are written and built under the ox name in the ox repository. Consumers (Pie, nema, Leash) are updated in the same rows where a story says so; they are internal tools and may change.
 
