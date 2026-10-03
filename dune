@@ -1,1 +1,5 @@
 ; Root dune file. Libraries live under lib/<package>/ and are added when a spec story needs them.
+
+; docs/ is prose and spike evidence (e.g. docs/issues/cancellation-value/spike/), never built or formatted.
+
+(data_only_dirs docs)
