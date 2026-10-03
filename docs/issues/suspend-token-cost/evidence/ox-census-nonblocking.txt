@@ -1,0 +1,186 @@
+lines {'ml': 17389, 'mli': 7271} files 192 functions 1843 marked 249 direct 107 fixedpoint_rounds 6 call_sites 523 references 32 deferred_fields 4
+lib/ai/transport.ml 4 : attempt@115, wait@130, run@145, post_json@180
+lib/ai_chat/chat.ml 1 : complete@26
+lib/ai_chat/ox_ai_chat.ml 1 : complete@11
+lib/ai_openrouter/audio.ml 1 : create@63
+lib/ai_openrouter/common.ml 1 : post@10
+lib/ai_openrouter/embeddings.ml 1 : create@60
+lib/ai_openrouter/responses.ml 3 : post@229, create@241, create_text@251
+lib/ai_realtime/session.ml 4 : connect@5, send@11, receive@27, close@34
+lib/ai_systemone/client.ml 1 : evaluate@23
+lib/app/config.ml 1 : read_regular@164
+lib/app/ox_app.ml 13 : serve@15, run_for_test_with_args@66, run_owned@94, run_owned_code@106, execute@151, run_for_test@274, posix_wakeup@314, tick@320, run_with_args@326, on_switch@372, read@390, run@409, run_simple@421
+lib/blocking/ox_blocking.ml 10 : shutdown@65, reserve@86, try_reserve@108, execute@120, run@177, try_run@182, run_result@192, try_run_result@197, run_result_timeout@202, try_run_result_timeout@210
+lib/http/client.ml 15 : refill@43, perform@44, available@66, take_byte@68, read_line@74, loop@76, read_exact@90, loop@92, read_response@103, headers@105, chunks@140, trailers@153, until_close@170, request@189, perform@192
+lib/http/server.ml 20 : refill@220, next_byte@225, line@231, loop@233, take@247, loop@249, parse_head@262, headers@275, request_body@326, trailers@357, write_response@408, write_bytes@446, loop@460, serve_flow@478, loop@487, run_h1_on_socket@556, close_idle@569, run@574, accept@575, run_h1@608
+lib/http/service.ml 1 : h1@246
+lib/http/tls_flow.ml 17 : with_lock@47, drain@50, loop@51, flush@70, try_flush@75, feed@105, handshake@120, loop@121, single_read@139, loop@142, write_once@171, single_write@189, attempt@195, close@211, copy@228, shutdown@229, create@232
+lib/http/ws_client.ml 17 : read_exact@50, loop@52, read_head@66, loop@68, create_tls@149, connect@161, perform@165, dial@192, finish@287, writing@295, send_frame@303, send_text@309, send_binary@312, close@314, read_frame@346, receive@403, loop@407
+lib/ipc/listener.ml 10 : read_line@175, read@177, scan@179, respond@195, peer@211, refuse@215, work@233, monitor@248, drain@250, run@273
+lib/otel/ox_otel.ml 13 : post@142, send@152, send_metrics@199, export_metrics@211, send_window@212, drain@232, finish@285, worker@298, flush_window@305, loop@309, create@351, flush@437, shutdown@448
+lib/ox/actor.ml 7 : next@50, enqueue@82, tell@85, ask@92, wait@98, create@133, loop@148
+lib/ox/agent.ml 9 : create@26, loop@31, request@55, get@70, update@75, get_and_update@80, cast@85, update_result@92, get_and_update_result@98
+lib/ox/channel.ml 3 : wait_changed@38, send@40, receive@48
+lib/ox/concurrent.ml 7 : par@15, both@24, all@29, for_each@37, race@45, race_first@71, with_background@76
+lib/ox/rate_limiter.ml 4 : acquire@89, run@93, wait_for_permit@94, run_or_drop@104
+lib/ox/resource.ml 2 : use_in_scope@1, use_closeable_in_scope@11
+lib/ox/retry.ml 5 : sleep@2, retry_loop@13, retry@29, repeat_loop@32, repeat@42
+lib/ox/scope.ml 7 : run@45, supervised_error@144, fork_error@152, fork@160, fork_daemon@162, fork_error_daemon@167, await@171
+lib/ox/select.ml 4 : select@50, block@80, block@98, receive@106
+lib/ox/supervisor.ml 22 : supervise@203, launch@230, settle_spontaneous@291, settle_induced@317, stop_entry@325, sweep@354, wait_ready@384, start_downs@411, go@412, recover@454, shutdown_all@485, loop@489, react@503, handle@510, config@609, launch_supervisor@621, start@631, stop@645, await@649, terminate_child@666, start_simple@682, start_child@694
+lib/ox/timeout.ml 1 : timeout@1
+lib/process/child.ml 4 : await@19, stop@28, spawn@42, output@60
+lib/process/supervised.ml 4 : stop@28, start@42, run@56, loop@59
+lib/rpc/correlator.ml 5 : close@76, create@84, loop@117, call@135, run@136
+lib/sql/migrate.ml 13 : query@403, execute@405, script@408, create_table@410, read_states@417, list_applied@453, apply_migration@482, run_migrations@507, loop@512, run@523, run_to@527, undo@540, loop@548
+lib/sql/pool.ml 18 : guard@19, shutdown_state@21, create@32, make@41, shutdown@76, apply_timeout@78, use@86, select@112, returning@113, execute_compiled@115, run_schema@118, fold_select@120, query@125, fold@128, execute@131, execute_script@134, with_connection@137, with_transaction@144
+UNRESOLVED EIO/IO DISPATCH
+1 lib/ai/transport.ml Eio.Time.now
+1 lib/app/config.ml read
+1 lib/app/ox_app.ml Eio.Condition.broadcast
+1 lib/app/ox_app.ml Eio.Condition.create
+1 lib/app/ox_app.ml Eio.Fiber.create_key
+1 lib/app/ox_app.ml Eio.Fiber.get
+3 lib/app/ox_app.ml Eio.Fiber.with_binding
+1 lib/app/ox_app.ml Eio.Stdenv.backend_id
+1 lib/app/ox_app.ml Eio.Switch.check
+1 lib/app/ox_app.ml Eio.Switch.fail
+1 lib/app/ox_app.ml Eio_main.run
+1 lib/app/ox_app.ml reader
+2 lib/blocking/ox_blocking.ml Eio.Semaphore.get_value
+2 lib/blocking/ox_blocking.ml Eio.Semaphore.make
+7 lib/blocking/ox_blocking.ml Eio.Semaphore.release
+1 lib/caps/cap_stdlib.ml Stdlib.read_line
+1 lib/caps/cap_sys.ml Sys.readdir
+1 lib/http/client.ml Ox_http_tls_openssl.create_ctx
+1 lib/http/client.ml Ox_http_tls_openssl.ctx_load_ca
+1 lib/http/ox_http_tls_openssl.ml bio_read_raw
+1 lib/http/ox_http_tls_openssl.ml bio_write_pending_raw
+1 lib/http/ox_http_tls_openssl.ml bio_write_raw
+1 lib/http/ox_http_tls_openssl.ml read_raw
+1 lib/http/ox_http_tls_openssl.ml write_raw
+1 lib/http/server.ml Eio.Cancel.protect
+1 lib/http/server.ml Eio.Switch.fail
+1 lib/http/server.ml stream.read
+1 lib/http/service.ml Eio_unix.Net.Ipaddr.of_unix
+1 lib/http/tls_flow.ml Eio.Cancel.protect
+1 lib/http/tls_flow.ml Eio.Flow.Pi.two_way
+3 lib/http/tls_flow.ml Eio.Mutex.create
+2 lib/http/tls_flow.ml Eio.Mutex.try_lock
+2 lib/http/tls_flow.ml Eio.Mutex.unlock
+1 lib/http/tls_flow.ml Eio.Resource.bindings
+1 lib/http/tls_flow.ml Eio.Resource.handler
+1 lib/http/ws_client.ml Eio.Mutex.create
+2 lib/http/ws_client.ml Eio.Time.now
+1 lib/ipc/listener.ml Eio.Cancel.protect
+1 lib/ipc/listener.ml Eio.Semaphore.make
+2 lib/ipc/listener.ml Eio.Semaphore.release
+1 lib/ipc/listener.ml Eio.Switch.check
+1 lib/ipc/listener.ml Eio.Switch.fail
+1 lib/ipc/listener.ml Eio_unix.Net.import_socket_listening
+1 lib/observability/context.ml Eio.Fiber.create_key
+1 lib/observability/context.ml Eio.Fiber.get
+1 lib/observability/context.ml Eio.Fiber.with_binding
+1 lib/observability/logger.ml Eio.Flow.copy_string
+1 lib/observability/logger.ml Eio.Mutex.create
+1 lib/observability/logger.ml Eio.Mutex.use_ro
+1 lib/observability/logger.ml Eio.Time.Mono.now
+1 lib/observability/logger.ml Eio.Time.now
+1 lib/observability/logger.ml write_line
+1 lib/otel/ox_otel.ml Eio.Cancel.protect
+2 lib/otel/ox_otel.ml Eio.Promise.create
+1 lib/otel/ox_otel.ml Eio.Promise.is_resolved
+2 lib/otel/ox_otel.ml Eio.Promise.peek
+3 lib/otel/ox_otel.ml Eio.Promise.resolve
+2 lib/otel/ox_otel.ml Eio.Promise.try_resolve
+1 lib/otel/ox_otel.ml Eio.Stream.add
+1 lib/otel/ox_otel.ml Eio.Stream.create
+1 lib/otel/ox_otel.ml Eio.Stream.length
+2 lib/otel/ox_otel.ml Eio.Stream.take_nonblocking
+1 lib/otel/ox_otel.ml Eio.Time.now
+2 lib/ox/actor.ml Eio.Cancel.protect
+1 lib/ox/actor.ml Eio.Fiber.check
+1 lib/ox/actor.ml Eio.Promise.create
+1 lib/ox/actor.ml Eio.Promise.resolve
+2 lib/ox/actor.ml Eio.Stream.add
+1 lib/ox/actor.ml Eio.Stream.create
+1 lib/ox/actor.ml Eio.Stream.length
+2 lib/ox/actor.ml Eio.Stream.take_nonblocking
+1 lib/ox/actor.ml Eio.Switch.check
+2 lib/ox/agent.ml Eio.Cancel.protect
+1 lib/ox/agent.ml Eio.Fiber.check
+1 lib/ox/agent.ml Eio.Promise.create
+1 lib/ox/agent.ml Eio.Promise.resolve
+1 lib/ox/agent.ml Eio.Switch.check
+1 lib/ox/channel.ml Eio.Condition.broadcast
+1 lib/ox/channel.ml Eio.Condition.create
+2 lib/ox/concurrent.ml Eio.Switch.check
+1 lib/ox/rate_limiter.ml Eio.Mutex.create
+1 lib/ox/rate_limiter.ml Eio.Switch.check
+1 lib/ox/rate_limiter.ml Eio.Time.now
+1 lib/ox/retry.ml Eio.Time.now
+1 lib/ox/scope.ml Eio.Fiber.check
+1 lib/ox/scope.ml Eio.Promise.create
+1 lib/ox/scope.ml Eio.Promise.resolve
+1 lib/ox/scope.ml Eio.Switch.check
+1 lib/ox/scope.ml Eio.Switch.get_error
+1 lib/ox/select.ml Eio.Time.now
+2 lib/ox/supervisor.ml Eio.Cancel.cancel
+1 lib/ox/supervisor.ml Eio.Cancel.sub
+8 lib/ox/supervisor.ml Eio.Promise.create
+1 lib/ox/supervisor.ml Eio.Promise.is_resolved
+15 lib/ox/supervisor.ml Eio.Promise.resolve
+1 lib/ox/supervisor.ml Eio.Stream.create
+1 lib/ox/supervisor.ml Eio.Stream.take_nonblocking
+1 lib/ox/supervisor.ml Eio.Switch.check
+1 lib/ox/supervisor.ml Eio.Time.now
+1 lib/ox/supervisor.ml Eio.traceln
+2 lib/process/child.ml Eio.Cancel.protect
+1 lib/process/child.ml Eio.Process.pid
+3 lib/process/child.ml Eio.Process.signal
+3 lib/process/child.ml Eio.Promise.create
+2 lib/process/child.ml Eio.Promise.is_resolved
+2 lib/process/child.ml Eio.Promise.resolve
+1 lib/process/child.ml Eio.Promise.resolve_error
+1 lib/process/child.ml Eio.Promise.resolve_ok
+2 lib/process/child.ml Eio.Promise.try_resolve
+1 lib/process/child.ml Eio_unix.Fd.of_unix
+1 lib/process/child.ml Eio_unix.Resource.fd_opt
+1 lib/process/supervised.ml Eio.Cancel.cancel
+2 lib/process/supervised.ml Eio.Cancel.protect
+1 lib/process/supervised.ml Eio.Cancel.sub
+2 lib/process/supervised.ml Eio.Promise.create
+1 lib/process/supervised.ml Eio.Promise.is_resolved
+1 lib/process/supervised.ml Eio.Promise.resolve
+1 lib/process/supervised.ml Eio.Promise.resolve_error
+1 lib/process/supervised.ml Eio.Promise.resolve_ok
+1 lib/process/supervised.ml Eio.Stream.add
+1 lib/process/supervised.ml Eio.Stream.create
+1 lib/process/supervised.ml Eio.Stream.length
+1 lib/process/supervised.ml Eio.Stream.take_nonblocking
+1 lib/process/supervised.ml Eio.Time.now
+1 lib/rpc/correlator.ml Eio.Cancel.cancel
+1 lib/rpc/correlator.ml Eio.Cancel.protect
+1 lib/rpc/correlator.ml Eio.Cancel.sub
+1 lib/rpc/correlator.ml Eio.Mutex.create
+2 lib/rpc/correlator.ml Eio.Promise.create
+1 lib/rpc/correlator.ml Eio.Promise.is_resolved
+3 lib/rpc/correlator.ml Eio.Promise.resolve
+2 lib/rpc/correlator.ml Eio.Stream.add
+1 lib/rpc/correlator.ml Eio.Stream.create
+3 lib/rpc/correlator.ml Eio.Stream.length
+2 lib/rpc/correlator.ml Eio.Stream.take_nonblocking
+1 lib/sql/connection.ml Compiled.change_sql
+1 lib/sql/connection.ml Compiled.returning_sql
+1 lib/sql/connection.ml Compiled.schema_sql
+2 lib/sql/connection.ml Compiled.select_sql
+1 lib/sql/pool.ml Eio.Condition.broadcast
+1 lib/sql/pool.ml Eio.Condition.create
+1 lib/sql/pool.ml Eio.Mutex.create
+1 lib/sql/pool.ml Eio.Pool.create
+1 lib/sql/sqlite.ml database_readonly_raw
+1 lib/sql/sqlite.ml expanded_sql_raw
+1 lib/sql/sqlite.ml statement_readonly_raw
+1 lib/sql/sqlite.ml statement_sql_raw
+1 lib/sql_dsl/ox_sql_dsl_query.ml Backend.value_to_sql_literal
+1 lib/sql_dsl/ox_sql_dsl_schema.ml Backend.sql_type

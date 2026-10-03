@@ -1,0 +1,6 @@
+File "bind_negative.ml", line 4, characters 14-16:
+4 |   Shim.sleep ~io clock 0.01;
+                  ^^
+Error: The value io is yielding
+       but is expected to be unyielding
+         because it is used in a letop (at file "bind_negative.ml", lines 3-5, characters 2-7).

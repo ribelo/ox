@@ -1,0 +1,117 @@
+{
+  "count": {
+    "standaloneReferences": 99,
+    "nonblocking": {
+      "functions": 310,
+      "applications": 825,
+      "standaloneReferences": 97
+    },
+    "rawSignatures": 342,
+    "rawCallSites": 909,
+    "factories": 13,
+    "ioSignatures": 329,
+    "ioCallSites": 887,
+    "externalSites": 199,
+    "loggingSites": 22,
+    "ioWithoutLogging": 310,
+    "helpers": 34
+  },
+  "perModule": {
+    "Actions": {
+      "signatures": 61,
+      "sites": 161
+    },
+    "Main": {
+      "signatures": 18,
+      "sites": 41
+    },
+    "Cdp.Frame": {
+      "signatures": 2,
+      "sites": 4
+    },
+    "Cdp": {
+      "signatures": 5,
+      "sites": 5
+    },
+    "Chrome": {
+      "signatures": 17,
+      "sites": 71
+    },
+    "Chrome.Log": {
+      "signatures": 1,
+      "sites": 1
+    },
+    "Chrome_stderr": {
+      "signatures": 2,
+      "sites": 3
+    },
+    "Config": {
+      "signatures": 9,
+      "sites": 17
+    },
+    "Control": {
+      "signatures": 10,
+      "sites": 52
+    },
+    "Desktop": {
+      "signatures": 8,
+      "sites": 18
+    },
+    "Dialog_race": {
+      "signatures": 1,
+      "sites": 2
+    },
+    "Dispatch": {
+      "signatures": 1,
+      "sites": 2
+    },
+    "Download_setup": {
+      "signatures": 3,
+      "sites": 9
+    },
+    "Drive": {
+      "signatures": 10,
+      "sites": 31
+    },
+    "Expiry": {
+      "signatures": 3,
+      "sites": 4
+    },
+    "Learning": {
+      "signatures": 14,
+      "sites": 44
+    },
+    "Models": {
+      "signatures": 7,
+      "sites": 16
+    },
+    "Planner": {
+      "signatures": 3,
+      "sites": 5
+    },
+    "Playbook": {
+      "signatures": 6,
+      "sites": 6
+    },
+    "Reading": {
+      "signatures": 26,
+      "sites": 45
+    },
+    "Run": {
+      "signatures": 12,
+      "sites": 50
+    },
+    "Tabs": {
+      "signatures": 106,
+      "sites": 293
+    },
+    "Telemetry": {
+      "signatures": 1,
+      "sites": 1
+    },
+    "Text_helper": {
+      "signatures": 3,
+      "sites": 6
+    }
+  }
+}

@@ -20,7 +20,7 @@ A mutex in the tree guards data by convention: nothing stops a read of `Tls_flow
 2. As a service author, I want data of one mutex's brand refused with another mutex's access, and the access refused outside the critical section, so that the lock that guards a datum is part of its type. ^ncrit-1px5
 3. As a service author, I want `Ox.Cancel.protect : (unit -> 'a) @ local once -> 'a` over `Eio.Cancel.protect`, so that `raw-concurrency-gate`'s ban on raw Eio has a replacement. ^ncrit-oa64
 4. As a kernel maintainer, I want `Tls_flow`, `Rate_limiter`, `Agent`, `Channel` and the IPC registry moved to `Ox.Mutex` where they hold shared state, so that each lock in ox guards a branded datum. ^ncrit-tbq0
-5. As a kernel maintainer, I want the critical section to reject suspension once `suspend-token` lands (its body is `unyielding`, and suspending operations need a `yielding` token), and until then documented as "do not suspend" with `Eio.Mutex` making it safe, not deadlocking, so that the contract is honest at each stage. ^ncrit-9sfw
+5. As a service author, I want two section kinds: `with_access` (`@ local once unyielding`, for short bookkeeping — suspension inside it refused once row 71 lands) and `with_access_waiting ~io` (`yielding`, for sections that legitimately wait, such as a condition wait or a transport write under the lock), so that the 22 general Eio mutex sections in ox and Leash's declared-synchronous `tabs.ml` sections each get the contract they mean (row 75 Findings §3). ^ncrit-9sfw
 6. As a kernel maintainer, I want compile-fail cases (no lock, wrong brand, leaked access, write through `@ read` from `read-only-status` where relevant), so that each refusal is pinned. ^ncrit-lpe4
 
 ## Implementation Decisions

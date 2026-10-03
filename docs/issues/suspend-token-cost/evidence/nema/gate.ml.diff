@@ -1,0 +1,67 @@
+--- before/gate.ml
++++ after/gate.ml
+@@ -24,42 +24,45 @@
+     active_readers = 0;
+   }
+ 
+-let release_read t =
+-  Eio.Cancel.protect (fun () ->
+-      Eio.Mutex.use_ro t.mutex (fun () ->
++let release_read ~(io : Io.t @ yielding) t =
++  Shim.cancel_protect (fun () ->
++      Shim.mutex_use_ro ~io t.mutex (fun () ->
+           t.active_readers <- t.active_readers - 1;
+           if t.active_readers = 0 then Eio.Condition.broadcast t.cond))
+ 
+-let with_read t f =
+-  Eio.Mutex.lock t.mutex;
++let with_read ~(io : Io.t @ yielding) t
++    (f : (unit -> 'a) @ local once yielding) =
++  Shim.mutex_lock ~io t.mutex;
+   let acquired = ref false in
+-  Fun.protect
++  Shim.protect
+     ~finally:(fun () ->
+-      if !acquired then release_read t
+-      else Eio.Cancel.protect (fun () -> Eio.Mutex.unlock t.mutex))
++      if !acquired then release_read ~io t
++      else Shim.cancel_protect (fun () -> Eio.Mutex.unlock t.mutex))
+     (fun () ->
+       while t.writers_waiting > 0 do
+-        Eio.Condition.await t.cond t.mutex
++        Shim.condition_await ~io t.cond t.mutex
+       done;
+       t.active_readers <- t.active_readers + 1;
+       acquired := true;
+       Eio.Mutex.unlock t.mutex;
+-      f ())
++      f ()) [@nontail]
+ 
+-let with_write ?(on_waiting = fun () -> Ok ()) t f =
+-  Eio.Mutex.lock t.mutex;
++let with_write ~(io : Io.t @ yielding)
++    ?(on_waiting : (unit -> (unit, 'e) result) @ local unyielding =
++      fun () -> Ok ()) t
++    (f : (unit -> ('a, 'e) result) @ local once yielding) =
++  Shim.mutex_lock ~io t.mutex;
+   t.writers_waiting <- t.writers_waiting + 1;
+-  Fun.protect
++  Shim.protect
+     ~finally:(fun () ->
+-      Eio.Cancel.protect (fun () ->
++      Shim.cancel_protect (fun () ->
+           t.writers_waiting <- t.writers_waiting - 1;
+           Eio.Condition.broadcast t.cond;
+           Eio.Mutex.unlock t.mutex))
+     (fun () ->
+-      match if t.active_readers > 0 then on_waiting () else Ok () with
+-      | Error cause -> Error cause
+-      | Ok () ->
++      let r = if t.active_readers > 0 then on_waiting () else Ok () in
++      Shim.bind r (fun () ->
+           while t.active_readers > 0 do
+-            Eio.Condition.await t.cond t.mutex
++            Shim.condition_await ~io t.cond t.mutex
+           done;
+-          f ())
++          f ()) [@nontail]) [@nontail]

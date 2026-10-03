@@ -1,0 +1,65 @@
+{
+  "regions": 42,
+  "byKind": {
+    "Agent fn": 2,
+    "Cancel.protect": 11,
+    "Eio.Mutex.use_rw": 11,
+    "Eio.Mutex.use_ro": 1,
+    "with_tab_lock callback": 8,
+    "Actor handle": 1,
+    "status function": 8
+  },
+  "criticalRegions": 16,
+  "uniqueListedSites": 73,
+  "conflicts": [
+    [
+      "Tabs",
+      1077,
+      "transition",
+      "Eio.Mutex.use_rw",
+      1076
+    ],
+    [
+      "Tabs",
+      1097,
+      "transition",
+      "Eio.Mutex.use_rw",
+      1095
+    ],
+    [
+      "Tabs",
+      1188,
+      "call",
+      "Eio.Mutex.use_rw",
+      1187
+    ],
+    [
+      "Tabs",
+      1305,
+      "transition",
+      "Eio.Mutex.use_rw",
+      1303
+    ],
+    [
+      "Tabs",
+      459,
+      "Ox_observability.Logger.info",
+      "Actor handle",
+      3009
+    ],
+    [
+      "Learning",
+      441,
+      "Eio.Mutex.use_ro",
+      "status function",
+      437
+    ],
+    [
+      "Learning",
+      442,
+      "proposals",
+      "status function",
+      437
+    ]
+  ]
+}

@@ -81,9 +81,9 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 70 | [local-scope/01-local-scope.md](local-scope/01-local-scope.md) (P4) | `ox` | 61, 64, 69 | scope handles cannot escape (store, return, capture in a fork); built on row 69 | [ ] |
 | 71 | [suspend-token/01-suspend-token.md](suspend-token/01-suspend-token.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_blocking` | 65, 66, 69 | suspending inside a critical section is a compile error | [ ] |
 | 72 | [read-only-status/01-read-only-status.md](read-only-status/01-read-only-status.md) | `ox_app`, `ox` | — | `status : t @ read`; decides `SERVICE` | [ ] |
-| 73 | [cancellation-value/01-cancellation-value.md](cancellation-value/01-cancellation-value.md) | spike, docs | 71 | decide cancellation as a value vs exception (ADR) | [ ] |
+| 73 | [cancellation-value/01-cancellation-value.md](cancellation-value/01-cancellation-value.md) | spike, docs | 71 | done: ADR-0011 rejects a recoverable token (second cancellation model) | [x] |
 | 74 | `upstream-eio/01-upstream-eio.md` | flake, `dune-project`, `ox_test`; Leash, Pie, inn, nema, grip flakes | 60 | upstream Eio 1.6 everywhere; the `oxcaml/eio` snapshot is gone | [x] |
-| 75 | [suspend-token-cost/01-suspend-token-cost.md](suspend-token-cost/01-suspend-token-cost.md) | spike, docs | 71 | measures the suspension token on ox, Leash and nema; decides 71's consumer stories | [ ] |
+| 75 | [suspend-token-cost/01-suspend-token-cost.md](suspend-token-cost/01-suspend-token-cost.md) | spike, docs | 71 | measures the suspension token on ox, Leash and nema; done: migrate Leash and nema after fixing their violations; Logger must never park | [x] |
 | 76 | [flow/01-flow.md](flow/01-flow.md) | `ox` (Flow) | 46, 61 | Scala Ox's streams built as `docs/design/flow.md` specifies | [ ] |
 | 77 | [adaptive-retry/01-adaptive-retry.md](adaptive-retry/01-adaptive-retry.md) | `ox` (Retry) | 65 | retries share a token bucket | [ ] |
 | 78 | [rate-limiter-duration/01-rate-limiter-duration.md](rate-limiter-duration/01-rate-limiter-duration.md) | `ox` (Rate_limiter) | 65 | limits by running operations, not starts | [ ] |

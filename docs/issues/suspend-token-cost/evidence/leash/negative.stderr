@@ -1,0 +1,7 @@
+File "download_setup_negative.ml", line 46, characters 26-28:
+46 |               Shim.sleep ~io clock 0.01; target := Some id; on_target id);
+                               ^^
+Error: The value io is yielding
+       but is expected to be unyielding
+         because it is used inside the function at file "download_setup_negative.ml", lines 45-46, characters 32-73
+         which is expected to be unyielding.

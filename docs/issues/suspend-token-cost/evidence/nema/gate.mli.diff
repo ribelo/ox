@@ -1,0 +1,24 @@
+--- before/gate.mli
++++ after/gate.mli
+@@ -2,15 +2,18 @@
+ 
+ val create : unit -> t
+ 
+-val with_read : t -> (unit -> 'a) -> 'a
++val with_read :
++  io:Io.t @ yielding -> t ->
++  (unit -> 'a) @ local once yielding -> 'a
+ (** [with_read t f] runs [f] with a shared read lease. New readers wait while a
+     writer is waiting or holding the write lease. Cancellation or an exception
+     from [f] releases the lease. *)
+ 
+ val with_write :
+-  ?on_waiting:(unit -> (unit, 'e) result) ->
++  io:Io.t @ yielding ->
++  ?on_waiting:(unit -> (unit, 'e) result) @ local unyielding ->
+   t ->
+-  (unit -> ('a, 'e) result) ->
++  (unit -> ('a, 'e) result) @ local once yielding ->
+   ('a, 'e) result
+ (** [with_write t f] runs [f] while holding the exclusive write lease. [f] runs
+     with the gate mutex held so readers cannot observe partial publication.

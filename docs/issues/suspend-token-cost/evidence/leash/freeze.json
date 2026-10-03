@@ -1,0 +1,6 @@
+{
+  "started": "2026-10-03T23:24:53.864Z",
+  "finished": "2026-10-03T23:24:55.664Z",
+  "head": "33635b527d7ba30ff1ca9a6a5a4a918558309983",
+  "note": "Non-atomic sequential read snapshot of actively edited dirty working tree; files are now frozen and report citations use the copies."
+}
