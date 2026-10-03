@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 package: ox (spike), docs
 consumer: every consumer (Ox-internal; ADR-0010)
 ---
@@ -24,3 +24,7 @@ A spike, not a change: decide whether Ox's expected interruptions (timeouts, `re
 ## Out of Scope
 
 Any change to consumers.
+
+## Verification
+
+2026-10-04: ADR-0011 records the outcome — reject the recoverable token, keep typed boundary outcomes (`Timeout`) and Eio teardown. Prototype sources and the runner are in `spike/` (`nix develop -c sh docs/issues/cancellation-value/spike/run.sh`): 18/18 runtime, 2/2 Eio-view, 12/12 Door-mapping checks, 4/4 refused compiles, on 5.4.0+ox with Eio 1.6.
