@@ -1,5 +1,5 @@
 ---
-status: postponed
+status: ready
 package: ox
 consumer: every consumer (Ox-internal; ADR-0010)
 ---
@@ -14,9 +14,9 @@ A switch or scope stored in a record, returned from its body, or captured by a l
 
 `Scope.run : ('e t @ local -> ('a, 'e) result) -> ...`, `supervised_error`'s body likewise, and every scope operation taking `'e t @ local`. Long-lived forking goes through an explicit `Spawner.t` (`spawner`).
 
-## Status: postponed
+## Path
 
-Decided 2026-10-03: accepted and postponed, because a `local` handle cannot be used after a `let*` — OxCaml elaborates binding operators with `global` continuations ("The value s is local ... because it is used in a letop"), and a `let*` declared with a `local` continuation is rejected. Evidence found the same night: an ordinary application `bind r (fun x -> ...) [@nontail]` with a `local` continuation typechecks and keeps every refusal (ADR-0010). This row therefore waits for `ppx-let`, not for the compiler.
+`let*` cannot carry a `local` handle: OxCaml elaborates binding operators with `global` continuations ("The value s is local ... because it is used in a letop"), and a `let*` declared with a `local` continuation is rejected. An ordinary application `bind r (fun x -> ...) [@nontail]` with a `local` continuation typechecks and keeps every refusal (ADR-0010), so this row is built on `ppx-let` (row 69). Postponed on 2026-10-03 while that looked impossible; reopened the same night once the `bind` route was verified.
 
 ## User Stories
 

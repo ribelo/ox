@@ -78,7 +78,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 67 | [ws-typestate/01-ws-typestate.md](ws-typestate/01-ws-typestate.md) (P8) | `ox_http` | 62, 63 | close codes, reasons and phases typed | [ ] |
 | 68 | [parse-dont-validate/01-parse-dont-validate.md](parse-dont-validate/01-parse-dont-validate.md) (P9) | `ox`, `ox_app`, `ox_http`, `ox_observability`, `ox_ai`, `ox_json`, `ox_blocking` | — | ADR-0008 applied to the kernel; one Door spec record | [ ] |
 | 69 | [ppx-let/01-ppx-let.md](ppx-let/01-ppx-let.md) | `ppx_ox_let` (new), `ox` | 15 | `local`/`yielding` values usable after a bind; unblocks 70 and 71 | [ ] |
-| 70 | [local-scope/01-local-scope.md](local-scope/01-local-scope.md) (P4) | `ox` | 61, 64, 69 | **postponed** (2026-10-03): scope handles cannot escape; waits for row 69 | [ ] |
+| 70 | [local-scope/01-local-scope.md](local-scope/01-local-scope.md) (P4) | `ox` | 61, 64, 69 | scope handles cannot escape (store, return, capture in a fork); built on row 69 | [ ] |
 | 71 | [suspend-token/01-suspend-token.md](suspend-token/01-suspend-token.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_blocking` | 65, 66, 69 | suspending inside a critical section is a compile error | [ ] |
 | 72 | [read-only-status/01-read-only-status.md](read-only-status/01-read-only-status.md) | `ox_app`, `ox` | — | `status : t @ read`; decides `SERVICE` | [ ] |
 | 73 | [cancellation-value/01-cancellation-value.md](cancellation-value/01-cancellation-value.md) | spike, docs | 71 | decide cancellation as a value vs exception (ADR) | [ ] |
@@ -90,7 +90,7 @@ Running alongside, not blocking: the local-handler spike in `../../.scratch/rese
 
 Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the order `../migration-plan.md` gives; each is a ticket in the *consumer's* repository (to-spec format, its own story prefix) that pins eta-next and ports the consumer whole — no bridge, no dual runtime. The consumer's ticket lists the kernel gaps it found; each gap becomes a new row here before the next consumer starts. Row 32 landed on 2026-09-28; `eta-next` became `master` on 2026-09-29 (`5b09ee47`), and `v1` stays a tag (`5b3affc8`) for taumel and p-doom. Packages leaving Eta for a consumer (Ladybug → nema, crux/signal/jsoo → taumel, linux_input → grip) are tickets in the receiving repository, not here.
 
-Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the one trusted cast). P1–P9 are the proposals accepted on 2026-10-03; 69, 71, 72 and 73 came out of the same night's check of what OxCaml and Jane Street's `await`/`capsule` already solve. Order: 61, then 62–65 in parallel, then 66 (it needs their replacements), 67 after 63; 68 and 72 are independent; 69 unblocks 70 (postponed by decision) and 71.
+Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the one trusted cast). P1–P9 are the proposals accepted on 2026-10-03; 69, 71, 72 and 73 came out of the same night's check of what OxCaml and Jane Street's `await`/`capsule` already solve. Order: 61, then 62–65 in parallel, then 66 (it needs their replacements), 67 after 63; 68 and 72 are independent; 69 unblocks 70 and 71.
 
 Rows 45–48 implement ADR-0009 (Ox is the floor). Order: 45 first (it changes `Concurrent` that the others build on), then **49 (the ox rename) before anything else**, so that 46–48 are written and built under the ox name in the ox repository. Consumers (Pie, nema, Leash) are updated in the same rows where a story says so; they are internal tools and may change.
 
