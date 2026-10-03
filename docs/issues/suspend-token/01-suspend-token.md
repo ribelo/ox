@@ -21,7 +21,7 @@ A fiber that suspends inside an actor handler, an agent closure, a `Cancel.prote
 3. As a service author, I want `Ox.Mutex.with_access`, `Ox.Cancel.protect`, `Actor.create ~handle`, `Agent` closures and `SERVICE.status` typed `unyielding`, so that suspending inside them is a compile error. ^nyield-0o4o
 4. As a reviewer, I want the shape and names to follow `Await.t` (`Io.yield`, termination vs cancellation kept for `cancellation-value`), so that a later swap to `await` is mechanical. ^nyield-6yub
 5. As a kernel maintainer, I want compile-fail cases (suspend in each critical section; token captured by raw `Eio.Fiber.fork`, which Eio's legacy signature already refuses) and controls through `let%bind`, so that the refusals are pinned. ^nyield-9spl
-6. As a consumer maintainer, I want the threading cost measured on Leash and nema before migration (sites per kloc, like caps' ^ncaps-21nk) and recorded here, so that the decision to migrate consumers is made on numbers. ^nyield-pqxk
+6. As a consumer maintainer, I want consumers migrated only as `suspend-token-cost` (row 75) recommends, so that the threading cost is decided on its numbers. ^nyield-pqxk
 
 ## Implementation Decisions
 

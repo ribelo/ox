@@ -8,7 +8,7 @@
 (license MIT)
 (homepage "https://github.com/ribelo/ox")
 
-; ox. Packages appear here only when a consumer's spec pulls them in.
+; ox. A package appears here when a spec story needs it (AGENTS.md: Ox is its own consumer).
 ; The compiler check survives from v1: Ox targets OxCaml exactly.
 (package
  (name conf-ox-oxcaml)

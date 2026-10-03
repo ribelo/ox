@@ -4,7 +4,7 @@ Ox is a private application kernel for OCaml services: typed errors, structured 
 
 This branch (`master`; it was the `eta-next` branch until the switch of 2026-09-29) is a fresh start. The previous design — an effect blueprint interpreted by a runtime layered over Eio — lives on the `v1` tag for the two applications that still use it (taumel, p-doom). `docs/why-ox.md` explains the change and how code is written here.
 
-Nothing enters this tree without a consumer. The first consumer is Leash (`/home/ribelo/projects/ribelo/leash`).
+Every change cites a story in a spec; Ox is its own consumer (`AGENTS.md`). Scala Ox's floor (ADR-0009) and whatever makes wrong code fail to compile (ADR-0010) enter without an outside application asking. The applications built on it are Leash, Pie, nema, inn and grip.
 
 - `CONTEXT.md` — vocabulary
 - `docs/why-ox.md` — why v1 was abandoned, how direct style works here, where effect handlers fit

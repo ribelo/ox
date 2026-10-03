@@ -1,3 +1,3 @@
 ; Root of the library tree. Libraries live under lib/<package>/ and are added
-; only when a consumer's spec pulls them in; the package itself is declared in
+; when a spec story needs them (Ox is its own consumer); the package is declared in
 ; dune-project (see docs/issues/README.md row 0).

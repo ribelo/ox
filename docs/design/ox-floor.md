@@ -4,10 +4,10 @@ ADR-0009 makes Scala Ox (https://ox.softwaremill.com, table of contents as of 20
 
 - `have (module)` — exists in the tree today; the module named was checked in `lib/`.
 - `spec (row)` — a delivery-map row specifies it; not yet built.
-- `design (flow.md)` — designed in `docs/design/flow.md`, built when a consumer pulls it.
+- `design (flow.md)` — designed in `docs/design/flow.md`; built in row 76.
 - `rejected (reason)` — deliberately absent, with the reason.
 
-The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable errors are exceptions, untyped on purpose; recoverable errors are values (`result` with polymorphic variants) that combinators know through their result type (`docs/why-ox.md`). A row changes status when its spec lands; a row that says `rejected` is reopened by a consumer's story, not by this document. ADR-0009's list (`RateLimiter`, `select`, `Actor`, `OxApp`, `Flow`) does not name the circuit breaker, adaptive retries, cron or the CPU pool; they are recorded as rejected for want of a consumer (ADR-0003), which is the one place this table is stricter than "nothing on the floor is skipped".
+The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable errors are exceptions, untyped on purpose; recoverable errors are values (`result` with polymorphic variants) that combinators know through their result type (`docs/why-ox.md`). A row changes status when its spec lands. Every item on the floor is built (ADR-0009; ADR-0003 as amended on 2026-10-04: Ox is its own consumer). The items this table once rejected "for want of a consumer" are specs now (rows 76–82); what stays rejected is rejected for a technical reason that holds without any consumer.
 
 | Ox item | Status |
 | --- | --- |
@@ -34,20 +34,20 @@ The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable
 | Fork locals | have (`Eio.Fiber.with_binding`; `Ox_observability.Context`) |
 | Interruptions, uninterruptible operations | have (`Eio.Cancel`, `Eio.Cancel.protect`; `Interrupt_id` carries identity) |
 | **Streaming** | |
-| Streaming APIs, Flows: creating, transforming, running, concurrency | design (flow.md) |
-| Flows: files and I/O, InputStream/OutputStream, files | design (flow.md) |
-| Flows: JSON (NDJSON, arrays) | design (flow.md) |
-| Flows: text transformations, logging | design (flow.md) |
-| Flows: reactive streams interoperability | rejected (no consumer; no JVM) |
+| Streaming APIs, Flows: creating, transforming, running, concurrency | spec (row 76, flow.md) |
+| Flows: files and I/O, InputStream/OutputStream, files | spec (row 76, flow.md) |
+| Flows: JSON (NDJSON, arrays) | spec (row 76, flow.md) |
+| Flows: text transformations, logging | spec (row 76, flow.md) |
+| Flows: reactive streams interoperability | rejected (a JVM interface: there is no Publisher/Subscriber standard to bridge to in OCaml) |
 | Channels: sinks, sources, handling closed channels | have (`Channel`) |
-| Transforming channels (eager), capacity, discharging | design (flow.md) |
+| Transforming channels (eager), capacity, discharging | spec (row 76, flow.md) |
 | Selecting from channels: receive exactly one from many, mixed send/receive | have (`Select.receive`, `Select.select`) |
 | Selecting: closed channels (done/error) | have (`Select`; a closure is a typed outcome) |
 | Selecting: default clauses, select with timeout | have (`Select.default_clause`, `Select.timeout_clause`) |
-| Error propagation, backpressure | design (flow.md) |
+| Error propagation, backpressure | spec (row 76, flow.md) |
 | **Scheduling** | |
 | Retries API: operation, configuration, examples | have (`Retry.retry`, `Retry.policy`, `Schedule`) |
-| Retries: adaptive retries | rejected (no consumer; a `Rate_limiter` around the attempt or an `is_worth_retrying` policy covers today's uses) |
+| Retries: adaptive retries | spec (row 77) |
 | Repeat API | have (`Retry.repeat`) |
 | Scheduled: schedule, configuration | have (`Schedule`) |
 | **Resiliency & utilities** | |
@@ -56,26 +56,26 @@ The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable
 | OxApp: SIGINT/SIGTERM as a clean stop | have (`Ox_app` signal monitor, `request_stop`; exit 0, Ox's default) |
 | OxApp: `OxApp.Simple` | have (`Ox_app.run_simple`, `Config.none`) |
 | OxApp: `WithEitherErrors`, `handleError` | have (`Ox_app.run ?exit_code`) |
-| OxApp settings: `interruptedExitCode` | have (`interrupt_exit` for owned-code commands; the service exits 0 like Ox's default; a service-wide setting is pulled by a consumer that wants one) |
+| OxApp settings: `interruptedExitCode` | have (`interrupt_exit` for owned-code commands; the service exits 0 like Ox's default; a service-wide setting is a field of the Door spec record, row 68) |
 | OxApp settings: `handleException`, `handleInterruptedException` | have (the Door renders the full `Cause` to stderr and exits 2; an interruption the Door requested is silent) |
 | OxApp settings: `threadFactory` | rejected (fibers, not threads; fiber-local context crosses `fork` by itself) |
 | OxApp settings: `shutdownTimeout` | rejected (Eio teardown is cooperative cancellation; a hard exit timer would cut flushes short; the supervisor's stop timeout — systemd `TimeoutStopSec` — owns it) |
 | Rate limiter API: `runBlocking`, `runOrDrop` | have (`Rate_limiter.run`, `run_or_drop`) |
 | Rate limiter: fixed window, sliding window, leaky bucket (start-time algorithms) | have (`Rate_limiter.Fixed_window`, `Sliding_window`, `Token_bucket`) |
 | Rate limiter: custom algorithms | have (`Rate_limiter.algorithm`, `Custom`) |
-| Rate limiter: duration algorithms (whole execution span) | rejected (no consumer; `algorithm` has no release hook — add one when a consumer needs it) |
+| Rate limiter: duration algorithms (whole execution span) | spec (row 78) |
 | Resources: `use`, `useCloseable` | have (`Fun.protect`; `Eio.Switch.run` with `Eio.Switch.on_release`) |
 | Resources: `useInScope`, `useCloseableInScope`, `releaseAfterScope` | have (`Resource.use_in_scope`, `use_closeable_in_scope`; `Eio.Switch.on_release`) |
 | Resources: `resourceScope` | have (`Eio.Switch.run`) |
 | Control flow methods (`forever`, `never`, `repeatWhile`…) | have (stdlib recursion; `Eio.Fiber.await_cancel` for never) |
-| CPU-intensive operations: `computeIntensive`, the compute pool | rejected (single-domain caveat of ADR-0009; no consumer crosses domains; `Ox_blocking` covers blocking calls) |
+| CPU-intensive operations: `computeIntensive`, the compute pool | spec (row 80; `@ portable` work, capability-free) |
 | Actors: ask, tell, close | have (`Actor`: `ask`, `tell`, `try_tell`, `state`, `changes`, stop with the switch; `Agent` for serialized closures; `Supervisor` for restartable child scopes) |
-| Circuit Breaker | rejected (not on ADR-0009's list; no consumer) |
+| Circuit Breaker | spec (row 79) |
 | Utilities (`pipe`, `tap`, `timed`, `unsupervised`…) | have (the stdlib's `Fun` and pipe operator; `Eio.Time`) |
 | **Integrations** | |
-| Kafka flows | rejected (no consumer) |
+| Kafka flows | spec (row 82; needs a client-library ADR first) |
 | Inheritable MDC using Logback | have (fiber-local `Ox_observability.Context`) |
-| Cron scheduler | rejected (no consumer; `Schedule` has no cron expression) |
+| Cron scheduler | spec (row 81) |
 | Propagating OpenTelemetry context | have (`Ox_observability.Context`, `Ox_otel`) |
 | HTTP server using Tapir | have (`Ox_http` server and routing) |
 | HTTP client using sttp | have (`Ox_http` client) |

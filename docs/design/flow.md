@@ -64,7 +64,7 @@ Completion travels the same channel: a finished producer calls `Channel.done_`; 
 
 ## 5. Operators
 
-First cut = the operators a named consumer needs (section 8); the rest are specified so the names and error behaviour are fixed, and built when pulled.
+Every operator specified here is built (row 76); section 8's consumers say which ones are exercised first.
 
 Sources
 ```ocaml
