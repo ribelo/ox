@@ -11,12 +11,12 @@ depends: [
   "conf-ox-oxcaml" {= version}
   "ox"
   "ox_json"
-  "eio"
+  "eio" {>= "1.6"}
   "cstruct"
   "base-unix"
   "conf-pkg-config"
   "conf-openssl"
-  "eio_main" {with-test}
+  "eio_main" {with-test & >= "1.6"}
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

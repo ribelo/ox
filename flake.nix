@@ -14,6 +14,13 @@
     url = "github:oxcaml/opam-repository/d65f081024758576f7a848bbd369863e7f7c1e81";
     flake = false;
   };
+  # Upstream Eio's own release, not oxcaml/eio (an unmaintained snapshot that the
+  # OxCaml repository's eio.1.3+ox points at). Only the four Eio packages are
+  # taken from this revision; see eioOpamRepository below (^neio-k3vq).
+  inputs.opam-repository-eio = {
+    url = "github:ocaml/opam-repository/2da7d48d1861cf46ff10773584abdee8693bde2b";
+    flake = false;
+  };
   inputs.oxcaml = {
     url = "github:oxcaml/oxcaml/5.4.0-ox2";
     flake = false;
@@ -32,6 +39,7 @@
       nixpkgs,
       opam-nix,
       opam-repository,
+      opam-repository-eio,
       oxcaml,
       oxcaml-opam-repository,
       oxcaml-merlin-src,
@@ -80,8 +88,25 @@
           builtins.tail (nixpkgs.lib.splitString "(package" duneProjectCode)
         )
       );
+      # An opam repository holding exactly upstream Eio 1.6 (eio, eio_posix,
+      # eio_linux, eio_main). Listed first in every opam-nix resolution so the
+      # OxCaml repository's eio.1.3+ox can never be chosen; dune-project also
+      # requires eio >= 1.6. Consumers put the same value first in their repos
+      # (^neio-k3vq).
+      eioOpamRepository =
+        system:
+        (opam-nix.lib.${system}).filterOpamRepo {
+          eio = "1.6";
+          eio_posix = "1.6";
+          eio_linux = "1.6";
+          eio_main = "1.6";
+        } opam-repository-eio;
     in
     {
+      legacyPackages = forAllSystems (system: {
+        eioOpamRepository = eioOpamRepository system;
+      });
+
       packages = forAllSystems (
         system:
         let
@@ -126,12 +151,6 @@
             }).overrideAttrs (_old: {
               doCheck = false;
             });
-          eioSrc = pkgs.fetchFromGitHub {
-            owner = "oxcaml";
-            repo = "eio";
-            rev = "7de26f5331f1e7aac1c086a5ebe849dd940b5c3e";
-            hash = "sha256-2sgXOko6qjTWcb6PONPS+SO7PPKvBEUIU/7U6ooXDyA=";
-          };
           # These release sources build against bigstringaf 0.10.0. The +ox
           # source forks require portability annotations it does not provide.
           faradaySrc = pkgs.fetchFromGitHub {
@@ -193,18 +212,14 @@
               src = angstromSrc;
               patches = [ ];
             });
-          } // builtins.listToAttrs (map
-            (name: {
-              inherit name;
-              value = prev.${name}.overrideAttrs (_: { src = eioSrc; });
-            })
-            [ "eio" "eio_linux" "eio_main" "eio_posix" ]);
+          };
           buildOpamProjectPrime = builtins.getAttr "buildOpamProject'" opam-nix.lib.${system};
           oxScope = buildOpamProjectPrime
             {
               inherit pkgs;
               overlays = [ oxcamlSystemOverlay ];
               repos = [
+                (eioOpamRepository system)
                 oxcaml-opam-repository
                 opam-repository
               ];
@@ -499,6 +514,16 @@
               opam pin add faraday.0.8.2+ox \
                 https://github.com/inhabitedtype/faraday/archive/0.8.2.tar.gz \
                 --no-action --yes
+
+              # Upstream Eio's release, never the OxCaml repository's eio.1.3+ox
+              # (an unmaintained oxcaml/eio snapshot). dune-project requires
+              # eio >= 1.6; eio_linux 1.6 brings uring >= 2.15 from opam.ocaml.org
+              # (^neio-k3vq).
+              for package in eio eio_posix eio_linux eio_main; do
+                opam pin add "$package.1.6" \
+                  https://github.com/ocaml-multicore/eio/releases/download/v1.6/eio-1.6.tbz \
+                  --no-action --yes
+              done
 
               # Test tooling no Ox package depends on: alcotest and qcheck
               # drive suites, memtrace is an allocation-trace hook.

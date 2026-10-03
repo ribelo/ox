@@ -12,11 +12,11 @@ depends: [
   "ox"
   "ox_caps"
   "ox_sql_dsl"
-  "eio"
+  "eio" {>= "1.6"}
   "conf-pkg-config"
   "conf-sqlite3"
   "ox_test" {with-test}
-  "eio_main" {with-test}
+  "eio_main" {with-test & >= "1.6"}
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

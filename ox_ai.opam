@@ -13,7 +13,7 @@ depends: [
   "ox_json"
   "ox_http"
   "ox_observability"
-  "eio"
+  "eio" {>= "1.6"}
   "yojson" {>= "2.0"}
   "alcotest" {with-test}
   "odoc" {with-doc}

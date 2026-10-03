@@ -353,7 +353,9 @@ module Process = struct
                 ignore (Eio.Promise.await child.Child.finished : Eio.Process.exit_status));
         `Stop_daemon)
 
-  let spawn_unix t ~sw ?cwd ?pgid ~env ~fds ~executable argv =
+  let spawn_unix t ~sw ?cwd ?pgid ?uid ?gid ?login_tty ~env ~fds ~executable argv =
+    if Option.is_some uid || Option.is_some gid || Option.is_some login_tty then
+      invalid_arg "Ox_test.Process: uid, gid and login_tty are not supported";
     let script =
       match t.scripts with
       | script :: rest ->
@@ -385,6 +387,9 @@ module Process = struct
   module Mgr = struct
     type nonrec t = t
     type tag = [ `Generic | `Unix ]
+
+    let environment _ = Eio.Process.Env.of_array (Unix.environment ())
+    let getenv_opt t name = Eio.Process.Env.get_opt name (environment t)
 
     let pipe _ ~sw =
       (Eio_unix.pipe sw

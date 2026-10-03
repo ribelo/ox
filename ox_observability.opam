@@ -12,12 +12,12 @@ depends: [
   "ocaml" {>= "5.4.0"}
   "conf-ox-oxcaml" {= version}
   "ox"
-  "eio"
+  "eio" {>= "1.6"}
   "ox_json"
   "yojson" {>= "2.0"}
   "mtime"
   "ox_test" {with-test}
-  "eio_main" {with-test}
+  "eio_main" {with-test & >= "1.6"}
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

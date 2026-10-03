@@ -175,6 +175,23 @@
         "type": "github"
       }
     },
+    "opam-repository-eio": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789988300,
+        "narHash": "sha256-YG/g9DwWwaTM8GMZbMIKgNz4ESETkg1G75jTiCNtVk8=",
+        "owner": "ocaml",
+        "repo": "opam-repository",
+        "rev": "2da7d48d1861cf46ff10773584abdee8693bde2b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ocaml",
+        "repo": "opam-repository",
+        "rev": "2da7d48d1861cf46ff10773584abdee8693bde2b",
+        "type": "github"
+      }
+    },
     "opam-repository_2": {
       "flake": false,
       "locked": {
@@ -287,6 +304,7 @@
         "nixpkgs": "nixpkgs",
         "opam-nix": "opam-nix",
         "opam-repository": "opam-repository_2",
+        "opam-repository-eio": "opam-repository-eio",
         "oxcaml": "oxcaml",
         "oxcaml-lsp": "oxcaml-lsp",
         "oxcaml-merlin-src": "oxcaml-merlin-src",

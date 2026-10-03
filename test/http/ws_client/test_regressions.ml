@@ -38,6 +38,8 @@ module Script = struct
 
   let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
   let shutdown _ _ = ()
+  let setsockopt _ _ _ = invalid_arg "scripted socket: no socket options"
+  let getsockopt _ _ = invalid_arg "scripted socket: no socket options"
 
   let close t =
     if not t.closed then (

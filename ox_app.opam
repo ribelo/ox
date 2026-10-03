@@ -13,8 +13,8 @@ depends: [
   "ox"
   "ox_caps"
   "ox_observability"
-  "eio"
-  "eio_main"
+  "eio" {>= "1.6"}
+  "eio_main" {>= "1.6"}
   "cmdliner"
   "toml"
   "yojson" {>= "2.0"}

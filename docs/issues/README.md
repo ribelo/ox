@@ -69,6 +69,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 58 | `linear-defaults/01-linear-defaults.md` | `ppx_yojson_minimal` | 15, 17 | Pie: a wide defaulted config record derives in linear code | [x] |
 | 59 | [pie-api-gaps/01-pie-api-gaps.md](pie-api-gaps/01-pie-api-gaps.md) | `ox_ai`, `ox_ai_openrouter`, `ox_http` | 25, 35, 40, 57 | Pie: audio/text Responses and precise transport deadlines | [x] |
 | 60 | `stress/01-stress.md` | `ox`, `ox_http`, `ox_ipc` | 45, 57 | stress and fuzz under the seams where every ox bug has lived | [x] |
+| 61 | `upstream-eio/01-upstream-eio.md` | flake, `dune-project`, `ox_test`; Leash, Pie, inn, nema, grip flakes | 60 | upstream Eio 1.6 everywhere; the `oxcaml/eio` snapshot is gone | [x] |
 | 61 | [once-forks/01-once-forks.md](once-forks/01-once-forks.md) (P1) | `ox` | 45 | ownership: a value moved into one fiber or one release; ADR-0010 | [ ] |
 | 62 | [owned-handles/01-owned-handles.md](owned-handles/01-owned-handles.md) (P2) | `ox_process`, `ox_http`, `ox_sql` | 61 | no use after close, wait or shutdown | [ ] |
 | 63 | [duplex-halves/01-duplex-halves.md](duplex-halves/01-duplex-halves.md) (P3) | `ox_http` | 57, 61, 62 | the row-57 class refused by the compiler; buffer mutexes go | [ ] |

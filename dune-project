@@ -22,8 +22,8 @@
  (depends
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
-  eio
-  (eio_main :with-test)
+  (eio (>= 1.6))
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 ; ^ncaps-sojd ^ncaps-4btv ^ncaps-n6r0: capability types, the wrappers of the dangerous
@@ -45,8 +45,8 @@
   (conf-ox-oxcaml (= :version))
   ox
   ox_caps
-  eio
-  eio_main
+  (eio (>= 1.6))
+  (eio_main (>= 1.6))
   alcotest))
 
 ; ox_json stays for unchecked JSON (CDP messages, wire shapes we do not own).
@@ -70,9 +70,9 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
-  eio
+  (eio (>= 1.6))
   (ox_test :with-test)
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -83,12 +83,12 @@
   (conf-ox-oxcaml (= :version))
   ox
   ox_json
-  eio
+  (eio (>= 1.6))
   cstruct
   base-unix
   conf-pkg-config
   conf-openssl
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -99,10 +99,10 @@
   (conf-ox-oxcaml (= :version))
   ox
   ox_caps
-  eio
+  (eio (>= 1.6))
   base-unix
   (ox_test :with-test)
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -113,10 +113,10 @@
   (conf-ox-oxcaml (= :version))
   ox
   ox_caps
-  eio
+  (eio (>= 1.6))
   base-unix
   (ox_test :with-test)
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -126,9 +126,9 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
-  eio
+  (eio (>= 1.6))
   base-unix
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -142,8 +142,8 @@
   ox_http
   ox_observability
   ox_caps
-  eio
-  (eio_main :with-test)
+  (eio (>= 1.6))
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)
   (yojson :with-test)))
 
@@ -156,12 +156,12 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ox
-  eio
+  (eio (>= 1.6))
   ox_json
   (yojson (>= 2.0))
   mtime
   (ox_test :with-test)
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -183,8 +183,8 @@
   ox
   ox_caps
   ox_observability
-  eio
-  eio_main
+  (eio (>= 1.6))
+  (eio_main (>= 1.6))
   cmdliner
   toml
   (yojson (>= 2.0))
@@ -200,7 +200,7 @@
   ox_json
   ox_http
   ox_observability
-  eio
+  (eio (>= 1.6))
   (yojson (>= 2.0))
   (alcotest :with-test)))
 
@@ -216,9 +216,9 @@
   ox_json
   ox_observability
   ox_http
-  eio
+  (eio (>= 1.6))
   (yojson (>= 2.0))
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -238,11 +238,11 @@
   ox
   ox_caps
   ox_sql_dsl
-  eio
+  (eio (>= 1.6))
   conf-pkg-config
   conf-sqlite3
   (ox_test :with-test)
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))
 
 (package
@@ -252,8 +252,8 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ppx_yojson_minimal
-  ox ox_ai ox_json ox_http ox_observability eio
-  (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
+  ox ox_ai ox_json ox_http ox_observability (eio (>= 1.6))
+  (yojson (>= 2.0)) (eio_main (and :with-test (>= 1.6))) (alcotest :with-test)))
 
 (package
  (name ox_ai_realtime)
@@ -262,8 +262,8 @@
   (ocaml (>= 5.4.0))
   (conf-ox-oxcaml (= :version))
   ppx_yojson_minimal
-  ox ox_ai ox_json ox_http ox_observability eio
-  (yojson (>= 2.0)) (eio_main :with-test) (alcotest :with-test)))
+  ox ox_ai ox_json ox_http ox_observability (eio (>= 1.6))
+  (yojson (>= 2.0)) (eio_main (and :with-test (>= 1.6))) (alcotest :with-test)))
 
 (package
  (name ox_ai_chat)
@@ -277,7 +277,7 @@
   ox_json
   ox_observability
   ox_http
-  eio
+  (eio (>= 1.6))
   (yojson (>= 2.0))
-  (eio_main :with-test)
+  (eio_main (and :with-test (>= 1.6)))
   (alcotest :with-test)))

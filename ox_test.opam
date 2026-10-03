@@ -11,8 +11,8 @@ depends: [
   "conf-ox-oxcaml" {= version}
   "ox"
   "ox_caps"
-  "eio"
-  "eio_main"
+  "eio" {>= "1.6"}
+  "eio_main" {>= "1.6"}
   "alcotest"
   "odoc" {with-doc}
 ]
