@@ -3,9 +3,21 @@
 # All inputs go through the compiler parser; no lexical fallback.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-engine="${OX_LINT:-$here/../ox_lint/ox-lint}"
-if [[ ! -x "$engine" ]]; then
-  echo "caps-gate: ox-lint missing; install ox_lint or set OX_LINT to its executable" >&2
+
+# Resolution order: an explicit OX_LINT, then the installed executable beside this
+# script's prefix, then one on PATH. The share tree is data only: opam installs share
+# files 0644, so the executable cannot live there (^ncapslint-x3gi).
+engine=""
+for candidate in "${OX_LINT:-}" "$here/../../bin/ox-lint" "$(command -v ox-lint 2>/dev/null || true)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    engine="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$engine" ]]; then
+  echo "caps-gate: ox-lint not found; install the ox_lint package or set OX_LINT to its executable" >&2
   exit 2
 fi
+
 exec "$engine" --caps-gate "$@"

@@ -19,11 +19,19 @@
  (package ox_lint)
  (deps main.bc))
 
+; ^ncapslint-x3gi: the executable goes in bin, where opam keeps the executable bit;
+; share holds only the rule pages and fixtures --self-check reads (share is 0644).
+
+(install
+ (package ox_lint)
+ (section bin)
+ (files
+  (main.exe as ox-lint)))
+
 (install
  (package ox_lint)
  (section share)
  (files
-  (main.exe as ox-lint)
   (../../docs/rules/ox-discarded-result.md
    as
    docs/rules/ox-discarded-result.md)
