@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: done
 package: ox_sql, ox_sql_dsl
 consumer: Exergy SQLite ingestion; existing SQLite consumers
 priority: P1
@@ -68,3 +68,6 @@ Interrupting a completed commit, forceful thread termination, automatic operatio
 - Exergy-owned defect, not a new Ox feature: the current ingest transaction helper can fail to roll back a raised callback/failed commit and discards rollback failure. The later migration must use the existing generic transaction contract and a shielded execution edge.
 - The [blocking-pool drain repair](<../blocking/01-blocking.md>) protects ownership around native callbacks. It does not make caller cancellation synchronously stop SQLite.
 - Additional verified P2 concern, not an Exergy raw-SQL prerequisite: [Pool timeout application:89–95](<../../../lib/sql/pool.ml#L89-L95>) silently ignores a requested timeout when no clock is supplied; [public timeout-bearing operations](<../../../lib/sql/pool.mli#L9-L33>) also run native statements synchronously on the Eio thread. [Current timeout test:87–98](<../../../test/sql/run.ml#L87-L98>) proves checkout timeout only. Before strengthening pooled-operation deadlines, ratify checkout-only versus full-native-work semantics, reject or structurally prevent a timeout without clock authority, and prove heartbeat responsiveness plus lease retention until physical settlement/rollback. This P2 follow-up is not included in the ready cancellation implementation slice. Do not silently adopt Pool for Exergy or ticket an async blueprint driver.
+
+Verified 2026-10-04: [SQLite cancellation tests](<../../../test/sql/test_sqlite_cancellation.ml>) `native_entry`, `commit_entry`, `body_failure_rollback`, `commit_failure_rollback`, `primary_and_rollback_failures`, `raised_body_rollback`, `restoration`, `active_interrupt`, `request_close_cleanup`, and `blocking_caller_cancellation` passed; the full SQL suite passed 34 tests.
+`@install`, `dune test`, and `@fmt` passed; caps-gate was verified by the lead on an isolated tree. Rollback-failure connection discard is Exergy-owned; test fixtures demonstrate caller-selected disposal only.

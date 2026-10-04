@@ -36,6 +36,7 @@ lib/sql_dsl/ox_sql_dsl_compiled.ml
 lib/sql_dsl/ox_sql_dsl_compiled.mli
 lib/sql_dsl/ox_sql_dsl_query.ml
 lib/sql_dsl/ox_sql_dsl_query.mli
+test/sql/test_sqlite_cancellation.ml
 # ^ncapslint-5rxe: compiler-parsed OxCaml hole regressions and exact binder sites.
 test/caps/rules/holes/*.ml
 test/caps/rules/holes/*.mli

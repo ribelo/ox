@@ -10,6 +10,7 @@ type db = {
 type stmt = {
   global_ mutex : Mutex.t;
   global_ stmt_raw : raw_stmt;
+  global_ db_raw : raw_db;
 }
 
 type rc = int
@@ -182,7 +183,7 @@ let exec_script_raw @ portable = fun (db @ local) sql ->
   let raw = db.raw in
   with_db_lock db (fun () -> exec_script_raw raw sql)
 
-external prepare_raw : raw_db -> string -> raw_stmt @@ portable = "ox_sqlite_prepare"
+external prepare_raw : raw_db -> string -> (raw_stmt, rc * string) result @@ portable = "ox_sqlite_prepare"
 
 external finalize_raw : raw_stmt -> (int[@untagged]) @@ portable = "ox_sqlite_finalize_bc" "ox_sqlite_finalize"
 
@@ -262,11 +263,12 @@ let bind_zeroblob (stmt @ local) index size =
   let raw = stmt.stmt_raw in
   with_stmt_lock stmt (fun () -> bind_zeroblob_raw raw index size)
 
-external step_raw : raw_stmt -> (int[@untagged]) @@ portable = "ox_sqlite_step_bc" "ox_sqlite_step"
+external step_raw : raw_db -> raw_stmt -> (int[@untagged]) @@ portable = "ox_sqlite_step_bc" "ox_sqlite_step"
 
 let step @ portable = fun (stmt @ local) ->
   let raw = stmt.stmt_raw in
-  with_stmt_lock stmt (fun () -> step_raw raw)
+  let db_raw = stmt.db_raw in
+  with_stmt_lock stmt (fun () -> step_raw db_raw raw)
 
 external column_int64_raw : raw_stmt -> (int[@untagged]) -> (int64[@unboxed]) @@ portable = "ox_sqlite_column_int64_bc" "ox_sqlite_column_int64"
 [@@noalloc]
@@ -426,9 +428,14 @@ module Cancellation = struct
     request_flag t.flag;
     interrupt t.db
 
-  let with_handler t f =
+  let with_handler t (f @ local) =
     install t.db.raw t.flag;
-    Fun.protect ~finally:(fun () -> remove t.db.raw t.flag) f
+    match f () with
+    | value -> remove t.db.raw t.flag; value
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        remove t.db.raw t.flag;
+        Printexc.raise_with_backtrace exn backtrace
 end
 
 external is_interrupted_raw : raw_db -> bool @@ portable = "ox_sqlite_is_interrupted_bc" "ox_sqlite_is_interrupted"
@@ -441,7 +448,8 @@ let is_closed @ portable = fun (db @ local) -> Atomic.get db.closed
 external complete : string -> bool = "ox_sqlite_complete_bc" "ox_sqlite_complete"
 
 let make_error @ portable = fun (db @ local) ~operation code ->
-  { operation; code; message = error_message db }
+  { operation; code;
+    message = if rc_equal code interrupt_ then "interrupted" else error_message db }
 
 let check @ portable = fun (db @ local) ~operation rc ->
   if rc = ok then
@@ -513,9 +521,8 @@ let with_db config f =
 
 let prepare_result @ portable = fun (db @ local) sql ->
   match prepare_raw db sql with
-  | raw -> Ok { mutex = db.mutex; stmt_raw = raw }
-  | exception Failure message ->
-      Result.Error { operation = "prepare"; code = error_code db; message }
+  | Ok stmt_raw -> Ok { mutex = db.mutex; stmt_raw; db_raw = db.raw }
+  | Result.Error (code, message) -> Result.Error { operation = "prepare"; code; message }
 
 let prepare @ portable = fun (db @ local) sql ->
   value_or_raise (prepare_result db sql)

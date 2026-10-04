@@ -1,7 +1,7 @@
 (test
  (name run)
- (modules run test_sqlite test_sql_dsl_transaction)
- (libraries ox_sql ox_sql_dsl ox_test eio_main alcotest))
+ (modules run test_sqlite test_sql_dsl_transaction test_sqlite_cancellation)
+ (libraries ox_sql ox_sql_dsl ox_blocking ox_test eio_main alcotest))
 
 (rule
  (alias runtest)

@@ -21,6 +21,10 @@ typedef struct ox_sqlite_db_state {
   sqlite3 *db;
   pthread_mutex_t mutex;
   int mutex_initialized;
+  /* Only the exclusive operation owner installs/removes this pointer. The
+     token is rooted by with_handler; concurrent request touches its atomic
+     flag, never this pointer. Close clears it under mutex. */
+  _Atomic int *cancelled;
 } ox_sqlite_db_state;
 
 typedef struct {
@@ -156,8 +160,8 @@ static sqlite3 *ox_sqlite_db_val(value v_db)
 }
 
 /* An operation owns a stable, GC-independent cancellation flag. SQLite's
-   interrupt flag alone is cleared when no statement is running, so a progress
-   callback also observes cancellation that arrived before prepare/step. */
+   idle interrupt is not sticky: native entry checks reject pre-requested work,
+   and the progress callback preserves cooperative interruption after entry. */
 static _Atomic int *ox_sqlite_cancellation_val(value token)
 {
   return *(_Atomic int **)Data_custom_val(token);
@@ -199,27 +203,88 @@ CAMLprim value ox_sqlite_cancellation_request(value token)
   return Val_unit;
 }
 
+/* TEST-ONLY post-entry gate, distinct from the before-step fixture. It is
+   reached only inside SQLite's VM progress callback. The gate uses no handle
+   mutex: cancellation request/interrupt must be able to finish while paused.
+   Private test-local externals are its only callers; no public SQL API. */
+static pthread_mutex_t ox_sqlite_progress_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t ox_sqlite_progress_cond = PTHREAD_COND_INITIALIZER;
+static _Atomic int ox_sqlite_progress_state = 0;
+
+CAMLprim value ox_sqlite_test_progress_arm(value unit)
+{
+  (void)unit;
+  atomic_store(&ox_sqlite_progress_state, 1);
+  return Val_unit;
+}
+
+CAMLprim value ox_sqlite_test_progress_wait(value unit)
+{
+  CAMLparam1(unit);
+  caml_enter_blocking_section();
+  pthread_mutex_lock(&ox_sqlite_progress_mu);
+  while (atomic_load(&ox_sqlite_progress_state) == 1)
+    pthread_cond_wait(&ox_sqlite_progress_cond, &ox_sqlite_progress_mu);
+  pthread_mutex_unlock(&ox_sqlite_progress_mu);
+  caml_leave_blocking_section();
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value ox_sqlite_test_progress_release(value unit)
+{
+  (void)unit;
+  pthread_mutex_lock(&ox_sqlite_progress_mu);
+  atomic_store(&ox_sqlite_progress_state, 0);
+  pthread_cond_broadcast(&ox_sqlite_progress_cond);
+  pthread_mutex_unlock(&ox_sqlite_progress_mu);
+  return Val_unit;
+}
+
 static int ox_sqlite_cancellation_progress(void *cancelled)
 {
+  if (atomic_load(&ox_sqlite_progress_state) == 1) {
+    pthread_mutex_lock(&ox_sqlite_progress_mu);
+    if (atomic_load(&ox_sqlite_progress_state) == 1) {
+      atomic_store(&ox_sqlite_progress_state, 2);
+      pthread_cond_broadcast(&ox_sqlite_progress_cond);
+      while (atomic_load(&ox_sqlite_progress_state) == 2)
+        pthread_cond_wait(&ox_sqlite_progress_cond, &ox_sqlite_progress_mu);
+    }
+    pthread_mutex_unlock(&ox_sqlite_progress_mu);
+  }
   return atomic_load((_Atomic int *)cancelled);
+}
+
+static int ox_sqlite_cancelled_at_entry(ox_sqlite_db_state *slot)
+{
+  return slot->cancelled != NULL && atomic_load(slot->cancelled);
 }
 
 CAMLprim value ox_sqlite_cancellation_install(value v_db, value token)
 {
-  sqlite3 *db = ox_sqlite_db_val(v_db);
-  if (db != NULL)
-    sqlite3_progress_handler(db, 1000, ox_sqlite_cancellation_progress,
-                            ox_sqlite_cancellation_val(token));
+  ox_sqlite_db_state *slot = ox_sqlite_db_state_val(v_db);
+  if (slot == NULL) return Val_unit;
+  pthread_mutex_lock(&slot->mutex);
+  if (slot->db != NULL) {
+    slot->cancelled = ox_sqlite_cancellation_val(token);
+    sqlite3_progress_handler(slot->db, 1000, ox_sqlite_cancellation_progress,
+                             slot->cancelled);
+  }
+  pthread_mutex_unlock(&slot->mutex);
   return Val_unit;
 }
 
 CAMLprim value ox_sqlite_cancellation_remove(value v_db, value token)
 {
-  sqlite3 *db = ox_sqlite_db_val(v_db);
+  ox_sqlite_db_state *slot = ox_sqlite_db_state_val(v_db);
   /* Passing token here keeps its native storage live until the callback has
      been removed; the worker has finished all SQLite calls at this point. */
   (void)token;
-  if (db != NULL) sqlite3_progress_handler(db, 0, NULL, NULL);
+  if (slot == NULL) return Val_unit;
+  pthread_mutex_lock(&slot->mutex);
+  if (slot->db != NULL) sqlite3_progress_handler(slot->db, 0, NULL, NULL);
+  slot->cancelled = NULL;
+  pthread_mutex_unlock(&slot->mutex);
   return Val_unit;
 }
 
@@ -232,6 +297,7 @@ static void ox_sqlite_db_init(value v_db)
     caml_failwith("sqlite open: state allocation failed");
   }
   db->db = NULL;
+  db->cancelled = NULL;
   db->mutex_initialized = 0;
   if (pthread_mutex_init(&db->mutex, NULL) != 0) {
     free(db);
@@ -440,6 +506,7 @@ CAMLprim intnat ox_sqlite_close(value v_db)
   pthread_mutex_unlock(&ox_sqlite_test_mu);
   if (rc == SQLITE_OK) {
     slot->db = NULL;
+    slot->cancelled = NULL;
   }
   /* Lock-order repair, unconditional: publish the closed handle and release
      the slot mutex BEFORE reacquiring the OCaml runtime. The previous order
@@ -457,6 +524,18 @@ CAMLprim value ox_sqlite_test_close_arm(value v_unit)
   pthread_mutex_lock(&ox_sqlite_test_mu);
   ox_sqlite_test_state = 1;
   pthread_mutex_unlock(&ox_sqlite_test_mu);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value ox_sqlite_test_close_wait(value unit)
+{
+  CAMLparam1(unit);
+  caml_enter_blocking_section();
+  pthread_mutex_lock(&ox_sqlite_test_mu);
+  while (ox_sqlite_test_state == 1)
+    pthread_cond_wait(&ox_sqlite_test_cond, &ox_sqlite_test_mu);
+  pthread_mutex_unlock(&ox_sqlite_test_mu);
+  caml_leave_blocking_section();
   CAMLreturn(Val_unit);
 }
 
@@ -502,7 +581,8 @@ CAMLprim value ox_sqlite_busy_timeout_bc(value v_db, value v_ms)
 CAMLprim intnat ox_sqlite_exec_script(value v_db, value v_sql)
 {
   CAMLparam2(v_db, v_sql);
-  sqlite3 *db = ox_sqlite_db_val(v_db);
+  ox_sqlite_db_state *slot = ox_sqlite_db_state_val(v_db);
+  sqlite3 *db = slot == NULL ? NULL : slot->db;
   char *sql;
   char *errmsg = NULL;
   int rc;
@@ -514,7 +594,8 @@ CAMLprim intnat ox_sqlite_exec_script(value v_db, value v_sql)
     CAMLreturnT(intnat, SQLITE_NOMEM);
   }
   caml_enter_blocking_section();
-  rc = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
+  rc = ox_sqlite_cancelled_at_entry(slot)
+         ? SQLITE_INTERRUPT : sqlite3_exec(db, sql, NULL, NULL, &errmsg);
   caml_leave_blocking_section();
   free(sql);
   if (errmsg != NULL) {
@@ -531,37 +612,55 @@ CAMLprim value ox_sqlite_exec_script_bc(value v_db, value v_sql)
 CAMLprim value ox_sqlite_prepare(value v_db, value v_sql)
 {
   CAMLparam2(v_db, v_sql);
-  CAMLlocal1(v_stmt);
-  sqlite3 *db = ox_sqlite_db_val(v_db);
+  CAMLlocal4(v_stmt, result, error, text);
+  ox_sqlite_db_state *db_slot = ox_sqlite_db_state_val(v_db);
+  sqlite3 *db = db_slot == NULL ? NULL : db_slot->db;
   sqlite3_stmt *stmt = NULL;
   size_t sql_len;
-  char *sql;
-  int rc;
-  if (db == NULL) {
-    caml_failwith("sqlite prepare: database is closed");
-  }
+  char *sql = NULL;
+  char message[512];
+  int rc = SQLITE_MISUSE;
   v_stmt = caml_alloc_custom(&ox_sqlite_stmt_ops, sizeof(ox_sqlite_stmt), 0, 1);
   ((ox_sqlite_stmt *)Data_custom_val(v_stmt))->stmt = NULL;
-  sql = ox_sqlite_copy_ocaml_string(v_sql, &sql_len);
-  if (sql == NULL) {
-    caml_failwith("sqlite prepare: out of memory");
-  }
-  if (sql_len > INT_MAX) {
+  if (db == NULL) {
+    snprintf(message, sizeof(message), "sqlite prepare: database is closed");
+  } else {
+    sql = ox_sqlite_copy_ocaml_string(v_sql, &sql_len);
+    if (sql == NULL) {
+      rc = SQLITE_NOMEM;
+      snprintf(message, sizeof(message), "sqlite prepare: out of memory");
+    } else if (sql_len > INT_MAX) {
+      rc = SQLITE_TOOBIG;
+      snprintf(message, sizeof(message), "sqlite prepare: SQL string too long");
+    } else {
+      caml_enter_blocking_section();
+      if (ox_sqlite_cancelled_at_entry(db_slot)) {
+        rc = SQLITE_INTERRUPT;
+        snprintf(message, sizeof(message), "sqlite prepare: %s", sqlite3_errstr(rc));
+      } else {
+        rc = sqlite3_prepare_v2(db, sql, (int)sql_len, &stmt, NULL);
+        if (rc != SQLITE_OK || stmt == NULL) {
+          snprintf(message, sizeof(message), "sqlite prepare: %s", sqlite3_errmsg(db));
+          if (rc == SQLITE_OK) rc = SQLITE_ERROR;
+        }
+      }
+      caml_leave_blocking_section();
+    }
     free(sql);
-    caml_failwith("sqlite prepare: SQL string too long");
   }
-  caml_enter_blocking_section();
-  rc = sqlite3_prepare_v2(db, sql, (int)sql_len, &stmt, NULL);
-  caml_leave_blocking_section();
-  free(sql);
-  if (rc != SQLITE_OK || stmt == NULL) {
-    char buffer[512];
-    snprintf(buffer, sizeof(buffer), "sqlite prepare: %s", sqlite3_errmsg(db));
-    caml_failwith(buffer);
+  if (rc != SQLITE_OK) {
+    text = caml_copy_string(message);
+    error = caml_alloc_tuple(2);
+    Store_field(error, 0, Val_int(rc));
+    Store_field(error, 1, text);
+    result = caml_alloc(1, 1); /* Error (rc, message), not an expected exception. */
+    Store_field(result, 0, error);
+  } else {
+    ((ox_sqlite_stmt *)Data_custom_val(v_stmt))->stmt = stmt;
+    result = caml_alloc(1, 0); /* Ok stmt */
+    Store_field(result, 0, v_stmt);
   }
-
-  ((ox_sqlite_stmt *)Data_custom_val(v_stmt))->stmt = stmt;
-  CAMLreturn(v_stmt);
+  CAMLreturn(result);
 }
 
 CAMLprim intnat ox_sqlite_finalize(value v_stmt)
@@ -791,24 +890,25 @@ static void ox_sqlite_test_before_step(sqlite3_stmt *stmt)
   pthread_mutex_unlock(&ox_sqlite_test_mu);
 }
 
-CAMLprim intnat ox_sqlite_step(value v_stmt)
+CAMLprim intnat ox_sqlite_step(value v_db, value v_stmt)
 {
-  CAMLparam1(v_stmt);
+  CAMLparam2(v_db, v_stmt);
+  ox_sqlite_db_state *slot = ox_sqlite_db_state_val(v_db);
   sqlite3_stmt *stmt = ox_sqlite_stmt_val(v_stmt);
   int rc;
-  if (stmt == NULL) {
+  if (stmt == NULL || slot == NULL || slot->db == NULL) {
     CAMLreturnT(intnat, SQLITE_MISUSE);
   }
   caml_enter_blocking_section();
   ox_sqlite_test_before_step(stmt);
-  rc = sqlite3_step(stmt);
+  rc = ox_sqlite_cancelled_at_entry(slot) ? SQLITE_INTERRUPT : sqlite3_step(stmt);
   caml_leave_blocking_section();
   CAMLreturnT(intnat, rc);
 }
 
-CAMLprim value ox_sqlite_step_bc(value v_stmt)
+CAMLprim value ox_sqlite_step_bc(value v_db, value v_stmt)
 {
-  return Val_int(ox_sqlite_step(v_stmt));
+  return Val_int(ox_sqlite_step(v_db, v_stmt));
 }
 
 CAMLprim int64_t ox_sqlite_column_int64(value v_stmt, intnat index)

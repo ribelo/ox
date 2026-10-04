@@ -180,6 +180,7 @@ let () =
           case "commit rollback raise"
             Test_sql_dsl_transaction.test_commit_raised_rollback_raised_once;
         ] );
+      ("SQLite cancellation", Test_sqlite_cancellation.tests);
       ( "Eio pool and migration ^inncap-b8ts",
         [
           case "typed CRUD and pragma" test_typed;

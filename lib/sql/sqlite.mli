@@ -150,18 +150,40 @@ module Cancellation : sig
   type t
 
   val create : db -> t
-  (** A fresh, sticky cancellation token for one database operation. *)
+  (** A fresh, sticky cancellation token for one database operation.
+      @blocking Does not suspend.
+      @cancel No cancellation point.
+      @cleanup Native token storage is GC-managed; this does not close [db].
+      @ownership The caller owns the token; it keeps [db] reachable.
+      @escape May be shared with the fiber or worker requesting cancellation. *)
 
   val request : t -> unit
-  (** Thread-safe: interrupt active SQLite work and retain cancellation for
-      native work that has not started yet. Safe before [with_handler]. *)
+  (** Thread-safe: interrupt active SQLite work and retain cancellation. While
+      [with_handler] is installed, a request known before native exec, prepare,
+      or step entry returns SQLite's interrupt result without doing that work.
+      Requests after entry are cooperative and cannot undo a completed COMMIT.
+      Safe before [with_handler] and after connection close.
+      @blocking Brief synchronous native synchronization; no Eio suspension.
+      @cancel Does not check Eio cancellation or reset the sticky request.
+      @cleanup Does not close the connection or settle an active worker.
+      @ownership Thread-safe; exclusive ownership is not required to request.
+      @escape Does not retain additional resources. *)
 
-  val with_handler : t -> (unit -> 'a) -> 'a
+  val with_handler : t -> (unit -> 'a) @ local -> 'a
   (** Install a native progress callback for the dynamic extent of the worker.
       The caller must exclusively own the connection until this returns; scopes
       must not overlap or nest on one connection. Cancellation is never reset.
       The handler is removed on both return and exception, before lease reuse.
-      Long native statements observe cancellation every 1000 VM instructions. *)
+      Long native statements observe cancellation every 1000 VM instructions.
+      Run transaction begin/body/commit in separate scopes; ROLLBACK and close
+      belong outside them. An abandoned blocking caller must retain the lease
+      until the native callback physically settles, not just until it cancels.
+      @blocking Executes the callback directly; its operations may block or suspend.
+      @cancel Callback exceptions, including Eio cancellation, propagate with their
+        original backtrace; removal itself has no Eio cancellation point.
+      @cleanup Removes the native entry flag and progress handler on return or raise.
+      @ownership The caller exclusively owns the connection throughout the callback.
+      @escape Accepts a local callback; it does not retain it past return. *)
 end
 val is_interrupted : db @ local -> bool
 val is_closed : db @ local -> bool @@ portable
