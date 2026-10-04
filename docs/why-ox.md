@@ -31,6 +31,8 @@ A **kernel**, not a framework: the packages Rafal's services are built from, wri
 1. Direct style on Eio; no blueprint, no interpreter, no second cancellation model (ADR-0001).
 2. `('a, 'err) result` is the error channel; the Cause tree is computed at scope boundaries (ADR-0002).
 3. Tabula rasa, spec-driven: nothing exists here without a spec story citing it, and Ox is its own consumer — Scala Ox's floor (ADR-0009) and the compile-time safety of ADR-0010 need no outside application; pure codecs are copied from v1 when a spec needs them, everything effectful is rewritten (ADR-0003, as amended).
+
+Resource-bearing interface values follow the documentation contract in `docs/rules/interface-documentation.md`: the lint checks presence and shape, while the implementation and the tests establish truth.
 4. One application model: Services, Deps, a Switch, a Door; no runtime dependency graph (ADR-0004).
 5. OxCaml-first with a strict dependency policy: stdlib, Eio, Jane Street packages when installable on our compiler, unavoidable C bindings, and an ADR for anything else (ADR-0005).
 6. Ox is the floor (ADR-0009): the table of contents of Scala's Ox (https://ox.softwaremill.com) is the checklist of the core, every item present in direct style or recorded with a reason in `docs/design/ox-floor.md`; what Ox adds above it is the Cause tree and the handler discipline of ADR-0006.

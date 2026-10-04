@@ -97,7 +97,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 86 | [usage-rules/01-usage-rules.md](usage-rules/01-usage-rules.md) | docs, `scripts/ox-check`, gate | 66, 85 | one page per rule with its check, a machine-readable index, one command an agent runs; the 2026-10-04 research folded in | [ ] |
 | 87 | [ox-lint/01-ox-lint.md](ox-lint/01-ox-lint.md) | `ox_lint` (new, build-time) | 66, 86 | our own rule decider on the pinned compiler's `compiler-libs`: Parsetree now, Typedtree from `.cmt` where types are needed; ast-grep has no OCaml, Semgrep's is Experimental | [x] |
 | 88 | [ox-lint-rules/01-ox-lint-rules.md](ox-lint-rules/01-ox-lint-rules.md) | `ox_lint` rules; `ox`, `ox_http`, `ox_otel`, `ox_ipc`, `ox_sql` | 87 | row 66's concurrency rules on our own decider, with the existing `lib/` violations fixed | [x] |
-| 89 | [ox-lint-docs/01-ox-lint-docs.md](ox-lint-docs/01-ox-lint-docs.md) | `ox_lint` rules, every `lib/**/*.mli` | 87 | the interface-documentation contract Eio never wrote down, decided from `.cmti`; 813 undocumented `val`s triaged | [ ] |
+| 89 | [ox-lint-docs/01-ox-lint-docs.md](ox-lint-docs/01-ox-lint-docs.md) | `ox_lint` rules, every `lib/**/*.mli` | 87 | the interface-documentation contract Eio never wrote down, decided from `.cmti`; 813 undocumented `val`s triaged | [x] |
 | 90 | [caps-on-ox-lint/01-caps-on-ox-lint.md](caps-on-ox-lint/01-caps-on-ox-lint.md) | `ox_lint` rules, `ox_caps`, `scripts/caps-gate`, flake | 88 | the 17 capability rules move onto `ox-lint` and Semgrep leaves the tree; entry condition is an equivalence run on ox and all five consumers | [x] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
