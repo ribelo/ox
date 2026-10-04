@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: done
 package: ox_http
 consumer: Exergy providers; existing HTTPS consumers
 priority: P0
@@ -52,7 +52,8 @@ Extend the existing one-shot request operation with explicit caller-owned final-
 - Represent pre-head failure, successful read, explicit skip and post-head failure honestly. A skipped body must be distinguishable from a genuinely empty body. The body-failure reason is nonrecursive and accompanied by the final status and headers.
 - The caller supplies a small final-head disposition function; it runs once for the final response, never for informational heads. Provider status/authentication rules and retry policy stay outside the kernel. A body failure does not trigger a second request.
 - Preserve the existing HTTP/1.1 codecs and OpenSSL trust behavior; make the API express the current contract and update its consumers instead of introducing a legacy overload or fallback path.
-- Header/trailer limits are documented finite parsing budgets, separate from the payload-byte budget. Reuse the existing header budget for trailer-block limits where appropriate; the implementation must document the cumulative informational-head budget.
+- Header/trailer limits are documented finite parsing budgets, separate from the payload-byte budget. Each head and framing line is bounded by 32 KiB; a head admits at most 256 fields. Informational heads share a cumulative 32 KiB wire-byte budget, and trailers have an independent cumulative 32 KiB budget, including CRLF.
+- Post-head failures now use `Body { status; headers; reason }`, with ordered duplicate headers and a nonrecursive reason. This supersedes the original flat post-head `Body_too_large`/`Closed`/timeout outcomes without changing stories 1–12; successful bodies are explicitly `Read bytes` or `Skipped`. No legacy overload remains.
 - Externally imposed Eio interruption remains an exception. Explicit request deadlines retain their typed timeout meaning and response phase. Defects and callback exceptions are not caught as expected HTTP failures.
 
 ## Testing Decisions
@@ -76,3 +77,7 @@ Streaming bodies, pooling, redirect following, WebSocket upgrades, HTTP/2, trans
 - Protocol role: non-upgrading HTTP/1.1 user agent. [RFC 9110 §15.2](<https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2>) requires parsing one or more informational responses before a final response; [§15.2.2](<https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2.2>) describes switching protocols. [RFC 9112 §7.1.2](<https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1.2>) describes the trailer section. The finite trailer budget is local availability policy, not a numerical RFC requirement. Implementers must refresh current RFC status and applicable errata; this scoped audit does not certify full HTTP conformance.
 - Trust boundary: provider/proxy bytes are untrusted. Availability impact is misleading completion on 1xx or unbounded framing work, not an established credential leak or cited CVE. Preserve verified TLS and never attach authentication headers or raw payloads to diagnostic output.
 - Exergy integration follows only after this capability lands: providers pass their explicit 16 MiB limits where required and classify the new native outcomes directly. No provider-specific error variants belong in Ox.
+
+Verified 2026-10-04: `nix develop -c dune runtest test/http --force` passed 71 HTTP tests (31 new final-head/disposition cases) and 25 preserved WebSocket tests.
+[Test_client_heads](<../../../test/http/test_client_heads.ml>) covers provenance, explicit caller policies, all framing/skip paths, informational and trailer boundaries, mock-clock deadlines/idle, real TCP/TLS faults, cleanup, cancellation and original callback traces; [run](<../../../test/http/run.ml>) preserves the original transport, trust and codec regressions.
+

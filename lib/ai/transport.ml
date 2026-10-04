@@ -62,8 +62,8 @@ let transport_failure message =
   `Unavailable { Error.message; retryable = true; retry_after = None; status = None }
 
 let map_error ~max_response_bytes : Ox_http.Client.error -> Error.t = function
-  | `Timeout | `Idle_timeout -> `Timeout
-  | `Body_too_large ->
+  | `Timeout | `Idle_timeout | `Body { reason = `Timeout | `Idle_timeout; _ } -> `Timeout
+  | `Body { reason = `Too_large; _ } ->
       `Invalid_response
         {
           Ox_json.path = "";
@@ -75,6 +75,18 @@ let map_error ~max_response_bytes : Ox_http.Client.error -> Error.t = function
   | `Connect why -> transport_failure ("connect: " ^ why)
   | `Tls why -> transport_failure ("tls: " ^ why)
   | `Protocol why -> transport_failure ("protocol: " ^ why)
+  | `Body { status; reason; _ } ->
+      let message =
+        match reason with
+        | `Truncated -> "response body truncated"
+        | `Malformed why -> "response body: " ^ why
+        | `Tls why -> "tls: " ^ why
+        | `Closed -> "connection closed during response body"
+        | `Connect why -> "connect: " ^ why
+        | `Timeout | `Idle_timeout | `Too_large -> assert false
+      in
+      `Unavailable
+        { Error.message; retryable = true; retry_after = None; status = Some status }
 
 (* The attempt policy (^nso-zmfp): one more attempt, only after a transport failure, a
    timeout of the attempt itself, or HTTP 429/529 — nothing else. The reference adapter
@@ -119,7 +131,8 @@ let attempt ~http ~url ~authorization ~body ~deadline ?response_idle ~max_respon
       ~headers:(("Content-Type", "application/json") :: authorization)
       ~body ~deadline ?response_idle ~max_body_bytes:max_response_bytes ()
   with
-  | Ok response -> Ok (response.Ox_http.Client.status, response.headers, response.body)
+  | Ok { status; headers; body = `Read body } -> Ok (status, headers, body)
+  | Ok { body = `Skipped; _ } -> Error (transport_failure "unexpected skipped body")
   | Error error -> Error (map_error ~max_response_bytes error)
 
 let bytes_of_json json = Bytes.of_string (Yojson.Safe.to_string json)

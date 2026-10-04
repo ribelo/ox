@@ -74,8 +74,10 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ?res
         Ox_http.Client.request http ~method_:"POST" ~url:endpoint ~headers ~body ~deadline
           ?response_idle ~max_body_bytes:Ox_ai.Transport.default_max_response_bytes ()
       with
-      | Error (`Timeout | `Idle_timeout) -> Error `Timeout
-      | Error `Body_too_large ->
+      | Error (`Timeout | `Idle_timeout | `Body { reason = `Timeout | `Idle_timeout; _ })
+        ->
+          Error `Timeout
+      | Error (`Body { reason = `Too_large; _ }) ->
           Common.invalid "transcription reply exceeds byte limit" `Null
       | Error _ ->
           Error
@@ -99,7 +101,9 @@ let create ~http ~api_key ?(endpoint = default_endpoint) ?max_request_bytes ?res
                  retry_after = None;
                  status = Some status;
                })
-      | Ok response -> (
-          match Common.decode (Bytes.to_string response.body) with
+      | Ok { body = `Skipped; _ } ->
+          Common.invalid "unexpected skipped transcription body" `Null
+      | Ok { body = `Read body; _ } -> (
+          match Common.decode (Bytes.to_string body) with
           | Error _ as error -> error
           | Ok json -> decode json))

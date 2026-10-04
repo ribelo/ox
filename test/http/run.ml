@@ -60,7 +60,10 @@ let with_server ?(tls = false) serve test =
 
 let good_response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"
 let expect_ok = function Ok x -> x | Error _ -> Alcotest.fail "HTTP request failed"
-let read_body = function `Read bytes -> Bytes.to_string bytes | `Skipped -> Alcotest.fail "body skipped"
+
+let read_body = function
+  | `Read bytes -> Bytes.to_string bytes
+  | `Skipped -> Alcotest.fail "body skipped"
 
 let plaintext () =
   (* nhttp-irnw nhttp-0qob nhttp-jdb0 *)
@@ -201,9 +204,7 @@ let slow_progress () =
         H.Client.request client ~method_:"GET" ~url ~response_idle:(Ox.Duration.ms 35) ()
         |> expect_ok
       in
-      Alcotest.(check string)
-        "progressing response" "hello"
-        (read_body response.body))
+      Alcotest.(check string) "progressing response" "hello" (read_body response.body))
 
 let cancel () =
   (* nhttp-6a47: cancellation interrupts the request and closes its socket. *)
