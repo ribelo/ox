@@ -3,11 +3,13 @@
     calls may block the domain; the wrappers add no Eio check. Keep blocking calls out of
     [Ox.Actor] handlers and [Ox.Agent] closures. ^nlintd-a7oq *)
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio; these direct calls may
-    block the domain. Cancellation: not a cancellation point; the wrapper performs no Eio
-    cancellation check. Finalizers: no Eio switch finalizer is registered; returned open
-    handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
-    runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
+(** Cancellation and finalizers: Suspension: never suspends in the wrapper; underlying
+    calls are delegated to Stdlib.Sys and may block the domain. Cancellation: not a
+    cancellation point in the wrapper; underlying checks and callbacks are delegated to
+    Stdlib.Sys, with no additional Eio cancellation check. Finalizers: no Eio switch
+    finalizer is registered; returned open handles are caller-owned. Locking: the wrapper
+    acquires no lock of its own; delegated runtime locking is unchanged. ^nlintd-von6
+    ^nlintd-a7oq *)
 
 val command : caps:< Cap.fork ; Cap.exec ; .. > -> string -> int
 val chdir : caps:< Cap.chdir ; .. > -> string -> unit

@@ -848,7 +848,11 @@ let retry_policy () =
       check_bool "on_retry saw each failed attempt" true
         (List.rev !seen = [ (1, Error "e1"); (2, Error "e2") ]);
       seen := [];
-      ignore (Retry.retry ~clock ~policy (Schedule.recurs 1) (fun () -> Error "e"));
+      ((* ^nlint-hxar: The attempts are scripted Error; only the on_retry count at schedule exhaustion is asserted here. *)
+       let _retry_result =
+         Retry.retry ~clock ~policy (Schedule.recurs 1) (fun () -> Error "e")
+       in
+       ());
       check_int "on_retry is not called when the schedule ends" 1 (List.length !seen);
       (* the schedule's input is the attempt's result *)
       tries := 0;

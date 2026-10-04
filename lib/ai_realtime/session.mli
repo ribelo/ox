@@ -1,3 +1,10 @@
+(** Cancellation and finalizers: Suspension: may suspend in delegated Ox_http.Ws_client
+    connection, frame I/O and close. Cancellation: propagates Eio.Cancel.Cancelled from
+    the delegated WebSocket operation. Finalizers: the supplied switch owns the WebSocket;
+    these wrappers add no hook. Locking: delegated to Ox_http.Ws_client. Cancellation
+    safety: unsafe because progress is lost if frame delivery or receipt is interrupted;
+    already-sent frames are not rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 type t
 (** Codex Realtime JSON session. The caller's switch owns its WebSocket; cancellation or
     switch exit closes the socket, and explicit close sends a close frame. Credentials are

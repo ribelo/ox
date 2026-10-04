@@ -1,3 +1,20 @@
+(** Cancellation and finalizers: Suspension: may suspend in the owned switches, Eio waits,
+    configuration I/O and caller callbacks; delegated Eio, Cmdliner, Stdlib and Ox
+    operations retain their own behaviour; delegates runtime entry to Eio_main,
+    capability/runtime setup to Ox_caps.Cap_sys and Ox_caps_door, reporting to
+    Ox_observability.Logger, decoding to Toml and Yojson, Cmdliner let-operator invocation
+    to its terms, and object method dispatch to the environment provider. Cancellation:
+    classified by the owned Scope.run boundary; outside it Eio.Cancel.Cancelled and caller
+    callback cancellation propagate; delegates runtime entry to Eio_main,
+    capability/runtime setup to Ox_caps.Cap_sys and Ox_caps_door, reporting to
+    Ox_observability.Logger, decoding to Toml and Yojson, Cmdliner let-operator invocation
+    to its terms, and object method dispatch to the environment provider. Finalizers:
+    owned switches run release hooks; caller-created service resources must use the
+    supplied switch, and with_powerbox registers no hook. Locking: no wrapper lock spans
+    caller code; synchronization is delegated to Eio and service callbacks. Cancellation
+    safety: unsafe because progress is lost when a program or callback is interrupted;
+    completed callback effects are not rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 module Env = Env
 (** The Door: one root Eio Switch, ordered Services, and classified exits. Cancellation
     interrupts the program and runs root-switch releases in reverse acquisition order. A
@@ -49,7 +66,9 @@ val serve : sw:Eio.Switch.t -> unit -> ('a, 'e) result
     Services as a dep before this call. [sw] is the root switch owning Services;
     cancellation releases its finalizers before the Door returns. The function never
     produces a value: it returns only by interruption, which the enclosing [Scope.run]
-    classifies. A switch that has already finished is a defect. *)
+    classifies. A switch that has already finished is a defect. ^nlintd-raises
+
+    @raise Invalid_argument if [sw] is finished. *)
 
 val request_stop : sw:Eio.Switch.t -> Ox.Interrupt_id.t -> unit
 (** Interrupt the root scope from a fiber (never directly from a signal handler). Only an
@@ -175,7 +194,11 @@ val run_for_test_with_args :
     pre-config {!Env} — above all its powerbox, [env.caps], the only source of
     capabilities a command has (^ncaps-0mvw). [commands_with_env] gives the top-level
     commands the same Env. The Door mints one powerbox per call and every {!Env} it builds
-    carries it. *)
+    carries it.
+
+    Supplying both telemetry and telemetry_result creates an Invalid_argument defect
+    inside the owned Scope.run; it is rendered as defect_exit rather than raised to this
+    caller. ^nlintd-truth *)
 
 val run_for_test :
   ?on_switch:(Eio.Switch.t -> unit) ->
@@ -248,7 +271,9 @@ val run_for_test :
     [telemetry_result] is [telemetry] for a hook whose acquisition can fail (an exporter
     that cannot be created): its [Error e] is rendered through [pp_err] with exit 1, like
     a program failure, before the program logger exists, and the program is never entered.
-    Give one of the two; both raise [Invalid_argument]. ^napp-scz2
+    Give one of the two; both cause an [Invalid_argument] defect inside the root
+    Scope.run, rendered as defect_exit rather than raised to this caller. ^napp-scz2
+    ^nlintd-truth
 
     [telemetry] runs on the run path alone — `config check` never calls it — after
     [validate] accepts, inside the root switch and before the program. It receives that
@@ -326,7 +351,11 @@ val run_with_args :
     must distinguish [`Missing] from [`Unreadable]. The application still owns live
     reload. Its CLI options and owned-code builder match {!run_for_test_with_args}.
     [wakeup_ms] selects the same outer-scope ticker as {!run}. ^napp-ytqk ^napp-x11e
-    ^napp-ersz ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt *)
+    ^napp-ersz ^napp-k0x0 ^napp-1k5x ^napp-j3qu ^napp-izjt
+
+    @raise Invalid_argument
+      if wakeup_ms is negative or, when it is absent, OX_POSIX_WAKEUP_MS is malformed or
+      negative; this validation is outside the inner program scope. ^nlintd-raises *)
 
 val run :
   ?wakeup_ms:int ->
@@ -397,7 +426,11 @@ val run :
     effective interval once through its journal logger, subject to [log_level] and
     [journal_level]. Owned/client commands start the ticker silently and keep stderr
     clean. Its outer switch outlives the program's cancellation and all protected cleanup
-    (^nwake-27rc, ^nwake-y4cx). *)
+    (^nwake-27rc, ^nwake-y4cx).
+
+    @raise Invalid_argument
+      if wakeup_ms is negative or, when it is absent, OX_POSIX_WAKEUP_MS is malformed or
+      negative; this validation is outside the inner program scope. ^nlintd-raises *)
 
 val run_and_exit_with_args :
   ?wakeup_ms:int ->
@@ -462,13 +495,23 @@ val run_and_exit_with_args :
     signal handling and [config check] output are unchanged.
 
     Suspension: may suspend during config loading, callbacks, the program and cleanup, or
-    in registered at_exit hooks. Cancellation: classified at the same owned scope
-    boundaries as {!run_with_args}; outside those boundaries it propagates, and exit-hook
-    cancellation depends on the hooks. Finalizers: the Door closes its switches and
-    restores signal handlers before exiting; Stdlib then runs at_exit hooks. Locking: no
-    additional lock spans caller code; callbacks retain their own locking. Cancellation
-    safety: unsafe because progress is lost if interrupted after callbacks have committed
-    external effects; replay may repeat those effects. ^ncaps-0mvw *)
+    in registered at_exit hooks; delegates runtime entry to Eio_main, capability/runtime
+    setup to Ox_caps.Cap_sys and Ox_caps_door, reporting to Ox_observability.Logger,
+    decoding to Toml and Yojson, Cmdliner let-operator invocation to its terms, and object
+    method dispatch to the environment provider. Cancellation: classified at the same
+    owned scope boundaries as {!run_with_args}; outside those boundaries
+    Eio.Cancel.Cancelled propagates, and exit-hook cancellation depends on the hooks;
+    delegates runtime entry to Eio_main, capability/runtime setup to Ox_caps.Cap_sys and
+    Ox_caps_door, reporting to Ox_observability.Logger, decoding to Toml and Yojson,
+    Cmdliner let-operator invocation to its terms, and object method dispatch to the
+    environment provider. Finalizers: the Door closes its switches and restores signal
+    handlers before exiting; Stdlib then runs at_exit hooks. Locking: no additional lock
+    spans caller code; callbacks retain their own locking. Cancellation safety: unsafe
+    because progress is lost if interrupted after callbacks have committed external
+    effects; replay may repeat those effects. ^ncaps-0mvw
+
+    Invalid_argument from invalid wakeup_ms or OX_POSIX_WAKEUP_MS is raised before the
+    inner program scope; in that case Stdlib.exit is not called. ^nlintd-raises *)
 
 val run_and_exit :
   ?wakeup_ms:int ->
@@ -513,13 +556,23 @@ val run_and_exit :
     handling and [config check] output are unchanged.
 
     Suspension: may suspend during config loading, callbacks, the program and cleanup, or
-    in registered at_exit hooks. Cancellation: classified at the same owned scope
-    boundaries as {!run}; outside those boundaries it propagates, and exit-hook
-    cancellation depends on the hooks. Finalizers: the Door closes its switches and
-    restores signal handlers before exiting; Stdlib then runs at_exit hooks. Locking: no
-    additional lock spans caller code; callbacks retain their own locking. Cancellation
-    safety: unsafe because progress is lost if interrupted after callbacks have committed
-    external effects; replay may repeat those effects. ^ncaps-0mvw *)
+    in registered at_exit hooks; delegates runtime entry to Eio_main, capability/runtime
+    setup to Ox_caps.Cap_sys and Ox_caps_door, reporting to Ox_observability.Logger,
+    decoding to Toml and Yojson, Cmdliner let-operator invocation to its terms, and object
+    method dispatch to the environment provider. Cancellation: classified at the same
+    owned scope boundaries as {!run}; outside those boundaries Eio.Cancel.Cancelled
+    propagates, and exit-hook cancellation depends on the hooks; delegates runtime entry
+    to Eio_main, capability/runtime setup to Ox_caps.Cap_sys and Ox_caps_door, reporting
+    to Ox_observability.Logger, decoding to Toml and Yojson, Cmdliner let-operator
+    invocation to its terms, and object method dispatch to the environment provider.
+    Finalizers: the Door closes its switches and restores signal handlers before exiting;
+    Stdlib then runs at_exit hooks. Locking: no additional lock spans caller code;
+    callbacks retain their own locking. Cancellation safety: unsafe because progress is
+    lost if interrupted after callbacks have committed external effects; replay may repeat
+    those effects. ^ncaps-0mvw
+
+    Invalid_argument from invalid wakeup_ms or OX_POSIX_WAKEUP_MS is raised before the
+    inner program scope; in that case Stdlib.exit is not called. ^nlintd-raises *)
 
 val posix_wakeup :
   caps:< Ox_caps.Cap.env ; .. > ->
@@ -545,12 +598,14 @@ val posix_wakeup :
     only after that scope's protected cleanups return.
 
     Suspension: may suspend in the supplied logger's reporter; the daemon sleeps on
-    [env#clock] independently. Cancellation: propagates from reporter calls and switch
-    checks. Finalizers: [sw] owns the daemon and cancels it when the switch finishes.
-    Locking: this function acquires no lock around caller code; reporter locking depends
-    on the supplied logger. Cancellation safety: unsafe because progress is lost if
-    cancellation interrupts reporter output; a startup record may be partially emitted.
-    ^nwake-27rc ^nwake-y4cx *)
+    [env#clock] independently; delegates logging to Ox_observability.Logger and
+    clock/provider operations to Eio. Cancellation: propagates Eio.Cancel.Cancelled from
+    reporter calls and switch checks; delegates environment reads to Ox_caps.Cap_sys,
+    logging to Ox_observability.Logger and provider checks to Eio. Finalizers: [sw] owns
+    the daemon and cancels it when the switch finishes. Locking: this function acquires no
+    lock around caller code; reporter locking depends on the supplied logger. Cancellation
+    safety: unsafe because progress is lost if cancellation interrupts reporter output; a
+    startup record may be partially emitted. ^nwake-27rc ^nwake-y4cx *)
 
 val with_powerbox : (Ox_caps.Cap.all_caps -> 'a) -> 'a
 (** Mint this process's powerbox and pass it to [f]. For an entry that already owns its
@@ -581,4 +636,8 @@ val run_simple :
     through [exit_code] (default 1); a defect is rendered as a full [Cause] on stderr and
     exits 2 where Ox's [Simple] prints a stack trace and exits 1, so that a defect can be
     told from a typed failure. [wakeup_ms] follows the selection and outer-scope lifetime
-    of {!run}. ^nfloor-6n2e *)
+    of {!run}. ^nfloor-6n2e
+
+    @raise Invalid_argument
+      if wakeup_ms is negative or, when it is absent, OX_POSIX_WAKEUP_MS is malformed or
+      negative; this validation is outside the inner program scope. ^nlintd-raises *)

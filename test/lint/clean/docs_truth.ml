@@ -29,3 +29,10 @@ let release_failure () = invalid_arg "release"
 let release_raises sw = Eio.Switch.on_release sw release_failure
 let finalizer_failure () = failwith "cleanup"
 let finalizer_raises _ = Fun.protect ~finally:finalizer_failure (fun () -> ())
+
+(* ^nlintd-truth *)
+let primitives _ n =
+  let cell = Atomic.make (n + 1) in
+  Atomic.get cell - 1
+
+let buffered_publish stream = Eio.Stream.add stream ()

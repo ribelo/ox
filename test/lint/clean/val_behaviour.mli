@@ -10,7 +10,9 @@ module M : sig
 
   val override : Eio.Switch.t -> unit
   (** Suspension: may suspend awaiting work. Cancellation: propagates. Finalizers:
-      registered on the switch. Locking: held only during bookkeeping. *)
+      registered on the switch. Locking: held only during bookkeeping. Cancellation
+      safety: safe to re-run; this shape-fixture implementation commits no state.
+      ^nlintd-a7oq *)
 end
 
 val pure : int -> string

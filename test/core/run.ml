@@ -237,7 +237,8 @@ let test_resource () =
       Alcotest.(check bool) "nothing acquired" false !failed_acquire;
       match
         Scope.run (fun sw ->
-            let _ =
+            (* ^nlint-hxar: Acquisition is scripted Ok; the test asserts suppression of the release defect behind the primary body error. *)
+            let _acquire_result =
               Support.acquire_release ~sw
                 ~acquire:(fun () -> Ok 1)
                 ~release:(fun _ -> failwith "cleanup")

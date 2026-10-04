@@ -14,11 +14,14 @@
     through Eio's [process_mgr] ([Ox_process.Child.spawn]) instead of [fork]/[exec], and
     run a blocking call through [Ox_blocking]. *)
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio; these direct calls may
-    block the domain. Cancellation: not a cancellation point; the wrapper performs no Eio
-    cancellation check. Finalizers: no Eio switch finalizer is registered; returned open
-    handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
-    runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
+(** Cancellation and finalizers: Suspension: never suspends in the wrapper; underlying
+    calls are delegated to Unix and may block the domain; depends on delegated Unix native
+    calls and Stdlib argument checks. Cancellation: not a cancellation point in the
+    wrapper; underlying checks and callbacks are delegated to Unix, with no additional Eio
+    cancellation check; depends on delegated Unix native calls and Stdlib argument checks.
+    Finalizers: no Eio switch finalizer is registered; returned open handles are
+    caller-owned. Locking: the wrapper acquires no lock of its own; delegated runtime
+    locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
 
 (** {1 fork, exec} *)
 
@@ -117,7 +120,9 @@ val openfile_write :
   Unix.file_descr
 (** Open a write-only descriptor. Reject [O_RDONLY] and [O_RDWR] flags; the wrapper
     supplies [O_WRONLY]. A lockfile used only for [lockf] and [fstat] needs no read
-    access. *)
+    access. ^nlintd-raises
+
+    @raise Invalid_argument if [flags] contain [O_RDONLY] or [O_RDWR]. *)
 
 val open_dev_null : caps:< Cap.fs_write ; .. > -> unit -> Unix.file_descr
 (** A write-only, close-on-exec descriptor on [/dev/null]. Requires [Cap.fs_write] because
@@ -156,6 +161,7 @@ val establish_server :
 
     Suspension: may suspend in the supplied server callback; Unix socket operations may
     block the domain. Cancellation: depends on the callback; the wrapper adds no Eio
-    protection. Finalizers: server process and socket cleanup are delegated to
-    Unix.establish_server, not an Eio switch. Locking: socket and process locking are
-    delegated to Unix. ^nlintd-a7oq *)
+    protection. Cancellation safety: unsafe because progress is lost; accepted connections
+    and completed server callback effects are not rolled back. Finalizers: server process
+    and socket cleanup are delegated to Unix.establish_server, not an Eio switch. Locking:
+    socket and process locking are delegated to Unix. ^nlintd-a7oq *)

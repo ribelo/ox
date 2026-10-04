@@ -1,3 +1,10 @@
+(** Cancellation and finalizers: Suspension: may suspend in the delegated Ox_ai.Transport
+    HTTP request and response I/O. Cancellation: propagates Eio.Cancel.Cancelled from that
+    request. Finalizers: per-request socket cleanup belongs to the transport; this wrapper
+    registers no hook. Locking: delegated to the transport. Cancellation safety: unsafe
+    because progress is lost if the response is interrupted; remote processing is not
+    rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 (** Indexed float embeddings for nema. Input shape and decoder are pure; create is bounded
     by deadline and its HTTP socket closes on cancellation. *)
 type input = Text of string | Texts of string list

@@ -13,17 +13,33 @@ val run : (env -> Eio.Switch.t -> 'a) -> 'a
 (** Runs with manually controlled mock wall and monotonic clocks, with the actual stdenv's
     fs, cwd, net and process manager. The operating system is NOT virtualized. Switch
     finalizers and children finish before return; cancellation propagates according to
-    Eio's normal rules. *)
+    Eio's normal rules. Suspension: may suspend in the caller callback and Eio switch
+    join. Cancellation: propagates Eio.Cancel.Cancelled from caller code and Eio waits.
+    Finalizers: the owned switch joins children and runs its release hooks protected
+    before Eio_main returns. Locking: no harness lock spans the callback. Cancellation
+    safety: unsafe because progress is lost; completed callback effects and mock clock
+    updates remain if the run is interrupted. ^nlintd-a7oq *)
 
 val advance : Eio_mock.Clock.t -> Ox.Duration.t -> unit
 (** Sets virtual wall time and yields to let due sleepers run; does not run switch
-    finalizers. Caller controls the monotonic clock separately. *)
+    finalizers. Caller controls the monotonic clock separately. Suspension: may suspend at
+    Eio.Fiber.yield after setting the mock wall clock. Cancellation: propagates
+    Eio.Cancel.Cancelled from that yield. Finalizers: none are registered. Locking: no
+    lock is acquired. Cancellation safety: unsafe because progress is lost; the clock
+    update is already committed before the yield. ^nlintd-a7oq *)
 
 type ('a, 'e) handle
 
 val fork_run : sw:Eio.Switch.t -> (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) handle
 (** Starts [Ox.Scope.run] in [sw]. External cancellation is classified by Scope.run and
-    cleanup is awaited. *)
+    cleanup is awaited. Suspension: may suspend while Eio starts the fiber and in the
+    caller callback. Cancellation: propagates Eio.Cancel.Cancelled from fork startup; the
+    child Scope.run classifies its interruption. Finalizers: the child scope joins its
+    fibers and runs its protected release hooks before settling the promise. Locking: no
+    harness lock spans caller code. Cancellation safety: unsafe because progress is lost;
+    child callback effects can begin before fork_run returns. ^nlintd-a7oq
+
+    A finished sw causes Invalid_argument in the delegated Eio fork. *)
 
 val await : ('a, 'e) handle -> ('a, 'e) Ox.Exit.t
 (** Waits for the classified Exit; cancellation of the waiter propagates. *)
@@ -73,7 +89,12 @@ val powerbox : unit -> Ox_caps.Cap.all_caps
 val flow_pair : ?label:string -> string list -> Eio_mock.Flow.t * Eio_mock.Flow.t
 (** A scripted readable flow (one read per chunk, then EOF) and writable sink. Neither
     registers a finalizer; callers can inspect writes with Eio tracing or configure the
-    sink using Eio_mock.Flow. *)
+    sink using Eio_mock.Flow. Suspension: never suspends; mock flow construction is
+    delegated to Eio_mock and installs no I/O action; delegated Stdlib, Stdlib.List
+    operations retain their own behaviour. Cancellation: not a cancellation point;
+    construction is delegated to Eio_mock without an Eio check; delegated Stdlib,
+    Stdlib.List operations retain their own behaviour. Finalizers: none are registered.
+    Locking: no lock is acquired. ^nlintd-a7oq *)
 
 module Process : sig
   type stream = Stdout | Stderr  (** The child's standard output or standard error. *)
@@ -106,11 +127,16 @@ module Process : sig
       without [clock]; the clock is the mock one [advance] moves.
 
       Suspension: never suspends; this call only constructs or reads OCaml values and
-      captures dependencies without invoking them. Cancellation: not a cancellation point;
-      this call performs no Eio cancellation check. Finalizers: this call registers no
-      switch hook and leaves captured resources with their existing owner. Locking: this
-      call acquires no lock; construction of synchronization objects does not acquire
-      them. ^nlintd-a7oq *)
+      captures dependencies without invoking them; delegated Ox.Duration, Stdlib.List,
+      Stdlib.Option operations retain their own behaviour. Cancellation: not a
+      cancellation point; this call performs no Eio cancellation check; delegated
+      Ox.Duration, Stdlib.List, Stdlib.Option operations retain their own behaviour.
+      Finalizers: this call registers no switch hook and leaves captured resources with
+      their existing owner. Locking: this call acquires no lock; construction of
+      synchronization objects does not acquire them. ^nlintd-a7oq
+
+      @raise Invalid_argument
+        if a chunk has a nonzero delay and clock is absent. ^nlintd-raises *)
 
   val mgr : t -> Eio_unix.Process.mgr_ty Eio.Resource.t
   (** Real Eio process-manager resource supporting both [spawn] and [spawn_unix]. Pipes
@@ -127,21 +153,23 @@ module Process : sig
       argv, env, cwd and fds.
 
       Suspension: never suspends; this call only constructs or reads OCaml values and
-      captures dependencies without invoking them. Cancellation: not a cancellation point;
-      this call performs no Eio cancellation check. Finalizers: this call registers no
-      switch hook and leaves captured resources with their existing owner. Locking: this
-      call acquires no lock; construction of synchronization objects does not acquire
-      them. ^nlintd-a7oq *)
+      captures dependencies without invoking them; delegated Eio_unix.Process operations
+      retain their own behaviour. Cancellation: not a cancellation point; this call
+      performs no Eio cancellation check; delegated Eio_unix.Process operations retain
+      their own behaviour. Finalizers: this call registers no switch hook and leaves
+      captured resources with their existing owner. Locking: this call acquires no lock;
+      construction of synchronization objects does not acquire them. ^nlintd-a7oq *)
 
   val spawns : t -> spawn list
   (** Spawns in call order; descriptors are retained as opaque references.
 
       Suspension: never suspends; this call only constructs or reads OCaml values and
-      captures dependencies without invoking them. Cancellation: not a cancellation point;
-      this call performs no Eio cancellation check. Finalizers: this call registers no
-      switch hook and leaves captured resources with their existing owner. Locking: this
-      call acquires no lock; construction of synchronization objects does not acquire
-      them. ^nlintd-a7oq *)
+      captures dependencies without invoking them; delegated Stdlib.List operations retain
+      their own behaviour. Cancellation: not a cancellation point; this call performs no
+      Eio cancellation check; delegated Stdlib.List operations retain their own behaviour.
+      Finalizers: this call registers no switch hook and leaves captured resources with
+      their existing owner. Locking: this call acquires no lock; construction of
+      synchronization objects does not acquire them. ^nlintd-a7oq *)
 
   val signals : t -> int list
   (** Signals received in call order, including cleanup SIGKILL when pending. *)

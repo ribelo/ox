@@ -1,11 +1,19 @@
 open Ocaml_common
 open Ox_caps
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio; synchronous filesystem
-    reads and Dune subprocess queries may block the domain. Cancellation: not a
-    cancellation point. Finalizers: channels and subprocess handles are closed before
+(** Cancellation and finalizers: Suspension: never suspends in Eio itself; synchronous
+    filesystem/compiler work may block the domain; operations delegate to Stdlib, Unix,
+    Ox_caps, Cmt_format, Cmi_format, Compilation_unit, Envaux, Import_info and Load_path
+    and their higher-order callbacks; capability object method dispatch depends on the
+    supplied provider; running returned visitors depends on caller code. Cancellation: not
+    a cancellation point in Eio itself; operations delegate to Stdlib, Unix, Ox_caps,
+    Cmt_format, Cmi_format, Compilation_unit, Envaux, Import_info and Load_path and their
+    higher-order callbacks; capability object method dispatch depends on the supplied
+    provider; running returned visitors depends on caller code; Failure reports missing
+    metadata, invalid build-directory rebasing, failed rebuilds or stale/missing
+    annotation evidence. Finalizers: channels and subprocess handles are closed before
     returning; returned annotations are in-memory values. Locking: compiler caches and
-    runtime I/O retain their existing locking. *)
+    runtime I/O retain their existing locking. ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
 
 type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
 
@@ -66,6 +74,10 @@ val setup : caps:< Cap.fs_read ; .. > -> t -> unit
 (** Reset caches and initialize rebased visible and hidden include paths, including Dune
     private CMIs in installed [.private] and build-tree [byte] directories. Recorded paths
     take precedence; every imported CMI fingerprint must still match. *)
+
+val rebuild_check : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> unit
+(** Rebuild [@check] after the whole-repository inventory and before reading evidence.
+    Explicit scans do not repair their supplied evidence. ^nlintcov-q6n2 *)
 
 val source : t -> string
 (** Resolve the annotation's source through its rebased build directory. *)

@@ -1,3 +1,17 @@
+(** Cancellation and finalizers: Suspension: may suspend in delegated Eio networking, TLS
+    handshake, frame I/O and Eio mutex acquisition; depends on delegated Cstruct buffers,
+    Ox_http.Tls_flow, Unix random initialization, Stdlib frame/string/collection
+    operations and Eio provider I/O; delegated callback dispatch and
+    Ox_http.Ox_http_tls_openssl, Stdlib operations retain their own behaviour.
+    Cancellation: propagates Eio.Cancel.Cancelled from those operations; depends on
+    delegated Eio provider checks, Ox_http.Tls_flow, Unix random initialization, Cstruct
+    buffers and Stdlib frame/string/collection operations; delegated callback dispatch and
+    Ox_http.Ox_http_tls_openssl, Stdlib operations retain their own behaviour. Finalizers:
+    the supplied switch owns the connection and failed connection attempts close their
+    acquired flow. Locking: an Eio mutex serializes outbound frames and close state.
+    Cancellation safety: unsafe because progress is lost if frame delivery or receipt is
+    interrupted; already-sent bytes are not rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 type t
 (** Direct-style RFC 6455 client over Ox's TCP and verified OpenSSL TLS. *)
 
@@ -27,7 +41,14 @@ val connect :
 (** The switch owns the socket. [establishment_timeout] defaults to ten seconds and bounds
     DNS, TCP, TLS and HTTP upgrade together, never the established stream (^oxpie-g2x6).
     Expiry returns [`Timeout] and releases any pending socket; cancellation propagates to
-    the caller and also releases it. Headers cannot override upgrade fields. *)
+    the caller and also releases it. Headers cannot override upgrade fields.
+
+    @raise Invalid_argument
+      if max_message_bytes is negative or sw is finished. ^nlintd-raises
+
+    @raise Tls_failure
+      if the delegated OpenSSL TLS handshake fails; the exception is private to Tls_flow
+      and failure_message extracts its message. ^nlintd-truth *)
 
 val selected_protocol : t -> string option
 val send_text : t -> string -> (unit, error) result

@@ -107,8 +107,12 @@ let error_leaves_state () =
           Actor.tell actor Refuse;
           check_bool "still serving" true (Actor.ask actor Get = Ok 11);
           let seen = Actor.changes actor in
-          ignore (Actor.ask actor Refuse);
-          ignore (Actor.ask actor (Add 1));
+          ((* ^nlint-hxar: Refuse is scripted to fail without changing state; the stream assertion below checks that it publishes no state. *)
+           let _refused_ask_result = Actor.ask actor Refuse in
+           ());
+          ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+           let _ask_result = Actor.ask actor (Add 1) in
+           ());
           check_bool "a failed handler publishes no state" true
             (Actor.Changes.next seen = Some 12)))
 
@@ -169,7 +173,9 @@ let ask_after_stop () =
       let actor =
         Eio.Switch.run (fun sw ->
             let actor = Actor.create ~sw ~init:5 ~handle () in
-            ignore (Actor.ask actor (Add 1));
+            ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+             let _ask_result = Actor.ask actor (Add 1) in
+             ());
             actor)
       in
       check_bool "ask on a stopped actor" true (Actor.ask actor Get = Error `Actor_stopped);
@@ -184,7 +190,12 @@ let changes_stream () =
       Eio.Switch.run (fun sw ->
           let actor = Actor.create ~sw ~init:0 ~handle () in
           let first = Actor.changes actor and second = Actor.changes actor in
-          List.iter (fun n -> ignore (Actor.ask actor (Add n))) [ 1; 2; 3 ];
+          List.iter
+            (fun n ->
+              (* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+              let _ask_result = Actor.ask actor (Add n) in
+              ())
+            [ 1; 2; 3 ];
           let take subscription n =
             List.init n (fun _ -> Actor.Changes.next subscription)
           in
@@ -198,7 +209,9 @@ let changes_stream () =
           (* overflow: a lagging observer loses the oldest states and counts them *)
           let slow = Actor.changes ~capacity:2 actor in
           for n = 1 to 5 do
-            ignore (Actor.ask actor (Add n))
+            (* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+            let _ask_result = Actor.ask actor (Add n) in
+            ()
           done;
           (* totals 7, 9, 12, 16, 21 *)
           check_int "the three oldest were dropped" 3 (Actor.Changes.dropped slow);
@@ -216,8 +229,12 @@ let changes_end_with_actor () =
         Eio.Switch.run (fun sw ->
             let actor = Actor.create ~sw ~init:0 ~handle () in
             let subscription = Actor.changes actor in
-            ignore (Actor.ask actor (Add 1));
-            ignore (Actor.ask actor (Add 2));
+            ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+             let _ask_result = Actor.ask actor (Add 1) in
+             ());
+            ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+             let _ask_result = Actor.ask actor (Add 2) in
+             ());
             subscription)
       in
       Alcotest.(check (list (option int)))
@@ -240,7 +257,9 @@ let state_snapshot () =
       Eio.Switch.run (fun sw ->
           let gate, release = Eio.Promise.create () in
           let actor = Actor.create ~sw ~init:0 ~handle () in
-          ignore (Actor.ask actor (Add 1));
+          ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+           let _ask_result = Actor.ask actor (Add 1) in
+           ());
           Actor.tell actor (Slow (10, gate));
           Actor.tell actor (Add 100);
           yields 3;
@@ -392,7 +411,9 @@ let on_stop_after_crash () =
                 ~on_stop:(fun state -> finals := state :: !finals)
                 ~sw ~init:0 ~handle ()
             in
-            ignore (Actor.ask actor (Add 4));
+            ((* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+             let _ask_result = Actor.ask actor (Add 4) in
+             ());
             Actor.tell actor (Crash (Boom "x"));
             yields 5;
             Ok ())
@@ -407,7 +428,9 @@ let on_stop_after_crash () =
             let actor =
               Actor.create ~on_stop:(fun _ -> raise (Boom "stop")) ~sw ~init:0 ~handle ()
             in
-            ignore (Actor.ask actor Get);
+            ((* ^nlint-hxar: The ask synchronizes actor startup; the scope-cause assertion checks the failing on_stop hook rather than the reply. *)
+             let _ready_ask_result = Actor.ask actor Get in
+             ());
             Ok ())
       in
       (* the switch was ending normally, so Eio's own stop reason is the primary cause and
@@ -436,7 +459,9 @@ let on_stop_may_suspend () =
                 persisted := Some state)
               ~sw ~init:0 ~handle ()
           in
-          ignore (Actor.ask actor (Add 7)));
+          (* ^nlint-hxar: The ask drives the scripted actor; the existing state, stream or shutdown assertions check its effect rather than its reply. *)
+          let _ask_result = Actor.ask actor (Add 7) in
+          ());
       check_bool "on_stop is protected from the cancellation that stops the actor" true
         (!persisted = Some 7))
 

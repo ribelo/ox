@@ -1,3 +1,16 @@
+(** Cancellation and finalizers: Suspension: may suspend in Eio.Net.accept,
+    Eio.Promise.await, Eio.Fiber.yield, flow I/O and caller handlers; depends on delegated
+    Cstruct buffer operations, Eio networking/fibers, Ox.Duration, Ox_http.Tls_flow,
+    Stdlib strings/collections and caller route callbacks. Cancellation: propagates
+    Eio.Cancel.Cancelled through request I/O and caller handlers; owned switches cancel
+    and await connection fibers; depends on delegated Eio provider/fiber checks, Cstruct
+    buffer operations, Ox.Duration, Ox_http.Tls_flow, Stdlib strings/collections and
+    caller route callbacks. Finalizers: accepted flows are closed in protected cleanup and
+    the listener belongs to its supplied switch. Locking: no server lock spans caller
+    handler code; synchronization is delegated to Eio. Cancellation safety: unsafe because
+    progress is lost if serving is interrupted; replies and handler effects already
+    published are not rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 (** Direct-style HTTP/1.1 server. Bodies and sockets belong to the caller's switch;
     cancellation interrupts I/O and every accepted flow is closed on exit. *)
 
@@ -123,7 +136,11 @@ val run_h1_on_socket :
   unit
 (** Serve an already listening, caller-owned socket. Stopping accepts no more connections;
     active handlers drain up to [drain_timeout]. Idle flows close. Caller owns [socket]
-    and closes it after this function returns. *)
+    and closes it after this function returns.
+
+    @raise Invalid_argument
+      if config's line/header limits are nonpositive or its body limit is negative.
+      ^nlintd-raises *)
 
 val run_h1 :
   sw:Eio.Switch.t ->
@@ -136,4 +153,8 @@ val run_h1 :
   addr:Eio.Net.Sockaddr.stream ->
   handler ->
   unit
-(** Listen on [addr] inside the provided switch and run the HTTP/1.1 server. *)
+(** Listen on [addr] inside the provided switch and run the HTTP/1.1 server.
+
+    @raise Invalid_argument
+      if sw is finished or config's line/header limits are nonpositive or its body limit
+      is negative. ^nlintd-raises *)

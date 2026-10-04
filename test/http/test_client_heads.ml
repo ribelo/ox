@@ -358,15 +358,19 @@ let policy_exceptions ?(tls = false) () =
               original_trace := Printexc.raw_backtrace_to_string trace;
               Printexc.raise_with_backtrace exn trace
           in
-          (match C.request client ~method_:"GET" ~url ~on_head () with
-          | _ -> fail "policy exception became typed HTTP error"
-          | exception exn ->
-              Alcotest.(check bool) "same exception object" true (exn == original);
-              Alcotest.(check bool)
-                "policy backtrace retained" true
-                (!original_trace <> ""
-                && String.starts_with ~prefix:!original_trace (Printexc.get_backtrace ())
-                ));
+          (* ^nhttp-hpo2 ^nlintc-du4v: reify the caller exception, including the
+             cancellation fixture, so the same identity/backtrace assertions inspect it. *)
+          let (`Raised (exn, trace)) =
+            match C.request client ~method_:"GET" ~url ~on_head () with
+            | _ -> fail "policy exception became typed HTTP error"
+            | exception exn -> `Raised (exn, Printexc.get_raw_backtrace ())
+          in
+          Alcotest.(check bool) "same exception object" true (exn == original);
+          Alcotest.(check bool)
+            "policy backtrace retained" true
+            (!original_trace <> ""
+            && String.starts_with ~prefix:!original_trace
+                 (Printexc.raw_backtrace_to_string trace));
           Eio.Promise.await done_))
     [
       Policy_defect 42;

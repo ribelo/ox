@@ -10,6 +10,7 @@ type value = {
   behaviour : bool;
   cancel_safety : bool;
   documentation : string list;
+  declaration_only : bool;
 }
 
 let targets =
@@ -257,6 +258,7 @@ let iterator ~(caps : < Cap.fs_read ; .. >) inspect =
   let origins = origins ~caps () in
   let defaults = ref [] in
   let modules = ref [] in
+  let declaration_only = ref false in
   let base = Tast_iterator.default_iterator in
   let default_fields attrs =
     texts attrs
@@ -277,12 +279,14 @@ let iterator ~(caps : < Cap.fs_read ; .. >) inspect =
         modules := parent);
     module_type_declaration =
       (fun self md ->
-        let previous, parent = (!defaults, !modules) in
+        let previous, parent, abstract = (!defaults, !modules, !declaration_only) in
+        declaration_only := true;
         defaults := merge !defaults (default_fields md.mtd_attributes);
         modules := !modules @ [ md.mtd_name.txt ];
         base.module_type_declaration self md;
         defaults := previous;
-        modules := parent);
+        modules := parent;
+        declaration_only := abstract);
     signature =
       (fun self signature ->
         let previous = !defaults in
@@ -320,6 +324,7 @@ let iterator ~(caps : < Cap.fs_read ; .. >) inspect =
                 families;
                 behaviour;
                 cancel_safety;
+                declaration_only = !declaration_only;
                 documentation =
                   texts value.val_attributes
                   @ List.map
@@ -327,7 +332,7 @@ let iterator ~(caps : < Cap.fs_read ; .. >) inspect =
                       (let own = fields (texts value.val_attributes) in
                        List.filter
                          (fun (label, _) -> not (List.mem_assoc label own))
-                         !defaults);
+                         (merge !defaults own));
               }
         | _ -> ());
         base.signature_item self item);
@@ -351,6 +356,7 @@ type effects = {
   exceptions : Names.t;
   explicit_raises : Names.t;
   opaque : Names.t;
+  opaque_raises : Names.t;
 }
 
 type transformation = Filter of Names.t * bool | Wrap of string
@@ -380,6 +386,7 @@ let empty_effects =
     exceptions = Names.empty;
     explicit_raises = Names.empty;
     opaque = Names.empty;
+    opaque_raises = Names.empty;
   }
 
 let empty_summary = { effects = empty_effects; calls = [] }
@@ -392,6 +399,7 @@ let union a b =
     exceptions = Names.union a.exceptions b.exceptions;
     explicit_raises = Names.union a.explicit_raises b.explicit_raises;
     opaque = Names.union a.opaque b.opaque;
+    opaque_raises = Names.union a.opaque_raises b.opaque_raises;
   }
 
 let join a b = { effects = union a.effects b.effects; calls = a.calls @ b.calls }
@@ -399,6 +407,13 @@ let joins xs = List.fold_left join empty_summary xs
 
 let unknown name =
   { empty_summary with effects = { empty_effects with opaque = Names.singleton name } }
+
+(* ^nlintd-truth: an unresolved exception identity cannot itself suspend or check cancellation. *)
+let unknown_raise name =
+  {
+    empty_summary with
+    effects = { empty_effects with opaque_raises = Names.singleton name };
+  }
 
 let thrown name =
   {
@@ -421,6 +436,7 @@ let filter_effects handled protected effects =
   {
     effects with
     explicit_raises;
+    opaque_raises = (if Names.mem "*" handled then Names.empty else effects.opaque_raises);
     cancellation = (if protected then Names.empty else effects.cancellation);
     exceptions =
       ( unhandled effects.exceptions |> fun xs ->
@@ -432,11 +448,13 @@ let transform transformation effects =
   match transformation with
   | Filter (handled, protected) -> filter_effects handled protected effects
   | Wrap name ->
-      if Names.is_empty effects.exceptions then effects
+      if Names.is_empty effects.exceptions && Names.is_empty effects.opaque_raises then
+        effects
       else
         {
           effects with
           exceptions = Names.singleton name;
+          opaque_raises = Names.empty;
           explicit_raises = Names.singleton name;
         }
 
@@ -468,11 +486,19 @@ let semantic_leaves =
   [
     ("Eio.Fiber.yield", true, true, []);
     ("Eio.Fiber.await_cancel", true, true, []);
+    ("Eio.Fiber.check", false, true, []);
+    (* Source-verified allocation leaves, not a blanket Eio exemption. ^nlintd-truth *)
+    ("Eio.Promise.create", false, false, []);
+    ("Eio.Promise.create_resolved", false, false, []);
+    ("Eio.Condition.create", false, false, []);
+    ("Eio.Mutex.create", false, false, []);
+    ("Eio.Semaphore.make", false, false, [ "Invalid_argument" ]);
     ("Eio.Promise.await", true, true, []);
     ("Eio.Promise.await_exn", true, true, []);
     ("Eio.Stream.add", true, true, []);
     ("Eio.Stream.take", true, true, []);
-    ("Eio.Condition.await", true, true, []);
+    ("Eio.Condition.await", true, true, [ "Eio.Mutex.Poisoned" ]);
+    ("Eio.Condition.await_no_mutex", true, true, []);
     ("Eio.Mutex.lock", true, true, []);
     ("Eio.Semaphore.acquire", true, true, []);
     ("Eio.Time.sleep", true, true, []);
@@ -540,6 +566,8 @@ let known_exception e =
       Some (canonical_exception (exception_name description))
   | _ -> None
 
+(* ^nlintd-truth: deliberately known non-suspending, non-resource primitives.
+   This is not a blanket Stdlib exemption: absent primitives remain opaque. *)
 let primitive_is_pure description =
   match description.Types.val_kind with
   | Val_prim primitive ->
@@ -547,16 +575,31 @@ let primitive_is_pure description =
         [
           "%identity";
           "%ignore";
-          "%intadd";
-          "%intsub";
-          "%intmul";
-          "%intand";
-          "%intor";
-          "%intxor";
-          "%intlsl";
-          "%intlsr";
-          "%intasr";
-          "%intneg";
+          "%addint";
+          "%subint";
+          "%mulint";
+          "%andint";
+          "%orint";
+          "%xorint";
+          "%lslint";
+          "%lsrint";
+          "%asrint";
+          "%negint";
+          "%succint";
+          "%predint";
+          "%negfloat";
+          "%addfloat";
+          "%subfloat";
+          "%mulfloat";
+          "%divfloat";
+          "%absfloat";
+          "%floatofint";
+          "%intoffloat";
+          "%atomic_load";
+          "%atomic_set";
+          "%atomic_exchange";
+          "%atomic_cas";
+          "%atomic_fetch_add";
           "%eq";
           "%noteq";
           "%boolnot";
@@ -672,6 +715,26 @@ let add_unit ~caps evidence artifact =
   let pure_callee e =
     match e.exp_desc with Texp_ident { desc; _ } -> primitive_is_pure desc | _ -> false
   in
+  (* ^nlintd-truth: invoking an exported alias has the same leaf semantics as
+     applying it; reading a non-function value is not a call. *)
+  let leaf name suspends checks exceptions =
+    let summary =
+      {
+        empty_summary with
+        effects =
+          {
+            empty_effects with
+            suspension = (if suspends then Names.singleton name else Names.empty);
+            cancellation = (if checks then Names.singleton name else Names.empty);
+            check_reachability = (if checks then Names.singleton name else Names.empty);
+            exceptions = Names.of_list (exceptions @ if checks then [ cancelled ] else []);
+          };
+      }
+    in
+    if name = "Eio.Promise.await_exn" then
+      join summary (unknown_raise (name ^ " stored exception"))
+    else summary
+  in
   let rec invokes e =
     match e.exp_desc with
     | Texp_function { body = Tfunction_body body; _ } -> invokes body
@@ -681,9 +744,14 @@ let add_unit ~caps evidence artifact =
              (fun c ->
                joins (List.map expression (Option.to_list c.c_guard @ [ c.c_rhs ])))
              cases.fc_cases)
-    | Texp_ident { path; desc; _ } ->
-        if primitive_is_pure desc then empty_summary
-        else { empty_summary with calls = [ { target = key e path; filters = [] } ] }
+    | Texp_ident { path; desc; _ } -> (
+        if (not (function_typed e)) || primitive_is_pure desc then empty_summary
+        else
+          match List.assoc_opt (origin e) leaves with
+          | Some (name, suspends, checks, exceptions) ->
+              leaf name suspends checks exceptions
+          | None ->
+              { empty_summary with calls = [ { target = key e path; filters = [] } ] })
     | Texp_apply (callee, _, _, _, _) when function_typed e ->
         join (expression e) (unknown ("returned-function callback from " ^ origin callee))
     | _ -> expression e
@@ -711,7 +779,7 @@ let add_unit ~caps evidence artifact =
               | (_, ex) :: _ -> (
                   match known_exception ex with
                   | Some name -> thrown name
-                  | None -> unknown "dynamic exception re-raise")
+                  | None -> unknown_raise "dynamic exception re-raise")
               | [] -> unknown "raise without exception evidence")
           | Some "Stdlib.invalid_arg" -> thrown "Invalid_argument"
           | Some "Stdlib.failwith" -> thrown "Failure"
@@ -737,36 +805,14 @@ let add_unit ~caps evidence artifact =
           | _ -> (
               match List.assoc_opt (origin callee) leaves with
               | Some (name, suspends, checks, exceptions) ->
-                  let summary =
-                    {
-                      empty_summary with
-                      effects =
-                        {
-                          empty_effects with
-                          suspension =
-                            (if suspends then Names.singleton name else Names.empty);
-                          cancellation =
-                            (if checks then Names.singleton name else Names.empty);
-                          check_reachability =
-                            (if checks then Names.singleton name else Names.empty);
-                          exceptions =
-                            Names.of_list
-                              (exceptions @ if checks then [ cancelled ] else []);
-                        };
-                    }
-                  in
-                  if name = "Eio.Promise.await_exn" then
-                    join summary (unknown (name ^ " stored exception"))
-                  else summary
+                  leaf name suspends checks exceptions
               | None when pure_callee callee -> invokes callee
               | None ->
                   let callbacks =
                     joins
                       (List.filter_map
                          (fun (_, arg) ->
-                           if function_typed arg then
-                             Some (unknown ("callback argument to " ^ origin callee))
-                           else None)
+                           if function_typed arg then Some (invokes arg) else None)
                          args)
                   in
                   let invocation =
@@ -939,25 +985,34 @@ let package_evidence ~caps (implementation : Artifact.t) =
           let build_source = Artifact.source artifact in
           let marker = "/_build/default/" in
           if Filename.check_suffix build_source ".ml-gen" then begin
-            let alias_module binding =
-              match binding.mb_expr.mod_desc with Tmod_ident _ -> true | _ -> false
+            (* ^nlintd-truth: deprecated empty modules and constant aliases in
+               generated wrappers execute no calls, just like module aliases. *)
+            let constant binding =
+              match binding.vb_expr.exp_desc with
+              | Texp_constant _ | Texp_ident _ | Texp_construct (_, _, _, [], _) -> true
+              | _ -> false
+            in
+            let rec transparent tree = List.for_all transparent_item tree.str_items
+            and transparent_item item =
+              match item.str_desc with
+              | Tstr_module binding -> (
+                  match binding.mb_expr.mod_desc with
+                  | Tmod_ident _ -> true
+                  | Tmod_structure tree -> transparent tree
+                  | _ -> false)
+              | Tstr_value (_, bindings) -> List.for_all constant bindings
+              | Tstr_attribute _ -> true
+              | _ -> false
             in
             let aliases_only =
               match artifact.info.cmt_annots with
-              | Implementation tree ->
-                  List.for_all
-                    (fun item ->
-                      match item.str_desc with
-                      | Tstr_module binding -> alias_module binding
-                      | Tstr_attribute _ -> true
-                      | _ -> false)
-                    tree.str_items
+              | Implementation tree -> transparent tree
               | _ -> false
             in
             if not aliases_only then
               failwith (artifact.path ^ ": generated wrapper is not alias-only")
-            (* Dune's alias-only wrappers contain no executable definitions. Canonical
-               compiler paths resolve their exports to the actual compilation unit. *)
+            (* Alias/constant wrappers contain no executable calls. Canonical compiler
+               paths resolve their exports to the actual compilation unit. *)
           end
           else begin
             let source =
@@ -999,6 +1054,26 @@ let raises_tags docs =
       loop 0)
     docs
   |> List.sort_uniq String.compare
+
+(* ^nlintd-truth: disclosure is not proof of an author's readiness invariant.
+   Only readiness-dependent leaves admit a named qualification; yield still suspends. *)
+let readiness_qualified claims label target =
+  List.mem target
+    [
+      "Eio.Stream.add";
+      "Eio.Stream.take";
+      "Eio.Promise.await";
+      "Eio.Promise.await_exn";
+      "Eio.Mutex.lock";
+      "Eio.Semaphore.acquire";
+    ]
+  &&
+  match List.assoc_opt label claims with
+  | None -> false
+  | Some text ->
+      contains text (String.lowercase_ascii target)
+      && List.exists (contains text)
+           [ "because"; "when"; "if"; "slot"; "capacity"; "ready" ]
 
 let exception_mentioned docs name =
   let name = String.lowercase_ascii name in
@@ -1090,7 +1165,8 @@ let cleanup_obligations ~caps evidence definition =
   in
   let safe_before protected e =
     let effects = filter_effects Names.empty protected (expression_effects e) in
-    if not (Names.is_empty effects.opaque) then `Unknown
+    if (not (Names.is_empty effects.opaque)) || not (Names.is_empty effects.opaque_raises)
+    then `Unknown
     else if not (Names.is_empty effects.exceptions) then `Missing
     else `Clean
   in
@@ -1329,7 +1405,31 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
   | Interface tree -> (
       let selected_values = ref [] in
       let inspect value =
-        if value.families <> [] then selected_values := value :: !selected_values
+        (* ^nlintd-truth: opaque evidence only matters when there is a claim to check.
+           Shape rules independently report missing sentences. *)
+        let docs = value.documentation in
+        let claims = fields docs in
+        let asserted =
+          List.exists
+            (fun label -> List.mem_assoc label claims)
+            [ "suspension"; "cancellation"; "cancellation safety" ]
+          || raises_tags docs <> []
+          || List.exists
+               (fun doc ->
+                 List.exists (contains doc)
+                   [
+                     "no resource left";
+                     "no resources left";
+                     "leaves no resource";
+                     "no resource remains";
+                     "leaves nothing";
+                     "cancel-safe";
+                   ])
+               docs
+        in
+        (* ^nlintd-truth: module-type declarations have no executable binding. *)
+        if value.families <> [] && asserted && not value.declaration_only then
+          selected_values := value :: !selected_values
       in
       let walk = iterator ~caps inspect in
       walk.signature walk tree;
@@ -1377,13 +1477,28 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                     if List.mem rule rules then
                       emit rule value.loc (qualified ^ ": " ^ message)
                   in
-                  if (no_suspend || no_added) && not (Names.is_empty effects.suspension)
+                  let undisclosed_suspension =
+                    if no_added then effects.suspension
+                    else
+                      Names.filter
+                        (fun target ->
+                          not (readiness_qualified claims "suspension" target))
+                        effects.suspension
+                  in
+                  if
+                    (no_suspend || no_added)
+                    && not (Names.is_empty undisclosed_suspension)
                   then
                     report "ox-val-behaviour"
                       ("documented never suspends; reaches "
-                      ^ String.concat ", " (Names.elements effects.suspension));
+                      ^ String.concat ", " (Names.elements undisclosed_suspension));
                   let checks =
-                    if no_added then effects.check_reachability else effects.cancellation
+                    if no_added then effects.check_reachability
+                    else
+                      Names.filter
+                        (fun target ->
+                          not (readiness_qualified claims "cancellation" target))
+                        effects.cancellation
                   in
                   if no_check && not (Names.is_empty checks) then
                     report "ox-val-behaviour"
@@ -1409,7 +1524,10 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                                   = tag)
                              effects.exceptions)
                       then
-                        if Names.is_empty effects.opaque then
+                        if
+                          Names.is_empty effects.opaque
+                          && Names.is_empty effects.opaque_raises
+                        then
                           report "ox-val-behaviour"
                             ("@raise " ^ tag ^ " has no reachable raise")
                         else
@@ -1422,31 +1540,35 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                       (fun label -> List.assoc_opt label claims)
                       [ "suspension"; "cancellation" ]
                   in
-                  Names.iter
-                    (fun target ->
-                      let bounded =
-                        opaque_qualified docs target
-                        && ((not no_suspend)
-                           || opaque_qualified
-                                (Option.to_list (List.assoc_opt "suspension" claims))
-                                target)
-                        && ((not no_check)
-                           || opaque_qualified
-                                (Option.to_list (List.assoc_opt "cancellation" claims))
-                                target)
-                        && (relevant = []
-                           || opaque_qualified relevant target
-                           || List.exists
-                                (fun doc ->
-                                  (contains doc "exception" || contains doc "raise")
-                                  && opaque_qualified [ doc ] target)
-                                docs)
-                      in
-                      if not bounded then
-                        undecided value.loc
-                          (qualified ^ ": opaque call " ^ target
-                         ^ "; document the delegated/callback limit"))
-                    effects.opaque;
+                  if
+                    List.mem "ox-val-behaviour" rules
+                    && (no_suspend || no_check || raises_tags docs <> [])
+                  then
+                    Names.iter
+                      (fun target ->
+                        let bounded =
+                          opaque_qualified docs target
+                          && ((not no_suspend)
+                             || opaque_qualified
+                                  (Option.to_list (List.assoc_opt "suspension" claims))
+                                  target)
+                          && ((not no_check)
+                             || opaque_qualified
+                                  (Option.to_list (List.assoc_opt "cancellation" claims))
+                                  target)
+                          && (relevant = []
+                             || opaque_qualified relevant target
+                             || List.exists
+                                  (fun doc ->
+                                    (contains doc "exception" || contains doc "raise")
+                                    && opaque_qualified [ doc ] target)
+                                  docs)
+                        in
+                        if not bounded then
+                          undecided value.loc
+                            (qualified ^ ": opaque call " ^ target
+                           ^ "; document the delegated/callback limit"))
+                      effects.opaque;
                   if List.mem "ox-cancel-safety" rules then begin
                     let resource_claim =
                       List.exists

@@ -41,6 +41,14 @@ val create : sw:Eio.Switch.t -> clock:_ Eio.Time.clock -> config -> t
 (** [create ~sw ~clock config] starts the limiter's algorithm at the clock's current time.
     [sw] is the caller's switch and is only checked ([Invalid_argument] if it finished, the
     cancellation if it was cancelled): the limiter owns nothing on it.
+
+    Suspension: may suspend in the caller's Custom constructor; Eio.Time.now reads
+    the clock without waiting; delegated Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Cancellation: propagates from the switch check and
+    depends on the Custom callback; delegated Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Finalizers: none are registered. Locking: no lock
+    is held around the Custom constructor. Cancellation safety: unsafe because
+    progress is lost if a Custom constructor is interrupted after producing effects.
+    ^nlintd-a7oq
+
     @raise Invalid_argument if a window has [n < 1], a bucket [capacity < 1], or [per] is
     zero. ^nfloor-p4ae *)
 

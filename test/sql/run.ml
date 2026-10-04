@@ -21,7 +21,12 @@ let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
               (P.create ~caps ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
                  (Q.Sqlite.memory_config ()))
           in
-          Fun.protect ~finally:(fun () -> ignore (P.shutdown pool)) (fun () -> f pool)))
+          Fun.protect
+            ~finally:(fun () ->
+              (* ^nlint-hxar: Shutdown is best effort in fixture cleanup so its typed error does not replace the test body outcome. *)
+              let _shutdown_result = P.shutdown pool in
+              ())
+            (fun () -> f pool)))
 
 module T = struct
   module Make = Q.Table.Make (struct

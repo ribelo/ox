@@ -246,7 +246,9 @@ let test_audio_waits () =
   Eio.Fiber.first
     (fun () ->
       Eio.Promise.resolve set_waiting ();
-      ignore (read_pcm t))
+      (* ^nlint-hxar: The losing read is deliberately cancelled; the subsequent admission and reads assert that the wait released its lock. *)
+      let _read_result = read_pcm t in
+      ())
     (fun () -> Eio.Promise.await waiting);
   check_offer "cancelled wait unlocked" (Ok ()) (offer_pcm t (Bytes.of_string "x"));
   check_read "next reader still works" (Ok (Some "x")) (read_pcm t);

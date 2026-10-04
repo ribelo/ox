@@ -30,16 +30,19 @@ Add `RateLimiter` and `Select` as small modules over Eio primitives; align resou
 12. As a maintainer, I want Ox's table of contents pasted into `docs/design/ox-floor.md` with each item marked `have (module)`, `spec (row)`, `design (flow.md)` or `rejected (reason)`, so that 'everything on the floor' is checkable. ^nfloor-37ic
 13. As a maintainer, I want `docs/why-ox.md` and `GLOSSARY.md` updated: Ox named as the floor, `Flow`, `Rate limiter`, `Select` added to the vocabulary, and the retired word list unchanged, so that the documents match ADR-0009. ^nfloor-igt7
 14. As a maintainer, I want the `leash` and any future consumer skills to mention `Rate_limiter` for per-site model and request limits, so that the first consumer uses it rather than a sleep. ^nfloor-8qx2
+15. As a resource owner, I want `Resource.use_in_scope` to release an acquired resource exactly once when its switch has already finished, including cancellation during acquisition, and preserve Eio's registration error, so that a failed registration cannot double-close a resource or replace the caller's failure. ^nfloor-once
 
 ## Implementation Decisions
 
 - `Rate_limiter` state is a mutex-guarded record with the clock injected; `run` sleeps on the clock until the algorithm grants; algorithms are a record of `try_acquire : now -> (bool * wait)`.
 - `Select` is built on `Eio.Stream.take_nonblocking`/`add` with a `Condition`-driven wait; fairness is round-robin over clauses; the implementation may be replaced by Eio's own `Fiber.first` over clause waiters if that proves simpler.
 - `Flow` is design-only in this row; no code.
+- ^nfloor-once: Eio owns the registration handoff: `Switch.on_release` either registers the release or runs it immediately under cancellation protection before raising for a finished switch. Ox must not retry release after that exception; the public resource-helper signatures and typed outcomes are unchanged.
 
 ## Testing Decisions
 
 - Seam: public modules under `Eio_main` with `Eio_mock.Clock` (`test/core`). Rate limiter: mock-clock tests per algorithm and for `run_or_drop`. Select: closed, default, timeout and fairness cases. Resource helpers: release order and release-on-failure. Door: a checklist test per `OxApp` item.
+- ^nfloor-once: use an already-finished switch, count acquisition and release, and assert the unchanged `Invalid_argument "Switch finished!"`. Repeat with cancellation requested inside acquisition; the non-suspending release checks its current cancellation context to prove Eio shields it and still runs it only once.
 
 ## Out of Scope
 

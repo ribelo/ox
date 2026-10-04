@@ -1,3 +1,13 @@
+(** Cancellation and finalizers: Suspension: may suspend in Eio.Path.with_open_in and file
+    reads; callback behaviour depends on caller code; delegates string comparison and
+    exception rendering to Stdlib. Cancellation: propagates Eio.Cancel.Cancelled from file
+    I/O and caller callbacks; delegates string comparison and exception rendering to
+    Stdlib without adding checks there. Finalizers: read_regular brackets its opened flow;
+    injected readers and decoders retain their own ownership contract. Locking: no lock is
+    held around caller callbacks. Cancellation safety: unsafe because progress is lost if
+    loading or a caller callback is interrupted; callback effects are not rolled back.
+    ^nlintd-z5p5 ^nlintd-vneh *)
+
 type error = [ `Config of string ]
 (** Config loading. Reading may suspend or be cancelled; decoding and the environment
     overrides are pure, and no operation registers a finalizer. *)
@@ -107,7 +117,13 @@ val read_regular : max_bytes:int -> _ Eio.Path.t -> (string, read_error) result
 (** Read a regular file only, inspecting its opened descriptor and bounding the bytes
     buffered even when the file grows. Missing paths remain [`Missing]; non-regular and
     oversized paths are [`Unreadable]. Reading may suspend or be cancelled. Use as the
-    production [read_file] policy when a consumer has a byte limit. ^napp-ersz *)
+    production [read_file] policy when a consumer has a byte limit. ^napp-ersz
+
+    Cancellation safety: safe to re-run; the bracket closes its flow on cancellation and a
+    new call reads from the beginning without writing the file. ^nlintd-a7oq
+    ^nlintd-raises
+
+    @raise Invalid_argument if [max_bytes < 0] or [max_bytes = max_int]. *)
 
 val load :
   spec:'cfg t ->

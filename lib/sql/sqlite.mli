@@ -279,4 +279,18 @@ module Testing : sig
     Config.t ->
     (db -> ('a, string) result) ->
     ('a, string) result
+  (** Suspension: may suspend in the caller callback; native SQLite and temporary-file
+      calls are synchronous delegated operations that may block the domain.
+      Cancellation: propagates Eio.Cancel.Cancelled from the callback or opening;
+      other opening and callback exceptions become Error strings. Temporary-path
+      creation is outside those catches and its filesystem failures propagate;
+      failing close or unlink cleanup escapes wrapped as Fun.Finally_raised rather
+      than becoming an Error string.
+      Finalizers:
+      nested Fun.protect brackets close the database and remove the temporary file
+      on return, failure or cancellation; no switch hook is installed. Locking:
+      database operations take their native mutexes; no mutex spans the whole caller
+      callback. Cancellation safety: unsafe because progress is lost; callback
+      effects outside the temporary database are not undone by closing and unlinking
+      it. ^nlintd-a7oq ^nlintd-vneh *)
 end

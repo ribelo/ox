@@ -1,3 +1,14 @@
+(** Cancellation and finalizers: Suspension: may suspend while starting fibers, joining
+    scopes and running caller callbacks; delegated callback dispatch and Eio, Stdlib,
+    Stdlib.List, Stdlib.Printexc operations retain their own behaviour. Cancellation:
+    propagates from Eio switch checks, waits and caller callbacks unless run classifies
+    it; delegated callback dispatch and Eio, Stdlib, Stdlib.List, Stdlib.Printexc
+    operations retain their own behaviour. Finalizers: owned switches join their fibers,
+    then run release hooks protected in reverse registration order; fork helpers register
+    no release hook. Locking: no lock is held around caller callbacks. Cancellation
+    safety: unsafe because progress is lost; started callbacks can have effects before
+    interruption and are not rolled back. ^nlintd-a7oq ^nlintd-4ja0 *)
+
 val run : (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) Exit.t
 (** Boundaries that own their Eio switch. [run] awaits all child fibers and finalizers
     before returning. Cancellation is classified as [Interrupt]. The first failed child
@@ -6,7 +17,9 @@ val run : (Eio.Switch.t -> ('a, 'e) result) -> ('a, 'e) Exit.t
     A defect reported by both the body and the switch is retained once. Eio exposes only
     the first switch cancellation reason before releases: further fiber failures mixed
     with release failures in an [Eio.Exn.Multiple] cannot be distinguished and may be
-    classified as finalizer failures. *)
+    classified as finalizer failures. Cancellation: classified as Cause.Interrupt rather
+    than raised, including cancellation during cleanup. Cancellation safety: unsafe
+    because progress is lost; callback effects before interruption remain. ^nlintd-a7oq *)
 
 val classify : exn -> Printexc.raw_backtrace -> 'e Cause.t
 (** Internal classification also usable by concurrency combinators. Pure. *)
@@ -34,24 +47,38 @@ val supervised_error : sw:Eio.Switch.t -> ('e t -> ('a, 'e) result) -> ('a, 'e) 
     finished. Releases registered on {!switch} run after all forks finished.
 
     [sw] is the caller's switch: it is checked ([Invalid_argument] if finished, the
-    cancellation if cancelled) and the scope owns nothing on it. *)
+    cancellation if cancelled) and the scope owns nothing on it.
+
+    @raise Invalid_argument if [sw] is finished. *)
 
 val fork_error : 'e t -> (unit -> ('a, 'e) result) -> ('a, 'e) fork
 (** [fork_error scope f] starts [f] as a supervised fiber. [Ok] is the fork's outcome,
     joinable with {!await}; [Error e] ends the scope with [e] as {!supervised_error}
-    describes. If the scope is already ending the fiber is not started (Eio's rule). *)
+    describes. If the scope is already ending the fiber is not started (Eio's rule).
+
+    The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
+    belongs to another domain. *)
 
 val fork : 'e t -> (unit -> unit) -> unit
 (** [fork scope f] starts a plain fiber that cannot fail typed; an exception in it ends
-    the scope, and its return value is not inspected. *)
+    the scope, and its return value is not inspected.
+
+    The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
+    belongs to another domain. *)
 
 val fork_daemon : 'e t -> (unit -> unit) -> unit
 (** Like {!fork} but the scope does not wait for it: it is cancelled when the body and the
-    non-daemon forks have finished (Eio's [fork_daemon] split, unchanged). *)
+    non-daemon forks have finished (Eio's [fork_daemon] split, unchanged).
+
+    The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
+    belongs to another domain. *)
 
 val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) -> unit
 (** A daemon whose [Error e] ends the scope like {!fork_error}'s; [Ok ()] just ends the
-    daemon and leaves the scope running. {!Concurrent.with_background} is this. *)
+    daemon and leaves the scope running. {!Concurrent.with_background} is this.
+
+    The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
+    belongs to another domain. *)
 
 val await : ('a, 'e) fork -> ('a, 'e) result
 (** The fork's [result]. If the scope ends before the fork settles (its own failure, a

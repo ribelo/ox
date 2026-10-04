@@ -250,7 +250,9 @@ let test_transport_controls () =
         "^nai-337c one attempt, one request" 1
         (Fake_server.connections server);
       let server = throttled [ ("Retry-After", "7") ] in
-      ignore (embed server);
+      ((* ^nlint-hxar: The provider error is incidental here; the connection count below asserts the default retry budget. *)
+       let _attempt_result = embed server in
+       ());
       Alcotest.(check int)
         "^nai-337c default still two attempts" 2
         (Fake_server.connections server);

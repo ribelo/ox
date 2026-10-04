@@ -28,7 +28,20 @@ val create :
     [`Read_failed exn]. [write] may raise; a write failure affects only that call.
     [max_notifications] defaults to 1024 and must be positive. Notifications overflow by
     dropping the oldest and incrementing [stats]. The reader observes Eio cancellation and
-    stops on switch teardown; no underlying transport is closed by this module. *)
+    stops on switch teardown; no underlying transport is closed by this module.
+
+    Suspension: may suspend while starting the reader fiber and in caller read, id and
+    session callbacks; delegated callback dispatch and Eio.Stream, Eio, Ox.Timeout,
+    Stdlib, Stdlib.Hashtbl operations retain their own behaviour. Cancellation: propagates
+    from startup; the reader preserves cancellation from caller callbacks; delegated
+    callback dispatch and Eio.Stream, Eio, Ox.Timeout, Stdlib, Stdlib.Hashtbl operations
+    retain their own behaviour. Finalizers: a switch hook settles pending calls and the
+    owning switch cancels and joins the reader; the transport remains borrowed. Locking:
+    no lock spans reader callbacks. Cancellation safety: unsafe because data is lost; the
+    reader can consume messages before create is interrupted, leaving no returned
+    correlator to observe them. ^nlintd-a7oq
+
+    @raise Invalid_argument if max_notifications is nonpositive or sw is finished. *)
 
 val call :
   'msg t -> ?session:string -> ?deadline:Ox.Duration.t -> 'msg -> ('msg, error) result
@@ -37,7 +50,14 @@ val call :
     write is never interrupted: cancelling a call waits for its frame to be written whole.
     [deadline] covers writing and awaiting a reply and uses the clock supplied at
     [create]. Timeout and external cancellation remove the slot; the latter propagates as
-    interruption. No finalizers are installed. *)
+    interruption. No finalizers are installed. Suspension: may suspend waiting for the
+    write mutex, in caller set_id/session/write callbacks and on the reply promise or
+    deadline. Cancellation: propagates from caller callbacks and waits, but the admitted
+    write is protected until its callback returns. Finalizers: Fun.protect removes the
+    pending slot on return, failure and cancellation. Locking: the write Eio mutex spans
+    the protected caller write callback, not the reply wait. Cancellation safety: unsafe
+    because data is lost; cancellation removes reply ownership after the request may
+    already have been written. ^nlintd-a7oq *)
 
 val notifications : 'msg t -> 'msg notification Eio.Stream.t
 (** Bounded FIFO for unmatched, duplicate and late messages. Consumers may suspend in
@@ -57,4 +77,9 @@ val close : 'msg t -> unit
 (** Idempotently reject new calls, settle all pending calls with
     [`Transport_closed `Closed], stop and join the reader before returning. Cancelling
     [close] propagates; switch teardown still joins the reader. The borrowed read/write
-    transport is not finalized. *)
+    transport is not finalized. Suspension: may suspend in the reader promise join and
+    Eio.Stream.add of the terminal notification; admission first frees a slot when the
+    bounded stream is full. Cancellation: propagates from the reader join. Finalizers:
+    none are registered; the existing switch still owns the reader. Locking: no lock is
+    held during the join. Cancellation safety: safe to re-run; settling is idempotent and
+    another close joins the same reader. ^nlintd-a7oq *)

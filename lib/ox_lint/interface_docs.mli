@@ -1,13 +1,19 @@
 open Ocaml_common
 open Ox_caps
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio itself; compiler
-    resolution may block the domain, effects are delegated to Stdlib, Ocaml_common and
-    Ox_caps, and caller-callback effects depend on caller code. Cancellation: not a
-    cancellation point itself; delegated Stdlib, Ocaml_common and Ox_caps operations and
-    caller callbacks govern additional checks and are not checked here. Finalizers: none
-    are registered by the analyser; callback-owned resources remain caller-owned. Locking:
-    delegated compiler caches retain their existing locking. *)
+(** Cancellation and finalizers: Suspension: never suspends in Eio itself; synchronous
+    filesystem/compiler work may block the domain; operations delegate to Stdlib, Unix,
+    Ox_caps, Cmi_format, Cmt_format, Compilation_unit, Env, Envaux, Ident, Import_info,
+    Load_path, Longident, Path, Typedtree and Types and their higher-order callbacks;
+    capability object method dispatch depends on the supplied provider; running returned
+    visitors depends on caller code. Cancellation: not a cancellation point in Eio itself;
+    operations delegate to Stdlib, Unix, Ox_caps, Cmi_format, Cmt_format,
+    Compilation_unit, Env, Envaux, Ident, Import_info, Load_path, Longident, Path,
+    Typedtree and Types and their higher-order callbacks; capability object method
+    dispatch depends on the supplied provider; running returned visitors depends on caller
+    code. Finalizers: none are registered by the analyser; callback-owned resources remain
+    caller-owned. Locking: delegated compiler caches retain their existing locking.
+    ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
 
 type value = {
   name : string;
@@ -16,6 +22,7 @@ type value = {
   behaviour : bool;
   cancel_safety : bool;
   documentation : string list;
+  declaration_only : bool;
 }
 (** Typed interface inventory and documentation shape, never semantic verification.
     ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn *)

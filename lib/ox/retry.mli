@@ -1,3 +1,11 @@
+(** Cancellation and finalizers: Suspension: may suspend in Eio.Time.sleep, caller
+    thunks, policy callbacks and schedule callbacks. Cancellation: propagates Eio.Cancel.Cancelled from the
+    sleep and caller callbacks; the delegated Schedule driver can raise Invalid_argument
+    on ordinal overflow or invalid numeric schedule output. Finalizers: no switch or cleanup hook is created;
+    callbacks own their resources. Locking: no lock is held around callbacks.
+    Cancellation safety: unsafe because progress is lost; completed attempts remain
+    effective and restarting resets the schedule. ^nlintd-a7oq ^nlintd-4ja0 *)
+
 type ('a, 'e) policy = {
   is_success : 'a -> bool;
   is_worth_retrying : 'e -> bool;

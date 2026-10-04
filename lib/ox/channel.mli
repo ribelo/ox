@@ -10,9 +10,11 @@
     from the fibers of a single domain. *)
 
 (** Cancellation and finalizers: Suspension: never suspends for creation, polling or
-    closing. Cancellation: not a cancellation point for creation, polling or closing.
-    Finalizers: none are registered; the channel owns no fiber or switch. Locking: no
-    mutex is held; queue updates contain no suspension. ^nlintd-a7oq *)
+    closing; delegated Stdlib.Queue, Eio.Condition operations retain their own behaviour.
+    Cancellation: not a cancellation point for creation, polling or closing; delegated
+    Stdlib.Queue, Eio.Condition operations retain their own behaviour. Finalizers: none
+    are registered; the channel owns no fiber or switch. Locking: no mutex is held; queue
+    updates contain no suspension. ^nlintd-a7oq *)
 
 type ('a, 'e) t
 (** Elements of type ['a]; ['e] is the payload of {!error}. *)
@@ -30,17 +32,19 @@ val create : ?capacity:int -> unit -> ('a, 'e) t
 val send : ('a, 'e) t -> 'a -> (unit, 'e closed) result
 (** [send t v] appends [v], suspending while the buffer is full. [Error] when the channel
     is closed, at once or while waiting: the element is then not sent. Suspension: may
-    suspend waiting for a queue change. Cancellation: propagates from the condition wait;
-    a successful queue operation does not suspend. Cancellation safety: safe to re-run;
-    cancellation while waiting has not enqueued or removed an item. ^nlintd-a7oq *)
+    suspend waiting for a queue change. Cancellation: propagates Eio.Cancel.Cancelled from
+    the condition wait; a successful queue operation does not suspend. Cancellation
+    safety: safe to re-run; cancellation while waiting has not enqueued or removed an
+    item. ^nlintd-a7oq *)
 
 val receive : ('a, 'e) t -> ('a, 'e closed) result
 (** [receive t] takes the oldest element, suspending while the buffer is empty. After
     {!done_} the remaining elements are still delivered, then [Error `Done] forever; after
     {!error} the buffer is dropped and every call is [Error (`Error e)]. Suspension: may
-    suspend waiting for a queue change. Cancellation: propagates from the condition wait;
-    a successful queue operation does not suspend. Cancellation safety: safe to re-run;
-    cancellation while waiting has not enqueued or removed an item. ^nlintd-a7oq *)
+    suspend waiting for a queue change. Cancellation: propagates Eio.Cancel.Cancelled from
+    the condition wait; a successful queue operation does not suspend. Cancellation
+    safety: safe to re-run; cancellation while waiting has not enqueued or removed an
+    item. ^nlintd-a7oq *)
 
 val try_send : ('a, 'e) t -> 'a -> (unit, [ `Full | 'e closed ]) result
 (** {!send} that never suspends: [Error `Full] when there is no room. *)
@@ -62,6 +66,6 @@ val wait_changed : ('a, 'e) t -> unit
 (** Suspend until the channel's state changes (an element sent or taken, or it closed).
     The building block of {!Select}: probe with {!try_send}/{!try_receive}, and call this
     only when no probe succeeded, with no suspension in between. Cancellable. Suspension:
-    may suspend until the condition is broadcast. Cancellation: propagates from
-    Eio.Condition.await_no_mutex. Cancellation safety: safe to re-run; this wait changes
-    neither the queue nor the channel state. ^nlintd-a7oq *)
+    may suspend until the condition is broadcast. Cancellation: propagates
+    Eio.Cancel.Cancelled from Eio.Condition.await_no_mutex. Cancellation safety: safe to
+    re-run; this wait changes neither the queue nor the channel state. ^nlintd-a7oq *)

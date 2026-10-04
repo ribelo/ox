@@ -255,6 +255,24 @@ let describe ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root arguments
     failwith ("Dune inventory unavailable: describe " ^ arguments);
   Buffer.contents buffer
 
+(* ^nlintcov-q6n2: inventory can regenerate volatile targets; the default gate
+   rebuilds once after all queries, before consuming compiler evidence. *)
+let rebuild_check ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
+  let command = "dune build @check --root " ^ Filename.quote root ^ " 2>&1" in
+  let channel = Cap_unix.open_process_in ~caps command in
+  let buffer = Buffer.create 4096 in
+  (try
+     try
+       while true do
+         Buffer.add_channel buffer channel 4096
+       done
+     with End_of_file -> ()
+   with ex ->
+     ignore (Unix.close_process_in channel);
+     raise ex);
+  if Unix.close_process_in channel <> Unix.WEXITED 0 then
+    failwith ("post-inventory @check rebuild failed: " ^ Buffer.contents buffer)
+
 (* Dune 3.22's workspace description omits [test]/[tests]. Query declared
    compiler rules, not existing artifacts: missing CMTs must remain undecided.
    Recursive @check expands the lazy rules for all test modules, including helpers;

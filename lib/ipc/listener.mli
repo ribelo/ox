@@ -1,3 +1,17 @@
+(** Cancellation and finalizers: Suspension: may suspend in delegated Eio socket I/O,
+    Eio.Semaphore.acquire admission waits and caller callbacks; Unix namespace operations
+    block the domain; depends on delegated Cstruct buffers, Eio_unix sockets, Ox.Scope,
+    Ox_caps.Cap_unix namespace operations and Stdlib strings/collections. Cancellation:
+    propagates Eio.Cancel.Cancelled at the initial switch check; daemon cancellation stops
+    serving and protected cleanup closes peer flows; depends on delegated Eio_unix
+    socket/provider checks, Ox.Scope boundaries, Ox_caps.Cap_unix namespace operations,
+    Cstruct buffers and Stdlib strings/collections. Finalizers: the supplied switch owns
+    the listener and retirement hook for the socket path and lockfile; peer cleanup
+    releases admission permits. Locking: listener ownership uses a lockfile and per-domain
+    claim table; peer admission uses an Eio semaphore. Cancellation safety: unsafe because
+    progress is lost if a request or handler is interrupted; already-published handler
+    effects are not rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 (** nlimit-ylvw: a private, one-line Unix socket listener. Pathname ownership assumes a
     private namespace without hostile mutation by another process of the same UID; OCaml's
     Unix.open_flag has no O_NOFOLLOW. Same-user processes are trusted: ownership and
@@ -87,4 +101,7 @@ val run :
     reported through [on_peer_error] without replacing the ingress cause that prompted it.
     Handler failures and egress failures are not ingress failures: [on_budget_exceeded]
     owns a budget cut, and no reply is attempted after a write has already failed. The
-    callback runs in that peer's fiber, so it must be quick. *)
+    callback runs in that peer's fiber, so it must be quick.
+
+    @raise Invalid_argument
+      if sw is finished when the listening socket is imported. ^nlintd-raises *)

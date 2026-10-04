@@ -144,7 +144,9 @@ let cancellation () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore (Correlator.call c (msg 1));
+                  ((* ^nlint-hxar: A normal reply makes this cancellation probe false; the existing interruption, slot and write assertions decide the outcome. *)
+                   let _call_result = Correlator.call c (msg 1) in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -178,7 +180,9 @@ let cancellation_mid_write () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore (Correlator.call c (msg 1));
+                  ((* ^nlint-hxar: A normal reply makes this cancellation probe false; the existing interruption, slot and write assertions decide the outcome. *)
+                   let _call_result = Correlator.call c (msg 1) in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in

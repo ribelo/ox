@@ -3,11 +3,37 @@
 ; ^nlintcov-8g4p: coverage.py runs outside Dune, after the live workspace build.
 ; Its inventory subprocess must not contend for the enclosing builder's workspace.
 
+; ^nlintcov-q6n2: source_tree expands to declared source dependencies, not build outputs.
+
+(rule
+ (target fixture-sources)
+ (deps
+  (source_tree project)
+  (source_tree mint)
+  (source_tree volatile))
+ (action
+  (with-stdout-to
+   %{target}
+   (run bash -c "printf '%s\n' \"$@\"" -- %{deps}))))
+
+; An arbitrary generated .ml pins provenance-based materialization without a name policy.
+
+(subdir
+ project
+ (rule
+  (target materialization-generated.ml)
+  (action
+   (with-stdout-to
+    %{target}
+    (echo "let generated_by_dune = ()")))))
+
 (rule
  (alias runtest)
  (deps
   check.sh
+  project/materialization-generated.ml
   (source_tree project)
+  (source_tree volatile)
   (source_tree mint)
   (source_tree ../../../docs/rules)
   ../../../docs/caps.md
@@ -21,4 +47,5 @@
    bash
    %{dep:check.sh}
    %{exe:../../../lib/ox_lint/main.exe}
-   %{workspace_root})))
+   %{workspace_root}
+   %{dep:fixture-sources})))

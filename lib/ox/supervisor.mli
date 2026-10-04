@@ -193,7 +193,25 @@ val start :
     windows and [Timeout] shutdowns and should be monotonic.
 
     [on_event] (default: {!Eio.traceln} for abnormal exits, backtraces included) receives
-    every {!event} synchronously from the supervisor's fiber and must not suspend. *)
+    every {!event} synchronously from the supervisor's fiber and must not suspend.
+
+    Suspension: may suspend while starting the daemon, awaiting children's ready promises
+    and running child callbacks; delegated callback dispatch and Eio, Eio.Stream, Eio,
+    Ox.Cause, Stdlib, Stdlib.Format, Stdlib.List, Stdlib.Option, Stdlib.Printexc,
+    Stdlib.String operations retain their own behaviour. Cancellation: propagates
+    Eio.Cancel.Cancelled from the scope switch check, startup waits and callbacks;
+    delegated callback dispatch and Eio, Eio.Stream, Eio, Ox.Cause, Stdlib, Stdlib.Format,
+    Stdlib.List, Stdlib.Option, Stdlib.Printexc, Stdlib.String operations retain their own
+    behaviour. Finalizers: the supervisor cancels and joins child switches protected when
+    it ends; caller callbacks own any cleanup they do not attach to those switches.
+    Locking: no lock is held around callbacks. Cancellation safety: unsafe because
+    progress is lost; children can perform effects before startup is interrupted and
+    retrying starts them again. ^nlintd-a7oq
+
+    @raise Invalid_argument if the scope switch is finished.
+
+    The daemon combines multiple recorded child/finalizer defects as Eio.Exn.Multiple;
+    Scope.run classifies that defect in the owning scope. ^nlintd-truth *)
 
 val stop : 'e t -> 'e outcome
 (** Ask the supervisor to end and wait for it: every child is stopped in reverse
@@ -230,7 +248,24 @@ val start_simple :
   ('input, 'ce) template ->
   (('input, 'ce) simple, [> `Invalid_supervisor of string ]) result
 (** As {!start}, with the same intensity, shutdown and classification rules; there is
-    nothing to wait for at start. *)
+    nothing to wait for at start. Suspension: may suspend while starting the daemon and in
+    template or event callbacks; delegated callback dispatch and Eio, Eio.Stream, Eio,
+    Ox.Cause, Stdlib, Stdlib.Format, Stdlib.List, Stdlib.Option, Stdlib.Printexc
+    operations retain their own behaviour. Cancellation: propagates Eio.Cancel.Cancelled
+    from the scope switch check and callbacks; delegated callback dispatch and Eio,
+    Eio.Stream, Eio, Ox.Cause, Stdlib, Stdlib.Format, Stdlib.List, Stdlib.Option,
+    Stdlib.Printexc operations retain their own behaviour. Finalizers: the daemon cancels
+    and joins its child switches protected when it ends. Locking: no lock spans callbacks.
+    Cancellation safety: unsafe because progress is lost; a started daemon can retain
+    effects before interruption and restarting creates another supervisor. ^nlintd-a7oq
+
+    @raise Invalid_argument if the scope switch is finished.
+
+    The internal Assert_failure protects the initial-start invariant: an empty initial
+    child list cannot report an initial child-start failure. ^nlintd-truth
+
+    The daemon combines multiple recorded child/finalizer defects as Eio.Exn.Multiple;
+    Scope.run classifies that defect in the owning scope. ^nlintd-truth *)
 
 val start_child :
   ('input, 'e) simple ->

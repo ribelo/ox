@@ -32,10 +32,13 @@ let retry_resource_cases () =
             incr attempts;
             match
               Scope.run (fun sw ->
-                  ignore
-                    (Support.acquire_release ~sw
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
-                       ~release:(fun () -> incr released));
+                       ~release:(fun () -> incr released)
+                   in
+                   ());
                   if !attempts < 3 then Error !attempts else Ok !attempts)
             with
             | Exit.Success n -> Ok n
@@ -76,15 +79,18 @@ let stress_compositions () =
         let live = ref 0 and acquired = ref 0 and released = ref 0 in
         let worker sw n () =
           Eio.Switch.run (fun nested ->
-              ignore
-                (Support.acquire_release ~sw:nested
+              ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+               let _acquire_result =
+                 Support.acquire_release ~sw:nested
                    ~acquire:(fun () ->
                      incr live;
                      incr acquired;
                      Ok ())
                    ~release:(fun () ->
                      decr live;
-                     incr released));
+                     incr released)
+               in
+               ());
               Eio.Fiber.yield ();
               if n > 0 && n mod 7 = 0 then Error n else Ok n)
         in
@@ -124,7 +130,9 @@ let bracket_cases () =
       events := [];
       (match
          Scope.run (fun sw ->
-             ignore (resource sw);
+             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+              let _acquire_result = resource sw in
+              ());
              Error "body")
        with
       | Exit.Failure (Cause.Fail "body") -> ()
@@ -134,7 +142,9 @@ let bracket_cases () =
       events := [];
       (match
          Scope.run (fun sw ->
-             ignore (resource sw);
+             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+              let _acquire_result = resource sw in
+              ());
              failwith "body defect")
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
@@ -142,10 +152,13 @@ let bracket_cases () =
       Alcotest.(check (list int)) "acquire_use_release defect release" [ 4 ] !events;
       let outcome =
         Scope.run (fun sw ->
-            ignore
-              (Support.acquire_release ~sw
+            ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+             let _acquire_result =
+               Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok ())
-                 ~release:(fun () -> failwith "release after success"));
+                 ~release:(fun () -> failwith "release after success")
+             in
+             ());
             Ok ())
       in
       (match outcome with
@@ -153,10 +166,13 @@ let bracket_cases () =
       | _ -> Alcotest.fail "acquire release release failure after success");
       let bracket_release =
         Scope.run (fun sw ->
-            ignore
-              (Support.acquire_release ~sw
+            ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+             let _acquire_result =
+               Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok ())
-                 ~release:(fun () -> failwith "bracket release after success"));
+                 ~release:(fun () -> failwith "bracket release after success")
+             in
+             ());
             Ok ())
       in
       match bracket_release with
@@ -345,10 +361,13 @@ let resource_edge_cases () =
       let released = ref [] in
       let outcome =
         Scope.run (fun sw ->
-            ignore
-              (Support.acquire_release ~sw
+            ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+             let _acquire_result =
+               Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok 1)
-                 ~release:(fun value -> released := value :: !released));
+                 ~release:(fun value -> released := value :: !released)
+             in
+             ());
             Ok 1)
       in
       check_bool "acquire release root finalizer" true
@@ -356,20 +375,26 @@ let resource_edge_cases () =
       released := [];
       let outcome =
         Scope.run (fun sw ->
-            ignore
-              (Support.acquire_release ~sw
+            ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+             let _acquire_result =
+               Support.acquire_release ~sw
                  ~acquire:(fun () -> Ok 2)
-                 ~release:(fun value -> released := value :: !released));
+                 ~release:(fun value -> released := value :: !released)
+             in
+             ());
             Error "root")
       in
       check_bool "acquire release root failure finalizer" true
         (outcome = Exit.Failure (Cause.Fail "root") && !released = [ 2 ]);
       (match
          Scope.run (fun sw ->
-             ignore
-               (Support.acquire_release ~sw
+             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+              let _acquire_result =
+                Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
-                  ~release:(fun () -> failwith "release after body defect"));
+                  ~release:(fun () -> failwith "release after body defect")
+              in
+              ());
              failwith "body defect")
        with
       | Exit.Failure
@@ -383,10 +408,13 @@ let resource_edge_cases () =
       | _ -> Alcotest.fail "acquire release suppresses release failure after defect");
       (match
          Scope.run (fun sw ->
-             ignore
-               (Support.acquire_release ~sw
+             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+              let _acquire_result =
+                Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
-                  ~release:(fun () -> failwith "bracket release"));
+                  ~release:(fun () -> failwith "bracket release")
+              in
+              ());
              failwith "bracket body")
        with
       | Exit.Failure
@@ -403,10 +431,13 @@ let resource_edge_cases () =
         Retry.repeat ~clock:env#clock (Schedule.recurs 3) (fun () ->
             match
               Scope.run (fun sw ->
-                  ignore
-                    (Support.acquire_release ~sw
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
-                       ~release:(fun () -> incr released));
+                       ~release:(fun () -> incr released)
+                   in
+                   ());
                   Ok 1)
             with
             | Exit.Success value -> Ok value
@@ -425,12 +456,15 @@ let retry_race_stress () =
               incr attempts;
               match
                 Scope.run (fun sw ->
-                    ignore
-                      (Support.acquire_release ~sw
+                    ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                     let _acquire_result =
+                       Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok ())
-                         ~release:(fun () -> decr live));
+                         ~release:(fun () -> decr live)
+                     in
+                     ());
                     if !attempts <= rounds then Error !attempts else Ok 1)
               with
               | Exit.Success value -> Ok value
@@ -444,12 +478,15 @@ let retry_race_stress () =
               Concurrent.race ~sw
                 [
                   (fun () ->
-                    ignore
-                      (Support.acquire_release ~sw
+                    ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                     let _acquire_result =
+                       Support.acquire_release ~sw
                          ~acquire:(fun () ->
                            incr live;
                            Ok ())
-                         ~release:(fun () -> decr live));
+                         ~release:(fun () -> decr live)
+                     in
+                     ());
                     Error "first");
                   (fun () ->
                     Eio.Fiber.yield ();
@@ -478,15 +515,18 @@ let parallel_resource_edges () =
                 Scope.run (fun sw ->
                     Concurrent.all ~sw
                       (List.init 8 (fun _ () ->
-                           ignore
-                             (Support.acquire_release ~sw
+                           ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                            let _acquire_result =
+                              Support.acquire_release ~sw
                                 ~acquire:(fun () ->
                                   incr live;
                                   Ok ())
                                 ~release:(fun () ->
                                   Eio.Fiber.yield ();
                                   decr live;
-                                  incr cleaned));
+                                  incr cleaned)
+                            in
+                            ());
                            Eio.Fiber.await_cancel ())))))
       in
       (match result with
@@ -499,10 +539,13 @@ let parallel_resource_edges () =
             Concurrent.all ~sw
               [
                 (fun () ->
-                  ignore
-                    (Support.acquire_release ~sw
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
-                       ~release:(fun () -> failwith "parallel release"));
+                       ~release:(fun () -> failwith "parallel release")
+                   in
+                   ());
                   Eio.Fiber.yield ();
                   Error "parallel body");
                 (fun () -> Eio.Fiber.await_cancel ());
@@ -523,12 +566,15 @@ let parallel_resource_edges () =
             Concurrent.all ~sw
               [
                 (fun () ->
-                  ignore
-                    (Support.acquire_release ~sw
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw
                        ~acquire:(fun () ->
                          incr live;
                          Ok ())
-                       ~release:(fun () -> decr live));
+                       ~release:(fun () -> decr live)
+                   in
+                   ());
                   Eio.Fiber.await_cancel ());
                 (fun () ->
                   Eio.Fiber.yield ();
@@ -544,10 +590,13 @@ let parallel_resource_edges () =
             Concurrent.all ~sw
               [
                 (fun () ->
-                  ignore
-                    (Support.acquire_release ~sw
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw
                        ~acquire:(fun () -> Ok ())
-                       ~release:(fun () -> failwith "release diagnostic"));
+                       ~release:(fun () -> failwith "release diagnostic")
+                   in
+                   ());
                   Ok 1);
                 (fun () -> Ok 2);
               ])
@@ -669,10 +718,13 @@ let supervisor_edges () =
         Scope.run (fun sw ->
             match
               Scope.run (fun child ->
-                  ignore
-                    (Support.acquire_release ~sw:child
+                  ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
+                   let _acquire_result =
+                     Support.acquire_release ~sw:child
                        ~acquire:(fun () -> Ok ())
-                       ~release:(fun () -> incr exited));
+                       ~release:(fun () -> incr exited)
+                   in
+                   ());
                   Ok 3)
             with
             | Exit.Success n -> Concurrent.with_background ~sw pending (fun () -> Ok n)

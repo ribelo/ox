@@ -114,10 +114,13 @@ let every_prefix corpus property =
   List.iter
     (fun (name, bytes) ->
       for length = 0 to Bytes.length bytes - 1 do
-        try property (Bytes.sub bytes 0 length)
-        with exn ->
-          failwith
-            (Printf.sprintf "%s truncated at %d: %s" name length (Printexc.to_string exn))
+        (* ^nlintc-du4v: enrich parser defects without translating cancellation. *)
+        try property (Bytes.sub bytes 0 length) with
+        | Eio.Cancel.Cancelled _ as cancelled -> raise cancelled
+        | exn ->
+            failwith
+              (Printf.sprintf "%s truncated at %d: %s" name length
+                 (Printexc.to_string exn))
       done)
     corpus
 
@@ -327,7 +330,10 @@ let deterministic_ws corpus =
       let bytes = ws_length length in
       every_prefix
         [ ("WS 64-bit length", bytes) ]
-        (fun prefix -> ignore (websocket ~masked:false prefix));
+        (fun prefix ->
+          (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+          let _parse_result = websocket ~masked:false prefix in
+          ());
       match websocket ~masked:false bytes with
       | Error _ -> ()
       | Ok _ -> failwith "accepted advertised WS length")
@@ -554,17 +560,27 @@ let run ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) () =
               writer_properties ~caps random (fun ~expected bytes ->
                   exchange ~expected bytes);
               run_property ~caps random "h1 response: mutated corpus and arbitrary bytes"
-                3000 (fuzz_gen responses) (fun bytes -> ignore (response bytes));
+                3000 (fuzz_gen responses) (fun bytes ->
+                  (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+                  let _parse_result = response bytes in
+                  ());
               run_property ~caps random
                 "ws: mutated corpus and arbitrary bytes, both masking modes" 3000
                 (fuzz_gen ws) (fun bytes ->
-                  ignore (websocket ~masked:false bytes);
-                  ignore (websocket ~masked:true bytes));
+                  ((* ^nlint-hxar: Arbitrary bytes may parse or be rejected; the unmasked fuzz property checks exceptions and parser invariants rather than acceptance. *)
+                   let _unmasked_parse_result = websocket ~masked:false bytes in
+                   ());
+                  (* ^nlint-hxar: Arbitrary bytes may parse or be rejected; the masked fuzz property checks exceptions and parser invariants rather than acceptance. *)
+                  let _masked_parse_result = websocket ~masked:true bytes in
+                  ());
               run_property ~caps random "h1 request: mutated corpus and arbitrary bytes"
                 800 (fuzz_gen requests) (fun bytes -> ignore (exchange bytes));
               run_property ~caps random "h1 response: advertised lengths" 300
                 (G.map decimal_response (G.oneof_list lengths))
-                (fun bytes -> ignore (response bytes));
+                (fun bytes ->
+                  (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+                  let _parse_result = response bytes in
+                  ());
               run_property ~caps random "h1 request: advertised lengths" 100
                 (G.map decimal_request (G.oneof_list lengths))
                 (fun bytes -> ignore (exchange bytes)));

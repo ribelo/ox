@@ -391,7 +391,8 @@ let blocking_caller_cancellation () =
                   try
                     Eio.Cancel.sub (fun ctx ->
                         Eio.Promise.resolve context_resolve ctx;
-                        ignore
+                        ((* ^nlint-hxar: The caller is deliberately cancelled; the existing on_settled callback checks the eventual native reply and physical completion. *)
+let _native_call_result =
                           (B.run ~pool
                              ~on_cancel:(fun () ->
                                incr cancels;
@@ -411,7 +412,7 @@ let blocking_caller_cancellation () =
                              (fun () ->
                                let code = protected token db (fun db -> S.step stmt) in
                                Atomic.set physical true;
-                               code)));
+                               code)) in ()));
                     Alcotest.fail "caller cancellation did not propagate"
                   with Eio.Cancel.Cancelled _ -> Eio.Promise.resolve caller_resolve ());
               worker (B.run ~pool progress_wait);

@@ -1,0 +1,6 @@
+; ^nlintcov-q6n2: each build samples wall-clock; inventory must not stale evidence.
+(library (name volatile))
+(rule
+ (target generated.ml)
+ (deps (universe))
+ (action (with-stdout-to %{target} (run bash %{dep:producer.sh}))))

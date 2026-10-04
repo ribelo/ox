@@ -71,11 +71,18 @@ val create :
     it. Release hooks registered after [create] run first (LIFO), preserving last records
     logged by program cleanup and Door SIGTERM. ^notel-1stb ^notel-056b ^notel-jx0z
 
-    Suspension: may suspend while starting the daemon fibers. Cancellation: depends on the
-    owner switch; both daemons inherit its context. Cancellation safety: safe to re-run;
-    successfully constructed exporters remain switch-owned and their ending is bounded.
-    Finalizers: the owner switch bounds recovery by the same ending deadline. Locking:
-    single-domain state changes hold no mutex across caller code.
+    Suspension: may suspend while starting the daemon fibers; delegated Ox.Channel,
+    Ox.Duration, Ox_caps.Cap_stdlib, Ox_http.Client, Ox_http.Url, Ox_json,
+    Ox_observability.Logger, Stdlib, Stdlib.Array, Stdlib.Bytes, Stdlib.Float,
+    Stdlib.Int64, Stdlib.List, Stdlib.Option, Stdlib.String operations retain their own
+    behaviour. Cancellation: depends on the owner switch; both daemons inherit its
+    context; delegated Ox.Channel, Ox.Duration, Ox_caps.Cap_stdlib, Ox_http.Client,
+    Ox_http.Url, Ox_json, Ox_observability.Logger, Stdlib, Stdlib.Array, Stdlib.Bytes,
+    Stdlib.Float, Stdlib.Int64, Stdlib.List, Stdlib.Option, Stdlib.String operations
+    retain their own behaviour. Cancellation safety: safe to re-run; successfully
+    constructed exporters remain switch-owned and their ending is bounded. Finalizers: the
+    owner switch bounds recovery by the same ending deadline. Locking: single-domain state
+    changes hold no mutex across caller code.
 
     [resource] adds OTLP resource attributes to every export beside the exporter's own
     [service.name]: [service.version], [deployment.environment], a host or a build id, so
@@ -109,7 +116,17 @@ val create :
     [max_metric_series] bounds how many distinct series — a name, a kind and an attribute
     set — the exporter aggregates between exports; a record that would begin one more is
     dropped and counted by {!dropped}, because attribute cardinality a program does not
-    control must not grow memory without bound. ^notel-8ixo *)
+    control must not grow memory without bound. ^notel-8ixo
+
+    @raise Invalid_argument
+      if sw is finished when the exporter daemons are started or its release hook is
+      registered. ^nlintd-raises
+
+    The exporter has an internal Assert_failure for its terminal stop-event invariant:
+    Some `End is handled before the residual branch. ^nlintd-truth
+
+    Eio.Switch.Release_error can propagate if a release callback fails on a switch owned
+    by a delegated operation. ^nlintd-truth *)
 
 val meter : t -> Meter.t
 (** The exporter's meter. Instruments created from it record in direct style from any

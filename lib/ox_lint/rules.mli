@@ -1,3 +1,16 @@
+(** Cancellation and finalizers: Suspension: never suspends during iterator/registry
+    construction and checks; synchronous filesystem/compiler work may block the domain;
+    operations delegate to Stdlib, Unix, Ox_caps, Caps, Concurrency and Interface_docs and
+    their higher-order callbacks; capability object method dispatch depends on the
+    supplied provider; running returned visitors depends on caller code. Cancellation: not
+    a cancellation point during iterator/registry construction and checks; operations
+    delegate to Stdlib, Unix, Ox_caps, Caps, Concurrency and Interface_docs and their
+    higher-order callbacks; capability object method dispatch depends on the supplied
+    provider; running returned visitors depends on caller code. Finalizers: no hook is
+    registered and returned rule records own no OS handle. Locking: no registry lock is
+    acquired; compiler/runtime synchronization is delegated to Ocaml_common and Stdlib.
+    ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
+
 open Ocaml_common
 
 type t = {
@@ -21,6 +34,9 @@ val all : caps:< Ox_caps.Cap.fs_read ; .. > -> t list
 val allowances : (string * string * string) list
 (** The shipped per-rule allow-list is empty; retained for future explicit policy;
     ^nlintc-j03j ^nlintc-7be1. *)
+
+val dormant : t -> bool
+(** Registered but deliberately inactive; ^nlintcov-r3k8 ^nlint-r01u. *)
 
 val applies : root:string -> source:string -> t -> bool
 (** Raw concurrency is dormant on every path. Other rules apply to all implementations or,

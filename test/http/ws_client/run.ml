@@ -393,7 +393,9 @@ let test_cancel_upgrade () =
       let winner =
         Eio.Fiber.first
           (fun () ->
-            ignore (W.connect ~sw ~net:env#net ~clock:env#clock url);
+            ((* ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
+             let _connect_result = W.connect ~sw ~net:env#net ~clock:env#clock url in
+             ());
             false)
           (fun () ->
             Eio.Time.sleep env#clock 0.03;

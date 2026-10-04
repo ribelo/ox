@@ -32,11 +32,13 @@
     return. *)
 
 (** Cancellation and finalizers: Suspension: never suspends for state reads, polling and
-    subscription bookkeeping. Cancellation: not a cancellation point for state reads,
-    polling and subscription bookkeeping. Finalizers: handle operations register no switch
-    hook; subscriptions must be closed by their owner. Locking: no lock is acquired by
-    this wrapper around caller code; Eio stream and promise locking is delegated.
-    ^nlintd-a7oq *)
+    subscription bookkeeping; delegated Eio.Condition, Stdlib.Queue operations retain
+    their own behaviour. Cancellation: not a cancellation point for state reads, polling
+    and subscription bookkeeping; delegated Eio.Condition, Stdlib.Queue operations retain
+    their own behaviour. Finalizers: handle operations register no switch hook;
+    subscriptions must be closed by their owner. Locking: no lock is acquired by this
+    wrapper around caller code; Eio stream and promise locking is delegated. ^nlintd-a7oq
+*)
 
 type ('state, 'msg, 'reply, 'e) t
 (** An actor folding messages of type ['msg] over a ['state], answering with ['reply] or
@@ -70,13 +72,23 @@ val create :
 
     The actor lives exactly as long as [sw] (^nactor-e0l5).
 
-    Suspension: may suspend while the daemon starts. Cancellation: propagates
+    Suspension: may suspend while the daemon starts; delegated callback dispatch and
+    Eio.Condition, Eio.Stream, Eio, Stdlib.List, Stdlib.Option, Stdlib.Printexc,
+    Stdlib.Queue operations retain their own behaviour. Cancellation: propagates
     Eio.Cancel.Cancelled from the initial switch check for a cancelled context; a finished
-    switch raises Invalid_argument instead. Finalizers: the owning switch cancels and
-    joins the daemon before its release hooks; no on_release hook is installed here.
-    Locking: no lock is held by this wrapper around handler callbacks. ^nlintd-a7oq
+    switch raises Invalid_argument instead; delegated callback dispatch and Eio.Condition,
+    Eio.Stream, Eio, Stdlib.List, Stdlib.Option, Stdlib.Printexc, Stdlib.Queue operations
+    retain their own behaviour. Cancellation safety: unsafe because progress is lost; the
+    daemon can start caller callbacks before creation returns and those effects are not
+    rolled back. Finalizers: the owning switch cancels and joins the daemon before its
+    release hooks; no on_release hook is installed here. Locking: no lock is held by this
+    wrapper around handler callbacks. ^nlintd-a7oq
 
-    @raise Invalid_argument if [capacity < 1] or [sw] is finished. *)
+    @raise Invalid_argument if [capacity < 1] or [sw] is finished.
+
+    If both the daemon body and on_stop fail with non-cancellation defects, the daemon
+    raises Eio.Exn.Multiple; the owning switch observes the combined defect. ^nlintd-truth
+*)
 
 val ask :
   ?timeout:'c Eio.Time.clock * Duration.t ->
@@ -94,19 +106,20 @@ val ask :
     handled, its reply dropped — a timeout says nothing about whether the message took
     effect. A caller that is cancelled while waiting leaves its message queued the same
     way, and the cancellation propagates. Suspension: may suspend while the mailbox is
-    full and while awaiting a reply. Cancellation: propagates from the channel or promise
-    wait, including the timeout wrapper's caller cancellation. Cancellation safety: unsafe
-    because data is lost; an accepted message's eventual reply is inaccessible to a
-    cancelled caller and the message may still be handled. ^nlintd-a7oq *)
+    full and while awaiting a reply. Cancellation: propagates Eio.Cancel.Cancelled from
+    the channel or promise wait, including the timeout wrapper's caller cancellation.
+    Cancellation safety: unsafe because data is lost; an accepted message's eventual reply
+    is inaccessible to a cancelled caller and the message may still be handled.
+    ^nlintd-a7oq *)
 
 val tell : ('state, 'msg, _, _) t -> 'msg -> unit
 (** [tell actor msg] enqueues [msg] and returns without waiting for it to be handled.
     ^nactor-jhl2 It blocks while the mailbox is full (^nactor-512k), cancellably. A
     handler's [Error] for a told message has nobody to report to and is dropped. Telling
     an actor that has stopped drops the message. Suspension: may suspend while the mailbox
-    is full. Cancellation: propagates from the channel wait; admission itself does not
-    suspend. Cancellation safety: safe to re-run; interruption while waiting has not
-    admitted the message. ^nlintd-a7oq *)
+    is full. Cancellation: propagates Eio.Cancel.Cancelled from the channel wait;
+    admission itself does not suspend. Cancellation safety: safe to re-run; interruption
+    while waiting has not admitted the message. ^nlintd-a7oq *)
 
 val try_tell : ('state, 'msg, _, _) t -> 'msg -> bool
 (** Like {!tell} but never blocks: [false] when the mailbox is full or the actor has
@@ -129,9 +142,9 @@ module Changes : sig
   (** The oldest buffered state, waiting for one if there is none; [None] once the actor
       has stopped (or the subscription was closed) and the buffer is drained. Cancellable
       while waiting. Suspension: may suspend until an update or end marker arrives.
-      Cancellation: propagates from Eio.Stream.take. Cancellation safety: safe to re-run;
-      a cancelled stream waiter has not taken an update. Locking: Eio.Stream.take releases
-      its internal mutex before waiting. ^nlintd-a7oq *)
+      Cancellation: propagates Eio.Cancel.Cancelled from Eio.Stream.take. Cancellation
+      safety: safe to re-run; a cancelled stream waiter has not taken an update. Locking:
+      Eio.Stream.take releases its internal mutex before waiting. ^nlintd-a7oq *)
 
   val dropped : 'state t -> int
   (** How many states were discarded because the observer fell more than [capacity]
@@ -140,7 +153,14 @@ module Changes : sig
 
   val close : 'state t -> unit
   (** Stops receiving states and discards the buffered ones: a waiting {!next} and every
-      later one answer [None]. Idempotent. *)
+      later one answer [None]. Idempotent. Suspension: never suspends; Eio.Stream.add uses
+      the free slot guaranteed after close drains the bounded stream with
+      take_nonblocking; Eio stream probes and Stdlib.Option checks are delegated
+      operations. Cancellation: not a cancellation point; Eio.Stream.add in that free-slot
+      branch makes no cancellation check and cannot deliver Eio.Cancel.Cancelled; Eio
+      stream probes and Stdlib.Option checks are delegated operations. Eio stream locking
+      is delegated. Cancellation safety: safe to re-run; close is idempotent and the
+      freed-slot invariant keeps End admission nonblocking. ^nlintd-a7oq ^nlintd-truth *)
 end
 
 val changes : ?capacity:int -> ('state, _, _, _) t -> 'state Changes.t
@@ -148,5 +168,12 @@ val changes : ?capacity:int -> ('state, _, _, _) t -> 'state Changes.t
     (^nactor-6z3i). Only states produced after the call are delivered: read {!state} first
     to start from the current one. [capacity] (default 64, at least 1) bounds the buffer.
     Subscribing to a stopped actor gives a subscription that has already ended.
+    Suspension: never suspends; Eio.Stream.add uses the free slot guaranteed by the new
+    empty stream in the stopped-actor branch; numeric bounds use delegated Stdlib integer
+    comparisons. Cancellation: not a cancellation point; there is no switch check, and
+    Eio.Stream.add with that free slot cannot deliver Eio.Cancel.Cancelled; Eio stream
+    locking and Stdlib integer comparisons are delegated operations without an Eio check.
+    Cancellation safety: safe to re-run; registration and terminal-event admission have no
+    cancellation point. ^nlintd-a7oq ^nlintd-truth
 
-    @raise Invalid_argument if [capacity < 1]. *)
+    @raise Invalid_argument if [capacity < 1] or [capacity + 1] overflows. *)

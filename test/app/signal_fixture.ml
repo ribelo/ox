@@ -114,7 +114,9 @@ let main ~(caps : < Ox_caps.Cap.exit ; .. >) () =
                       Eio.Flow.copy_string "code command released\n"
                         env.Ox_app.Env.base#stdout);
                   Eio.Flow.copy_string "ready\n" env.Ox_app.Env.base#stdout;
-                  ignore (Ox_app.serve ~sw ());
+                  ((* ^nlint-hxar: The signal fixture tests owned interruption and the command exit code; a normal serve reply is incidental. *)
+                   let _serve_result = Ox_app.serve ~sw () in
+                   ());
                   19))
         in
         [ Cmdliner.Cmd.v (Cmdliner.Cmd.info "long-code") long ])

@@ -1,10 +1,15 @@
 open Ocaml_common
 open Ox_caps
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio; compiler environment
-    reconstruction and normalization may read interfaces synchronously. Cancellation: not
-    a cancellation point. Finalizers: none are registered. Locking: compiler caches retain
-    their existing locking. *)
+(** Cancellation and finalizers: Suspension: never suspends in Eio itself; synchronous
+    filesystem/compiler work may block the domain; operations delegate to Stdlib, Ox_caps,
+    Env, Envaux, Longident and Path and their higher-order callbacks; capability object
+    method dispatch depends on the supplied provider; running returned visitors depends on
+    caller code. Cancellation: not a cancellation point in Eio itself; operations delegate
+    to Stdlib, Ox_caps, Env, Envaux, Longident and Path and their higher-order callbacks;
+    capability object method dispatch depends on the supplied provider; running returned
+    visitors depends on caller code. Finalizers: none are registered. Locking: compiler
+    caches retain their existing locking. ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
 
 val env : caps:< Cap.fs_read ; .. > -> Env.t -> Env.t
 (** Reconstruct an annotation's environment; missing dependencies fail closed. *)

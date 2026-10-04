@@ -23,7 +23,24 @@ val start :
     spawn error stops and emits [Gave_up (Fail (Spawn e))]; schedule exhaustion emits
     [Gave_up (Fail (Schedule_exhausted exit))]. Defects are emitted as
     [Gave_up (Die ...)]. A jittered [schedule] is not seeded here: stepping one raises
-    [Invalid_argument]. Pass a schedule that does not draw. *)
+    [Invalid_argument]. Pass a schedule that does not draw.
+
+    Suspension: may suspend while starting the daemon and in the spawn or schedule
+    callbacks; daemon waits use Child.await and Eio.Time.sleep; delegated callback
+    dispatch and Eio.Process, Eio.Stream, Eio.Time, Eio, Ox.Duration, Ox.Schedule,
+    Stdlib.Printexc operations retain their own behaviour. Cancellation: propagates
+    Eio.Cancel.Cancelled from Eio fork startup; daemon cancellation awaits its child
+    scope; delegated callback dispatch and Eio.Process, Eio.Stream, Eio.Time, Eio,
+    Ox.Duration, Ox.Schedule, Stdlib.Printexc operations retain their own behaviour.
+    Finalizers: Child's scope retires the current process protected before the worker
+    ends. Locking: no lock spans the spawn callback. Cancellation safety: unsafe because
+    progress is lost; a child may run before interruption and restarting starts another
+    generation. ^nlintd-a7oq
+
+    @raise Invalid_argument if [sw] is finished.
+
+    If a release callback fails while the private child switch closes,
+    Eio.Switch.Release_error wraps that cleanup failure and propagates. ^nlintd-raises *)
 
 val generation : 'e t -> int
 

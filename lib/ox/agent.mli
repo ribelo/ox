@@ -33,12 +33,13 @@
     was and the agent goes on. *)
 
 (** Cancellation and finalizers: Suspension: may suspend waiting for mailbox capacity and
-    the request reply. Cancellation: propagates from the caller's channel or promise wait;
-    accepted request callbacks run protected in the owner. Cancellation safety: unsafe
-    because data is lost; an accepted request's eventual reply is inaccessible to a
-    cancelled caller and its state update may still commit. Finalizers: request operations
-    install no switch hook; create starts the switch-owned daemon. Locking: no lock is
-    held by this wrapper around request callbacks. ^nlintd-a7oq *)
+    the request reply. Cancellation: propagates Eio.Cancel.Cancelled from the caller's
+    channel or promise wait; accepted request callbacks run protected in the owner.
+    Cancellation safety: unsafe because data is lost; an accepted request's eventual reply
+    is inaccessible to a cancelled caller and its state update may still commit.
+    Finalizers: request operations install no switch hook; create starts the switch-owned
+    daemon. Locking: no lock is held by this wrapper around request callbacks.
+    ^nlintd-a7oq *)
 
 type 'state t
 (** A handle on the state; the type says nothing but the state's. *)
@@ -52,12 +53,17 @@ val create : ?capacity:int -> sw:Eio.Switch.t -> init:(unit -> 'state) -> unit -
     [capacity] bounds the mailbox (default 1024, at least 1); every operation queues on
     it.
 
-    Suspension: may suspend while the daemon starts and in the protected init callback.
-    Cancellation: propagates Eio.Cancel.Cancelled from the initial switch check for a
-    cancelled context; a finished switch raises Invalid_argument instead. Finalizers: the
-    owning switch cancels and joins the daemon before its release hooks; no on_release
-    hook is installed here. Locking: no lock is held by this wrapper around init or
-    request callbacks. ^nlintd-a7oq
+    Suspension: may suspend while the daemon starts and in the protected init callback;
+    delegated callback dispatch and Eio.Condition, Eio, Stdlib.Option, Stdlib.Printexc,
+    Stdlib.Queue operations retain their own behaviour. Cancellation: propagates
+    Eio.Cancel.Cancelled from the initial switch check for a cancelled context; a finished
+    switch raises Invalid_argument instead; delegated callback dispatch and Eio.Condition,
+    Eio, Stdlib.Option, Stdlib.Printexc, Stdlib.Queue operations retain their own
+    behaviour. Cancellation safety: unsafe because progress is lost; the daemon can start
+    caller callbacks before creation returns and those effects are not rolled back.
+    Finalizers: the owning switch cancels and joins the daemon before its release hooks;
+    no on_release hook is installed here. Locking: no lock is held by this wrapper around
+    init or request callbacks. ^nlintd-a7oq
 
     @raise Invalid_argument if [capacity < 1] or [sw] is finished. *)
 
@@ -80,9 +86,9 @@ val cast : 'state t -> fn:('state -> 'state) -> (unit, [> `Agent_stopped ]) resu
     run: [Ok ()] means accepted, nothing more. It blocks, cancellably, while the mailbox
     is full; fire-and-forget is not unlimited buffering. An exception in [fn] fails the
     owning switch. Suspension: may suspend while the mailbox is full; it does not await a
-    reply. Cancellation: propagates from the channel wait; admission itself does not
-    suspend. Cancellation safety: safe to re-run; interruption while waiting has not
-    admitted the request. ^nlintd-a7oq *)
+    reply. Cancellation: propagates Eio.Cancel.Cancelled from the channel wait; admission
+    itself does not suspend. Cancellation safety: safe to re-run; interruption while
+    waiting has not admitted the request. ^nlintd-a7oq *)
 
 val update_result :
   'state t ->

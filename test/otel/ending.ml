@@ -283,7 +283,11 @@ let accounting ~caps () =
       let log = logger env exporter in
       L.info log "uncertain";
       ignore (Eio.Stream.take arrivals : string * string);
-      ignore (L.span log "queued span" (fun () -> Ok ()) : (unit, string) result);
+      (* ^notel-od2q: the body returns Ok; the queued trace is checked below in
+         abandoned-work accounting rather than through the span return value. *)
+      let _queued_span_result =
+        (L.span log "queued span" (fun () -> Ok ()) : (unit, string) result)
+      in
       O.Meter.add (O.Meter.counter (O.meter exporter) ~name:"queued metric" ()) 9.;
       let flush = fork_result ~sw (fun () -> O.flush exporter) in
       Eio.Fiber.yield ();
@@ -336,7 +340,11 @@ let queued_controls_recovery ~caps () =
       L.info log "uncertain mixed batch";
       let pending = fork_result ~sw (fun () -> O.flush exporter) in
       let _, first_body = Eio.Stream.take arrivals in
-      ignore (L.span log "recovered span" (fun () -> Ok ()) : (unit, string) result);
+      (* ^notel-opp7: the body returns Ok; recovery is checked below through
+         settled Flush controls and the recovered trace request. *)
+      let _recovered_span_result =
+        (L.span log "recovered span" (fun () -> Ok ()) : (unit, string) result)
+      in
       O.Meter.add (O.Meter.counter (O.meter exporter) ~name:"recovered metric" ()) 4.;
       let queued = fork_result ~sw (fun () -> O.flush exporter) in
       Eio.Fiber.yield ();

@@ -1,3 +1,15 @@
+(** Cancellation and finalizers: Suspension: may suspend in delegated Server body reads
+    and server execution or caller route handlers; depends on delegated Cstruct buffers,
+    Eio_unix/Unix socket work, Eio synchronization, Ox.Scope, Stdlib strings/collections
+    and caller routes. Cancellation: propagates Eio.Cancel.Cancelled from those delegated
+    operations and caller code; depends on delegated Cstruct buffers, Eio_unix/Unix socket
+    work, Eio synchronization, Ox.Scope boundaries, Stdlib strings/collections and caller
+    routes. Finalizers: bodies and sockets remain owned by the Server switch; routing
+    helpers register no hook. Locking: no routing lock spans caller code. Cancellation
+    safety: unsafe because progress is lost if serving or consuming a body is interrupted;
+    already-read body data and handler effects are not restored. ^nlintd-z5p5 ^nlintd-vneh
+*)
+
 (** Consumer-used routing and extraction helpers for {!Server}. All helpers are
     synchronous results; caller switch owns the request body and socket. *)
 module Req : sig
@@ -81,4 +93,7 @@ module Serve : sig
     ?port:int ->
     Server.handler ->
     unit
+  (** @raise Invalid_argument
+        if sw is finished or the request line/header limits are nonpositive or the request
+        body limit is negative. ^nlintd-raises *)
 end

@@ -1,3 +1,14 @@
+(** Cancellation and finalizers: Suspension: may suspend in Eio.Semaphore.acquire
+    admission waits and Eio.Promise.await completion waits; native callbacks run through
+    the worker pool; depends on delegated Eio worker/job setup and caller native
+    callbacks. Cancellation: propagates Eio.Cancel.Cancelled to the waiting caller but
+    does not preempt a started native callback; depends on delegated Eio worker/job checks
+    and caller native callbacks. Finalizers: no hook is registered; the pool owner must
+    retain callback resources until physical completion or draining shutdown. Locking:
+    admission synchronization is delegated to Eio; native callbacks own their locks.
+    Cancellation safety: unsafe because progress is lost for the waiting caller while a
+    started callback may still complete and publish effects. ^nlintd-z5p5 ^nlintd-vneh *)
+
 (** Direct-style bridge from Eio fibers to blocking native callbacks. Pools are owned by
     one Eio domain (worker-thread completion uses only thread-safe atomics/semaphores). A
     caller's cancellation never preempts a started callback. Do not release callback
@@ -26,10 +37,12 @@ module Pool : sig
       admitted waiting fibers; other [run] callers wait outside admission. The owner
       switch retains every worker fiber, including calls whose caller has timed out or
       cancelled. Shut down before releasing that switch. Suspension: never suspends; this
-      call only reads or constructs OCaml values. Cancellation: not a cancellation point;
-      this call performs no Eio cancellation check. Finalizers: none are registered by
-      this call; existing resource ownership is unchanged. Locking: no lock is acquired by
-      this call. ^nlintd-a7oq *)
+      call only reads or constructs OCaml values; numeric bounds use delegated Stdlib
+      integer comparisons. Cancellation: not a cancellation point; this call performs no
+      Eio cancellation check; numeric bounds use delegated Stdlib integer comparisons
+      without an Eio check. Finalizers: none are registered by this call; existing
+      resource ownership is unchanged. Locking: no lock is acquired by this call.
+      ^nlintd-a7oq *)
 
   val shutdown_policy : t -> shutdown_policy
   (** Suspension: never suspends; this call only reads or constructs OCaml values.

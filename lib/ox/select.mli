@@ -64,9 +64,12 @@ val receive : ('a, 'e) Channel.t list -> ('a, 'e Channel.closed) result
     that is closed. Ox's [select(sourceA, sourceB)].
     @raise Invalid_argument
       on an empty list. Suspension: may suspend waiting for a channel change; losing
-      waiters are cancelled and joined before probing again. Cancellation: propagates from
-      the condition waits and Eio.Fiber.any. Cancellation safety: safe to re-run; waiting
-      branches only observe queue changes, and the selected nonblocking receive does not
-      suspend after taking an item. Finalizers: the temporary Eio.Fiber.any scope joins
-      its waiters before return; no caller-switch hook is registered. Locking: channel
-      probes hold no mutex; the rotation cursor uses an atomic update. ^nlintd-a7oq *)
+      waiters are cancelled and joined before probing again; delegated callback dispatch
+      and Eio, Stdlib, Stdlib.Array, Stdlib.List operations retain their own behaviour.
+      Cancellation: propagates from the condition waits and Eio.Fiber.any; delegated
+      callback dispatch and Eio, Stdlib, Stdlib.Array, Stdlib.List operations retain their
+      own behaviour. Cancellation safety: safe to re-run; waiting branches only observe
+      queue changes, and the selected nonblocking receive does not suspend after taking an
+      item. Finalizers: the temporary Eio.Fiber.any scope joins its waiters before return;
+      no caller-switch hook is registered. Locking: channel probes hold no mutex; the
+      rotation cursor uses an atomic update. ^nlintd-a7oq *)

@@ -5,12 +5,24 @@
     ([Invalid_argument] if finished, the cancellation if cancelled) before anything
     starts.
 
-    One law governs all of them: a combinator raises exactly what a body raises, returns
-    exactly the [result] a body returns, adds nothing and swallows nothing; the
-    interruption of losers is suppressed onto the primary outcome (Eio drops it, so
-    [Scope.run] sees the primary failure alone). The first typed [Error] or exception ends
-    the computation; the remaining branches are cancelled and awaited, their finalizers
-    run, and a branch not yet started never starts. *)
+    [par], [both], [all] and [for_each] end on the first typed [Error] or exception; the
+    remaining branches are cancelled and awaited. [race] waits for a success or all typed
+    failures, whereas [race_first] uses the first completed outcome. Loser cancellation is
+    suppressed; other simultaneous defects can be combined by Eio. Callback effects that
+    completed before cancellation remain. ^nlintd-truth
+
+    Cancellation and finalizers: Suspension: may suspend in Eio fiber joins and caller
+    callbacks; delegated callback dispatch and Eio, Stdlib, Stdlib.List, Stdlib.Printexc
+    operations retain their own behaviour. Cancellation: propagates Eio.Cancel.Cancelled
+    from the initial switch check (which raises Invalid_argument if finished), branch
+    waits and caller callbacks; delegated callback dispatch and Eio, Stdlib, Stdlib.List,
+    Stdlib.Printexc operations retain their own behaviour. Finalizers: Eio awaits
+    cancelled branches before returning; callback cleanup remains the callback's
+    responsibility. Locking: this wrapper holds no lock around caller callbacks.
+    Cancellation safety: unsafe because progress is lost; completed branch effects are not
+    rolled back and restarting repeats them. ^nlintd-a7oq ^nlintd-4ja0
+
+    @raise Invalid_argument if [sw] is finished. *)
 
 val par :
   sw:Eio.Switch.t ->

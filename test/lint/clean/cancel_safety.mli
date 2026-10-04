@@ -1,4 +1,9 @@
 (* ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn *)
+(** Cancellation and finalizers: Suspension: never suspends; the shape-fixture stubs
+    ignore their resource arguments. Cancellation: not a cancellation point; the stubs
+    perform no check. Finalizers: none. Locking: none. Safety labels below are syntax
+    examples for the represented operations, not runtime effects of these inert stubs.
+    ^nlintd-a7oq *)
 
 val safe : ('a, 'e) Ox.Channel.t -> unit
 (** Cancellation safety: safe to re-run. *)

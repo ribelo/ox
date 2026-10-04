@@ -3,7 +3,8 @@ open Ocaml_common
 open Ox_caps
 
 let usage =
-  "ox-lint [--rules RULE]... [--require-typed] [--self-check] [--root DIR] PATH...\n\
+  "ox-lint [--repo-gate] [--rules RULE]... [--require-typed] [--self-check] [--root \
+   DIR]   PATH...\n\
   \  Build first: dune build @install; dune build @check for executable modules\n\
   \  Example: ox-lint --require-typed --rules ox-discarded-result lib/\n\
   \  PATH is an .ml/.mli source, a directory, or a .cmt/.cmti annotation.\n\
@@ -115,21 +116,22 @@ let self_check_root ~(caps : < Cap.fs_read ; .. >) override =
 
 let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
   let ids, paths, self_check, require_typed = (ref [], ref [], ref false, ref false) in
-  (* ^ncapslint-x3gi ^ncapslint-87ld: the gate selects typed rules, never a lexer. *)
-  let caps_gate, allows = (ref false, ref []) in
+  (* ^nlint-r01u ^ncapslint-x3gi: the repository gate selects every registered rule. *)
+  let repo_gate, allows = (ref false, ref []) in
   let root_override = ref None in
   let inventory = ref false in
   let options =
     [
-      ( "--caps-gate",
-        Arg.Set caps_gate,
-        " Run capability policy (whole workspace by default)" );
+      ( "--repo-gate",
+        Arg.Set repo_gate,
+        " Decide all registered rules (whole workspace by default)" );
+      ("--caps-gate", Arg.Set repo_gate, " Alias for --repo-gate");
       ( "--rules",
         Arg.String (fun id -> ids := id :: !ids),
         "RULE Select a rule (repeatable)" );
       ( "--require-typed",
         Arg.Set require_typed,
-        " Require fresh typed evidence; optional only in --caps-gate mode" );
+        " Require fresh typed evidence; optional only in --repo-gate mode" );
       ( "--allow",
         Arg.String (fun glob -> allows := glob :: !allows),
         "GLOB Exclude a gate path (shipped policy has no entries)" );
@@ -175,7 +177,7 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
           | Some ("excluded", _) when decision = "excluded" && reason = "no-ocaml" -> ()
           | _ -> Hashtbl.replace decisions path (decision, reason)
       in
-      let default_scan = !caps_gate && !paths = [] in
+      let default_scan = !repo_gate && !paths = [] in
       let scan_root =
         Option.value (Artifact.workspace ~caps (Sys.getcwd ())) ~default:(Sys.getcwd ())
       in
@@ -192,7 +194,7 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
           Hashtbl.add undecided_paths (absolute path) ();
           incr undecided
         end;
-        if fatal || not (typed && !caps_gate && not !require_typed) then incr failures;
+        if fatal || not (typed && !repo_gate && not !require_typed) then incr failures;
         let message =
           match ex with
           | Failure s | Invalid_argument s | Sys_error s -> s
@@ -211,13 +213,9 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
       in
       (try
          if default_scan then paths := [ scan_root ];
-         if !allows <> [] && not !caps_gate then
-           invalid_arg "--allow requires --caps-gate";
-         let rules =
-           Rules.select ~caps !ids
-           |> List.filter (fun rule ->
-               (not !caps_gate) || String.starts_with ~prefix:"ox-caps-" rule.Rules.id)
-         in
+         if !allows <> [] && not !repo_gate then
+           invalid_arg "--allow requires --repo-gate (or --caps-gate)";
+         let rules = Rules.select ~caps !ids in
          if !self_check then begin
            let root = self_check_root ~caps !root_override in
            let errors =
@@ -338,6 +336,18 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
                                else None)
                        entries)
          in
+         let rebuilt = ref 0 in
+         (* ^nlintcov-q6n2 ^nlint-r01u: finish mutating inventory before rebuilding.
+             An explicit scan must still expose missing/stale supplied annotations. *)
+         if !repo_gate && default_scan then
+           List.iter
+             (fun root ->
+               try
+                 Artifact.rebuild_check ~caps root;
+                 incr rebuilt
+               with ex -> fail ~typed:true ~fatal:true root ex)
+             (List.map (fun (_, _, workspace) -> workspace) selections
+             |> List.sort_uniq String.compare);
          let inputs =
            List.concat_map
              (fun path ->
@@ -368,13 +378,14 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
            sources @ generated |> List.sort_uniq String.compare
            |> List.filter (fun path -> not (Hashtbl.mem unresolved (absolute path)))
            |> List.filter (fun path ->
-               if !caps_gate && Caps_policy.excluded !allows path then begin
+               if !repo_gate && Caps_policy.excluded !allows path then begin
                  record path "excluded" "explicit-allow";
                  false
                end
                else true)
          in
-         if !caps_gate then
+         if !repo_gate && List.exists (fun rule -> rule.Rules.id = "ox-caps-mint") rules
+         then
            Caps_policy.check_dune ~caps (List.rev !paths) (fun path line ->
                incr findings;
                let print = if !inventory then Cap_stdlib.eprintf else Cap_stdlib.printf in
@@ -493,14 +504,20 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
                end
              with ex -> fail ~typed:typed_requested ~fatal:true input ex)
            inputs;
-         if !caps_gate then
+         if !repo_gate then begin
+           let selected = List.length rules in
+           let dormant = List.length (List.filter Rules.dormant rules) in
            Cap_stdlib.eprintf ~caps
-             "caps-gate: %d findings; %d modules with typed rules undecided; %d \
-              data-only files out of scope; %d paths with no OCaml sources; %d ignored \
-              paths skipped; %d directory cycles skipped%s\n"
-             !findings !undecided !data_only !empty_paths !ignored_paths !directory_cycles
+             "repo-gate: %d registered rules selected (%d active, %d dormant); %d \
+              findings; %d modules with typed rules undecided; %d data-only files out of \
+              scope; %d paths with no OCaml sources; %d ignored paths skipped; %d \
+              directory cycles skipped; rebuilt @check in %d workspace%s%s\n"
+             selected (selected - dormant) dormant !findings !undecided !data_only
+             !empty_paths !ignored_paths !directory_cycles !rebuilt
+             (if !rebuilt = 1 then "" else "s")
              (if !require_typed then " (typed evidence required)"
               else " (build first for typed coverage)")
+         end
          else if !empty_paths > 0 || !ignored_paths > 0 || !directory_cycles > 0 then
            Cap_stdlib.eprintf ~caps
              "ox-lint: %d paths with no OCaml sources; %d ignored paths skipped; %d \

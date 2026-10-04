@@ -14,6 +14,15 @@ val create :
   ?timeout_ms:int ->
   Sqlite.config ->
   (t, Types.sql_error) result
+(** Suspension: never suspends; SQLite and Unix clock calls are delegated synchronous
+    operations that may block the domain; delegated callback dispatch and
+    Ox_caps.Cap_unix, Stdlib, Stdlib.Int, Stdlib.Mutex, Stdlib.Option, Stdlib.Printexc
+    operations retain their own behaviour. Cancellation: not a cancellation point; no Eio
+    check is made; delegated callback dispatch and Ox_caps.Cap_unix, Stdlib, Stdlib.Int,
+    Stdlib.Mutex, Stdlib.Option, Stdlib.Printexc operations retain their own behaviour.
+    Finalizers: Sqlite closes a handle if configuration raises; a returned connection must
+    be closed by its owner. Locking: SQLite configuration calls use native database
+    mutexes. ^nlintd-a7oq *)
 
 val sqlite : t -> Sqlite.db
 val touch : t -> unit

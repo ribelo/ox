@@ -1,3 +1,16 @@
+(** Cancellation and finalizers: Suspension: never suspends during iterator/registry
+    construction and checks; synchronous filesystem/compiler work may block the domain;
+    operations delegate to Stdlib, Ox_caps, Env, Envaux, Longident and Path and their
+    higher-order callbacks; capability object method dispatch depends on the supplied
+    provider; running returned visitors depends on caller code. Cancellation: not a
+    cancellation point during iterator/registry construction and checks; operations
+    delegate to Stdlib, Ox_caps, Env, Envaux, Longident and Path and their higher-order
+    callbacks; capability object method dispatch depends on the supplied provider; running
+    returned visitors depends on caller code. Finalizers: no hook is registered; iterator
+    state is an in-memory value. Locking: compiler and Stdlib synchronization are
+    delegated; each iterator owns mutable traversal state and must not be shared across
+    simultaneous walks. ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
+
 open Ocaml_common
 
 val catch_all :

@@ -194,6 +194,9 @@ let all ~caps =
 (* No shipped exception paths; applicability is based on source kind only. *)
 let allowances = []
 
+(* ^nlintcov-r3k8 ^nlint-r01u: summary and applicability share the dormant policy. *)
+let dormant rule = rule.id = "ox-raw-concurrency"
+
 let applies ~root ~source rule =
   let absolute path =
     if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
@@ -207,7 +210,7 @@ let applies ~root ~source rule =
         (String.length source - String.length root - 1)
     else source
   in
-  rule.id <> "ox-raw-concurrency"
+  (not (dormant rule))
   && (not (List.exists (fun (id, path, _) -> id = rule.id && path = relative) allowances))
   && ((not
          (List.mem rule.id

@@ -92,7 +92,11 @@ let tls_trust () =
 
 let tls_untrusted () =
   with_server ~tls:true
-    (fun _ flow -> try read_request flow with _ -> ())
+    (fun _ flow ->
+      (* ^nlintc-du4v: rejection may close TLS, but server cancellation must propagate. *)
+      try read_request flow with
+      | Eio.Cancel.Cancelled _ as cancelled -> raise cancelled
+      | _ -> ())
     (fun env _client url ->
       Eio.Switch.run (fun sw ->
           let client = H.Client.create ~sw ~net:env#net ~clock:env#clock () in
@@ -218,7 +222,9 @@ let cancel () =
       let winner =
         Eio.Fiber.first
           (fun () ->
-            ignore (H.Client.request client ~method_:"GET" ~url ());
+            ((* ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
+             let _request_result = H.Client.request client ~method_:"GET" ~url () in
+             ());
             false)
           (fun () ->
             Eio.Time.sleep env#clock 0.03;
@@ -238,7 +244,11 @@ let close_delimited () =
 
 let tls_wrong_identity () =
   with_server ~tls:true
-    (fun _ flow -> try read_request flow with _ -> ())
+    (fun _ flow ->
+      (* ^nlintc-du4v: rejection may close TLS, but server cancellation must propagate. *)
+      try read_request flow with
+      | Eio.Cancel.Cancelled _ as cancelled -> raise cancelled
+      | _ -> ())
     (fun _ client url ->
       let needle = "localhost" in
       let start =

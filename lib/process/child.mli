@@ -33,7 +33,27 @@ val spawn :
     [caps] is what spawning a child may touch (^ncaps-x7z8): it forks and execs another
     program and opens [/dev/null] for writing when output is discarded. Eio's [mgr] spawns
     the process; [fs_write] authorizes opening the null device. A service that launches a
-    program shows [< Cap.fork; Cap.exec; Cap.fs_write; .. >] in its own type. *)
+    program shows [< Cap.fork; Cap.exec; Cap.fs_write; .. >] in its own type.
+
+    Suspension: may suspend in Eio fork startup, process-provider operations and awaiting
+    the ready promise; delegated Eio_unix, Eio_unix.Fd, Eio_unix.Process, Ox.Duration,
+    Ox.Timeout, Ox_caps.Cap_unix, Stdlib, Stdlib.List, Stdlib.Option operations retain
+    their own behaviour. Cancellation: propagates Eio.Cancel.Cancelled from startup and
+    waits; the cancellation bridge requests protected retirement; delegated Eio_unix,
+    Eio_unix.Fd, Eio_unix.Process, Ox.Duration, Ox.Timeout, Ox_caps.Cap_unix, Stdlib,
+    Stdlib.List, Stdlib.Option operations retain their own behaviour. Finalizers: owner
+    switch release retires the child; the private switch closes its process and
+    descriptors after retirement, including on launch failure. Locking: no wrapper lock is
+    held; process and FD behavior depends on the Eio Unix provider. Cancellation safety:
+    unsafe because progress is lost; the child may execute before startup is interrupted,
+    even though retirement closes local resources. ^nlintd-a7oq
+
+    @raise Invalid_argument
+      if [sw] is finished or the provider rejects [argv]. A returned Eio Unix pipe without
+      a file descriptor causes Failure.
+
+    If a release callback fails while the private child switch closes,
+    Eio.Switch.Release_error wraps that cleanup failure and propagates. ^nlintd-raises *)
 
 val pid : t -> int
 (** [pid t] is the child's operating-system process id, for status reports and

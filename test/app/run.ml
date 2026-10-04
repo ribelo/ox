@@ -754,9 +754,12 @@ let test_telemetry_hook () =
   let code, _, err, journal =
     run ~telemetry:hook
       ~program:(fun env _ _ ->
-        ignore
-          (Ox_observability.Logger.span env.Env.logger "unit" (fun () -> Ok ())
-            : (unit, string) result);
+        ((* ^nlint-hxar: The span body is scripted Ok; this test asserts Door exit and reporter records, not the unit reply. *)
+         let _span_result =
+           (Ox_observability.Logger.span env.Env.logger "unit" (fun () -> Ok ())
+             : (unit, string) result)
+         in
+         ());
         Ok ())
       ()
   in
@@ -1857,9 +1860,12 @@ let test_door4_journal_level () =
     let code, _, err, journal =
       run ?journal_level ~telemetry
         ~program:(fun env _ _ ->
-          ignore
-            (Ox_observability.Logger.span env.Env.logger "info span" (fun () -> Ok ())
-              : (unit, string) result);
+          ((* ^nlint-hxar: The span body is scripted Ok; this test asserts Door exit and reporter records, not the unit reply. *)
+           let _span_result =
+             (Ox_observability.Logger.span env.Env.logger "info span" (fun () -> Ok ())
+               : (unit, string) result)
+           in
+           ());
           Ox_observability.Logger.error env.Env.logger "program error";
           Ok ())
         ()

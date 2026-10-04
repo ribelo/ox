@@ -112,7 +112,11 @@ let queued_cancellation () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore (run ~pool:p (fun () -> Atomic.set ran true));
+                  ((* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                   let _cancelled_call_result =
+                     run ~pool:p (fun () -> Atomic.set ran true)
+                   in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -121,7 +125,9 @@ let queued_cancellation () =
       Alcotest.(check bool) "queued caller released" true (Eio.Promise.await_exn second);
       Alcotest.(check int) "queue removed" 0 (Pool.stats p).queued;
       release permit;
-      ignore (Eio.Promise.await_exn first);
+      ((* ^nlint-hxar: Awaiting joins the scripted first callback; the queued-call and never-started assertions cover this probe, not its reply. *)
+       let _first_call_result = Eio.Promise.await_exn first in
+       ());
       Pool.shutdown p;
       Alcotest.(check bool) "never started" false (Atomic.get ran))
 
@@ -140,13 +146,16 @@ let running_cancellation () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore
-                    (run ~pool:p
+                  ((* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                   let _cancelled_call_result =
+                     run ~pool:p
                        ~on_cancel:(fun () -> inc hooks)
                        (fun () ->
                          Eio.Semaphore.release started;
                          wait permit;
-                         42));
+                         42)
+                   in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -168,7 +177,9 @@ let defects_and_detach () =
   within (fun _env sw ->
       let p = pool ~sw ~policy:Pool.Detach_started () in
       (try
-         ignore (run ~pool:p (fun () -> raise Native_defect));
+         ((* ^nlint-hxar: The callback is scripted to raise Native_defect; the existing failure sentinel rejects any normal return. *)
+          let _defect_result = run ~pool:p (fun () -> raise Native_defect) in
+          ());
          Alcotest.fail "callback defect lost"
        with Native_defect -> ());
       Pool.shutdown p;
@@ -189,7 +200,11 @@ let settled_after_completion () =
       | Ok 5 -> ()
       | _ -> Alcotest.fail "value");
       Alcotest.(check int) "settled once" 1 (List.length !seen);
-      (try ignore (run ~pool:p ~on_settled (fun () -> raise Exit)) with Exit -> ());
+      (try
+         (* ^nlint-hxar: The callback is scripted to raise Exit; the existing on_settled assertion checks exception delivery rather than a normal reply. *)
+         let _defect_result = run ~pool:p ~on_settled (fun () -> raise Exit) in
+         ()
+       with Exit -> ());
       Alcotest.(check bool) "exception settles" true (List.hd !seen = `Exn);
       Pool.shutdown p)
 
@@ -209,8 +224,9 @@ let settled_after_cancellation () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore
-                    (run ~pool:p
+                  ((* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                   let _cancelled_call_result =
+                     run ~pool:p
                        ~on_settled:(fun _ ->
                          if (Domain.self () :> int) <> domain then
                            Atomic.set same_domain false;
@@ -218,7 +234,9 @@ let settled_after_cancellation () =
                        (fun () ->
                          Eio.Semaphore.release started;
                          wait permit;
-                         1));
+                         1)
+                   in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -258,10 +276,13 @@ let settled_after_timeout_not_before_claim () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore
-                    (run ~pool:p
-                       ~on_settled:(fun _ -> settled := `Second :: !settled)
-                       (fun () -> Atomic.set queued_ran true))
+                  (* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                  let _cancelled_call_result =
+                    run ~pool:p
+                      ~on_settled:(fun _ -> settled := `Second :: !settled)
+                      (fun () -> Atomic.set queued_ran true)
+                  in
+                  ()
                 with Eio.Cancel.Cancelled _ -> ()))
       in
       wait_until env#clock (fun () -> (Pool.stats p).queued = 1 && !cancel <> None);
@@ -447,8 +468,10 @@ exception Hook_abandoned
 let[@inline never] raise_marker ex = raise ex
 
 let backtrace_of ex =
+  (* ^nlintc-du4v: marker backtraces are test data, never a cancellation boundary. *)
   match raise_marker ex with
   | () -> assert false
+  | exception (Eio.Cancel.Cancelled _ as cancelled) -> raise cancelled
   | exception _ -> Printexc.get_raw_backtrace ()
 
 let bt_string = Printexc.raw_backtrace_to_string
@@ -504,13 +527,16 @@ let retained_hook_defect () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore
-                    (run ~pool:p
+                  ((* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                   let _cancelled_call_result =
+                     run ~pool:p
                        ~on_settled:(fun _ ->
                          Printexc.raise_with_backtrace Hook_abandoned abandoned_bt)
                        (fun () ->
                          Eio.Semaphore.release started;
-                         wait permit));
+                         wait permit)
+                   in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -548,14 +574,17 @@ let detach_keeps_policy () =
             Eio.Cancel.sub (fun ctx ->
                 cancel := Some ctx;
                 try
-                  ignore
-                    (run ~pool:p
+                  ((* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                   let _cancelled_call_result =
+                     run ~pool:p
                        ~on_settled:(fun _ ->
                          Eio.Semaphore.release hook;
                          raise Hook_abandoned)
                        (fun () ->
                          Eio.Semaphore.release started;
-                         wait permit));
+                         wait permit)
+                   in
+                   ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
       in
@@ -588,14 +617,17 @@ let owner_cancellation_joins_worker () =
                      let p = pool ~sw () in
                      let started = Eio.Semaphore.make 0 in
                      Eio.Fiber.fork ~sw (fun () ->
-                         ignore
-                           (run ~pool:p
-                              ~on_cancel:(fun () ->
-                                Eio.Promise.resolve set_caller_released ())
-                              ~on_settled:(fun _ -> inc settled)
-                              (fun () ->
-                                Eio.Semaphore.release started;
-                                wait permit)));
+                         (* ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
+                         let _cancelled_call_result =
+                           run ~pool:p
+                             ~on_cancel:(fun () ->
+                               Eio.Promise.resolve set_caller_released ())
+                             ~on_settled:(fun _ -> inc settled)
+                             (fun () ->
+                               Eio.Semaphore.release started;
+                               wait permit)
+                         in
+                         ());
                      Eio.Semaphore.acquire started;
                      Eio.Switch.fail sw Owner_stop)
                with

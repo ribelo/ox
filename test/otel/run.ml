@@ -397,12 +397,19 @@ let log_and_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
         L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
           ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
       in
-      ignore
+      (* ^notel-6m2q: the body returns Ok; completed spans and their parentage
+         are asserted below after flush/shutdown. *)
+      let _outer_span_result =
         (L.span logger "outer" (fun () ->
              L.info logger "query started";
-             ignore (L.span logger "inner" (fun () -> Ok ()) : (unit, string) result);
+             (* ^notel-6m2q: the body returns Ok; the inner span and its
+                parent/trace IDs are asserted below on the wire. *)
+             let _inner_span_result =
+               (L.span logger "inner" (fun () -> Ok ()) : (unit, string) result)
+             in
              Ok ())
-          : (unit, string) result);
+          : (unit, string) result)
+      in
       exporter_ok (O.flush exporter);
       exporter_ok (O.shutdown exporter);
       exporter_ok (O.shutdown exporter);
@@ -518,7 +525,11 @@ let spans_without_ids_remain_logs ~(caps : < Ox_caps.Cap.random ; .. >) () =
         L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
           ~reporter:(O.reporter exporter) ()
       in
-      ignore (L.span logger "legacy" (fun () -> Ok ()) : (unit, string) result);
+      (* ^notel-6m2q: the body returns Ok; the assertion below checks that
+         both legacy start/end records are exported as logs without span IDs. *)
+      let _legacy_span_result =
+        (L.span logger "legacy" (fun () -> Ok ()) : (unit, string) result)
+      in
       exporter_ok (O.shutdown exporter);
       let records =
         List.concat_map
@@ -547,11 +558,14 @@ let trace_failure_names_signal ~(caps : < Ox_caps.Cap.random ; .. >) () =
         L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
           ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
       in
-      ignore
+      (* ^notel-na2w: the body returns Ok; collector refusal is checked through
+         Flush and both error callbacks below, not through the span return value. *)
+      let _refused_span_result =
         (L.span logger "refused trace" (fun () ->
              L.info logger "accepted log";
              Ok ())
-          : (unit, string) result);
+          : (unit, string) result)
+      in
       (match O.flush exporter with
       | Error (`Status 503) -> ()
       | _ -> Alcotest.fail "trace refusal must reach flush");
@@ -617,7 +631,11 @@ let headers_and_resource_on_the_wire ~(caps : < Ox_caps.Cap.random ; .. >) () =
           ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
       in
       L.info logger "hello";
-      ignore (L.span logger "unit" (fun () -> Ok ()) : (unit, string) result);
+      (* ^notel-6o5v ^notel-jzdm: the body returns Ok; the assertions below check
+         headers and resource identity on both log and trace export requests. *)
+      let _wire_span_result =
+        (L.span logger "unit" (fun () -> Ok ()) : (unit, string) result)
+      in
       exporter_ok (O.shutdown exporter);
       check_int "one logs and one traces request" 2 (List.length !received);
       List.iter
@@ -1011,7 +1029,9 @@ let inherited_context_on_spans_and_logs ~(caps : < Ox_caps.Cap.random ; .. >) ()
           let before =
             Ox_observability.Context.fields (Ox_observability.Context.current ())
           in
-          ignore
+          (* ^notel-nbvl ^notel-uydw: the body returns Ok; exported outer
+             attributes and context restoration are asserted below. *)
+          let _context_outer_span_result =
             (L.span logger "outer"
                ~fields:
                  [
@@ -1033,21 +1053,29 @@ let inherited_context_on_spans_and_logs ~(caps : < Ox_caps.Cap.random ; .. >) ()
                        ("parent_span_id", String "fake-parent");
                        ("token", Redacted (Ox_observability.Redact.make secret));
                      ];
-                 ignore
+                 (* ^notel-nbvl ^notel-p11y: the body returns Ok; the inner
+                    attributes, parentage and correlated log are asserted below. *)
+                 let _context_inner_span_result =
                    (L.span logger "inner"
                       ~fields:[ ("inner.local", Bool true) ]
                       (fun () ->
                         L.info logger "inner-correlated";
                         Ok ())
-                     : (unit, string) result);
+                     : (unit, string) result)
+                 in
                  let a, b =
                    Eio.Fiber.pair (fun () -> leg "kraken") (fun () -> leg "okx")
                  in
-                 ignore (a : (unit, string) result);
-                 ignore (b : (unit, string) result);
+                 (* ^notel-jda9: the kraken body returns Ok; its exported
+                    sibling context, parentage and log are asserted below. *)
+                 let _kraken_span_result = (a : (unit, string) result) in
+                 (* ^notel-jda9: the okx body returns Ok; its exported sibling
+                    context, parentage and log are asserted below independently. *)
+                 let _okx_span_result = (b : (unit, string) result) in
                  L.info logger "outer-after-children";
                  Ok ())
-              : (unit, string) result);
+              : (unit, string) result)
+          in
           Alcotest.(check bool)
             "nested and forked bindings restore the caller" true
             (Ox_observability.Context.fields (Ox_observability.Context.current ())
@@ -1252,7 +1280,9 @@ let completion_fields_on_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
         L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
           ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
       in
-      ignore
+      (* ^notel-nbvl ^notel-dzpj: the body returns Ok 204; the assertion below
+         checks that this completion value wins the exported http.status attribute. *)
+      let _completion_span_result =
         (L.span logger "request"
            ~fields:[ ("http.status", Int 0) ]
            ~complete:(fun result ->
@@ -1260,7 +1290,8 @@ let completion_fields_on_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
              | Ok status -> [ ("http.status", L.Int status) ]
              | Error _ -> [])
            (fun () -> Ok 204)
-          : (int, string) result);
+          : (int, string) result)
+      in
       exporter_ok (O.shutdown exporter);
       let span = named "request" (exported_spans !received) in
       check_attribute_keys "request" span;

@@ -13,7 +13,22 @@
     Cancellation and finalizers: {!post_json} runs in the calling fiber, sleeps on the
     caller's clock, and owns no switch; each attempt's socket is opened and closed by
     {!Ox_http.Client.request}, so cancellation closes the socket and a cancelled call
-    leaves nothing behind. No finalizer is registered here.
+    leaves no local socket behind. No finalizer is registered here; a request already
+    transmitted can still have remote effects.
+
+    Suspension: may suspend in Client.request, Eio.Time.sleep backoff and the timeout
+    wrapper; delegates HTTP to Ox_http.Client.request, time reads to Eio.Time.now,
+    deadline arithmetic to Ox.Duration and Ox.Timeout, diagnostics to
+    Ox_observability.Logger.debug, and parsing/byte/string operations to Stdlib.
+    Cancellation: propagates Eio.Cancel.Cancelled from external cancellation; deadline
+    expiry returns [Error `Timeout]; delegates HTTP/deadline checks to
+    Ox_http.Client.request and Ox.Timeout, clock access to Eio.Time, diagnostics to
+    Ox_observability.Logger.debug, and numeric/parsing operations to Ox.Duration and
+    Stdlib. Finalizers: Client.request owns and closes each attempt's socket on return,
+    failure or cancellation. Locking: this wrapper holds no lock; logger sinks and
+    Client.request delegate their own synchronization. Cancellation safety: unsafe because
+    progress is lost; cancellation does not undo a transmitted POST and restarting may
+    repeat server-side effects. ^nlintd-a7oq ^nlintd-4ja0
 
     ^nso-y4rw ^nso-77t7 ^nso-zmfp *)
 
@@ -84,7 +99,12 @@ val post_json :
     make: [1] for a caller that owns its retry policy, one request and no backoff. Either
     out of range raises [Invalid_argument]. A non-2xx reply's [Retry-After] (delta-seconds
     or IMF-fixdate) is carried as [retry_after] in [`Unavailable]. ^nai-97as ^nai-337c
-    ^nai-rjkq *)
+    ^nai-rjkq ^nlintd-raises
+
+    @raise Invalid_argument if [max_response_bytes < 0] or [max_attempts < 1].
+
+    The internal Assert_failure protects a status-pattern invariant: after the
+    transport/429/529/2xx cases, classify_status cannot return Ok. ^nlintd-truth *)
 
 val bytes_of_json : Yojson.Safe.t -> bytes
 (** [bytes_of_json json] is the compact UTF-8 encoding of [json] as the request body

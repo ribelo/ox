@@ -1,3 +1,10 @@
+(** Cancellation and finalizers: Suspension: may suspend in the delegated Ox_ai.Transport
+    HTTP request and response I/O. Cancellation: propagates Eio.Cancel.Cancelled from that
+    request. Finalizers: per-request socket cleanup belongs to the transport; this wrapper
+    registers no hook. Locking: delegated to the transport. Cancellation safety: unsafe
+    because progress is lost if the response is interrupted; remote processing is not
+    rolled back. ^nlintd-z5p5 ^nlintd-vneh *)
+
 type schema = { name : string; schema : Ox_json.t; strict : bool option }
 (** Pie Responses with audio or text input. Each call is bounded by its supplied total
     deadline; cancellation closes the HTTP socket, with no additional finalizer. *)

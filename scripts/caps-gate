@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ox's capability gate (^ncaps-w6n2): no shipped --allow entries.
+# ox's repository gate (^nlint-r01u ^ncaps-w6n2): every rule; no shipped --allow entries.
 #   nix develop -c scripts/caps-gate
 set -euo pipefail
 cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"

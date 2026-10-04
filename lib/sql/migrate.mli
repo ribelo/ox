@@ -1,3 +1,14 @@
+(** Cancellation and finalizers: Suspension: may suspend in pool lease, mutex and timeout
+    waits; directory reads and SQLite calls are delegated synchronous calls that may block
+    the domain. Cancellation: propagates Eio.Cancel.Cancelled from pool operations; Pool
+    lease/restoration cleanup defects propagate wrapped by Fun.Finally_raised, not as a
+    migration error. Finalizers: Pool returns leases and restores autocommit on
+    cancellation; a migration transaction rolls back its database changes on failure.
+    Locking: pool leases serialize use of each connection; no migration-wide lock is
+    installed. Cancellation safety: unsafe because progress is lost; earlier migrations
+    and the dirty marker remain, and no_tx migrations can leave partial SQL effects.
+    ^nlintd-a7oq ^nlintd-4ja0 *)
+
 module Version : sig
   type t
 
@@ -107,7 +118,9 @@ module Source : sig
     t ->
     (Migration.t list, error) result
   (** Reads a directory source. An in-memory source does not touch the filesystem, but the
-      same function may, so it always takes [Ox_caps.Cap.fs_read]. ^inncap-b8ts *)
+      same function may, so it always takes [Ox_caps.Cap.fs_read]. Sys_error from the
+      initial Cap_sys.readdir propagates: the later handler surrounds only the entry loop.
+      File read failures become Source_error. ^inncap-b8ts ^nlintd-truth *)
 end
 
 val error_to_string : error -> string
@@ -119,7 +132,11 @@ val run :
   Pool.t ->
   Source.t ->
   (run_report, error) result
-(** Resolves the source and times each applied migration. ^inncap-b8ts *)
+(** Resolves the source and times each applied migration. Internal Assert_failure checks
+    inherit Pool.with_transaction's pool-vs-transaction runner invariant; this operation
+    supplies a pool runner. Sys_error from the initial Cap_sys.readdir propagates: the
+    later exception handler surrounds only the directory-entry loop. File read failures
+    become Source_error. ^inncap-b8ts ^nlintd-truth *)
 
 val run_to :
   caps:< Ox_caps.Cap.fs_read ; Ox_caps.Cap.time ; .. > ->
@@ -128,6 +145,10 @@ val run_to :
   Source.t ->
   target:Version.t ->
   (run_report, error) result
+(** Internal Assert_failure checks inherit Pool.with_transaction's pool-vs-transaction
+    runner invariant; this operation supplies a pool runner. Sys_error from the initial
+    Cap_sys.readdir propagates: the later exception handler surrounds only the entry loop.
+    File read failures become Source_error. ^nlintd-truth *)
 
 val undo :
   caps:< Ox_caps.Cap.fs_read ; .. > ->
@@ -136,4 +157,6 @@ val undo :
   Source.t ->
   target:Version.t ->
   (run_report, error) result
-(** Resolves the source. A downgrade does not read the clock. ^inncap-b8ts *)
+(** Resolves the source. A downgrade does not read the clock. Sys_error from the initial
+    Cap_sys.readdir propagates: the later exception handler surrounds only the entry loop.
+    File read failures become Source_error. ^inncap-b8ts ^nlintd-truth *)

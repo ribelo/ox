@@ -103,7 +103,9 @@ let test_parse_max_bytes () =
   | Error _ | Ok _ -> Alcotest.fail "a zero bound refuses any input");
   let raised =
     try
-      ignore (Ox_json.parse ~max_bytes:(-1) raw);
+      ((* ^nlint-hxar: The negative bound must raise Invalid_argument; any normal return makes the existing raised assertion false. *)
+       let _parse_result = Ox_json.parse ~max_bytes:(-1) raw in
+       ());
       false
     with Invalid_argument _ -> true
   in
@@ -477,22 +479,56 @@ let test_of_json_never_raises () =
   in
   let attempts =
     [
-      (fun json -> ignore (Decode.string json));
-      (fun json -> ignore (Decode.bool json));
-      (fun json -> ignore (Decode.int json));
-      (fun json -> ignore (Decode.float json));
-      (fun json -> ignore (Decode.null json));
-      (fun json -> ignore (Decode.list Decode.int json));
-      (fun json -> ignore (Decode.option Decode.int json));
-      (fun json -> ignore (Decode.field "a" Decode.int json));
-      (fun json -> ignore (Decode.at [ "a"; "b" ] Decode.int json));
       (fun json ->
-        ignore
-          (Decode.one_of
-             [ Decode.field "a" Decode.int; Decode.field "b" Decode.int ]
-             json));
-      (fun json -> ignore (Decode.try_or_none (Decode.field "a" Decode.string) json));
-      (fun json -> ignore ((Decode.one_of [] : unit Ox_json.Of_json.t) json));
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.string json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.bool json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.int json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.float json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.null json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.list Decode.int json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.option Decode.int json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.field "a" Decode.int json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.at [ "a"; "b" ] Decode.int json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result =
+          Decode.one_of [ Decode.field "a" Decode.int; Decode.field "b" Decode.int ] json
+        in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = Decode.try_or_none (Decode.field "a" Decode.string) json in
+        ());
+      (fun json ->
+        (* ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
+        let _decode_result = (Decode.one_of [] : unit Ox_json.Of_json.t) json in
+        ());
     ]
   in
   List.iter

@@ -66,5 +66,7 @@ The gate declares its required source modules in
 [modules.txt](<../../test/lint/modules.txt>); it never infers coverage from annotations
 that happen to exist. The rule's [violating](<../../test/lint/violating/discard.ml>) and
 [clean](<../../test/lint/clean/discard.ml>) fixtures are checked under `test/lint/`.
-Concurrency and interface-documentation rules belong to rows 88 and 89; the caps
-gate remains independent. (^nlint-emql, ^nlint-4sct)
+Concurrency and interface-documentation rules belong to rows 88 and 89. The
+repository gate (`--repo-gate`, also accepted as `--caps-gate`) selects them and
+this rule alongside all capability rules; `--rules` narrows that selection.
+(^nlint-emql, ^nlint-r01u)

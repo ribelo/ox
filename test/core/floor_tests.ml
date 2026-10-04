@@ -190,7 +190,9 @@ let channel_basics () =
           (* a blocked send resumes when room appears, in order *)
           let sent = ref false in
           Eio.Fiber.fork ~sw (fun () ->
-              ignore (Channel.send c 3);
+              ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+               let _send_result = Channel.send c 3 in
+               ());
               sent := true);
           yield ();
           check_bool "sender blocked on capacity" false !sent;
@@ -210,7 +212,9 @@ let channel_closing () =
       Eio.Switch.run (fun sw ->
           (* done_: the buffer drains, then Done forever; senders are refused *)
           let c : (int, string) Channel.t = Channel.create () in
-          ignore (Channel.send c 1);
+          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+           let _send_result = Channel.send c 1 in
+           ());
           Channel.done_ c;
           check_bool "send after done" true (Channel.send c 2 = Error `Done);
           check_bool "drain" true (Channel.receive c = Ok 1);
@@ -218,7 +222,9 @@ let channel_closing () =
           check_bool "done is sticky" true (Channel.try_receive c = Error `Done);
           (* error: the buffer is dropped, both sides see the error, first error wins *)
           let c : (int, string) Channel.t = Channel.create () in
-          ignore (Channel.send c 1);
+          ((* ^nlint-hxar: The send supplies a buffered value that error closure deliberately drops; the assertions check the closure error, not this seed reply. *)
+           let _send_result = Channel.send c 1 in
+           ());
           Channel.error c "bad";
           Channel.error c "worse";
           Channel.done_ c;
@@ -233,7 +239,9 @@ let channel_closing () =
           yield ();
           check_bool "blocked receiver woken by done_" true (!got = Some (Error `Done));
           let c : (int, string) Channel.t = Channel.create ~capacity:1 () in
-          ignore (Channel.send c 1);
+          ((* ^nlint-hxar: The send fills the channel to block the next sender; the assertion checks that error closure wakes that sender. *)
+           let _send_result = Channel.send c 1 in
+           ());
           let got = ref None in
           Eio.Fiber.fork ~sw (fun () -> got := Some (Channel.send c 2));
           yield ();
@@ -252,7 +260,9 @@ let select_receive () =
       Eio.Switch.run (fun sw ->
           let a : (int, string) Channel.t = Channel.create ()
           and b : (int, string) Channel.t = Channel.create () in
-          ignore (Channel.send b 7);
+          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+           let _send_result = Channel.send b 7 in
+           ());
           check_bool "the ready channel fires, the other is untouched" true
             (Select.select [ recv_a a; recv_b b ] = B 7);
           check_bool "a is untouched" true (Channel.try_receive a = Error `Empty);
@@ -262,11 +272,15 @@ let select_receive () =
               got := Some (Select.select [ recv_a a; recv_b b ]));
           yield ();
           check_bool "still waiting" true (!got = None);
-          ignore (Channel.send a 5);
+          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+           let _send_result = Channel.send a 5 in
+           ());
           yield ();
           check_bool "woken by a" true (!got = Some (A 5));
           (* Select.receive over same-typed channels *)
-          ignore (Channel.send b 9);
+          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+           let _send_result = Channel.send b 9 in
+           ());
           check_bool "Select.receive" true (Select.receive [ a; b ] = Ok 9)))
 
 let select_fairness () =
@@ -274,8 +288,12 @@ let select_fairness () =
       let a : (int, string) Channel.t = Channel.create ~capacity:16 ()
       and b : (int, string) Channel.t = Channel.create ~capacity:16 () in
       for i = 1 to 8 do
-        ignore (Channel.send a i);
-        ignore (Channel.send b i)
+        ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+         let _send_result = Channel.send a i in
+         ());
+        (* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+        let _send_result = Channel.send b i in
+        ()
       done;
       let fired = List.init 8 (fun _ -> Select.select [ recv_a a; recv_b b ]) in
       let count f = List.length (List.filter f fired) in
@@ -293,8 +311,12 @@ let select_send () =
       check_bool "room in c: the send clause fires" true
         (Select.select [ send_c; recv_b d ] = Sent_c);
       check_bool "the value was sent" true (Channel.try_receive c = Ok 10);
-      ignore (Channel.send c 0);
-      ignore (Channel.send d 4);
+      ((* ^nlint-hxar: The send fills c so its select-send clause cannot fire; the receive assertions below check the selected effect. *)
+       let _send_result = Channel.send c 0 in
+       ());
+      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+       let _send_result = Channel.send d 4 in
+       ());
       check_bool "c full, d ready: the receive clause fires" true
         (Select.select [ send_c; recv_b d ] = B 4);
       check_bool "the unfired send did not happen" true (Channel.try_receive c = Ok 0))
@@ -305,7 +327,9 @@ let select_default () =
       let default = Select.default_clause (fun () -> Idle) in
       check_bool "nothing ready: default, without blocking" true
         (Select.select [ recv_a a; default ] = Idle);
-      ignore (Channel.send a 1);
+      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+       let _send_result = Channel.send a 1 in
+       ());
       check_bool "a ready clause beats the default" true
         (Select.select [ recv_a a; default ] = A 1))
 
@@ -322,12 +346,16 @@ let select_timeout () =
           check_float "after exactly the timeout" 0.1 (now clock);
           Eio.Fiber.fork ~sw (fun () ->
               Eio.Time.sleep clock 0.05;
-              ignore (Channel.send a 3));
+              (* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+              let _send_result = Channel.send a 3 in
+              ());
           let start = now clock in
           check_bool "a value before the deadline wins" true
             (Select.select [ recv_a a; timeout 100 ] = A 3);
           check_float "at the value's time, not the deadline" (start +. 0.05) (now clock);
-          ignore (Channel.send a 4);
+          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+           let _send_result = Channel.send a 4 in
+           ());
           check_bool "a ready clause beats a zero timeout" true
             (Select.select [ recv_a a; timeout 0 ] = A 4)))
 
@@ -350,7 +378,9 @@ let select_closed () =
       check_bool "Select.receive: Error carries the payload" true
         (Select.receive [ c ] = Error (`Error "bad"));
       (* a closed channel is ready, so the caller learns of it and drops the clause *)
-      ignore (Channel.send b 1);
+      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+       let _send_result = Channel.send b 1 in
+       ());
       let outcomes = List.init 2 (fun _ -> Select.select [ recv_a a; recv_b b ]) in
       check_bool "both fire, closure included" true
         (List.sort compare outcomes = List.sort compare [ Closed_a; B 1 ]);
@@ -377,7 +407,9 @@ let select_cancellation_and_misuse () =
             `Cancelled)
       in
       check_bool "cancelling a blocked select" true (outcome = `Cancelled);
-      ignore (Channel.send a 1);
+      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
+       let _send_result = Channel.send a 1 in
+       ());
       check_bool "no clause fired: the element is still there" true
         (Channel.try_receive a = Ok 1);
       let invalid f =
@@ -466,6 +498,31 @@ let resources () =
       with
       | Exit.Failure (Cause.Finalizer _ | Cause.Die _ | Cause.Suppressed _) -> ()
       | _ -> Alcotest.fail "release failure lost")
+
+(* ^nfloor-once: Eio releases immediately before rejecting a finished switch. *)
+let resource_finished_switch ~cancel_during_acquire () =
+  Eio_main.run (fun _ ->
+      let sw = Eio.Switch.run Fun.id in
+      let acquired = ref 0 in
+      let released = ref 0 in
+      Eio.Cancel.sub (fun cc ->
+          let acquire () =
+            incr acquired;
+            if cancel_during_acquire then Eio.Cancel.cancel cc Exit;
+            42
+          in
+          let release resource =
+            incr released;
+            Eio.Fiber.check ();
+            check_int "release received the acquired resource" 42 resource
+          in
+          (match Resource.use_in_scope ~sw acquire release with
+          | exception Invalid_argument message ->
+              Alcotest.(check string)
+                "registration error is unchanged" "Switch finished!" message
+          | _ -> Alcotest.fail "finished switch accepted a resource");
+          check_int "acquired once" 1 !acquired;
+          check_int "released exactly once before returning the error" 1 !released))
 
 let closeable () =
   Eio_main.run (fun _ ->
@@ -641,6 +698,10 @@ let tests =
         Alcotest.test_case "nfloor-6qf5 select cancellation and misuse" `Quick
           select_cancellation_and_misuse;
         Alcotest.test_case "nfloor-elwp use_in_scope" `Quick resources;
+        Alcotest.test_case "nfloor-once finished switch releases once" `Quick
+          (resource_finished_switch ~cancel_during_acquire:false);
+        Alcotest.test_case "nfloor-once cancelled acquisition releases once" `Quick
+          (resource_finished_switch ~cancel_during_acquire:true);
         Alcotest.test_case "nfloor-elwp use_closeable_in_scope" `Quick closeable;
         Alcotest.test_case "nfloor-twpq Duration at the surface" `Quick (fun () ->
             durations ~caps:(Ox_test.powerbox ()) ());

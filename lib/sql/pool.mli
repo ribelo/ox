@@ -1,4 +1,17 @@
-(** Direct-style SQLite runner. A switch owns all opened handles. *)
+(** Direct-style SQLite runner. A switch owns all opened handles.
+
+    Cancellation and finalizers: Suspension: may suspend waiting for Eio mutexes,
+    a pool lease, shutdown's condition, a timeout or caller callbacks; SQLite native
+    calls may block the domain; delegated callback dispatch and Eio.Mutex, Eio.Pool, Ox_caps.Cap_unix, Stdlib, Stdlib.Int, Stdlib.List, Stdlib.Mutex, Stdlib.Option, Stdlib.Printexc operations retain their own behaviour. Cancellation: propagates Eio.Cancel.Cancelled from these waits and caller
+    callbacks; configured deadlines return [Error `Timeout]; delegated callback dispatch and Eio.Mutex, Eio.Pool, Ox_caps.Cap_unix, Stdlib, Stdlib.Int, Stdlib.List, Stdlib.Mutex, Stdlib.Option, Stdlib.Printexc operations retain their own behaviour; a defect during lease/autocommit restoration or protected active-count cleanup propagates wrapped by Fun.Finally_raised. Finalizers: every lease
+    restores autocommit or closes an unusable connection, decrements its active count
+    protected and returns the lease even on cancellation. Switch release shuts the
+    pool down and closes its handles. Locking: state updates use protected Eio mutex
+    sections, not a lock spanning caller code; a lease is exclusive and SQLite uses
+    native mutexes, including across row-fold callbacks. Cancellation safety: unsafe
+    because progress is lost; completed SQL and caller effects are not rolled back
+    by cancellation, except the database portion inside with_transaction.
+    ^nlintd-a7oq ^nlintd-4ja0 *)
 type error = [ `Ox_sql of Types.sql_error | `Pool_shutdown | `Timeout ]
 type pool
 type tx
@@ -14,7 +27,21 @@ val create :
   ?max_size:int ->
   Sqlite.config ->
   (t, error) result
+(** Open the first connection and register switch-owned shutdown. Eio runs shutdown
+    protected if registration finds the switch already finished, then raises; the
+    opened connection is closed before that raise. ^nlintd-a7oq ^nlintd-raises
+
+    @raise Invalid_argument if [sw] is finished.
+
+    Eio.Switch.Release_error denotes a failed release callback on a switch owned by a delegated operation. ^nlintd-truth *)
+
 val shutdown : t -> (unit, error) result
+(** Internal Assert_failure guards the pool-vs-transaction runner invariant; the
+    abstract pool phantom kind excludes a Transaction runner here. ^nlintd-truth
+
+    Eio.Mutex.Poisoned denotes an internal mutex poisoned by a prior failed protected
+    guarded mutation; that defect propagates rather than returning a pool error.
+    ^nlintd-truth *)
 
 module Typed : sig
   val select : ?timeout:Ox.Duration.t -> 'kind runner -> 'a Dsl.Compiled.select -> ('a list, error) result
@@ -31,3 +58,5 @@ module Raw : sig
   val with_connection : 'kind runner -> (Sqlite.db @ local -> ('a, error) result) -> ('a, error) result
 end
 val with_transaction : ?timeout:Ox.Duration.t -> t -> (tx runner -> ('a, error) result) -> ('a, error) result
+(** Internal Assert_failure guards the pool-vs-transaction runner invariant; the
+    abstract pool phantom kind excludes a Transaction runner here. ^nlintd-truth *)

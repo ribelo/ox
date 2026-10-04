@@ -1,7 +1,8 @@
 (* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup *)
 (** Cancellation and finalizers: Suspension: never suspends in Eio; effects of Stdlib
     operations depend on Ox_caps.Cap_stdlib and Stdlib and are not checked. Cancellation:
-    not a cancellation point. Finalizers: none. Locking: delegated to Stdlib. *)
+    not a cancellation point; delegated Ox_caps.Cap_stdlib and Stdlib calls add no Eio
+    check. Finalizers: none. Locking: delegated to Stdlib. *)
 
 val forward : Eio.Switch.t -> unit
 val dormant : Eio.Switch.t -> unit
@@ -12,25 +13,30 @@ val raises : Eio.Switch.t -> unit
 
 val protected : Eio.Switch.t -> unit
 (** Suspension: may suspend while yielding. Cancellation: protected throughout.
+    Cancellation safety: safe to re-run; the protected yield commits no application state.
     Finalizers: none. Locking: none. *)
 
 val hook : caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> unit
-(** Cancellation: propagates. Cancellation safety: safe to re-run. Finalizers: resource
-    closed by the switch hook. Raises Eio.Cancel.Cancelled and Invalid_argument from the
-    switch; other exceptions depend on Ox_caps.Cap_stdlib and Stdlib. *)
+(** Cancellation: propagates Eio.Cancel.Cancelled; delegated Ox_caps.Cap_stdlib and Stdlib
+    calls retain their own behaviour. Cancellation safety: safe to re-run; the acquired
+    output channel is closed if cancellation reaches the switch check. Finalizers:
+    resource closed by the switch hook. Raises Eio.Cancel.Cancelled and Invalid_argument
+    from the switch; Eio.Switch.Release_error wraps a failing release callback; other
+    exceptions depend on Ox_caps.Cap_stdlib and Stdlib. *)
 
 val bracket : caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> unit
 (** Cancellation: propagates. Cancellation safety: safe to re-run. Finalizers: resource
-    closed by a guaranteed finally callback. Raises Eio.Cancel.Cancelled and
-    Invalid_argument from the switch; other exceptions depend on Ox_caps.Cap_stdlib and
-    Stdlib. *)
+    closed by a guaranteed finally callback. Fun.Finally_raised wraps a failing close.
+    Raises Eio.Cancel.Cancelled and Invalid_argument from the switch; other exceptions
+    depend on Ox_caps.Cap_stdlib and Stdlib. *)
 
 val masked_check : Eio.Switch.t -> unit
 (** Cancellation: not a cancellation point while protected. Raises Invalid_argument from a
     finished switch. *)
 
 val protected_raise : Eio.Switch.t -> unit
-(** Cancellation: protected throughout. @raise Failure explicitly even while protected. *)
+(** Cancellation: protected throughout.
+    @raise Failure explicitly even while protected. *)
 
 val match_caught : Eio.Switch.t -> unit
 
@@ -41,3 +47,13 @@ val release_raises : Eio.Switch.t -> unit
 
 val finalizer_raises : Eio.Switch.t -> unit
 (** @raise Fun.Finally_raised when the finalizer fails. *)
+
+(* ^nlintd-truth: known primitive identities and disclosed readiness are not opaque. *)
+val primitives : Eio.Switch.t -> int -> int
+
+val buffered_publish : unit Eio.Stream.t -> unit
+(** Suspension: never suspends because Eio.Stream.add uses a free slot guaranteed by the
+    caller. Cancellation: not a cancellation point when Eio.Stream.add has that free slot;
+    Eio.Cancel.Cancelled cannot be delivered without waiting. Cancellation safety: safe to
+    re-run; the free-slot branch has no cancellation point and commits once. Finalizers:
+    none. Locking: delegated to the stream. *)

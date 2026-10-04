@@ -80,7 +80,11 @@ let test_census () =
       in
       Alcotest.(check int) "plain Eio fork detected" 1 count;
       let detected =
-        match Ox_test.assert_no_fibers_left () with exception _ -> true | () -> false
+        (* ^nlintc-du4v: only the census failure is evidence; cancellation must escape. *)
+        match Ox_test.assert_no_fibers_left () with
+        | exception (Eio.Cancel.Cancelled _ as cancelled) -> raise cancelled
+        | exception _ -> true
+        | () -> false
       in
       Alcotest.(check bool) "untracked blocked fiber fails census" true detected;
       Alcotest.(check int)

@@ -13,19 +13,23 @@
     [output_string (Cap_stdlib.stdout ~caps) s] or
     [Format.fprintf (Cap_stdlib.std_formatter ~caps) ...]. *)
 
-(** Cancellation and finalizers: Suspension: never suspends in Eio; these direct calls may
-    block the domain. Cancellation: not a cancellation point; the wrapper performs no Eio
-    cancellation check. Finalizers: no Eio switch finalizer is registered; returned open
-    handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
-    runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
+(** Cancellation and finalizers: Suspension: never suspends in the wrapper; underlying
+    calls are delegated to Stdlib and may block the domain. Cancellation: not a
+    cancellation point in the wrapper; underlying checks and callbacks are delegated to
+    Stdlib, with no additional Eio cancellation check. Finalizers: no Eio switch finalizer
+    is registered; returned open handles are caller-owned. Locking: the wrapper acquires
+    no lock of its own; delegated runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq
+*)
 
 (** {1 exit} *)
 
 val exit : caps:< Cap.exit ; .. > -> int -> 'a
 (** Suspension: may suspend if an installed at_exit hook performs Eio operations.
-    Cancellation: depends on the exit hooks; the wrapper adds no protection. Finalizers:
-    Stdlib.exit runs the registered at_exit hooks before terminating. Locking: exit-hook
-    and runtime locking are delegated to Stdlib. ^nlintd-a7oq *)
+    Cancellation: depends on the exit hooks; the wrapper adds no protection. Cancellation
+    safety: unsafe because progress is lost; completed exit-hook effects remain if a later
+    hook is interrupted. Finalizers: Stdlib.exit runs the registered at_exit hooks before
+    terminating. Locking: exit-hook and runtime locking are delegated to Stdlib.
+    ^nlintd-a7oq *)
 
 (** {1 Standard streams} *)
 
@@ -43,9 +47,10 @@ val print_newline : caps:< Cap.stdout ; .. > -> unit -> unit
 
 val printf : caps:< Cap.stdout ; .. > -> ('a, out_channel, unit) format -> 'a
 (** Suspension: may suspend if a supplied formatter callback performs Eio operations.
-    Cancellation: depends on those callbacks; the wrapper adds no protection. Finalizers:
-    no Eio switch finalizer is registered. Locking: formatting and channel locking are
-    delegated to Printf. ^nlintd-a7oq *)
+    Cancellation: depends on those callbacks; the wrapper adds no protection. Cancellation
+    safety: unsafe because progress is lost; output already written and formatter callback
+    effects are not rolled back. Finalizers: no Eio switch finalizer is registered.
+    Locking: formatting and channel locking are delegated to Printf. ^nlintd-a7oq *)
 
 val stderr : caps:< Cap.stderr ; .. > -> out_channel
 val err_formatter : caps:< Cap.stderr ; .. > -> Format.formatter
@@ -59,9 +64,10 @@ val prerr_newline : caps:< Cap.stderr ; .. > -> unit -> unit
 
 val eprintf : caps:< Cap.stderr ; .. > -> ('a, out_channel, unit) format -> 'a
 (** Suspension: may suspend if a supplied formatter callback performs Eio operations.
-    Cancellation: depends on those callbacks; the wrapper adds no protection. Finalizers:
-    no Eio switch finalizer is registered. Locking: formatting and channel locking are
-    delegated to Printf. ^nlintd-a7oq *)
+    Cancellation: depends on those callbacks; the wrapper adds no protection. Cancellation
+    safety: unsafe because progress is lost; output already written and formatter callback
+    effects are not rolled back. Finalizers: no Eio switch finalizer is registered.
+    Locking: formatting and channel locking are delegated to Printf. ^nlintd-a7oq *)
 
 (** {1 Files outside Eio's [fs]} *)
 
@@ -84,16 +90,18 @@ module In_channel : sig
   val with_open_bin : caps:< Cap.fs_read ; .. > -> string -> (In_channel.t -> 'a) -> 'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 
   val with_open_text : caps:< Cap.fs_read ; .. > -> string -> (In_channel.t -> 'a) -> 'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 
   val with_open_gen :
     caps:< Cap.fs_read ; .. > ->
@@ -104,9 +112,10 @@ module In_channel : sig
     'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 end
 
 module Out_channel : sig
@@ -123,16 +132,18 @@ module Out_channel : sig
   val with_open_bin : caps:< Cap.fs_write ; .. > -> string -> (Out_channel.t -> 'a) -> 'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 
   val with_open_text : caps:< Cap.fs_write ; .. > -> string -> (Out_channel.t -> 'a) -> 'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 
   val with_open_gen :
     caps:< Cap.fs_write ; .. > ->
@@ -143,9 +154,10 @@ module Out_channel : sig
     'a
   (** Suspension: may suspend in the supplied callback; opening and closing may block the
       domain. Cancellation: depends on the callback; the wrapper adds no Eio protection.
-      Finalizers: Stdlib closes the opened channel when the callback returns or raises.
-      Locking: channel operations and their locking are delegated to Stdlib. ^nlintd-a7oq
-  *)
+      Cancellation safety: unsafe because progress is lost; callback effects and any
+      completed file writes are not rolled back. Finalizers: Stdlib closes the opened
+      channel when the callback returns or raises. Locking: channel operations and their
+      locking are delegated to Stdlib. ^nlintd-a7oq *)
 end
 
 (** {1 Randomness from the system} *)

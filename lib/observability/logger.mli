@@ -177,8 +177,8 @@ val create :
     parent_span_id; absent [span_ids], existing behavior is unchanged.
     ^nobs-xovg ^notel-6m2q
 
-    Suspension: never suspends; this call only constructs or reads OCaml values and captures dependencies without invoking them.
-    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Suspension: never suspends; this call only constructs or reads OCaml values and captures dependencies without invoking them; delegated Stdlib.Hashtbl operations retain their own behaviour.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check; delegated Stdlib.Hashtbl operations retain their own behaviour.
     Finalizers: this call registers no switch hook and leaves captured resources with their existing owner.
     Locking: this call acquires no lock; construction of synchronization objects does not acquire them.
     ^nlintd-a7oq *)

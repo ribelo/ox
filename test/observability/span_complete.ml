@@ -164,11 +164,14 @@ let test_not_before_completion () =
         counting (fun (_ : (int, string) result) -> [ ("rows", Logger.Int 7) ])
       in
       let calls_inside = ref (-1) in
-      ignore
-        (Logger.span logger ~complete "ingest" (fun () ->
+      ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+       let _span_result =
+         Logger.span logger ~complete "ingest" (fun () ->
              calls_inside := !calls;
              Logger.info logger "inside";
-             Ok 7));
+             Ok 7)
+       in
+       ());
       check_int "^nobs-3cck not called while the body runs" 0 !calls_inside;
       let inside =
         List.find (fun r -> String.equal r.Logger.msg "inside") (records memory)
@@ -203,8 +206,9 @@ let test_precedence () =
           ("error", Logger.String "forged");
         ]
       in
-      ignore
-        (Logger.span logger ~complete
+      ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+       let _span_result =
+         Logger.span logger ~complete
            ~fields:
              [
                ("k", Logger.String "static");
@@ -212,7 +216,9 @@ let test_precedence () =
                ("event", Logger.String "forged");
              ]
            "op"
-           (fun () -> Ok 1));
+           (fun () -> Ok 1)
+       in
+       ());
       let started = start_of memory "op" and finished = only_end memory "op" in
       check_string "base alone" "base" (field_text finished "b");
       check_string "static over base" "static" (field_text finished "s");
@@ -226,9 +232,12 @@ let test_precedence () =
       let names = List.map fst finished.fields in
       check_int "no duplicate names" (List.length names)
         (List.length (List.sort_uniq String.compare names));
-      ignore
-        (Logger.span logger ~complete ~pp_err:Format.pp_print_string "failing" (fun () ->
-             Error "boom"));
+      ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+       let _span_result =
+         Logger.span logger ~complete ~pp_err:Format.pp_print_string "failing" (fun () ->
+             Error "boom")
+       in
+       ());
       let failed = only_end memory "failing" in
       check_string "kernel error over completion" "Fail(boom)" (field_text failed "error");
       check_string "kernel outcome over completion" "failed" (field_text failed "outcome"))
@@ -304,6 +313,8 @@ let test_extractor_defect () =
           Logger.span logger ~complete ~fields:[ ("url", Logger.String "u") ] name body
         with
         | _ -> Alcotest.fail "the extractor's exception was swallowed"
+        (* ^nlintc-du4v: assert the scripted defect, not an intercepted cancellation. *)
+        | exception (Eio.Cancel.Cancelled _ as cancelled) -> raise cancelled
         | exception exn ->
             let backtrace = Printexc.get_raw_backtrace () in
             check_bool "^nobs-wrzs the extractor's own exception" true (exn == boom);
@@ -342,12 +353,15 @@ let test_redacted_completion () =
                ])
           ()
       in
-      ignore
-        (Logger.span logger
+      ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+       let _span_result =
+         Logger.span logger
            ~complete:(fun (_ : (string, string) result) ->
              [ ("session", Logger.Redacted (Redact.make "sk-live-1234")) ])
            "login"
-           (fun () -> Ok "sk-live-1234"));
+           (fun () -> Ok "sk-live-1234")
+       in
+       ());
       check_int "memory: redacted" 1
         (List.length (Logger.Memory.find ~field:("session", "<redacted>") memory));
       check_int "memory: the secret matches nothing" 0
@@ -372,12 +386,15 @@ let test_isolation () =
       let logger = make_logger env memory in
       let rows n (_ : (int, string) result) = [ ("rows", Logger.Int n) ] in
       let sibling name n =
-        ignore
-          (Logger.span logger ~complete:(rows n) name (fun () ->
-               Eio.Fiber.yield ();
-               Logger.info logger (name ^ "-inside");
-               Eio.Fiber.yield ();
-               Ok n))
+        (* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+        let _span_result =
+          Logger.span logger ~complete:(rows n) name (fun () ->
+              Eio.Fiber.yield ();
+              Logger.info logger (name ^ "-inside");
+              Eio.Fiber.yield ();
+              Ok n)
+        in
+        ()
       in
       Eio.Fiber.both (fun () -> sibling "a" 1) (fun () -> sibling "b" 2);
       check_string "sibling a" "1" (field_text (only_end memory "a") "rows");
@@ -388,12 +405,18 @@ let test_isolation () =
       let inner_calls, inner_complete =
         counting (fun (_ : (int, string) result) -> [ ("inner.rows", Logger.Int 20) ])
       in
-      ignore
-        (Logger.span logger ~complete:outer_complete "outer" (fun () ->
-             ignore
-               (Logger.span logger ~complete:inner_complete "inner" (fun () -> Ok 20));
+      ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+       let _span_result =
+         Logger.span logger ~complete:outer_complete "outer" (fun () ->
+             ((* ^nlint-hxar: The span body is scripted; the existing completion-field and reporter assertions check logging rather than its reply. *)
+              let _span_result =
+                Logger.span logger ~complete:inner_complete "inner" (fun () -> Ok 20)
+              in
+              ());
              Logger.info logger "after-inner";
-             Ok 10));
+             Ok 10)
+       in
+       ());
       check_int "outer once" 1 !outer_calls;
       check_int "inner once" 1 !inner_calls;
       let outer = only_end memory "outer" and inner = only_end memory "inner" in

@@ -1,3 +1,15 @@
+(** Cancellation and finalizers: Suspension: never suspends in Eio itself; synchronous
+    filesystem/compiler work may block the domain; operations delegate to Stdlib, Unix and
+    Ox_caps and their higher-order callbacks; capability object method dispatch depends on
+    the supplied provider; running returned visitors depends on caller code. Cancellation:
+    not a cancellation point in Eio itself; operations delegate to Stdlib, Unix and
+    Ox_caps and their higher-order callbacks; capability object method dispatch depends on
+    the supplied provider; running returned visitors depends on caller code; malformed
+    Dune stanzas raise Failure. Finalizers: input channels opened by these checks are
+    bracketed by Cap_stdlib.In_channel.with_open_bin; no switch hook is registered.
+    Locking: runtime I/O synchronization is delegated to Stdlib and Unix; no lock is
+    acquired by this module. ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
+
 val allowances : (string * string) list
 (** The shipped capability allow-list is empty. ^ncapslint-x3gi ^ncapslint-snhg *)
 
