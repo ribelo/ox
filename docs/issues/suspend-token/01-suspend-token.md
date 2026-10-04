@@ -25,9 +25,12 @@ A fiber that suspends inside an actor handler, an agent closure, a `Cancel.prote
 7. As a reviewer, I want any no-`io` facade kept for migration marked unchecked and refused inside checked critical code by the gate, so that a legacy wrapper cannot carry suspension into a must-not-suspend section. ^nyield-k7r2
 8. As a kernel maintainer, I want compile-fail cases (suspend in each must-not-suspend kind; token captured by raw `Eio.Fiber.fork`; a token minted inside a critical callback) and controls through `let%bind`, so that the refusals are pinned. ^nyield-x5ce
 
+9. As a kernel maintainer, I want the token considered as a **capability in `ox_caps`** rather than a separate `Ox.Io.t`, and the choice recorded: capability absence is the published OxCaml spelling of this guarantee (Jane Street's `Parallel` states "Subtasks must not [Await] or [Yield]; [Parallel.t] does not provide the capability"), the gate already enforces capability discipline, and `@ unyielding` on a callback parameter is the published spelling of "this callback must not suspend" (`Await.Mutex.with_access`, `Effect.Deep.Safe.match_with`). ^nyield-c4tb
+10. As a kernel maintainer, I want it stated that the `yielding` axis has nothing to bite on by itself: every Eio suspension point ox calls is unmoded (`Time.sleep`, `Condition.await`, `Fiber.yield`, `Process.await`), so the guarantee exists only where suspension is routed through Ox's own API and the gate refuses the raw call (row 66 story 1). ^nyield-wq7s
+
 ## Implementation Decisions
 
-Verified (ADR-0010) with a one-field `io = { suspend : unit -> unit } [@@unboxed]` token at `global yielding`: correct use compiles; suspension in an `unyielding` section and capture by raw `Eio.Fiber.fork` are refused; `let*` refuses the token, explicit `bind` accepts it — hence the dependency on `ppx-let`. Raw Eio suspension (`Eio.Fiber.yield`, `Eio.Stream.take`) does not need the token, so `raw-concurrency-gate` must also refuse Eio's suspending operations outside `lib/`; story 2's list is the replacement set.
+Verified (ADR-0010) with a one-field `io = { suspend : unit -> unit } [@@unboxed]` token at `global yielding`: correct use compiles; suspension in an `unyielding` section and capture by raw `Eio.Fiber.fork` are refused; `let*` refuses the token, explicit `bind` accepts it — hence the dependency on `ppx-let`. Evidence: [research/02-oxcaml.md](../usage-rules/research/02-oxcaml.md). Raw Eio suspension (`Eio.Fiber.yield`, `Eio.Stream.take`) does not need the token, so `raw-concurrency-gate` must also refuse Eio's suspending operations outside `lib/`; story 2's list is the replacement set.
 
 ## Out of Scope
 

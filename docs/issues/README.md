@@ -107,6 +107,8 @@ Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the on
 
 Rows 76–82 are Scala Ox floor items this map once recorded as rejected "for want of a consumer"; ADR-0003 as amended reopens them (Ox is its own consumer). Row 83 replaces Eio's synchronization primitives where `await`'s or a `unique`-typed version refuses more at compile time.
 
+The five research passes of 2026-10-04 (Eio community practice, OxCaml mode patterns, deterministic simulation, machine-checkable rules, the neighbouring ecosystems) are kept in [usage-rules/research/](usage-rules/research/) and were folded into rows 65, 66, 71, 84, 85, 86 and ADR-0010; what they rejected stays in their own section 3.
+
 Rows 84–86 answer what ADR-0011 left open. 84 builds the option it chose instead of a cancellation token. 85 moves the only mechanism that catches timing bugs — seeded deterministic simulation — from an opt-in alias to the default shape of a concurrency test. 86 exists because ox is written only by agents: a rule they cannot verify mechanically is not a rule, so every rule gets its check and one command runs them.
 
 Rows 45–48 implement ADR-0009 (Ox is the floor). Order: 45 first (it changes `Concurrent` that the others build on), then **49 (the ox rename) before anything else**, so that 46–48 are written and built under the ox name in the ox repository. Consumers (Pie, nema, Leash) are updated in the same rows where a story says so; they are internal tools and may change.
