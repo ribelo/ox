@@ -12,7 +12,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 1 | `core/01-core.md` | `eta` | 0 | 2–8 | [x] |
 | 2 | `test/01-test.md` | `eta_test` | 1 | all tests | [x] |
 | 3 | `json-and-schema/01-json-and-schema.md` | `eta_json`, `eta_schema`, `eta_schema_yojson` | 0 | 4, 5, Leash protocol | [x] |
-| 4 | [observability/01-observability.md](observability/01-observability.md) (reopened audit) | `ox_observability` | 1, 3 | Exergy: result-derived completion fields | [ ] |
+| 4 | [observability/01-observability.md](observability/01-observability.md) (reopened audit) | `ox_observability` | 1, 3 | Exergy: result-derived completion fields | [x] |
 | 5 | `app/01-app.md` | `eta_app` | 1, 3, 4 | Leash milestone 1 | [x] |
 | 6 | `process/01-process.md` | `eta_process` | 1, 2 | Leash milestone 1 (Chrome) | [x] |
 | 7 | `ipc/01-ipc.md` | `eta_ipc` | 1, 2 | Leash milestone 1 (control socket) | [x] |
@@ -25,18 +25,18 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 14 | `door-validate/01-door-validate.md` | `eta_app` | 5 | Leash L1 (svc-ljl3, svc-tkor) | [x] |
 | 15 | `ppx-on-oxcaml/01-ppx-on-oxcaml.md` | toolchain | 10 | deriving anywhere | [x] |
 | 16 | `remove-eta-schema/01-remove-eta-schema.md` | `eta_app`, `eta_observability`; removes `eta_schema*` | 15 | Leash L1 (Config, protocol types) | [x] |
-| 17 | [ppx-yojson-minimal-2/01-ppx-yojson-minimal-2.md](ppx-yojson-minimal-2/01-ppx-yojson-minimal-2.md) (reopened audit) | `ppx_yojson_minimal` | 15 | Exergy: native encoder/module decision (needs-info) | [ ] |
+| 17 | [ppx-yojson-minimal-2/01-ppx-yojson-minimal-2.md](ppx-yojson-minimal-2/01-ppx-yojson-minimal-2.md) (reopened audit) | `ppx_yojson_minimal` | 15 | Exergy: native encoder/module decision (needs-info) | [x] |
 | 18 | `fake-child-output/01-fake-child-output.md` | `eta_test` | 2 | Leash drops its scripted runner (etagap-43zf, hand-phof) | [x] |
-| 19 | [http-client/01-http-client.md](http-client/01-http-client.md) (reopened audit) | `ox_http` | 1, 2 | Exergy: final-head/body policy and bounded framing | [ ] |
+| 19 | [http-client/01-http-client.md](http-client/01-http-client.md) (reopened audit) | `ox_http` | 1, 2 | Exergy: final-head/body policy and bounded framing | [x] |
 | 20 | `ai-systemone/01-ai-systemone.md` | `eta_ai`, `eta_ai_systemone` | 19 | Leash drive (JEV) | [x] |
 | 21 | `ai-chat/01-ai-chat.md` | `eta_ai_chat` | 20 | Leash drive (text helper) | [x] |
 | 22 | `ws-client/01-ws-client.md` | `eta_http` | 19 | Pie (Codex Realtime) | [x] |
 | 23 | `http-server/01-http-server.md` server, routing, service helpers | `eta_http` | 19 | inn, nema | [x] |
-| 24 | [sql/01-sql.md](sql/01-sql.md) (reopened audit) | `ox_sql, ox_sql_dsl` | 1 | Exergy: sticky cancellation and cleanup | [ ] |
+| 24 | [sql/01-sql.md](sql/01-sql.md) (reopened audit) | `ox_sql, ox_sql_dsl` | 1 | Exergy: sticky cancellation and cleanup | [x] |
 | 25 | `ai-responses/01-ai-responses.md` Responses, embeddings, audio; Codex Realtime | `eta_ai_openrouter`, `eta_ai_realtime` | 21, 22 | Pie, nema | [x] |
-| 26 | [otel/01-otel.md](otel/01-otel.md) (reopened audit) | `ox_otel` | 19 | Exergy: inherited attributes and bounded shared ending | [ ] |
+| 26 | [otel/01-otel.md](otel/01-otel.md) (reopened audit) | `ox_otel` | 19 | Exergy: inherited attributes and bounded shared ending | [x] |
 | 27 | [stream/01-stream.md](stream/01-stream.md): measured; Eio/Seq suffice | — (no `eta_stream` package) | 1 | Pie | [x] |
-| 28 | [blocking/01-blocking.md](blocking/01-blocking.md) (reopened audit) | `ox_blocking` | 1 | Exergy: concurrent/cancelled Drain | [ ] |
+| 28 | [blocking/01-blocking.md](blocking/01-blocking.md) (reopened audit) | `ox_blocking` | 1 | Exergy: concurrent/cancelled Drain | [x] |
 | 29 | **grip migrates to eta-next** (ticket in grip: `docs/issues/eta-next-migration/`). Move `eta_linux_input` into grip first (v1 ticket `remove-linux-input`), then port grip's ~10 Eta call sites (`Eta_eio` door → `Eta_app.run`, `Eta_blocking` → `eta_blocking`, one HTTP client call), pin eta-next, gates green, grip runs. Kernel gaps found become rows here. | grip | 19, 28 | proves the migration process on a 5k-line app | [x] |
 | 30 | **inn migrates to eta-next** (ticket in inn). HTTP client + server + service helpers, SQL DSL/pool/migrate; port from `Effect.t` to direct style module by module; pin; gates; inn runs. First server + SQL consumer: expect gaps in rows 23–24 and file them here. | inn | 23, 24, 29 | second consumer of http server and sql | [x] |
 | 31 | **nema migrates** (ticket in nema). Move `eta_ladybug` into nema first (copy from `v1:drivers/eta_ladybug`, keep on v1's Effect.t or rewrite direct-style, nema's call), then HTTP client + server, embeddings, OTel, blocking. | nema | 23, 25, 26, 28, 30 | largest active consumer | [x] |
