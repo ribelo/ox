@@ -1,0 +1,5 @@
+; ^ncapslint-nf4t ^ncapslint-8jcy: compiler-origin fixture evidence.
+
+(library
+ (name caps_violating)
+ (libraries unix ox_caps ox_app))

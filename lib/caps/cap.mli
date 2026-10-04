@@ -12,8 +12,8 @@
     Capabilities cover what Eio does not already hand out as values (^ncaps-jkku): Eio's
     [net], [fs], [process_mgr], [clock] and [domain_mgr] stay Eio values passed as they
     are. The dangerous standard-library calls live behind {!Cap_unix}, {!Cap_sys} and
-    {!Cap_stdlib}, and the Semgrep rules in [caps.yaml] forbid the raw calls everywhere
-    else (^ncaps-n6r0).
+    {!Cap_stdlib}, and the compiler-backed [ox-caps-*] rules forbid the raw calls
+    everywhere else (^ncaps-n6r0).
 
     A capability is a single-domain value (^ncaps-vlwm): objects are not [portable] across
     OxCaml domains, which is why v1 dropped object capabilities. A future parallel package

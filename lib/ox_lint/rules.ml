@@ -90,54 +90,80 @@ let concurrency_rule name message typed =
     typed = Some typed;
   }
 
+(* ^ncapslint-nf4t ^ncapslint-snhg: one registry and one fixture/page triangle. *)
+let capability_rule name typed =
+  {
+    id = "ox-caps-" ^ name;
+    message =
+      (if name = "signature" then
+         "dangerous operation without its capability in the function signature"
+       else
+         "raw " ^ name ^ " operation; take its capability and use Ox_caps (docs/caps.md)");
+    violating =
+      "test/caps/rules/violating/"
+      ^ String.map (fun c -> if c = '-' then '_' else c) name
+      ^ ".ml";
+    clean =
+      "test/caps/rules/clean/"
+      ^ String.map (fun c -> if c = '-' then '_' else c) name
+      ^ ".ml";
+    documentation = "docs/rules/ox-caps-" ^ name ^ ".md";
+    source = (if name = "signature" then None else Some (Caps.source name));
+    typed = Some typed;
+  }
+
 let all =
-  [
-    {
-      id = "ox-discarded-result";
-      message =
-        "discarded result; match Ok/Error, propagate the error, or name an intentional \
-         discard with a reason";
-      violating = "test/lint/violating/discard.ml";
-      clean = "test/lint/clean/discard.ml";
-      documentation = "docs/rules/ox-discarded-result.md";
-      source = None;
-      typed = Some discarded_result;
-    };
-    concurrency_rule "catch-all"
-      "cancellation swallowed; re-raise Eio.Cancel.Cancelled or return the original \
-       exception as data"
-      Concurrency.catch_all;
-    concurrency_rule "suspending-finalizer"
-      "unprotected suspension in cleanup; wrap the suspension in Eio.Cancel.protect or \
-       use Eio.Switch.on_release"
-      Concurrency.suspending_finalizer;
-    concurrency_rule "stdlib-lock"
-      "domain-blocking Stdlib lock; use a fiber-aware Eio.Mutex/Condition/Semaphore \
-       (Ox.Mutex when row 65 lands)"
-      Concurrency.stdlib_lock;
-    concurrency_rule "raw-concurrency"
-      "raw Eio concurrency; use Scope.fork @ once, Spawner.t or Ox.Mutex when rows \
-       61/64/65 land"
-      Concurrency.raw_concurrency;
-    {
-      id = "ox-public-exception";
-      message =
-        "public exception; hide the exception and expose a result-returning boundary";
-      violating = "test/lint/violating/public_exception.mli";
-      clean = "test/lint/clean/public_exception.mli";
-      documentation = "docs/rules/ox-public-exception.md";
-      source = Some public_exception;
-      typed = None;
-    };
-    concurrency_rule "obj-magic"
-      "unchecked Obj.magic* cast; use a typed representation or confine the trusted cast \
-       to lib/ox/once.ml"
-      Concurrency.obj_magic;
-    concurrency_rule "race-deadline"
-      "race against sleep is not a deadline (race selects first success); use \
-       Ox.Timeout.timeout"
-      Concurrency.race_deadline;
-  ]
+  List.map
+    (fun (op : Caps.operation) -> capability_rule op.name (Caps.raw op.name))
+    Caps.operations
+  @ [ capability_rule "signature" Caps.signature ]
+  @ [
+      {
+        id = "ox-discarded-result";
+        message =
+          "discarded result; match Ok/Error, propagate the error, or name an intentional \
+           discard with a reason";
+        violating = "test/lint/violating/discard.ml";
+        clean = "test/lint/clean/discard.ml";
+        documentation = "docs/rules/ox-discarded-result.md";
+        source = None;
+        typed = Some discarded_result;
+      };
+      concurrency_rule "catch-all"
+        "cancellation swallowed; re-raise Eio.Cancel.Cancelled or return the original \
+         exception as data"
+        Concurrency.catch_all;
+      concurrency_rule "suspending-finalizer"
+        "unprotected suspension in cleanup; wrap the suspension in Eio.Cancel.protect or \
+         use Eio.Switch.on_release"
+        Concurrency.suspending_finalizer;
+      concurrency_rule "stdlib-lock"
+        "domain-blocking Stdlib lock; use a fiber-aware Eio.Mutex/Condition/Semaphore \
+         (Ox.Mutex when row 65 lands)"
+        Concurrency.stdlib_lock;
+      concurrency_rule "raw-concurrency"
+        "raw Eio concurrency; use Scope.fork @ once, Spawner.t or Ox.Mutex when rows \
+         61/64/65 land"
+        Concurrency.raw_concurrency;
+      {
+        id = "ox-public-exception";
+        message =
+          "public exception; hide the exception and expose a result-returning boundary";
+        violating = "test/lint/violating/public_exception.mli";
+        clean = "test/lint/clean/public_exception.mli";
+        documentation = "docs/rules/ox-public-exception.md";
+        source = Some public_exception;
+        typed = None;
+      };
+      concurrency_rule "obj-magic"
+        "unchecked Obj.magic* cast; use a typed representation or confine the trusted \
+         cast to lib/ox/once.ml"
+        Concurrency.obj_magic;
+      concurrency_rule "race-deadline"
+        "race against sleep is not a deadline (race selects first success); use \
+         Ox.Timeout.timeout"
+        Concurrency.race_deadline;
+    ]
 
 (* ^nlintc-j03j ^nlintc-7be1: narrowly authorised existing boundaries, never suffix matches. *)
 let allowances =

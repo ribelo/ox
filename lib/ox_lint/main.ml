@@ -29,14 +29,22 @@ let rec data_root dir =
 
 let () =
   let ids, paths, self_check, require_typed = (ref [], ref [], ref false, ref false) in
+  (* ^ncapslint-x3gi ^ncapslint-87ld: the gate selects typed rules, never a lexer. *)
+  let caps_gate, allows = (ref false, ref []) in
   Arg.parse
     [
+      ( "--caps-gate",
+        Arg.Set caps_gate,
+        " Run capability policy (lib/packages/bin by default)" );
+      ( "--allow",
+        Arg.String (fun glob -> allows := glob :: !allows),
+        "GLOB Exclude a gate path (reason belongs in caller documentation)" );
       ( "--rules",
         Arg.String (fun id -> ids := id :: !ids),
         "RULE Select a rule (repeatable)" );
       ( "--require-typed",
         Arg.Set require_typed,
-        " Require complete fresh typed evidence (always enforced for typed rules)" );
+        " Require fresh typed evidence; optional only in --caps-gate mode" );
       ( "--self-check",
         Arg.Set self_check,
         " Check every rule's replacement, fixtures and documentation" );
@@ -44,8 +52,11 @@ let () =
     (fun path -> paths := path :: !paths)
     usage;
   let findings, failures = (ref 0, ref 0) in
-  let fail path ex =
-    incr failures;
+  let undecided = ref 0 in
+  let sites = Hashtbl.create 64 in
+  let fail ?(typed = false) path ex =
+    if typed then incr undecided;
+    if not (typed && !caps_gate && not !require_typed) then incr failures;
     let message =
       match ex with
       | Failure s | Invalid_argument s | Sys_error s -> s
@@ -61,7 +72,14 @@ let () =
     Printf.eprintf "%s:1: ox-lint: %s\n" path message
   in
   (try
-     let rules = Rules.select !ids in
+     if !caps_gate && !paths = [] then
+       paths := List.filter Sys.file_exists [ "lib"; "packages"; "bin" ];
+     if !allows <> [] && not !caps_gate then invalid_arg "--allow requires --caps-gate";
+     let rules =
+       Rules.select !ids
+       |> List.filter (fun rule ->
+           (not !caps_gate) || String.starts_with ~prefix:"ox-caps-" rule.Rules.id)
+     in
      if !self_check then begin
        let directory = Filename.dirname Sys.executable_name in
        let root =
@@ -74,7 +92,7 @@ let () =
                  (data_root (Sys.getcwd ()))
                  ~default:(Filename.dirname Sys.executable_name)
        in
-       let errors = Rules.self_check ~root Rules.all in
+       let errors = Rules.self_check ~root Rules.all @ Caps_policy.self_check root in
        List.iter (fun message -> fail "ox-lint --self-check" (Failure message)) errors;
        if errors = [] then
          Printf.printf
@@ -90,7 +108,14 @@ let () =
            xs)
          (List.rev !paths)
        |> List.sort_uniq String.compare
+       |> List.filter (fun path ->
+           (not !caps_gate) || not (Caps_policy.excluded !allows path))
      in
+     if !caps_gate then
+       Caps_policy.check_dune (List.rev !paths) (fun path line ->
+           incr findings;
+           Printf.printf "%s:%d: ox-caps-mint: forbidden dependency ox_caps.door\n" path
+             line);
      List.iter
        (fun input ->
          try
@@ -107,9 +132,18 @@ let () =
            in
            let rules = List.filter (Rules.applies ~root ~source) rules in
            let emit rule loc =
-             incr findings;
-             Printf.printf "%s:%d: %s: %s\n" source loc.Location.loc_start.Lexing.pos_lnum
-               rule.Rules.id rule.message
+             let key =
+               ( source,
+                 loc.Location.loc_start.pos_lnum,
+                 loc.loc_start.pos_cnum,
+                 rule.Rules.id )
+             in
+             if not (Hashtbl.mem sites key) then begin
+               Hashtbl.add sites key ();
+               incr findings;
+               Printf.printf "%s:%d: %s: %s\n" source loc.loc_start.pos_lnum rule.id
+                 rule.message
+             end
            in
            Syntax.walk source (fun context iterator ->
                List.fold_left
@@ -121,23 +155,30 @@ let () =
            if
              List.exists (fun rule -> Option.is_some rule.Rules.typed) rules
              || !require_typed
-           then begin
-             let t = match artifact with Some t -> t | None -> Artifact.find source in
-             Artifact.check ~source t;
-             Artifact.setup t;
-             List.iter
-               (fun rule ->
-                 match rule.Rules.typed with
-                 | None -> ()
-                 | Some make -> (
-                     let iterator = make (emit rule) in
-                     match t.info.cmt_annots with
-                     | Implementation tree -> iterator.structure iterator tree
-                     | Interface tree -> iterator.signature iterator tree
-                     | _ -> assert false))
-               rules
-           end
+           then
+             begin try
+               let t = match artifact with Some t -> t | None -> Artifact.find source in
+               Artifact.check ~source t;
+               Artifact.setup t;
+               List.iter
+                 (fun rule ->
+                   match rule.Rules.typed with
+                   | None -> ()
+                   | Some make -> (
+                       let iterator = make (emit rule) in
+                       match t.info.cmt_annots with
+                       | Implementation tree -> iterator.structure iterator tree
+                       | Interface tree -> iterator.signature iterator tree
+                       | _ -> assert false))
+                 rules
+             with ex -> fail ~typed:true input ex
+             end
          with ex -> fail input ex)
-       inputs
+       inputs;
+     if !caps_gate then
+       Printf.eprintf "caps-gate: %d findings; %d modules with typed rules undecided%s\n"
+         !findings !undecided
+         (if !require_typed then " (typed evidence required)"
+          else " (build first for typed coverage)")
    with ex -> fail "ox-lint" ex);
   exit (if !failures > 0 then 2 else if !findings > 0 then 1 else 0)

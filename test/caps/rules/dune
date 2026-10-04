@@ -1,0 +1,19 @@
+; ^ncapslint-w2tq ^ncapslint-8jcy: source and typed deciders cannot mask each other.
+
+(executable
+ (name test_caps)
+ (modules test_caps)
+ (libraries lint_engine))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree clean)
+  (source_tree violating)
+  source_identity.ml
+  (source_tree holes)
+  clean/caps_clean.cma
+  violating/caps_violating.cma
+  (source_tree ../../../docs))
+ (action
+  (run ./test_caps.exe)))

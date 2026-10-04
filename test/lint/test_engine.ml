@@ -40,7 +40,7 @@ let () =
             base.value_description self value);
       });
   assert (!docs = 1);
-  let rule = List.hd Rules.all in
+  let rule = List.hd (Rules.select [ "ox-discarded-result" ]) in
   assert (Rules.self_check ~root:"../.." [ rule ] = []);
   let mutations =
     [

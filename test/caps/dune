@@ -1,6 +1,6 @@
 ; Row 48 (docs/issues/caps/01-caps.md). Three seams: the public modules in process
 ; (caps_tests), the type checker on files that must not compile (compile_fail/, after
-; test/modes), and the Semgrep gate on fixture files with and without violations (gate/).
+; test/modes), and the installed compiler gate with and without violations (gate/).
 
 (test
  (name caps_tests)
@@ -40,8 +40,8 @@
  (alias runtest)
  (deps
   (package ox_caps)
-  (source_tree gate)
-  %{bin:semgrep})
+  (package ox_lint)
+  (source_tree gate))
  (action
   (chdir
    gate

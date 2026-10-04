@@ -92,9 +92,24 @@ cp "$lint" "$scratch/installed/ox-lint"
 cp ../../docs/rules/ox-*.md "$scratch/installed/docs/rules/"
 cp clean/*.ml clean/*.mli "$scratch/installed/test/lint/clean/"
 cp violating/*.ml violating/*.mli "$scratch/installed/test/lint/violating/"
+# ^ncapslint-snhg: installed self-check must carry all capability evidence too.
+mkdir -p "$scratch/installed/test/caps/rules/clean" "$scratch/installed/test/caps/rules/violating"
+cp ../caps/rules/clean/*.ml "$scratch/installed/test/caps/rules/clean/"
+cp ../caps/rules/violating/*.ml "$scratch/installed/test/caps/rules/violating/"
+cp ../../docs/caps.md "$scratch/installed/docs/"
+chmod u+w "$scratch/installed/docs/caps.md"
 original_lint="$lint"
 lint="$scratch/installed/ox-lint"
 expect 0 --self-check
+# ^ncapslint-snhg: extra/duplicate allowance rows cannot masquerade as policy.
+printf '\n<!-- caps-allowances -->\n| `unexpected/path` | undeclared |\n<!-- /caps-allowances -->\n' >> "$scratch/installed/docs/caps.md"
+expect 2 --self-check
+grep -q 'unexpected documented entry' "$scratch/err"
+cp ../../docs/caps.md "$scratch/installed/docs/caps.md"
+printf '\n<!-- caps-allowances -->\n| `lib/caps` | The Cap_* wrappers and token identity boundary contain the raw calls. |\n<!-- /caps-allowances -->\n' >> "$scratch/installed/docs/caps.md"
+expect 2 --self-check
+grep -q 'duplicate documented entry' "$scratch/err"
+cp ../../docs/caps.md "$scratch/installed/docs/caps.md"
 mv "$scratch/installed/docs/rules/ox-discarded-result.md" "$scratch/installed/docs/rules/missing"
 expect 2 --self-check
 grep -q 'missing documentation' "$scratch/err"
@@ -123,6 +138,6 @@ while read -r source annotation; do
   args+=("../../$source")
 done < modules.txt
 # ^nlintc-kdcl ^nlintc-ayjk: run every applied row-88 rule; caps stays independent.
-expect 0 --require-typed "${args[@]}"
+expect 0 --require-typed --rules ox-discarded-result --rules ox-catch-all --rules ox-suspending-finalizer --rules ox-stdlib-lock --rules ox-public-exception --rules ox-obj-magic --rules ox-race-deadline "${args[@]}"
 [[ ! -s "$scratch/out" && ! -s "$scratch/err" ]]
 printf 'compiled boundaries, evidence failures, and %s declared sources: pass\n' "${#args[@]}"

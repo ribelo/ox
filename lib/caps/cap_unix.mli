@@ -1,10 +1,10 @@
 (** The dangerous [Unix] calls, each requiring its capability (^ncaps-4btv). The
-    [ox-caps-*] Semgrep rules forbid the raw [Unix] functions outside this library; each
-    function here is the raw call with the capability in front of it and nothing else; the
-    capability is only looked at, never kept. It is an ordinary (global) argument so that
-    a partial application such as [~getenv:(Cap_sys.getenv_opt ~caps)] is an ordinary
-    closure, and a [@ local] closure — the thunk of [Ox.Rate_limiter.run], the acquire of
-    [Ox.Resource.use_in_scope] — can capture a capability and call these.
+    Compiler-backed [ox-caps-*] rules forbid the raw [Unix] functions outside this
+    library; each function here is the raw call with the capability in front of it and
+    nothing else; the capability is only looked at, never kept. It is an ordinary (global)
+    argument so that a partial application such as [~getenv:(Cap_sys.getenv_opt ~caps)] is
+    an ordinary closure, and a [@ local] closure — the thunk of [Ox.Rate_limiter.run], the
+    acquire of [Ox.Resource.use_in_scope] — can capture a capability and call these.
 
     These calls block the domain; none of them is an Eio suspension point and none
     observes cancellation. Do not call them from an [Ox.Actor] handler or an [Ox.Agent]

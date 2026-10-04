@@ -1,0 +1,2 @@
+(* ^ncapslint-5rxe: minimized from the corresponding real parser-hole source. *)
+let violation @ portable = fun (f @ local) -> ignore f; Obj.magic 0

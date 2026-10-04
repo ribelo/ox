@@ -18,4 +18,5 @@ allow=(
   --allow lib/ox_lint # ^nlint-r01u ^nlint-4sct: compiler build tool, not a Door program; reads sources/evidence and writes CLI output/status.
 )
 
-exec lib/caps/caps-gate "${allow[@]}" "$@"
+# ^ncapslint-87ld: source tier is mandatory; ox also requires fresh typed evidence.
+exec _build/default/lib/ox_lint/main.exe --caps-gate --require-typed "${allow[@]}" "$@"

@@ -157,6 +157,10 @@ lib/ox/timeout.ml lib/ox/.ox.objs/byte/ox__Timeout.cmt
 lib/ox/timeout.mli lib/ox/.ox.objs/byte/ox__Timeout.cmti
 lib/ox_lint/artifact.ml lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
 lib/ox_lint/artifact.mli lib/ox_lint/.lint_engine.objs/byte/artifact.cmti
+lib/ox_lint/caps.ml lib/ox_lint/.lint_engine.objs/byte/caps.cmt
+lib/ox_lint/caps.mli lib/ox_lint/.lint_engine.objs/byte/caps.cmti
+lib/ox_lint/caps_policy.ml lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmt
+lib/ox_lint/caps_policy.mli lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmti
 lib/ox_lint/concurrency.ml lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
 lib/ox_lint/concurrency.mli lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
 lib/ox_lint/paths.ml lib/ox_lint/.lint_engine.objs/byte/paths.cmt

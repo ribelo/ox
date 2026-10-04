@@ -46,6 +46,8 @@
   (source_tree comment)
   (source_tree missing)
   (source_tree stale)
+  (source_tree ../caps/rules)
+  ../../docs/caps.md
   ../../docs/rules/ox-discarded-result.md
   ../../lib/caps/door/.ox_caps_door.objs/byte/ox_caps_door.cmt
   ../../lib/caps/door/.ox_caps_door.objs/byte/ox_caps_door.cmti
@@ -203,6 +205,10 @@
   ../../lib/ox/.ox.objs/byte/ox__Supervisor.cmti
   ../../lib/ox/.ox.objs/byte/ox__Timeout.cmt
   ../../lib/ox/.ox.objs/byte/ox__Timeout.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/caps.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/caps.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt

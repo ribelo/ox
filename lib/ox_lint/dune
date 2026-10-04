@@ -3,7 +3,7 @@
 (library
  (name lint_engine)
  (wrapped false)
- (modules syntax artifact paths concurrency rules)
+ (modules syntax artifact paths concurrency caps caps_policy rules)
  (libraries ocaml-compiler-libs.common unix))
 
 (executable
@@ -77,4 +77,103 @@
    test/lint/violating/race_deadline.ml)
   (../../test/lint/clean/race_deadline.ml
    as
-   test/lint/clean/race_deadline.ml)))
+   test/lint/clean/race_deadline.ml)
+  (../../docs/caps.md as docs/caps.md)
+  (../../docs/rules/ox-caps-fork.md as docs/rules/ox-caps-fork.md)
+  (../../test/caps/rules/violating/fork.ml
+   as
+   test/caps/rules/violating/fork.ml)
+  (../../test/caps/rules/clean/fork.ml as test/caps/rules/clean/fork.ml)
+  (../../docs/rules/ox-caps-exec.md as docs/rules/ox-caps-exec.md)
+  (../../test/caps/rules/violating/exec.ml
+   as
+   test/caps/rules/violating/exec.ml)
+  (../../test/caps/rules/clean/exec.ml as test/caps/rules/clean/exec.ml)
+  (../../docs/rules/ox-caps-exit.md as docs/rules/ox-caps-exit.md)
+  (../../test/caps/rules/violating/exit.ml
+   as
+   test/caps/rules/violating/exit.ml)
+  (../../test/caps/rules/clean/exit.ml as test/caps/rules/clean/exit.ml)
+  (../../docs/rules/ox-caps-chdir.md as docs/rules/ox-caps-chdir.md)
+  (../../test/caps/rules/violating/chdir.ml
+   as
+   test/caps/rules/violating/chdir.ml)
+  (../../test/caps/rules/clean/chdir.ml as test/caps/rules/clean/chdir.ml)
+  (../../docs/rules/ox-caps-env.md as docs/rules/ox-caps-env.md)
+  (../../test/caps/rules/violating/env.ml
+   as
+   test/caps/rules/violating/env.ml)
+  (../../test/caps/rules/clean/env.ml as test/caps/rules/clean/env.ml)
+  (../../docs/rules/ox-caps-signal.md as docs/rules/ox-caps-signal.md)
+  (../../test/caps/rules/violating/signal.ml
+   as
+   test/caps/rules/violating/signal.ml)
+  (../../test/caps/rules/clean/signal.ml as test/caps/rules/clean/signal.ml)
+  (../../docs/rules/ox-caps-time.md as docs/rules/ox-caps-time.md)
+  (../../test/caps/rules/violating/time.ml
+   as
+   test/caps/rules/violating/time.ml)
+  (../../test/caps/rules/clean/time.ml as test/caps/rules/clean/time.ml)
+  (../../docs/rules/ox-caps-random.md as docs/rules/ox-caps-random.md)
+  (../../test/caps/rules/violating/random.ml
+   as
+   test/caps/rules/violating/random.ml)
+  (../../test/caps/rules/clean/random.ml as test/caps/rules/clean/random.ml)
+  (../../docs/rules/ox-caps-stdin.md as docs/rules/ox-caps-stdin.md)
+  (../../test/caps/rules/violating/stdin.ml
+   as
+   test/caps/rules/violating/stdin.ml)
+  (../../test/caps/rules/clean/stdin.ml as test/caps/rules/clean/stdin.ml)
+  (../../docs/rules/ox-caps-stdout.md as docs/rules/ox-caps-stdout.md)
+  (../../test/caps/rules/violating/stdout.ml
+   as
+   test/caps/rules/violating/stdout.ml)
+  (../../test/caps/rules/clean/stdout.ml as test/caps/rules/clean/stdout.ml)
+  (../../docs/rules/ox-caps-stderr.md as docs/rules/ox-caps-stderr.md)
+  (../../test/caps/rules/violating/stderr.ml
+   as
+   test/caps/rules/violating/stderr.ml)
+  (../../test/caps/rules/clean/stderr.ml as test/caps/rules/clean/stderr.ml)
+  (../../docs/rules/ox-caps-fs-read.md as docs/rules/ox-caps-fs-read.md)
+  (../../test/caps/rules/violating/fs_read.ml
+   as
+   test/caps/rules/violating/fs_read.ml)
+  (../../test/caps/rules/clean/fs_read.ml
+   as
+   test/caps/rules/clean/fs_read.ml)
+  (../../docs/rules/ox-caps-fs-write.md as docs/rules/ox-caps-fs-write.md)
+  (../../test/caps/rules/violating/fs_write.ml
+   as
+   test/caps/rules/violating/fs_write.ml)
+  (../../test/caps/rules/clean/fs_write.ml
+   as
+   test/caps/rules/clean/fs_write.ml)
+  (../../docs/rules/ox-caps-tmp.md as docs/rules/ox-caps-tmp.md)
+  (../../test/caps/rules/violating/tmp.ml
+   as
+   test/caps/rules/violating/tmp.ml)
+  (../../test/caps/rules/clean/tmp.ml as test/caps/rules/clean/tmp.ml)
+  (../../docs/rules/ox-caps-network.md as docs/rules/ox-caps-network.md)
+  (../../test/caps/rules/violating/network.ml
+   as
+   test/caps/rules/violating/network.ml)
+  (../../test/caps/rules/clean/network.ml
+   as
+   test/caps/rules/clean/network.ml)
+  (../../docs/rules/ox-caps-mint.md as docs/rules/ox-caps-mint.md)
+  (../../test/caps/rules/violating/mint.ml
+   as
+   test/caps/rules/violating/mint.ml)
+  (../../test/caps/rules/clean/mint.ml as test/caps/rules/clean/mint.ml)
+  (../../docs/rules/ox-caps-forge.md as docs/rules/ox-caps-forge.md)
+  (../../test/caps/rules/violating/forge.ml
+   as
+   test/caps/rules/violating/forge.ml)
+  (../../test/caps/rules/clean/forge.ml as test/caps/rules/clean/forge.ml)
+  (../../docs/rules/ox-caps-signature.md as docs/rules/ox-caps-signature.md)
+  (../../test/caps/rules/violating/signature.ml
+   as
+   test/caps/rules/violating/signature.ml)
+  (../../test/caps/rules/clean/signature.ml
+   as
+   test/caps/rules/clean/signature.ml)))

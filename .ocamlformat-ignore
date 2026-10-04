@@ -36,6 +36,11 @@ lib/sql_dsl/ox_sql_dsl_compiled.ml
 lib/sql_dsl/ox_sql_dsl_compiled.mli
 lib/sql_dsl/ox_sql_dsl_query.ml
 lib/sql_dsl/ox_sql_dsl_query.mli
+# ^ncapslint-5rxe: compiler-parsed OxCaml hole regressions and exact binder sites.
+test/caps/rules/holes/*.ml
+test/caps/rules/holes/*.mli
+test/caps/rules/source_identity.ml
+
 # Gate fixtures (test/caps/gate): exact line numbers and deliberately unparseable syntax are the point.
 test/caps/gate/shadowed/lib/shadow.ml
 test/caps/gate/skip-clean/lib/unparseable.ml
