@@ -608,8 +608,8 @@ let docs () =
       "rejected (";
     ];
   expect "why-ox.md" [ "Ox is the floor"; "Rate_limiter"; "Select" ];
-  expect "../CONTEXT.md" [ "**Flow**"; "**Rate limiter**"; "**Select**"; "Ox" ];
-  let context = read "../CONTEXT.md" in
+  expect "../GLOSSARY.md" [ "**Flow**"; "**Rate limiter**"; "**Select**"; "Ox" ];
+  let context = read "../GLOSSARY.md" in
   check_bool "retired list unchanged" true
     (contains context
        "effect (as a noun for Ox's type), blueprint, interpreter, runtime, SPI, \

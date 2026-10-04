@@ -2,7 +2,7 @@
 
 > **Migration complete, 2026-09-29.** `master` was reset to `5b09ee47f92a3bc7ea5ee18b8e37c03f38b9594d` (the `eta-next` tip) and this record is the docs commit on top of it; the old master is the `v1` tag (`5b3affc840010c1ffa3420ad30df21a46f08bd87`). Leash, grip, inn, nema and Pie take their Eta input from `?ref=master` and are re-locked to it; taumel and p-doom stay on `v1` by pinned revision. See `../migration-plan.md`.
 
-Everything an implementing agent needs, in order. Each row is one spec under this directory; the spec says what must be true when it is done. Rows were delivered on the `eta-next` branch, which became `master` on 2026-09-29; each row is its own commits citing story IDs. Read `../../AGENTS.md`, `../../CONTEXT.md`, `../why-ox.md` and the five ADRs first — they are short and they are the rules.
+Everything an implementing agent needs, in order. Each row is one spec under this directory; the spec says what must be true when it is done. Rows were delivered on the `eta-next` branch, which became `master` on 2026-09-29; each row is its own commits citing story IDs. Read `../../AGENTS.md`, `../../GLOSSARY.md`, `../why-ox.md` and the five ADRs first — they are short and they are the rules.
 
 ## Order
 

@@ -6,7 +6,7 @@ This branch (`master`; it was the `eta-next` branch until the switch of 2026-09-
 
 Every change cites a story in a spec; Ox is its own consumer (`AGENTS.md`). Scala Ox's floor (ADR-0009) and whatever makes wrong code fail to compile (ADR-0010) enter without an outside application asking. The applications built on it are Leash, Pie, nema, inn and grip.
 
-- `CONTEXT.md` — vocabulary
+- `GLOSSARY.md` — vocabulary
 - `docs/why-ox.md` — why v1 was abandoned, how direct style works here, where effect handlers fit
 - `docs/adr/` — the decisions that are hard to reverse
 - `ox` — core typed failures, scoped resources, schedules, Eio concurrency, and the rest of Ox's floor: `Rate_limiter` (use it for per-site or per-model limits instead of a sleep), `Channel` and `Select`, `Resource`, `Actor`, `Agent` and `Supervisor` (a state-owning fiber with a typed mailbox, serialized closures over a state, and restartable child scopes — `docs/issues/actor/01-actor.md`) (`docs/design/ox-floor.md`; `Flow` is designed in `docs/design/flow.md`)

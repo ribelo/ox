@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-Read `CONTEXT.md` (vocabulary), then `docs/why-ox.md` (why this tree exists and how code is written here), then `docs/adr/`. The previous design is on the `v1` tag; its source is reference material for pure codecs and nothing else.
+Read `GLOSSARY.md` (vocabulary), then `docs/why-ox.md` (why this tree exists and how code is written here), then `docs/adr/`. The previous design is on the `v1` tag; its source is reference material for pure codecs and nothing else.
 
 ## Landing
 

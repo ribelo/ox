@@ -16,7 +16,7 @@
   ../../lib/ox/dune
   ../../docs/why-ox.md
   ../../docs/modes.md
-  ../../CONTEXT.md
+  ../../GLOSSARY.md
   (glob_files ../../docs/design/*.md)
   (source_tree ../../lib)
   (glob_files ../../lib/ox/*.ml)

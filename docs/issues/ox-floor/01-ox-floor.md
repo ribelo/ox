@@ -28,7 +28,7 @@ Add `RateLimiter` and `Select` as small modules over Eio primitives; align resou
 10. As a maintainer, I want the design note to decide `Flow`'s error type: `('a, 'e) t` carrying a typed error through `run_*` as `result`, with exceptions propagating as Ox does, so that streams follow the two-error-kinds doctrine. ^nfloor-t8w5
 11. As a maintainer, I want the note to name the first likely consumers (Leash's CDP event stream, `run`'s JSONL output, Pie's audio pipeline) and what each would need, so that the first implementation is sized by real use. ^nfloor-tv7b
 12. As a maintainer, I want Ox's table of contents pasted into `docs/design/ox-floor.md` with each item marked `have (module)`, `spec (row)`, `design (flow.md)` or `rejected (reason)`, so that 'everything on the floor' is checkable. ^nfloor-37ic
-13. As a maintainer, I want `docs/why-ox.md` and `CONTEXT.md` updated: Ox named as the floor, `Flow`, `Rate limiter`, `Select` added to the vocabulary, and the retired word list unchanged, so that the documents match ADR-0009. ^nfloor-igt7
+13. As a maintainer, I want `docs/why-ox.md` and `GLOSSARY.md` updated: Ox named as the floor, `Flow`, `Rate limiter`, `Select` added to the vocabulary, and the retired word list unchanged, so that the documents match ADR-0009. ^nfloor-igt7
 14. As a maintainer, I want the `leash` and any future consumer skills to mention `Rate_limiter` for per-site model and request limits, so that the first consumer uses it rather than a sleep. ^nfloor-8qx2
 
 ## Implementation Decisions

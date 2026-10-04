@@ -38,4 +38,4 @@ The five reports of 2026-10-04 are in [research/](research/): [Eio community pra
 
 ## Out of Scope
 
-Rewriting `CONTEXT.md` or the ADRs; a documentation generator.
+Rewriting `GLOSSARY.md` or the ADRs; a documentation generator.

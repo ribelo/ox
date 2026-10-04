@@ -35,7 +35,7 @@ A **kernel**, not a framework: the packages Rafal's services are built from, wri
 5. OxCaml-first with a strict dependency policy: stdlib, Eio, Jane Street packages when installable on our compiler, unavoidable C bindings, and an ADR for anything else (ADR-0005).
 6. Ox is the floor (ADR-0009): the table of contents of Scala's Ox (https://ox.softwaremill.com) is the checklist of the core, every item present in direct style or recorded with a reason in `docs/design/ox-floor.md`; what Ox adds above it is the Cause tree and the handler discipline of ADR-0006.
 
-Vocabulary is in `CONTEXT.md`. The words *effect*, *blueprint*, *runtime*, *interpreter*, *component* and *coeffect* are retired, and so is *capability* in v1's sense of a runtime service; row 48 reuses the word for a typed value in a signature (`docs/caps.md`).
+Vocabulary is in `GLOSSARY.md`. The words *effect*, *blueprint*, *runtime*, *interpreter*, *component* and *coeffect* are retired, and so is *capability* in v1's sense of a runtime service; row 48 reuses the word for a typed value in a signature (`docs/caps.md`).
 
 ## 4. How to write direct style here
 

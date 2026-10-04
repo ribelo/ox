@@ -88,7 +88,7 @@ The two error kinds are shared by Scala Ox and this OCaml library: unrecoverable
 
 ## For consumers [^nfloor-8qx2]
 
-A per-site or per-model request limit in a consumer (Leash's model calls and site requests first) is a `Rate_limiter` created once from the Door's clock and wrapped around the call, `Rate_limiter.run limiter (fun () -> call ())`, never a sleep between calls: the limiter is cancellable while it waits, consumes nothing when cancelled, and a mock clock tests it. Wait on several channels with `Select`, not by polling. Register a resource with `Resource.use_in_scope` or `Eio.Switch.on_release` on the switch that owns it. Consumer-facing instructions live where the consumer keeps them: the `leash` skill in the dotfiles library is an operator's guide to the Leash CLI, not a place for Ox API guidance, so this section and Leash's own `AGENTS.md` and `CONTEXT.md` are where the guidance belongs.
+A per-site or per-model request limit in a consumer (Leash's model calls and site requests first) is a `Rate_limiter` created once from the Door's clock and wrapped around the call, `Rate_limiter.run limiter (fun () -> call ())`, never a sleep between calls: the limiter is cancellable while it waits, consumes nothing when cancelled, and a mock clock tests it. Wait on several channels with `Select`, not by polling. Register a resource with `Resource.use_in_scope` or `Eio.Switch.on_release` on the switch that owns it. Consumer-facing instructions live where the consumer keeps them: the `leash` skill in the dotfiles library is an operator's guide to the Leash CLI, not a place for Ox API guidance, so this section and Leash's own `AGENTS.md` and `GLOSSARY.md` are where the guidance belongs.
 
 ## OxApp against the Door
 
