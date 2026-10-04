@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: done
 package: ox_blocking
 consumer: Exergy SQLite ingestion; existing native workers
 priority: P1
@@ -60,3 +60,6 @@ Automatic Pool.create finalizers, forcefully killing OS threads, retry, SQLite t
 - Evidence: [pool state/create:15–50](<../../../lib/blocking/ox_blocking.ml#L15-L50>), [Drain:65–77](<../../../lib/blocking/ox_blocking.ml#L65-L77>), [shutdown contract](<../../../lib/blocking/ox_blocking.mli>), and [current blocking tests](<../../../test/blocking/run.ml>).
 - No automatic-drain gap is claimed: the original capability explicitly requires shutdown before the owner switch ends. Exergy must register its protected explicit cleanup in that order.
 - Already delivered: [settled hook capability](<../blocking-settled/01-blocking-settled.md>). Its physical-settlement guarantee remains independent of caller timeout/cancellation.
+
+Verified 2026-10-04: [test/blocking/run.ml](<../../../test/blocking/run.ml>) group "drain": two_drainers_join_one_ending (nblock-5siy nblock-faq7 nblock-vm4e), cancelled_drainer_leaves_drain (nblock-8z91 nblock-de0p nblock-vm4e), repeated_drain_idle (nblock-de0p), drain_seals_admission (nblock-l36w nblock-vm4e), drain_preserves_outcomes (nblock-qwwp nblock-faq7), owner_cancellation_joins_worker (nblock-c664), retained_hook_defect (nblock-l78q nblock-vm4e), detach_keeps_policy (nblock-l78q).
+The historical acquire-every-slot Drain fails the first two by deadlock guard; group "native" (stories 1–5, nblk-2h3g) still passes.

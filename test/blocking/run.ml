@@ -275,6 +275,347 @@ let settled_after_timeout_not_before_claim () =
       | _ -> Alcotest.fail "expected exactly the timed-out call to settle, with its value");
       Alcotest.(check bool) "pre-claim callback never ran" false (Atomic.get queued_ran))
 
+(* Deadlock guard for drain fixtures: every gate handed out is opened when the body ends,
+   also on assertion failure or guard timeout, so the owner switch can join its workers. *)
+let guarded f =
+  Eio_main.run (fun env ->
+      let gates = ref [] in
+      let tracked_gate () =
+        let g = gate () in
+        gates := g :: !gates;
+        g
+      in
+      Eio.Switch.run (fun sw ->
+          Fun.protect
+            ~finally:(fun () -> List.iter release !gates)
+            (fun () ->
+              Eio.Time.with_timeout_exn env#clock 5. (fun () -> f sw tracked_gate))))
+
+(* Start a callback held at [permit]; return once it is physically running. *)
+let start_gated ~sw ~gate p ?on_settled () =
+  let started = Eio.Semaphore.make 0 in
+  let permit = gate () in
+  let call =
+    Eio.Fiber.fork_promise ~sw (fun () ->
+        run ~pool:p ?on_settled (fun () ->
+            Eio.Semaphore.release started;
+            wait permit))
+  in
+  Eio.Semaphore.acquire started;
+  (call, permit)
+
+(* Counts hook runs; [hook] is signalled in the owner's context after each one. *)
+let settled_counter () =
+  let settled = Atomic.make 0 in
+  let hook = Eio.Semaphore.make 0 in
+  let on_settled _ =
+    inc settled;
+    Eio.Semaphore.release hook
+  in
+  (settled, hook, on_settled)
+
+(* A Drain caller in its own fiber; [Ok n] reports [seen ()] when Drain returned. *)
+let drain ~sw ?(seen = fun () -> 0) p =
+  Eio.Fiber.fork_promise ~sw (fun () ->
+      match Pool.shutdown p with
+      | () -> Ok (seen ())
+      | exception ex -> Error (ex, Printexc.get_raw_backtrace ()))
+
+let drained name promise =
+  match Eio.Promise.await_exn promise with
+  | Ok seen -> seen
+  | Error (ex, _) -> Alcotest.failf "%s raised %s" name (Printexc.to_string ex)
+
+let call_ok name promise =
+  match Eio.Promise.await_exn promise with
+  | Ok () -> ()
+  | Error `Shutting_down -> Alcotest.failf "%s was not admitted" name
+
+let pending name promise =
+  Eio.Fiber.yield ();
+  Alcotest.(check bool) name false (Eio.Promise.is_resolved promise)
+
+(* nblock-5siy nblock-faq7 nblock-vm4e: two workers, two drainers. Released one at a time,
+   each freed slot would go to a different historical drainer; both must join one ending
+   that completes only after both callbacks and both hooks. *)
+let two_drainers_join_one_ending () =
+  guarded (fun sw gate ->
+      let p = pool ~sw ~threads:2 () in
+      let settled, hook, on_settled = settled_counter () in
+      let a, permit_a = start_gated ~sw ~gate p ~on_settled () in
+      let b, permit_b = start_gated ~sw ~gate p ~on_settled () in
+      let seen () = Atomic.get settled in
+      let d1 = drain ~sw ~seen p in
+      let d2 = drain ~sw ~seen p in
+      release permit_a;
+      Eio.Semaphore.acquire hook;
+      pending "first drainer waits for the second callback" d1;
+      pending "second drainer waits for the second callback" d2;
+      release permit_b;
+      Alcotest.(check int) "first drainer after both hooks" 2 (drained "first" d1);
+      Alcotest.(check int) "second drainer after both hooks" 2 (drained "second" d2);
+      call_ok "first call" a;
+      call_ok "second call" b;
+      Alcotest.(check int) "each hook exactly once" 2 (Atomic.get settled);
+      Alcotest.(check int) "nothing active" 0 (Pool.stats p).active)
+
+(* nblock-8z91 nblock-de0p nblock-vm4e: a drainer cancelled after one callback finished
+   leaves an ending a surviving drainer completes; repeating it changes nothing. *)
+let cancelled_drainer_leaves_drain () =
+  guarded (fun sw gate ->
+      let p = pool ~sw ~threads:2 () in
+      let settled, hook, on_settled = settled_counter () in
+      let a, permit_a = start_gated ~sw ~gate p ~on_settled () in
+      let b, permit_b = start_gated ~sw ~gate p ~on_settled () in
+      let cancel = ref None in
+      let gave_up =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  Pool.shutdown p;
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      release permit_a;
+      Eio.Semaphore.acquire hook;
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "drainer gave up");
+      Alcotest.(check bool)
+        "cancelled drainer released" true
+        (Eio.Promise.await_exn gave_up);
+      (match try_run ~pool:p (fun () -> Alcotest.fail "admitted after seal") with
+      | Not_run Shutting_down -> ()
+      | _ -> Alcotest.fail "admission must stay sealed");
+      let survivor = drain ~sw ~seen:(fun () -> Atomic.get settled) p in
+      pending "survivor waits for the gated callback" survivor;
+      release permit_b;
+      Alcotest.(check int) "survivor after both hooks" 2 (drained "survivor" survivor);
+      call_ok "first call" a;
+      call_ok "second call" b;
+      let before = Pool.stats p in
+      Pool.shutdown p;
+      Pool.shutdown p;
+      Alcotest.(check bool) "repeated drain keeps accounting" true (before = Pool.stats p);
+      Alcotest.(check int) "hooks not rerun" 2 (Atomic.get settled))
+
+(* nblock-de0p: repeated Drain of an idle pool returns at once without new accounting. *)
+let repeated_drain_idle () =
+  within (fun _env sw ->
+      let p = pool ~sw () in
+      (match run ~pool:p (fun () -> 1) with Ok 1 -> () | _ -> Alcotest.fail "value");
+      Pool.shutdown p;
+      let before = Pool.stats p in
+      Pool.shutdown p;
+      Alcotest.(check bool) "unchanged" true (before = Pool.stats p);
+      Alcotest.(check int) "one completion" 1 before.completed)
+
+(* nblock-l36w nblock-vm4e: the first Drain seals admission; queued and new work is
+   rejected honestly and never starts. *)
+let drain_seals_admission () =
+  guarded (fun sw gate ->
+      let p = pool ~sw ~threads:1 ~queued:1 () in
+      let a, permit = start_gated ~sw ~gate p () in
+      let queued_ran = Atomic.make false in
+      let queued =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            run ~pool:p (fun () -> Atomic.set queued_ran true))
+      in
+      Alcotest.(check int) "admitted waiter" 1 (Pool.stats p).queued;
+      (match try_run ~pool:p (fun () -> ()) with
+      | Not_run Saturated -> ()
+      | _ -> Alcotest.fail "expected saturation before drain");
+      let ending = drain ~sw p in
+      (match run ~pool:p (fun () -> Atomic.set queued_ran true) with
+      | Error `Shutting_down -> ()
+      | Ok () -> Alcotest.fail "new run admitted after seal");
+      (match try_run_result ~pool:p (fun () -> Ok ()) with
+      | Ok (Not_run Shutting_down) -> ()
+      | _ -> Alcotest.fail "new try_run admitted after seal");
+      pending "drain waits for the running callback" ending;
+      release permit;
+      ignore (drained "drain" ending);
+      call_ok "running call" a;
+      (match Eio.Promise.await_exn queued with
+      | Error `Shutting_down -> ()
+      | Ok () -> Alcotest.fail "queued work slipped in");
+      Alcotest.(check bool) "queued callback never started" false (Atomic.get queued_ran);
+      Alcotest.(check int) "only the started call completed" 1 (Pool.stats p).completed)
+
+exception Hook_live
+exception Hook_abandoned
+
+let[@inline never] raise_marker ex = raise ex
+
+let backtrace_of ex =
+  match raise_marker ex with
+  | () -> assert false
+  | exception _ -> Printexc.get_raw_backtrace ()
+
+let bt_string = Printexc.raw_backtrace_to_string
+
+(* A re-raise appends the frames it crosses; the original frames must come first. *)
+let keeps_backtrace name ~original observed =
+  Alcotest.(check bool)
+    name true
+    (String.starts_with ~prefix:(bt_string original) (bt_string observed))
+
+(* nblock-qwwp nblock-faq7: callback values, typed errors and raised defects keep their
+   contract in a Drain pool; outcomes delivered to waiting callers do not fail Drain. *)
+let drain_preserves_outcomes () =
+  within (fun _env sw ->
+      let p = pool ~sw ~threads:2 () in
+      let settled, _hook, on_settled = settled_counter () in
+      (match run_result ~pool:p ~on_settled (fun () -> Ok 3) with
+      | Ok 3 -> ()
+      | _ -> Alcotest.fail "value lost");
+      (match run_result ~pool:p ~on_settled (fun () -> Error `Native) with
+      | Error (`Callback `Native) -> ()
+      | _ -> Alcotest.fail "typed callback error lost");
+      (match run ~pool:p ~on_settled (fun () -> raise Native_defect) with
+      | _ -> Alcotest.fail "callback defect converted"
+      | exception Native_defect -> ());
+      Pool.shutdown p;
+      Alcotest.(check int) "each hook once before drain" 3 (Atomic.get settled))
+
+(* nblock-l78q nblock-vm4e: a hook defect after caller cancellation is retained and raised,
+   with its original backtrace, by concurrent and repeated Drains; a still-waiting caller
+   observes its own hook defect, which is not retained. *)
+let retained_hook_defect () =
+  Printexc.record_backtrace true;
+  guarded (fun sw gate ->
+      let p = pool ~sw ~threads:2 () in
+      let live_bt = backtrace_of Hook_live in
+      (match
+         run ~pool:p
+           ~on_settled:(fun _ -> Printexc.raise_with_backtrace Hook_live live_bt)
+           (fun () -> 1)
+       with
+      | _ -> Alcotest.fail "waiting caller lost its hook defect"
+      | exception Hook_live ->
+          keeps_backtrace "waiting caller sees original backtrace" ~original:live_bt
+            (Printexc.get_raw_backtrace ()));
+      let abandoned_bt = backtrace_of Hook_abandoned in
+      Alcotest.(check bool) "fixture has a backtrace" true (bt_string abandoned_bt <> "");
+      let started = Eio.Semaphore.make 0 in
+      let permit = gate () in
+      let cancel = ref None in
+      let caller =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore
+                    (run ~pool:p
+                       ~on_settled:(fun _ ->
+                         Printexc.raise_with_backtrace Hook_abandoned abandoned_bt)
+                       (fun () ->
+                         Eio.Semaphore.release started;
+                         wait permit));
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      Eio.Semaphore.acquire started;
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
+      let d1 = drain ~sw p in
+      let d2 = drain ~sw p in
+      pending "drain waits for the abandoned callback" d1;
+      release permit;
+      let expect_retained name = function
+        | Ok _ -> Alcotest.failf "%s reported a successful drain" name
+        | Error (Hook_abandoned, bt) ->
+            keeps_backtrace
+              (name ^ " keeps the original backtrace")
+              ~original:abandoned_bt bt
+        | Error (ex, _) -> Alcotest.failf "%s raised %s" name (Printexc.to_string ex)
+      in
+      expect_retained "first drain" (Eio.Promise.await_exn d1);
+      expect_retained "second drain" (Eio.Promise.await_exn d2);
+      expect_retained "repeated drain" (Eio.Promise.await_exn (drain ~sw p));
+      Alcotest.(check int) "physically completed" 2 (Pool.stats p).completed)
+
+(* nblock-l78q: Detach_started keeps physical completion and hook execution after caller
+   cancellation, without reporting the abandoned hook defect. *)
+let detach_keeps_policy () =
+  guarded (fun sw gate ->
+      let p = pool ~sw ~policy:Pool.Detach_started () in
+      let started = Eio.Semaphore.make 0 in
+      let hook = Eio.Semaphore.make 0 in
+      let permit = gate () in
+      let cancel = ref None in
+      let caller =
+        Eio.Fiber.fork_promise ~sw (fun () ->
+            Eio.Cancel.sub (fun ctx ->
+                cancel := Some ctx;
+                try
+                  ignore
+                    (run ~pool:p
+                       ~on_settled:(fun _ ->
+                         Eio.Semaphore.release hook;
+                         raise Hook_abandoned)
+                       (fun () ->
+                         Eio.Semaphore.release started;
+                         wait permit));
+                  false
+                with Eio.Cancel.Cancelled _ -> true))
+      in
+      Eio.Semaphore.acquire started;
+      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
+      Pool.shutdown p;
+      Alcotest.(check int) "started call detached" 1 (Pool.stats p).detached;
+      release permit;
+      Eio.Semaphore.acquire hook;
+      Alcotest.(check int) "physically completed" 1 (Pool.stats p).completed;
+      Pool.shutdown p)
+
+exception Owner_stop
+
+(* nblock-c664: cancelling the owner switch releases the caller at once, but the owner
+   joins the started native worker and its settled hook before it ends. *)
+let owner_cancellation_joins_worker () =
+  Eio_main.run (fun env ->
+      let permit = gate () in
+      let caller_released, set_caller_released = Eio.Promise.create () in
+      let settled = Atomic.make 0 in
+      let owner_done = Atomic.make false in
+      let settled_at_owner_end = ref (-1) in
+      Eio.Time.with_timeout_exn env#clock 5. (fun () ->
+          Eio.Fiber.both
+            (fun () ->
+              (match
+                 Eio.Switch.run (fun sw ->
+                     let p = pool ~sw () in
+                     let started = Eio.Semaphore.make 0 in
+                     Eio.Fiber.fork ~sw (fun () ->
+                         ignore
+                           (run ~pool:p
+                              ~on_cancel:(fun () ->
+                                Eio.Promise.resolve set_caller_released ())
+                              ~on_settled:(fun _ -> inc settled)
+                              (fun () ->
+                                Eio.Semaphore.release started;
+                                wait permit)));
+                     Eio.Semaphore.acquire started;
+                     Eio.Switch.fail sw Owner_stop)
+               with
+              | () -> Alcotest.fail "owner switch should fail"
+              | exception Owner_stop -> ());
+              settled_at_owner_end := Atomic.get settled;
+              Atomic.set owner_done true)
+            (fun () ->
+              Fun.protect
+                ~finally:(fun () -> release permit)
+                (fun () ->
+                  Eio.Promise.await caller_released;
+                  for _ = 1 to 10 do
+                    Eio.Fiber.yield ()
+                  done;
+                  Alcotest.(check bool)
+                    "owner still joining the worker" false (Atomic.get owner_done);
+                  Alcotest.(check int) "not settled while running" 0 (Atomic.get settled))));
+      Alcotest.(check int) "hook ran before the owner ended" 1 !settled_at_owner_end)
+
 let () =
   Alcotest.run "ox_blocking"
     [
@@ -294,5 +635,22 @@ let () =
             settled_after_cancellation;
           Alcotest.test_case "nblk-2h3g settled after timeout, never before claim" `Quick
             settled_after_timeout_not_before_claim;
+        ] );
+      ( "drain",
+        [
+          Alcotest.test_case "nblock-5siy nblock-faq7 nblock-vm4e two drainers" `Quick
+            two_drainers_join_one_ending;
+          Alcotest.test_case "nblock-8z91 nblock-de0p nblock-vm4e cancelled drainer"
+            `Quick cancelled_drainer_leaves_drain;
+          Alcotest.test_case "nblock-de0p repeated idle drain" `Quick repeated_drain_idle;
+          Alcotest.test_case "nblock-l36w nblock-vm4e drain seals admission" `Quick
+            drain_seals_admission;
+          Alcotest.test_case "nblock-qwwp nblock-faq7 drain preserves outcomes" `Quick
+            drain_preserves_outcomes;
+          Alcotest.test_case "nblock-c664 owner cancellation joins worker" `Quick
+            owner_cancellation_joins_worker;
+          Alcotest.test_case "nblock-l78q nblock-vm4e retained hook defect" `Quick
+            retained_hook_defect;
+          Alcotest.test_case "nblock-l78q detach keeps policy" `Quick detach_keeps_policy;
         ] );
     ]

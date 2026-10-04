@@ -44,11 +44,33 @@ module Pool : sig
       unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
   val shutdown : t -> unit
-  (** Closes admission. [Drain] waits for all reserved slots to become free, including
-      calls whose callers were cancelled or timed out. It must run outside a callback
-      using this pool. [Detach_started] returns immediately, leaving started callbacks and
-      their resources with the caller to manage. Neither policy interrupts a native
-      callback. *)
+  (** Closes admission. The first call seals the pool: from then on [run] and [try_run]
+      return [Shutting_down] without starting a callback, including callers that were
+      already waiting for a slot. Shutdown policy is fixed at [create].
+
+      [Drain] is one ending owned by the pool, not by its caller. Every call, concurrent
+      or repeated, waits for the same completion: every callback that physically started
+      has returned and its [on_settled] hook ran exactly once, including calls whose
+      callers were cancelled or timed out. Repeated calls after completion return at once
+      and change no accounting. If an [on_settled] hook raised after its caller was
+      cancelled or timed out, the first such exception is retained for the pool's
+      lifetime, and every [Drain] call raises it with its original backtrace once all
+      callbacks and hooks have settled, instead of returning. A hook exception delivered
+      to a still-waiting caller is not retained. [Drain] must run outside a callback using
+      this pool, before the owner switch ends.
+
+      [Detach_started] returns immediately, leaving started callbacks and their resources
+      with the caller to manage; a hook exception after caller cancellation is not
+      reported. Neither policy interrupts a native callback.
+
+      Suspension: may suspend under [Drain] until every admitted call has physically
+      settled; never suspends under [Detach_started]. Cancellation: propagates out of the
+      [Drain] wait; a cancelled caller only stops waiting, admission stays sealed and the
+      pool still completes the ending for other callers. Finalizers: none are registered;
+      started callbacks stay owned by the pool's owner switch. Locking: no lock is
+      acquired; the wait spans no caller code. Cancellation safety: safe to re-run because
+      sealing is idempotent and a later call joins the same ending. ^nblock-5siy
+      ^nblock-8z91 ^nblock-de0p ^nblock-l36w ^nblock-faq7 ^nblock-l78q *)
 end
 
 type admission_failure = Saturated | Shutting_down
@@ -72,9 +94,11 @@ val run :
     It is not invoked for a call abandoned before a worker claimed it (the callback never
     ran). It runs before a still-waiting caller sees the result and before the slot is
     released, so a [Drain] shutdown returns only after every [on_settled] has run. It must
-    not suspend for long and must not raise: a raise replaces the outcome a waiting caller
-    sees and is otherwise lost. Use it to release a resource leased to the callback.
-    ^nblk-2h3g *)
+    not suspend for long and must not raise: a raise is a defect that replaces the outcome
+    a waiting caller sees, keeping its backtrace. After the caller was cancelled or timed
+    out, a [Drain] pool retains it and [Pool.shutdown] raises it; a [Detach_started] pool
+    loses it. Use it to release a resource leased to the callback. ^nblk-2h3g ^nblock-l78q
+*)
 
 val try_run :
   pool:Pool.t ->
