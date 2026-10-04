@@ -24,7 +24,9 @@ val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
     failure; coverage is never inferred from existing annotations. ^nlint-2nwm. *)
 
 val setup : caps:< Cap.fs_read ; .. > -> t -> unit
-(** Reset caches and initialize rebased visible and hidden include paths. *)
+(** Reset caches and initialize rebased visible and hidden include paths, including Dune
+    private CMIs in installed [.private] and build-tree [byte] directories. Recorded paths
+    take precedence; every imported CMI fingerprint must still match. *)
 
 val source : t -> string
 (** Resolve the annotation's source through its rebased build directory. *)

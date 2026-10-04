@@ -32,13 +32,47 @@ contains() {
 }
 cp -R "$fixture" "$scratch/project"
 chmod -R u+w "$scratch/project"
-for path in dune-project qualified/dune bin/dune; do
+for path in dune-project qualified/dune bin/dune private/dune consumer/dune; do
   inside_scratch "$scratch/project/$path.in"
   inside_scratch "$scratch/project/$path"
   mv "$scratch/project/$path.in" "$scratch/project/$path"
 done
 project="$scratch/project"
-dune build --root "$project" @check
+dune build --root "$project" @install @check
+# Dune exposes only public_cmi to build-tree consumers; private CMIs stay in byte.
+private_objects="$project/_build/default/private/.deployment_private.objs"
+[[ -f "$private_objects/byte/deployment_private__Hidden.cmi" ]]
+[[ ! -e "$private_objects/public_cmi/deployment_private__Hidden.cmi" ]]
+expect 0 "$engine" --caps-gate --require-typed "$project/consumer/consumer.ml" "$project/consumer/consumer.mli"
+contains "$scratch/err" '0 modules with typed rules undecided'
+build_private_cmi="$private_objects/byte/deployment_private__Hidden.cmi"
+inside_scratch "$build_private_cmi"; inside_scratch "$build_private_cmi.saved"
+mv "$build_private_cmi" "$build_private_cmi.saved"
+expect 2 "$engine" --caps-gate --require-typed "$project/consumer/consumer.ml"
+contains "$scratch/err" 'missing imported CMI Deployment_private__Hidden'
+mv "$build_private_cmi.saved" "$build_private_cmi"
+# Install for real, then compile a separate consumer against that prefix only.
+private_prefix="$scratch/private-prefix"
+dune install --root "$project" --prefix "$private_prefix" deployment_private
+private_cmi="$private_prefix/lib/deployment_private/.private/deployment_private__Hidden.cmi"
+[[ -f "$private_cmi" ]]
+mkdir "$scratch/installed-consumer"
+cp "$project/consumer/consumer.ml" "$project/consumer/consumer.mli" "$scratch/installed-consumer/"
+cp "$project/consumer/dune" "$scratch/installed-consumer/dune"
+printf '(lang dune 3.21)\n' > "$scratch/installed-consumer/dune-project"
+export OCAMLPATH="$private_prefix/lib${OCAMLPATH:+:$OCAMLPATH}"
+dune build --root "$scratch/installed-consumer" @check
+expect 0 "$engine" --caps-gate --require-typed "$scratch/installed-consumer/consumer.ml" "$scratch/installed-consumer/consumer.mli"
+contains "$scratch/err" '0 modules with typed rules undecided'
+# A found private CMI still has to match the recorded fingerprint.
+inside_scratch "$private_cmi"; inside_scratch "$private_cmi.saved"
+mv "$private_cmi" "$private_cmi.saved"
+expect 2 "$engine" --caps-gate --require-typed "$scratch/installed-consumer/consumer.ml"
+contains "$scratch/err" 'missing imported CMI Deployment_private__Hidden'
+cp "$project/_build/default/qualified/.deployment_qualified.objs/byte/deployment_qualified__Other__Dictation.cmi" "$private_cmi"
+expect 2 "$engine" --caps-gate --require-typed "$scratch/installed-consumer/consumer.ml"
+contains "$scratch/err" 'imported CMI fingerprint changed'
+mv "$private_cmi.saved" "$private_cmi"
 objects="$project/_build/default/qualified/.deployment_qualified.objs/byte"
 cmt="$objects/deployment_qualified__Assistant__Dictation.cmt"
 cmti="$objects/deployment_qualified__Assistant__Dictation.cmti"

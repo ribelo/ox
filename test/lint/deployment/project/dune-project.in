@@ -1,2 +1,4 @@
 (lang dune 3.21)
-(name deployment_fixture)
+(name deployment_private)
+(package
+ (name deployment_private))

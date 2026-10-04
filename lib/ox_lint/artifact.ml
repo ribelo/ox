@@ -321,12 +321,30 @@ let setup ~(caps : < Cap.fs_read ; .. >) t =
       Filename.concat t.builddir (String.sub p 16 (String.length p - 16))
     else p
   in
-  Load_path.init ~auto_include:Load_path.no_auto_include
-    ~visible:
-      (List.map
-         (fun (p : Clflags.visible_include) -> { p with path = rebase p.path })
-         t.info.cmt_loadpath.visible)
-    ~hidden:(List.map rebase t.info.cmt_loadpath.hidden);
+  let visible =
+    List.map
+      (fun (p : Clflags.visible_include) -> { p with path = rebase p.path })
+      t.info.cmt_loadpath.visible
+  in
+  let hidden = List.map rebase t.info.cmt_loadpath.hidden in
+  (* Dune installs private CMIs below the library's .private directory. In a
+     build tree public_cmi omits them, while the sibling byte directory keeps
+     all CMIs. Add these as hidden fallbacks, preserving recorded precedence. *)
+  let private_dirs =
+    List.map (fun (p : Clflags.visible_include) -> p.path) visible @ hidden
+    |> List.concat_map (fun dir ->
+        let installed = Filename.concat dir ".private" in
+        let objects = Filename.dirname dir in
+        let build =
+          if Filename.basename dir = "public_cmi" && Filename.check_suffix objects ".objs"
+          then [ Filename.concat objects "byte" ]
+          else []
+        in
+        installed :: build)
+    |> List.filter (fun dir -> Sys.file_exists dir && Sys.is_directory dir)
+  in
+  Load_path.init ~auto_include:Load_path.no_auto_include ~visible
+    ~hidden:(hidden @ private_dirs);
   (* Missing CMIs can make expand_head retain an alias rather than fail. Validate
      the annotation's imported fingerprints before any type predicate can pass. *)
   Array.iter
