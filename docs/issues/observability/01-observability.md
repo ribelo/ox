@@ -1,18 +1,19 @@
 ---
-status: completed
-package: eta_observability
-consumer: Leash milestone 1 (chrome-fuao), milestone 6 (svc-p67t, svc-qilu, svc-f4op)
+status: ready-for-agent
+package: ox_observability
+consumer: Exergy and existing Logger users
+priority: P1
 ---
 
-# Observability: structured logging first, tracing as context
+# Structured spans with result-derived completion fields
 
 ## Problem Statement
 
-A service needs structured logs in the journal with the fields that identify the work (service name, tab handle, owner, command), a way to attach those fields to everything a fiber does without threading them, and a redaction rule so secrets and page content never reach a log line. OTLP export can come later; the shape must allow it.
+Logger already records typed result failures, defects and external interruption correctly. It only accepts fields known before the body executes. Exergy needs the returned HTTP status, sanitized provider outcome and row count attached to the same completed request/ingest span. An inner context binding expires before completion, and a separate log is not the same span.
 
 ## Solution
 
-`eta_observability`: `Logger` (levels, structured records, a journal reporter writing one JSON object per line to stderr, an in-memory reporter for tests), `Context` (fiber-local key-value fields that every record inherits, crossing `Fiber.fork`), and `Redact` (a wrapper type whose printer never shows the value).
+Extend the existing structured span operation with a narrow pure completion-fields function over its returned result. Keep the start/end lifecycle, context inheritance and result/exception behavior. Do not create a second tracer or a mutable span handle.
 
 ## User Stories
 
@@ -24,21 +25,39 @@ A service needs structured logs in the journal with the fields that identify the
 6. As a service author, I want a per-logger minimum level and a rate limit for a named repeated message, so that a flapping component cannot flood the journal. ^nobs-262i
 7. As a service author, I want `Logger.span name f` to log start and end with elapsed time and an outcome (ok, failed with cause summary), so that tracing exists as structured logs before any exporter. ^nobs-xovg
 8. As a kernel maintainer, I want the package to depend on `eta`, `eio` and `eta_json` only, so that OTLP export is a later, separate package. Row 16 adds `yojson` for `Redact.t`'s codecs (^nnoschema-ifg0, admitted by ADR-0007); the ceiling is otherwise unchanged. ^nobs-6x58
+9. As a service author, I want a completion-fields function over the returned result, so that a span can include data known only after its body finishes. ^nobs-pzpr
+10. As a provider author, I want successful HTTP status and sanitized provider outcome on the completed request span, so that trace queries describe the actual response rather than only request inputs. ^nobs-uwrx
+11. As an ingest author, I want successful row counts and other nonsecret result summaries on the existing span, so that one operation produces one searchable completion. ^nobs-tv72
+12. As a provider author, I want completion fields derived from a typed Error as well as Ok, so that a known failed-response status is not lost from telemetry. ^nobs-yi3q
+13. As a service author, I want the original returned value or typed error preserved without reconstruction, so that telemetry cannot change domain behavior. ^nobs-jc4q
+14. As a service author, I want static fields on start and completion but result-derived fields only on completion, so that a pending operation never publishes guessed final data. ^nobs-3cck
+15. As a kernel maintainer, I want logger base fields overridden by explicit static fields and those by completion fields, while kernel lifecycle fields always win, so that duplicate names have one deterministic meaning. ^nobs-ze6n
+16. As a service author, I want completion extraction skipped when the body raises and external interruption/defects preserved with their backtraces, so that an absent result is never fabricated for telemetry. ^nobs-h6pt
+17. As a service author, I want a raising completion extractor classified as a defect with one defect completion and its original backtrace, so that a telemetry callback bug is not hidden or reported as a provider error. ^nobs-wrzs
+18. As a test author, I want one completion per span, redacted values and sibling/nested isolation under result extraction, so that final fields do not leak to unrelated requests. ^nobs-a0se
 
 ## Implementation Decisions
 
-- Context is `Eio.Fiber.create_key` + `Fiber.with_binding`; a forked fiber inherits bindings in Eio, which is the whole reason this is not an effect.
-- Records carry `Cause` summaries through `Cause.pp_compact`, never page or request bodies; the redaction rule is by type (`Redact.t`), not by field name.
-- Timestamps from the Door's clock (wall clock for the journal), monotonic elapsed for spans.
+- Keep direct style and the existing typed-result span operation. One result-to-fields callback is sufficient; separate success/error APIs and a mutable span object would add unnecessary surface.
+- The extractor is a pure summary function, called once after a normally returned result. It does not await, issue requests, mutate context or emit telemetry. A body exception has no result and never invokes it.
+- Precedence is logger base fields < static span fields < completion fields < kernel-owned event/outcome/elapsed_ms/error fields. Use a provider-specific key such as http.outcome instead of replacing kernel outcome. Correlation IDs remain context controls.
+- If extraction raises, propagate that defect/backtrace and emit at most one defect end record, never both a successful end and a defect end. Preserve the existing exception policy of the reporter; do not introduce swallowing or broad result conversion.
+- No dependency on the OTLP exporter. Preserve redaction through every reporter and keep the logger nonparking under its existing contract. Update native call sites if the public span signature changes; no Eta-compatible overload.
 
 ## Testing Decisions
 
-- `test/observability/` with the in-memory reporter: inheritance across fork, redaction through each printer, rate limit with a mock clock, span outcome on Ok/Error/raise — all stories.
+- Confirmed public seam: Logger with its memory reporter; additionally one configured Door/OTLP local-collector integration proves the computed fields belong to a completed exported span.
+- Test Ok and typed Error, unchanged value/error identity, static versus completion timing, collision precedence, reserved fields, body defects, external Eio cancellation, and extractor defects with distinguishable backtraces. Assert one start/end pair, not just presence of an extra log.
+- Use nested and sibling fibers to prove dynamic summaries stay local; after the span, no result field remains in inherited context. Test Redact values through memory, journal and OTLP-facing record conversion.
+- Existing result-awareness tests remain valid. Test names cite new IDs and prove the absent completion hook fails before implementation.
 
 ## Out of Scope
 
-OTLP, metrics, sampling, trace propagation headers — each a later spec when Leash milestone 6 or Pie pulls it.
+A mutable span handle, OpenTelemetry SDK, provider error classification, exporter lifecycle, automatic HTTP instrumentation, metrics policy, and compatibility with Eta named/observed-result wrappers.
 
-Verification: `nix develop -c env DUNE_BUILD_DIR=_build_obs dune build @install` passed for the whole tree and `dune test test/observability` passed 20 tests; every story ID (^nobs-og4h, ^nobs-2d4r, ^nobs-ek28, ^nobs-rayu, ^nobs-iedi, ^nobs-262i, ^nobs-xovg, ^nobs-6x58) is cited by name in `test/observability/run.ml`.
-Verification: eta_test's mock clocks drive the wall-clock timestamp (asserted byte-for-byte in the journal line), the rate-limit window, and span elapsed time; context inheritance across `Eio.Fiber.fork`, redaction through `pp`/`to_string`/JSON/record, and span outcomes on Ok, typed Error, raise and cancellation are all asserted.
-Verification (row 16, ^nnoschema-ifg0): `dune test test/observability` runs 24 cases green, including the yojson codecs — `yojson_of_t` encodes ["<redacted>"], `t_of_yojson` wraps a decoded string and refuses a non-string with the offending subtree — and the dependency-ceiling test now admits `yojson`.
+## Further Notes
+
+- Audit 2026-10-04 at Ox 08c6fc8f; relevant source remained unchanged at 72af4cde. Original IDs are preserved. Historical delivery is not evidence for this new hook; this audit made no implementation changes.
+- Evidence: [public span signature:202–209](<../../../lib/observability/logger.mli#L202-L209>) and [span lifecycle:264–306](<../../../lib/observability/logger.ml#L264-L306>).
+- Consumer contracts: [Gateway tracing requirements:22–29](</home/ribelo/projects/exergy/docs/requirements/ibkr-gateway-session.md#L22-L29>), [Gateway result fields:702–713](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L702-L713>), [Flex result fields:969–981](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L969-L981>), and [observed-result wrapper:119–130](</home/ribelo/projects/exergy/lib/facade_core/exergy_runtime.ml#L119-L130>).
+- Already present, not new work: typed Error versus Ok classification, elapsed-time measurement, correlation IDs, fiber context and Redact. Existing context export has a distinct repair in the [OTel capability](<../otel/01-otel.md>).

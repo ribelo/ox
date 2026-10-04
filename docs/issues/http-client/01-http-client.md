@@ -1,18 +1,19 @@
 ---
-status: completed
-package: eta_http (client only: h1, TLS via OpenSSL), copied codecs from v1
-consumer: Leash milestone 5 (drive-zml5, drive-ls3c: System One and the text helper are HTTPS POSTs)
+status: ready-for-agent
+package: ox_http
+consumer: Exergy providers; existing HTTPS consumers
+priority: P0
 ---
 
-# HTTP/1.1 client over TLS, direct style
+# HTTP client: final response heads and bounded body disposition
 
 ## Problem Statement
 
-Leash's drive loop makes two kinds of HTTPS request — a System One evaluation and a chat completion — and eta-next has no HTTP client at all. v1 has a complete, hardened HTTP/1.1 codec, an OpenSSL binding, and an Eio transport, all written against `Effect.t` in the transport and pure in the codec.
+The direct Eio client already returns a bounded response, but collapses body acquisition failures into the same flat errors as failures before headers. Exergy needs HTTP 401 to remain a browser-login response even when its body never arrives, and HTTP 200 with a failed body to retain status 200. Different providers admit bodies differently. Independently, the current reader returns informational 1xx heads as completed responses and bounds each trailer line but not the trailer block. These are native client contract defects, not requests for an Eta stream runtime.
 
 ## Solution
 
-`eta_http`: the v1 HTTP/1.1 codec (`lib/http/h1`, pure) and OpenSSL binding (`lib/http_tls_openssl`, C stubs plus a pure state-machine driver) copied file by file; a direct-style Eio transport (connect, TLS handshake, write request, read response) rewritten from `lib/http_eio/{transport,tls,h1,client}`; one `Client` with a request function, bounded bodies, deadlines, and idle-timeout. Client only: no server, no HTTP/2, no WebSocket until a consumer pulls them.
+Extend the existing one-shot request operation with explicit caller-owned final-head/body disposition and phase-aware typed failures. Keep the final head on body acquisition errors, including the whole-request deadline. Consume informational responses until a final head, reject unsupported upgrades, and bound all framing sections. The request owns and closes the connection; no stream escapes it.
 
 ## User Stories
 
@@ -27,22 +28,51 @@ Leash's drive loop makes two kinds of HTTPS request — a System One evaluation 
 9. As a service author, I want typed errors — ``Connect`, ``Tls`, ``Timeout`, ``Idle_timeout`, ``Protocol of string`, ``Body_too_large`, ``Closed` — and never an exception for a network condition, so that callers handle failures by variant. ^nhttp-ed7t
 10. As a service author, I want cancellation during any phase to close the socket and propagate as interruption, so that a cancelled request leaves nothing open. ^nhttp-6a47
 11. As a test author, I want a local plaintext and a local TLS test server (self-signed, trust injected through `?tls`) under `test/http/`, so that every story runs offline, plus one live smoke against `https://example.com` behind an environment flag. ^nhttp-j0bc
-12. As a kernel maintainer, I want `eta_http` to depend on `eta`, `eio`, `eio.unix`, the OpenSSL C library and nothing else, recorded in ADR-0007, so that the dependency policy holds. ^nhttp-6c3d
+12. As a kernel maintainer, I want `ox_http` to depend on `ox`, `eio`, `eio.unix`, the OpenSSL C library and nothing else, recorded in ADR-0007, so that the dependency policy holds. ^nhttp-6c3d
+13. As a provider author, I want failures before a final response head distinguished from failures while acquiring its body, so that transport failure does not erase a known HTTP status. ^nhttp-dlp2
+14. As a provider author, I want every post-head body failure to retain the final status, ordered headers and typed reason, so that HTTP 200 with a broken body is not classified as a connection failure. ^nhttp-j7cz
+15. As a provider author, I want response-head metadata retained on fixed-length truncation, malformed chunks, oversized bodies, post-head connection/TLS failure and response-idle timeout, so that all body acquisition failures have the same provenance. ^nhttp-uhrh
+16. As a provider author, I want a whole-request deadline expiring after the final head to retain that head, while expiration before it remains a pre-head timeout, so that the deadline wrapper does not flatten the phase distinction. ^nhttp-w60z
+17. As a provider author, I want to choose bounded body acquisition or skip-and-close from the final status and headers for each request, so that an authentication response can be classified without waiting for an unwanted body. ^nhttp-3bbt
+18. As a provider author, I want skip-and-close to return the final head with an explicitly skipped body rather than a fabricated successfully-read empty body, so that no response stream or connection lease escapes the request. ^nhttp-w5yp
+19. As an IBKR Gateway author, I want a 401 with a stalled, oversized or malformed body to be returned when my policy skips it, so that browser-login classification is independent of unread content. ^nhttp-jxpd
+20. As a provider author, I want policies that read only 2xx, skip only 401, or read every status to remain caller-owned, so that the kernel does not impose one provider authentication policy. ^nhttp-v147
+21. As a service author, I want read and skip paths to close their one-shot connection on every exit, so that policy rejection, timeout, cancellation and defects do not leak sockets. ^nhttp-dgoe
+22. As a service author, I want external Eio cancellation and defects, including defects in the head-policy callback, to propagate with their original backtraces rather than becoming transport errors, so that structured concurrency remains honest. ^nhttp-hpo2
+23. As an HTTP client author, I want 100 and 103 response heads consumed until the final response arrives, including split network reads and multiple informational heads, so that an interim status is never returned as a completed request. ^nhttp-oaw6
+24. As an HTTP client author, I want unsupported 101 protocol switching rejected explicitly, so that a one-shot HTTP client does not claim to own an upgraded transport. ^nhttp-0d9e
+25. As an HTTP client author, I want informational-head acquisition bounded by a documented cumulative byte budget and the same deadline/idle rules as final-head acquisition, so that endless progress responses cannot evade finite parsing limits. ^nhttp-ey81
+26. As an HTTP client author, I want chunked trailers bounded cumulatively as well as per line, with a documented finite limit and a typed protocol failure after the head, so that endless short trailers cannot evade the body bound. ^nhttp-bx60
+27. As a test author, I want no-body HEAD/204/304 responses and empty, fixed-length, chunked and close-delimited bodies exercised through the public request API under both dispositions, so that new head handling does not regress supported framing. ^nhttp-8ixg
+28. As a kernel maintainer, I want scripted plaintext/TLS server regressions for head provenance, disposition, informational heads, bounded trailers and cleanup, so that defect-specific regressions fail on the audited implementation and pass on the replacement while preservation fixtures stay green. ^nhttp-32fq
 
 ## Implementation Decisions
 
-- Copy: `git show v1:lib/http/h1/*`, `v1:lib/http_tls_openssl/*` (including `tls_openssl_stubs.c`, `tls_openssl_alloc.{c,h}`, the dune with the C stanza), and their tests; strip `Effect.t` where any appears in the codec (there should be none).
-- Rewrite: the Eio transport as plain functions over `Eio.Net` and `Eio.Flow`; the TLS flow as an `Eio.Flow.two_way` wrapper driving the memory BIO (v1's `tls_eio.ml` is the reference for the state machine, 677 lines, rewritten not copied).
-- Deadlines through `Eta.Timeout`; idle timeout as a per-read `Timeout`.
-- URL parsing: the minimal parser from `v1:lib/http_eio/url.ml` if pure, else a fifty-line one.
+- Direct Eio execution with typed results. Existing explicit switch, network, clock, TLS trust, deadline, response-idle and body-limit dependencies remain; there is no interpreter, transport registry or process-global client.
+- Represent pre-head failure, successful read, explicit skip and post-head failure honestly. A skipped body must be distinguishable from a genuinely empty body. The body-failure reason is nonrecursive and accompanied by the final status and headers.
+- The caller supplies a small final-head disposition function; it runs once for the final response, never for informational heads. Provider status/authentication rules and retry policy stay outside the kernel. A body failure does not trigger a second request.
+- Preserve the existing HTTP/1.1 codecs and OpenSSL trust behavior; make the API express the current contract and update its consumers instead of introducing a legacy overload or fallback path.
+- Header/trailer limits are documented finite parsing budgets, separate from the payload-byte budget. Reuse the existing header budget for trailer-block limits where appropriate; the implementation must document the cumulative informational-head budget.
+- Externally imposed Eio interruption remains an exception. Explicit request deadlines retain their typed timeout meaning and response phase. Defects and callback exceptions are not caught as expected HTTP failures.
 
 ## Testing Decisions
 
-- `test/http/`: codec and OpenSSL binding regression tests copied; transport tests against local servers for every error variant, deadline and idle timeout with short local delays, and cancellation mid-read verified by peer-observed socket closure.
-
-Verified: copied v1 codecs and OpenSSL binding, direct Eio transport, local plaintext/TLS fixtures, bounded framing, deadlines, idle reads, typed errors and cancellation.
-Gates: `nix develop -c dune build @install`, `nix develop -c dune test`, `nix develop -c dune build @fmt`; live smoke is opt-in with `ETA_HTTP_LIVE_SMOKE=1`.
+- Confirmed seam: public client calls against scripted local plaintext and TLS servers, with latches for head sent, body stalled and peer closure. Fakes do not replace the parser or deadline wrapper.
+- Assert status, duplicate-header preservation and typed reason for truncated fixed/chunked data, over-limit data, idle timeout and whole-request timeout after a head; compare a pre-head timeout without invented metadata. Use a post-head TLS failure only with a deterministic transport fixture, not a timing-dependent close.
+- For skip, send a head but never provide the body; completion must precede the server releasing its body latch, and the server must observe connection closure. Assert that the policy was called once and only for the final head.
+- Exercise the three consumer dispositions independently; a 401 skip must not accidentally establish a global non-2xx rule. Cover a 401 read when the caller requests it.
+- Feed 100 then 200, 103 then 100 then 200, split/coalesced heads, EOF before a final head, unsupported 101, informational-budget exhaustion, and many short trailers crossing the cumulative bound. Oversized trailers retain the already-known final head.
+- External cancellation during connect/head/body and a raising disposition function must terminate the request, close the connection and preserve the exception/backtrace. Use outer test timeouts only as deadlock guards. Existing framing, trust, request validation, deadline and body-limit suites remain in force; names cite the new IDs.
 
 ## Out of Scope
 
-HTTP/2, WebSocket, server, connection pooling, proxies, compression, cookies.
+Streaming bodies, pooling, redirect following, WebSocket upgrades, HTTP/2, transparent retry, provider authentication, a generic HTTP tracer, and recreating Eta request/response wrappers. Compression is not an established Exergy prerequisite; no provider currently negotiates or decodes gzip/deflate/br. Do not add decompression incidentally.
+
+## Further Notes
+
+- Audit: 2026-10-04. Relevant source is unchanged between audited Ox revision `08c6fc8f` and `72af4cde`. Original stories retain their IDs; reopening does not invalidate earlier delivery. Earlier green tests did not cover these response-phase contracts. No implementation changes or newly added regression tests were made in this audit; passing existing baseline gates does not establish the new stories.
+- Evidence: [client reader:103–187](<../../../lib/http/client.ml#L103-L187>), [deadline/error wrapper:189–267](<../../../lib/http/client.ml#L189-L267>), and [existing HTTP tests](<../../../test/http/run.ml>).
+- Consumer acceptance evidence: [Gateway tests:451–544](</home/ribelo/projects/exergy/lib/ibkr/test/test_ibkr.ml#L451-L544>), [Gateway admission:678–699](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L678-L699>), [Flex admission:953–965](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L953-L965>), and [Yahoo admission:828–850](</home/ribelo/projects/exergy/lib/yahoo/yahoo.ml#L828-L850>).
+- Protocol role: non-upgrading HTTP/1.1 user agent. [RFC 9110 §15.2](<https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2>) requires parsing one or more informational responses before a final response; [§15.2.2](<https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2.2>) describes switching protocols. [RFC 9112 §7.1.2](<https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1.2>) describes the trailer section. The finite trailer budget is local availability policy, not a numerical RFC requirement. Implementers must refresh current RFC status and applicable errata; this scoped audit does not certify full HTTP conformance.
+- Trust boundary: provider/proxy bytes are untrusted. Availability impact is misleading completion on 1xx or unbounded framing work, not an established credential leak or cited CVE. Preserve verified TLS and never attach authentication headers or raw payloads to diagnostic output.
+- Exergy integration follows only after this capability lands: providers pass their explicit 16 MiB limits where required and classify the new native outcomes directly. No provider-specific error variants belong in Ox.
