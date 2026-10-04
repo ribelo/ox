@@ -68,9 +68,9 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Ox_app.Env.t) (cfg : config) =
         let client = Ox_http.Client.create ~sw ~net:base#net ~clock:base#clock () in
         let exporter =
           match
-            Ox_otel.create ~caps:env.Ox_app.Env.caps ~sw ~clock:base#clock
-              ~http_client:client ~endpoint ~service_name:"signal-fixture"
-              ~request_deadline:(Ox.Duration.ms 2000) ()
+            Ox_otel.create ~ending_budget:(Ox.Duration.ms 100) ~caps:env.Ox_app.Env.caps
+              ~sw ~clock:base#clock ~http_client:client ~endpoint
+              ~service_name:"signal-fixture" ()
           with
           | Ok exporter -> exporter
           | Error error ->
@@ -81,7 +81,9 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Ox_app.Env.t) (cfg : config) =
               match Ox_otel.shutdown exporter with
               | Ok () -> ()
               | Error error ->
-                  failwith (Format.asprintf "otlp shutdown: %a" Ox_otel.pp_error error));
+                  Eio.Flow.copy_string
+                    (Format.asprintf "otlp shutdown: %a\n" Ox_otel.pp_error error)
+                    base#stdout);
         {
           Ox_app.reporters = [ reporter; Ox_otel.reporter exporter ];
           span_ids = Some (Ox_otel.span_ids exporter);

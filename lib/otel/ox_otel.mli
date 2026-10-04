@@ -20,6 +20,11 @@ module Otlp_json : module type of Otlp_json
 
 type t
 
+type abandoned = { logs : int; spans : int; metric_series : int; controls : int }
+(** Counts of unsent or uncertain work abandoned at expiry, not exact remote losses.
+    Counts are bounded by queue plus batch capacity, one pending command and two
+    metric-series windows; control counts add the one active control. *)
+
 type error =
   [ `Invalid_config of string
   | `Http of Ox_http.Client.error
@@ -39,6 +44,7 @@ val create :
   http_client:Ox_http.Client.t ->
   endpoint:string ->
   service_name:string ->
+  ending_budget:Ox.Duration.t ->
   ?scope_name:string ->
   ?resource:(string * string) list ->
   ?headers:(string * string) list ->
@@ -59,10 +65,17 @@ val create :
     exported when the switch ends even if nobody calls {!shutdown}: Eio cancels the
     switch's fibers before it runs its release hooks, so the daemon is already gone and
     the exporter exports what the queue still holds in the releasing fiber, under
-    [Eio.Cancel.protect], at the configured [request_deadline]. Release hooks registered
-    after [create] run first (releases are LIFO), so a program that logs while the switch
-    is stopping still gets its last records exported. A Door SIGTERM stop releases the
-    root switch this way. ^notel-1stb
+    [Eio.Cancel.protect], within [ending_budget]. This required positive finite budget
+    starts at the first shutdown or owner release, and is one absolute deadline for
+    sealing, all sends, recovery and control settlement. Request deadlines never extend
+    it. Release hooks registered after [create] run first (LIFO), preserving last records
+    logged by program cleanup and Door SIGTERM. ^notel-1stb ^notel-056b ^notel-jx0z
+
+    Suspension: may suspend while starting the daemon fibers. Cancellation: depends on the
+    owner switch; both daemons inherit its context. Cancellation safety: safe to re-run;
+    successfully constructed exporters remain switch-owned and their ending is bounded.
+    Finalizers: the owner switch bounds recovery by the same ending deadline. Locking:
+    single-domain state changes hold no mutex across caller code.
 
     [resource] adds OTLP resource attributes to every export beside the exporter's own
     [service.name]: [service.version], [deployment.environment], a host or a build id, so
@@ -87,7 +100,11 @@ val create :
 
     [on_signal_error] names the failed OTLP pipeline for each failed export batch;
     [on_error] retains its existing error-only contract. Both callbacks are invoked
-    independently when supplied, including during a release drain. ^notel-na2w
+    independently when supplied, including during a release drain. They must be nonparking
+    summaries; a callback that suspends is cancelled, and callback defects are best
+    effort. Failure classification survives callback cancellation. Transport error
+    payloads are sanitized before callbacks or public results; collector headers/bodies
+    are not retained for diagnostics. ^notel-na2w ^notel-nf92
 
     [max_metric_series] bounds how many distinct series — a name, a kind and an attribute
     set — the exporter aggregates between exports; a record that would begin one more is
@@ -121,17 +138,39 @@ val dropped : t -> int
 (** Number of records rejected when the bounded queue was full, and metric records
     rejected when the exporter already held [max_metric_series] series. *)
 
-val flush : t -> (unit, error) result
-(** Settles all earlier admitted records and returns the first send failure since the
-    previous flush. It never waits for a worker the switch has already cancelled: with the
-    worker gone the remaining queue is settled in the calling fiber. ^notel-p4xe
-    ^notel-t8br ^notel-1stb *)
+val abandoned : t -> abandoned
+(** Counts retained after [Drain_deadline]; zero before expiry. Payloads are discarded,
+    not retained for diagnostics or counted as ordinary queue rejection. ^notel-od2q *)
 
-val shutdown : ?timeout:Ox.Duration.t -> t -> (unit, error) result
-(** Seals admission and ends the exporter, returning the ending's result: a live worker
-    drains the remaining queue and reports it, and a worker the switch has already
-    cancelled is replaced by the caller's own drain rather than waited for — so a
-    [shutdown] registered with [Eio.Switch.on_release] returns instead of blocking on a
-    fiber that cannot run, and one called after release returns the result the release
-    recorded. Repeated calls return the same result. A timeout reports [Drain_deadline],
-    not a successful drain. ^notel-j9vc ^notel-t8br ^notel-1stb *)
+val flush : t -> (unit, error) result
+(** Settles earlier admitted work and returns the first send failure since the preceding
+    flush. A queued, pending or consumed control remains owned until it settles exactly
+    once, including owner cancellation and metric recovery. A caller blocked on full-queue
+    admission before sealing joins the terminal ending; a new caller after sealing
+    receives [Closed]. ^notel-p4xe ^notel-t8br ^notel-1stb ^notel-hjd5 ^notel-d52a
+    ^notel-5qi9
+
+    Suspension: may suspend on queue capacity, collector export and settlement.
+    Cancellation: propagates Eio interruption of this waiter, never corrupting shared
+    state. Cancellation safety: safe to re-run; admitted controls retain their independent
+    owner, although uncertain exports can be delivered at least once rather than exactly
+    once. Finalizers: the exporter owner recovers and settles admitted controls within its
+    budget. Locking: no mutex spans waits or error callbacks. *)
+
+val shutdown : t -> (unit, error) result
+(** Seals admission without suspension and joins one exporter-owned ending. Concurrent and
+    repeated calls return the immutable terminal result. Expiry returns [Drain_deadline],
+    records {!abandoned}, settles controls and retires the worker before publishing the
+    result; no further HTTP send occurs after ending. A cancelled waiter never becomes a
+    deadline failure or leaves an unowned transition. Release-hook callers recover
+    uncertain in-flight batches at least once, within the original absolute deadline.
+    There is no per-caller timeout: the required construction [ending_budget] is the sole
+    ending budget. ^notel-j9vc ^notel-t8br ^notel-1stb ^notel-s12c ^notel-48tm ^notel-m8ax
+    ^notel-opp7
+
+    Suspension: may suspend awaiting the terminal ending, or recovering during owner
+    release. Cancellation: propagates waiter interruption; owner-release recovery is
+    protected only within the ending deadline. Cancellation safety: safe to re-run;
+    callers join the same terminal result and cannot reset the deadline or lose shared
+    progress. Finalizers: the owner switch retires its worker and completes bounded
+    recovery. Locking: no mutex spans waits, HTTP sends or error callbacks. *)

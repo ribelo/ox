@@ -21,19 +21,27 @@ let pp_error ppf = function
   | `Drain_deadline -> Format.pp_print_string ppf "OTLP drain deadline reached"
 
 type item = Log of Logger.record | Span of Json.span
-type command = Item of item | Flush of (unit, error) result Eio.Promise.u | Stop
 
-(* ^notel-1stb: one ending per exporter. The worker resolves it when it takes [Stop];
-   a release resolves the same one — Eio cancels a switch's fibers before it runs its
-   release hooks, so the worker is already gone by then and the exporter exports the
-   queue's remainder itself. Every [shutdown] reads that one result. *)
-type ending = {
-  stop : (unit, error) result Eio.Promise.t;
+type control = {
+  wait : (unit, error) result Eio.Promise.t;
   resolve : (unit, error) result Eio.Promise.u;
 }
 
+type command = Item of item | Flush of control | End
+type abandoned = { logs : int; spans : int; metric_series : int; controls : int }
+
+let nothing_abandoned = { logs = 0; spans = 0; metric_series = 0; controls = 0 }
+
+type ending = {
+  stop : (unit, error) result Eio.Promise.t;
+  resolve : (unit, error) result Eio.Promise.u;
+  begun : unit Eio.Promise.t;
+  begin_ : unit Eio.Promise.u;
+  mutable deadline : float option;
+}
+
 type t = {
-  queue : command Eio.Stream.t;
+  queue : (command, unit) Ox.Channel.t;
   http_client : Ox_http.Client.t;
   logs_url : string;
   traces_url : string;
@@ -41,32 +49,39 @@ type t = {
   resource_attrs : (string * string) list;
   scope_name : string;
   batch_size : int;
-  max_queue : int;
   request_deadline : Ox.Duration.t option;
   headers : (string * string) list;
   on_error : error -> unit;
   on_signal_error : signal -> error -> unit;
   with_timeout : float -> (unit -> (unit, error) result) -> (unit, error) result;
-  (* ^notel-8ixo: the worker blocks here at most [seconds]: a command when one arrives,
-     [None] when that wait expires. Built in [create] because the exporter's clock is
-     polymorphic and a record field cannot hold it. *)
   wait : float -> command option;
   metrics_interval_ms : int;
+  now : unit -> float;
   now_ms : unit -> int;
+  ending_seconds : float;
   ids : Random.State.t;
   mutable dropped : int;
   metrics : Metric_aggregation.t;
   mutable pending_metric_rows : Metric_aggregation.row list option;
   mutable closed : bool;
-  mutable stopping : bool;
   mutable worker_done : bool;
+  retired : unit Eio.Promise.t;
+  retire : unit Eio.Promise.u;
+  mutable worker_cancel : Eio.Cancel.t option;
+  mutable retiring : bool;
+  mutable finishing : bool;
+  mutable worker_result : (unit, error) result option;
   mutable first_failure : error option;
-  mutable ending : ending option;
+  ending : ending;
+  mutable controls : control list;
+  mutable abandoned : abandoned;
   mutable pending : command option;
   mutable in_flight : item list;
+  mutable recovering : item list;
 }
 
 let dropped t = t.dropped
+let abandoned t = t.abandoned
 
 let span_ids t () =
   let hex = "0123456789abcdef" in
@@ -116,8 +131,10 @@ let span_of_end (record : Logger.record) =
 
 let submit t item =
   if not t.closed then
-    if Eio.Stream.length t.queue >= t.max_queue then t.dropped <- t.dropped + 1
-    else Eio.Stream.add t.queue (Item item)
+    match Ox.Channel.try_send t.queue (Item item) with
+    | Ok () -> ()
+    | Error `Full -> t.dropped <- t.dropped + 1
+    | Error (`Done | `Error ()) -> ()
 
 let reporter t =
   Logger.Reporter.records (fun record ->
@@ -149,7 +166,26 @@ let post t ~url body =
   with
   | Ok { status; _ } when status >= 200 && status < 300 -> Ok ()
   | Ok { status; _ } -> Error (`Status status)
-  | Error error -> Error (`Http error)
+  | Error error ->
+      (* ^notel-nf92: callbacks may inspect the typed error, not only [pp_error].
+         Keep classifiers and status, but no header values or peer-supplied text. *)
+      let reason = function
+        | `Malformed _ -> `Malformed "malformed collector body"
+        | `Tls _ -> `Tls "TLS failed"
+        | `Connect _ -> `Connect "transport failed"
+        | (`Truncated | `Too_large | `Idle_timeout | `Timeout | `Closed) as reason ->
+            reason
+      in
+      let sanitized =
+        match error with
+        | `Connect _ -> `Connect "transport failed"
+        | `Tls _ -> `Tls "TLS failed"
+        | `Protocol _ -> `Protocol "invalid HTTP exchange"
+        | `Body failure ->
+            `Body { failure with headers = []; reason = reason failure.reason }
+        | (`Timeout | `Idle_timeout | `Closed) as error -> error
+      in
+      Error (`Http sanitized)
 
 let send t items =
   match items with
@@ -174,35 +210,36 @@ let send t items =
 let same_signal a b =
   match (a, b) with Log _, Log _ | Span _, Span _ -> true | _ -> false
 
-let ending t =
-  match t.ending with
-  | Some ending -> ending
-  | None ->
-      let stop, resolve = Eio.Promise.create () in
-      let ending = { stop; resolve } in
-      t.ending <- Some ending;
-      ending
+(* Error hooks are summaries, not a second teardown owner. A hook that parks is
+   cancelled after yielding; normal nonparking callbacks and their defects remain
+   independent. Record failure before calling either hook. ^notel-d52a ^notel-nf92 *)
+let callback f =
+  Eio.Fiber.first
+    (fun () -> try f () with Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+    Eio.Fiber.yield
 
-(* ^notel-p4xe: the first failure since the previous flush is reported once, by the
-   flush or the shutdown that settles it. The worker and the release drain share it. *)
 let note t signal = function
   | Ok () -> ()
-  | Error error -> (
+  | Error error ->
       if t.first_failure = None then t.first_failure <- Some error;
-      (* ^nlintc-du4v: callback defects remain best effort; interruption does not. *)
-      (try t.on_error error with
-      | Eio.Cancel.Cancelled _ as exn -> raise exn
-      | _ -> ());
-      (* ^notel-na2w: a legacy callback defect must not hide the signal hook. *)
-      (* ^nlintc-du4v: keep the signal hook best effort without swallowing interruption. *)
-      try t.on_signal_error signal error with
-      | Eio.Cancel.Cancelled _ as exn -> raise exn
-      | _ -> ())
+      callback (fun () -> t.on_error error);
+      callback (fun () -> t.on_signal_error signal error)
 
 let settled t =
   let result = match t.first_failure with None -> Ok () | Some error -> Error error in
   t.first_failure <- None;
   result
+
+let settle_control t control result =
+  t.controls <- List.filter (fun other -> other != control) t.controls;
+  Eio.Promise.resolve control.resolve result
+
+let settle_controls t result =
+  let controls = t.controls in
+  t.controls <- [];
+  List.iter
+    (fun (control : control) -> Eio.Promise.resolve control.resolve result)
+    controls
 
 let send_metrics t rows =
   if rows = [] then Ok ()
@@ -211,110 +248,133 @@ let send_metrics t rows =
       (Json.encode_metrics_request ~resource_attrs:t.resource_attrs
          ~scope_name:t.scope_name rows)
 
-(* ^notel-8ixo: one metrics window leaves the exporter here. The window a worker was
-   posting when it was cancelled is recorded in [pending_metric_rows], so the release
-   drain re-sends it before the window the exporter still holds: an interruption costs a
-   duplicate window, never a lost one. Aggregation is at record time, so a full log or
-   trace queue never costs a measurement. *)
 let export_metrics t =
   let send_window rows =
     if rows <> [] then begin
       t.pending_metric_rows <- Some rows;
-      note t Metrics (send_metrics t rows);
-      t.pending_metric_rows <- None
+      let result = send_metrics t rows in
+      (* Confirmed completion is committed before a callback can suspend. *)
+      t.pending_metric_rows <- None;
+      note t Metrics result
     end
   in
-  (match t.pending_metric_rows with
-  | Some rows ->
-      t.pending_metric_rows <- None;
-      send_window rows
-  | None -> ());
+  Option.iter send_window t.pending_metric_rows;
   send_window (Metric_aggregation.drain t.metrics)
 
-(* ^notel-1stb: exports everything the queue still holds, in the same signal batches the
-   worker would have sent, and settles every flush waiting there. Eio cancels a switch's
-   fibers before it runs its release hooks, so this is the export of last resort; it runs
-   under [Cancel.protect] because a release happens on the cancellation path and these
-   records have nowhere else to go. Each request keeps the exporter's own bounded
-   [request_deadline]. *)
-let drain t =
-  Eio.Cancel.protect (fun () ->
-      let items = ref [] and flushes = ref [] and stopped = ref false in
-      let take_command = function
-        | Item item -> items := item :: !items
-        | Flush resolve -> flushes := resolve :: !flushes
-        | Stop -> stopped := true
-      in
-      (* The worker is gone, but it may have taken records out of the queue before it
-         was cancelled: the batch it was sending and the command it had set aside are
-         recovered here, in order, or they would be lost with the worker. *)
-      List.iter (fun item -> take_command (Item item)) t.in_flight;
-      Option.iter take_command t.pending;
-      t.in_flight <- [];
-      t.pending <- None;
-      let rec collect () =
-        match Eio.Stream.take_nonblocking t.queue with
-        | Some command ->
-            take_command command;
-            collect ()
-        | None -> ()
-      in
-      collect ();
-      let rec batches = function
-        | [] -> []
-        | first :: rest ->
-            let rec take count reversed rest =
-              match rest with
-              | next :: rest when count < t.batch_size && same_signal first next ->
-                  take (count + 1) (next :: reversed) rest
-              | rest -> (List.rev reversed, rest)
-            in
-            let batch, rest = take 1 [ first ] rest in
-            batch :: batches rest
-      in
-      List.iter
-        (function
-          | [] -> ()
-          | first :: _ as batch ->
-              let signal = match first with Log _ -> Logs | Span _ -> Traces in
-              note t signal (send t batch))
-        (batches (List.rev !items));
-      export_metrics t;
-      let result = settled t in
-      List.iter (fun resolve -> Eio.Promise.resolve resolve result) !flushes;
-      if !stopped then
-        (* A queued [Stop] is a [shutdown] waiting for this ending. *)
-        ignore (Eio.Promise.try_resolve (ending t).resolve result : bool);
-      result)
+(* Move recovery into exporter-owned storage before any suspension. The active
+   Flush remains in [controls] even after it left the queue. ^notel-hjd5 ^notel-opp7 *)
+let recover t =
+  let items = ref (List.rev t.in_flight) in
+  let take = function Item item -> items := item :: !items | Flush _ | End -> () in
+  t.in_flight <- [];
+  Option.iter take t.pending;
+  t.pending <- None;
+  let rec collect () =
+    match Ox.Channel.try_receive t.queue with
+    | Ok command ->
+        take command;
+        collect ()
+    | Error (`Empty | `Done | `Error ()) -> ()
+  in
+  collect ();
+  t.recovering <- t.recovering @ List.rev !items
 
-(* ^notel-1stb: the exporter's ending, whoever reaches it first: it seals admission,
-   exports what the queue still holds without the worker, and records the result every
-   later [shutdown] reads. *)
+let drain t =
+  recover t;
+  let rec batches () =
+    match t.recovering with
+    | [] -> ()
+    | first :: rest ->
+        let rec take count reversed = function
+          | next :: rest when count < t.batch_size && same_signal first next ->
+              take (count + 1) (next :: reversed) rest
+          | rest -> (List.rev reversed, rest)
+        in
+        let batch, rest = take 1 [ first ] rest in
+        let result = send t batch in
+        t.recovering <- rest;
+        note t (match first with Log _ -> Logs | Span _ -> Traces) result;
+        batches ()
+  in
+  batches ();
+  export_metrics t;
+  settled t
+
+let begin_ending t =
+  if t.ending.deadline = None then begin
+    (* Non-suspending sealing also wakes all pre-seal admission waiters. Stop is
+       channel closure, so no caller must park while trying to enqueue it. *)
+    t.ending.deadline <- Some (t.now () +. t.ending_seconds);
+    t.closed <- true;
+    Ox.Channel.done_ t.queue;
+    Eio.Promise.resolve t.ending.begin_ ()
+  end
+
+let record_ending t result =
+  settle_controls t result;
+  Eio.Promise.resolve t.ending.resolve result;
+  result
+
+let expire t =
+  (* Join before accounting/discarding; no retired worker can send or settle again. *)
+  t.retiring <- true;
+  Option.iter (fun cc -> Eio.Cancel.cancel cc Eio.Time.Timeout) t.worker_cancel;
+  Eio.Promise.await t.retired;
+  recover t;
+  let logs, spans =
+    List.fold_left
+      (fun (logs, spans) -> function
+        | Log _ -> (logs + 1, spans) | Span _ -> (logs, spans + 1))
+      (0, 0) t.recovering
+  in
+  let pending =
+    match t.pending_metric_rows with None -> 0 | Some rows -> List.length rows
+  in
+  t.abandoned <-
+    {
+      logs;
+      spans;
+      metric_series = pending + List.length (Metric_aggregation.drain t.metrics);
+      controls = List.length t.controls;
+    };
+  t.recovering <- [];
+  t.pending_metric_rows <- None;
+  record_ending t (Error `Drain_deadline)
+
 let finish t =
-  let recorded = ending t in
-  match Eio.Promise.peek recorded.stop with
+  match Eio.Promise.peek t.ending.stop with
   | Some result -> result
-  | None -> (
-      t.closed <- true;
-      let drained = drain t in
-      ignore (Eio.Promise.try_resolve recorded.resolve drained : bool);
-      (* [drain] resolves the ending itself when a queued [Stop] carried its resolver. *)
-      match Eio.Promise.peek recorded.stop with
-      | Some result -> result
-      | None -> drained)
+  | None when t.finishing -> Eio.Promise.await t.ending.stop
+  | None ->
+      t.finishing <- true;
+      Fun.protect
+        ~finally:(fun () -> t.finishing <- false)
+        (fun () ->
+          begin_ending t;
+          let deadline = Option.get t.ending.deadline in
+          let remaining = deadline -. t.now () in
+          if remaining <= 0. then expire t
+          else
+            try
+              let result =
+                t.with_timeout remaining (fun () ->
+                    if t.worker_done then
+                      match t.worker_result with Some result -> result | None -> drain t
+                    else begin
+                      Eio.Promise.await t.retired;
+                      match t.worker_result with Some result -> result | None -> drain t
+                    end)
+              in
+              record_ending t result
+            with Eio.Time.Timeout -> expire t)
 
 let worker t =
-  (* ^notel-8ixo: the metrics window is exported once the interval has elapsed, whether
-     the worker spent it idle or carrying logs and traces, so a busy exporter cannot
-     starve its metrics; each export re-arms the deadline, and the wait is bounded by
-     the time that remains. A flush or a stop exports the window there and then, because
-     it must settle what was recorded before it. *)
   let due = ref (t.now_ms () + t.metrics_interval_ms) in
   let flush_window () =
     export_metrics t;
     due := t.now_ms () + t.metrics_interval_ms
   in
-  let rec loop () : unit =
+  let rec loop () =
     let command =
       match t.pending with
       | Some command ->
@@ -322,48 +382,49 @@ let worker t =
           Some command
       | None -> t.wait (float_of_int (max 0 (!due - t.now_ms ())) /. 1000.)
     in
-    (match command with
-    | None -> ()
-    | Some (Flush resolve) ->
+    match command with
+    | Some End ->
         flush_window ();
-        Eio.Promise.resolve resolve (settled t)
-    | Some Stop ->
-        flush_window ();
-        Eio.Promise.resolve (ending t).resolve (settled t)
-    | Some (Item item) ->
-        let rec gather count reversed =
-          if count = t.batch_size then List.rev reversed
-          else
-            match Eio.Stream.take_nonblocking t.queue with
-            | Some (Item next) when same_signal item next ->
-                gather (count + 1) (next :: reversed)
-            | Some next ->
-                t.pending <- Some next;
-                List.rev reversed
-            | None -> List.rev reversed
-        in
-        (* ^notel-1stb: the batch is recorded before it is sent, so a cancellation in
-           the middle of the request leaves it to the release drain instead of losing
-           it. A batch that reached the collector while the response was being read is
-           exported twice: at-least-once beats dropping the last records before a
-           stop. *)
-        t.in_flight <- gather 1 [ item ];
-        note t (match item with Log _ -> Logs | Span _ -> Traces) (send t t.in_flight);
-        t.in_flight <- [];
-        ());
-    if t.now_ms () >= !due then flush_window ();
-    loop ()
+        t.worker_result <- Some (settled t)
+    | command ->
+        (match command with
+        | None -> ()
+        | Some End -> assert false
+        | Some (Flush control) ->
+            flush_window ();
+            settle_control t control (settled t)
+        | Some (Item item) ->
+            let rec gather count reversed =
+              if count = t.batch_size then List.rev reversed
+              else
+                match Ox.Channel.try_receive t.queue with
+                | Ok (Item next) when same_signal item next ->
+                    gather (count + 1) (next :: reversed)
+                | Ok next ->
+                    t.pending <- Some next;
+                    List.rev reversed
+                | Error (`Empty | `Done | `Error ()) -> List.rev reversed
+            in
+            t.in_flight <- gather 1 [ item ];
+            let result = send t t.in_flight in
+            t.in_flight <- [];
+            note t (match item with Log _ -> Logs | Span _ -> Traces) result);
+        if t.now_ms () >= !due then flush_window ();
+        loop ()
   in
   loop ()
 
-let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = "ox_otel")
-    ?(resource = []) ?(headers = []) ?(batch_size = 64) ?(max_queue = 1024)
-    ?(metrics_interval = Ox.Duration.seconds 60) ?(max_metric_series = 1024)
-    ?request_deadline ?(on_error = fun _ -> ()) ?(on_signal_error = fun _ _ -> ()) () =
+let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ~ending_budget
+    ?(scope_name = "ox_otel") ?(resource = []) ?(headers = []) ?(batch_size = 64)
+    ?(max_queue = 1024) ?(metrics_interval = Ox.Duration.seconds 60)
+    ?(max_metric_series = 1024) ?request_deadline ?(on_error = fun _ -> ())
+    ?(on_signal_error = fun _ _ -> ()) () =
   if batch_size < 1 || max_queue < 1 || max_metric_series < 1 then
     Error (`Invalid_config "batch_size, max_queue and max_metric_series must be positive")
   else if Ox.Duration.compare metrics_interval Ox.Duration.zero <= 0 then
     Error (`Invalid_config "metrics_interval must be positive")
+  else if Ox.Duration.compare ending_budget Ox.Duration.zero <= 0 then
+    Error (`Invalid_config "ending_budget must be positive")
   else if String.trim service_name = "" then
     Error (`Invalid_config "service_name must not be empty")
   else
@@ -378,7 +439,10 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
             String.sub endpoint 0 (String.length endpoint - 1)
           else endpoint
         in
-        let queue = Eio.Stream.create max_queue in
+        let queue = Ox.Channel.create ~capacity:max_queue () in
+        let stop, resolve = Eio.Promise.create () in
+        let begun, begin_ = Eio.Promise.create () in
+        let retired, retire = Eio.Promise.create () in
         let t =
           {
             queue;
@@ -393,7 +457,6 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
               :: List.filter (fun (name, _) -> name <> "service.name") resource;
             scope_name;
             batch_size;
-            max_queue;
             request_deadline;
             headers;
             on_error;
@@ -403,27 +466,54 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
               (fun seconds ->
                 match
                   Eio.Time.with_timeout clock seconds (fun () ->
-                      Ok (Eio.Stream.take queue))
+                      Ok
+                        (match Ox.Channel.receive queue with
+                        | Ok command -> command
+                        | Error (`Done | `Error ()) -> End))
                 with
                 | Ok command -> Some command
                 | Error `Timeout -> None);
             metrics_interval_ms = max 1 (Ox.Duration.to_ms metrics_interval);
+            now = (fun () -> Eio.Time.now clock);
+            ending_seconds = Ox.Duration.to_seconds_float ending_budget;
             now_ms = (fun () -> int_of_float (Eio.Time.now clock *. 1000.));
             ids = Ox_caps.Cap_stdlib.Random.make_self_init ~caps ();
             dropped = 0;
             metrics = Metric_aggregation.create ~max_series:max_metric_series;
             pending_metric_rows = None;
             closed = false;
-            stopping = false;
             worker_done = false;
             first_failure = None;
-            ending = None;
+            retired;
+            retire;
+            worker_cancel = None;
+            retiring = false;
+            finishing = false;
+            worker_result = None;
+            ending = { stop; resolve; begun; begin_; deadline = None };
+            controls = [];
+            abandoned = nothing_abandoned;
+            recovering = [];
             pending = None;
             in_flight = [];
           }
         in
         Eio.Fiber.fork_daemon ~sw (fun () ->
-            Fun.protect ~finally:(fun () -> t.worker_done <- true) (fun () -> worker t);
+            Eio.Cancel.sub (fun cc ->
+                t.worker_cancel <- Some cc;
+                Fun.protect
+                  ~finally:(fun () ->
+                    t.worker_done <- true;
+                    t.worker_cancel <- None;
+                    Eio.Promise.resolve t.retire ())
+                  (fun () ->
+                    match worker t with
+                    | () -> ()
+                    | exception Eio.Cancel.Cancelled _ when t.retiring -> ()));
+            `Stop_daemon);
+        Eio.Fiber.fork_daemon ~sw (fun () ->
+            Eio.Promise.await t.ending.begun;
+            let _result = finish t in
             `Stop_daemon);
         (* ^notel-1stb: Eio cancels a switch's fibers before it runs its release hooks,
            so the daemon above is gone by the time this runs; the exporter exports the
@@ -433,7 +523,9 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
            records they log are still exported. *)
         Eio.Switch.on_release sw (fun () ->
             (* ^nlint-hxar: finish records the outcome; callbacks already report export failures. *)
-            let _finish_result = (finish t : (unit, error) result) in
+            let _finish_result =
+              (Eio.Cancel.protect (fun () -> finish t) : (unit, error) result)
+            in
             ());
         Ok t
 
@@ -445,34 +537,30 @@ let meter t =
       if not t.closed then
         if not (Metric_aggregation.add t.metrics point) then t.dropped <- t.dropped + 1)
 
+let shutdown t =
+  Eio.Fiber.check ();
+  begin_ending t;
+  (* A release-hook caller cannot wait for the cancelled controller. Protect only
+     the fiber taking over unfinished recovery, never a waiter joining its owner. *)
+  if t.worker_done && (not t.finishing) && not (Eio.Promise.is_resolved t.ending.stop)
+  then begin
+    (* ^nlint-hxar: shutdown is best effort — a failed final flush must not stop
+       the caller from observing that the exporter ended. *)
+    let _finish_result : (unit, error) result = Eio.Cancel.protect (fun () -> finish t) in
+    ()
+  end;
+  Eio.Fiber.check ();
+  Eio.Promise.await t.ending.stop
+
 let flush t =
+  Eio.Fiber.check ();
   if t.closed then Error `Closed
-  else if t.worker_done then
-    (* ^notel-1stb: no worker is left to take the command — the switch cancelled it —
-       so the queue is settled here rather than waiting for one that cannot run. *)
-    drain t
+  else if t.worker_done then shutdown t
   else
     let wait, resolve = Eio.Promise.create () in
-    Eio.Stream.add t.queue (Flush resolve);
-    Eio.Promise.await wait
-
-let shutdown ?timeout t =
-  let recorded = ending t in
-  if (not (Eio.Promise.is_resolved recorded.stop)) && not t.stopping then begin
-    t.stopping <- true;
-    t.closed <- true;
-    (* ^notel-1stb: a worker the switch has already cancelled never takes another
-       command, so the queue is exported here, in the caller, instead. *)
-    if t.worker_done then
-      (* ^nlint-hxar: finish records the outcome that shutdown awaits below. *)
-      let _finish_result = (finish t : (unit, error) result) in
-      ()
-    else Eio.Stream.add t.queue Stop
-  end;
-  match timeout with
-  | None -> Eio.Promise.await recorded.stop
-  | Some duration -> (
-      try
-        t.with_timeout (Ox.Duration.to_seconds_float duration) (fun () ->
-            Eio.Promise.await recorded.stop)
-      with Eio.Time.Timeout -> Error `Drain_deadline)
+    let control = { wait; resolve } in
+    match Ox.Channel.send t.queue (Flush control) with
+    | Ok () ->
+        t.controls <- control :: t.controls;
+        Eio.Promise.await wait
+    | Error (`Done | `Error ()) -> Eio.Promise.await t.ending.stop

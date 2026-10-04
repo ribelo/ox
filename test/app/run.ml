@@ -1224,7 +1224,7 @@ let test_real_signal_telemetry
 
 (* ^notel-1stb: the smallest OTLP collector: it records every POSTed body and answers
    200, so a test can see what an exporter sent during a Door stop. *)
-let with_otlp_collector env sw f =
+let with_otlp_collector ?(stall = false) env sw f =
   let listener =
     Eio.Net.listen ~sw ~backlog:8 env#net (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
   in
@@ -1256,6 +1256,7 @@ let with_otlp_collector env sw f =
             headers length
         in
         received := Eio.Buf_read.take (headers 0) input :: !received;
+        if stall then Eio.Fiber.await_cancel ();
         Eio.Flow.copy_string "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" flow
       done;
       `Stop_daemon);
@@ -1277,7 +1278,7 @@ let otlp_messages bodies =
 
 (* ^notel-1stb: run the fixture to a real SIGTERM stop with a configured OTLP exporter
    and report its exit status, its stdout, and the messages the collector received. *)
-let signal_stop_otlp
+let signal_stop_otlp ?(stall = false)
     ~(caps :
        < Ox_caps.Cap.tmp
        ; Ox_caps.Cap.fs_write
@@ -1289,7 +1290,7 @@ let signal_stop_otlp
     ~finally:(fun () ->
       if Sys.file_exists config_path then Ox_caps.Cap_sys.remove ~caps config_path)
     (fun () ->
-      with_otlp_collector env sw (fun port received ->
+      with_otlp_collector ~stall env sw (fun port received ->
           let output = Ox_caps.Cap_stdlib.open_out ~caps config_path in
           output_string output
             (Printf.sprintf
@@ -1366,6 +1367,31 @@ let test_real_signal_otlp_shutdown
           Alcotest.(check (list string))
             "^notel-1stb and the last record still reaches the collector"
             [ "signal stopped" ] messages))
+
+(* ^notel-056b ^notel-jx0z ^notel-z5vn: the last record's POST is received but
+   never answered, with no request deadline. Both SIGTERM release paths must finish
+   within the fixture's explicit ending budget; the outer timeout is only a guard. *)
+let test_real_signal_otlp_deadline
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
+  List.iter
+    (fun shutdown ->
+      Eio_main.run (fun env ->
+          Eio.Switch.run (fun sw ->
+              let clean, printed, messages =
+                signal_stop_otlp ~stall:true ~caps env sw ~shutdown
+              in
+              Alcotest.(check bool)
+                "deadline does not turn SIGTERM into a defect" true clean;
+              Alcotest.(check (list string))
+                "last record was admitted" [ "signal stopped" ] messages;
+              expect_part printed "telemetry flushed";
+              if shutdown then expect_part printed "OTLP drain deadline reached")))
+    [ false; true ]
 
 (* ^napp-ytqk: default and named invocation parse exactly one typed term. *)
 (* ^napp-x11e: an extra long-lived verb uses production signal handling and
@@ -2523,6 +2549,9 @@ let () =
               test_run_validates ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^napp-idii telemetry flush on SIGTERM" `Quick (fun () ->
               test_real_signal_telemetry ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "bounded OTLP SIGTERM (^notel-056b ^notel-jx0z ^notel-z5vn)"
+            `Quick (fun () ->
+              test_real_signal_otlp_deadline ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^notel-1stb OTLP drain on SIGTERM" `Quick (fun () ->
               test_real_signal_otlp ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^notel-1stb shutdown in a release hook on SIGTERM" `Quick

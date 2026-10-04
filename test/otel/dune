@@ -1,5 +1,6 @@
 (test
  (name run)
+ (modules run)
  (libraries
   ox_otel
   ox_test
@@ -10,4 +11,18 @@
   eio
   eio_main
   yojson
+  alcotest))
+
+(test
+ (name ending)
+ (modules ending)
+ (libraries
+  ox_otel
+  ox_test
+  ox_observability
+  ox_http
+  ox
+  eio
+  eio.mock
+  eio_main
   alcotest))

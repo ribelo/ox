@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: done
 package: ox_otel
 consumer: Exergy, nema and configured Door telemetry
 priority: P1
@@ -83,3 +83,6 @@ An ambient telemetry interpreter, SDK replacement, synchronous QuickJS host brid
 
 Verified 2026-10-04 (context slice):
 [`inherited_context_on_spans_and_logs`](<../../../test/otel/run.ml#L974>) covers ^notel-nbvl, ^notel-uydw, ^notel-p11y, ^notel-jda9 and ^notel-dzpj; [`completion_fields_on_spans`](<../../../test/otel/run.ml#L1242>) covers ^notel-nbvl and ^notel-dzpj through the public exporter and local collector.
+
+Verified 2026-10-04:
+The 15 [ending regressions](<../../../test/otel/ending.ml>) (`full_queue_budget`, `cancelled_shutdown`, `consumed_flush`, `automatic_budget`, `retires_worker`, `preseal_flush`, `global_deadline`, `accounting`, `queued_controls_recovery`, `hooks_and_terminal_failure`, `private_diagnostics`, `invalid_budget`, `worker_defect_recovery`, `request_deadline`, `private_headers_and_transport`) cover stories 11–23; [test_real_signal_otlp_deadline](<../../../test/app/run.ml#L1374>) covers automatic and explicit SIGTERM ending against a stalled collector with a 100ms ending budget and no request deadline. All 22 [historical exporter tests](<../../../test/otel/run.ml>) and 52 [Door tests](<../../../test/app/run.ml>) pass; `dune build @install`, `dune test`, `dune build @fmt` and `scripts/caps-gate` all exit 0 (0 findings, 0 typed modules undecided).
