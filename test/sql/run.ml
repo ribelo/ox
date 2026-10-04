@@ -12,17 +12,13 @@ let migration = function
   | Ok value -> value
   | Error err -> Alcotest.fail (M.error_to_string err)
 
-(* ^inncap-b8ts: a closed time row is enough to open a pool. *)
-let time_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.time >)
-let migrate_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.fs_read ; Ox_caps.Cap.time >)
-let read_caps () = (Ox_test.powerbox () :> < Ox_caps.Cap.fs_read >)
-
-let with_pool f =
+(* ^inncap-b8ts: only time is needed to open a pool. *)
+let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let pool =
             get
-              (P.create ~caps:(time_caps ()) ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
+              (P.create ~caps ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
                  (Q.Sqlite.memory_config ()))
           in
           Fun.protect ~finally:(fun () -> ignore (P.shutdown pool)) (fun () -> f pool)))
@@ -39,8 +35,8 @@ module T = struct
 end
 
 (* ^nsql-4m2q ^nsql-k3zf: consumer's typed declarations and CRUD. *)
-let test_typed () =
-  with_pool (fun pool ->
+let test_typed ~(caps : < Ox_caps.Cap.time ; .. >) () =
+  with_pool ~caps (fun pool ->
       let schema =
         Q.Ox_schema.(
           compile (create_table T.table [ column ~primary_key:true T.id; column T.name ]))
@@ -64,8 +60,8 @@ let test_typed () =
       Alcotest.(check bool) "raw pragma" true (List.length rows >= 2))
 
 (* ^nsql-p8na ^nsql-k3zf: rollback before lease reuse, explicit shutdown. *)
-let test_rollback () =
-  with_pool (fun pool ->
+let test_rollback ~(caps : < Ox_caps.Cap.time ; .. >) () =
+  with_pool ~caps (fun pool ->
       ignore (get (P.Raw.execute pool "CREATE TABLE tx (value TEXT)" []));
       (match
          P.with_transaction pool (fun tx ->
@@ -84,8 +80,8 @@ let test_rollback () =
       | _ -> Alcotest.fail "query succeeded after shutdown")
 
 (* ^nsql-k3zf ^nsql-p8na: timed-out waiter leaves the borrowed handle healthy. *)
-let test_timeout () =
-  with_pool (fun pool ->
+let test_timeout ~(caps : < Ox_caps.Cap.time ; .. >) () =
+  with_pool ~caps (fun pool ->
       let result =
         P.Raw.with_connection pool (fun _ ->
             match P.Raw.query ~timeout:(Ox.Duration.ms 20) pool "SELECT 1" [] with
@@ -98,8 +94,8 @@ let test_timeout () =
         (List.length (get (P.Raw.query pool "SELECT 1" []))))
 
 (* ^nsql-v5td: ordered application, checksum rejection, reversible downgrade. *)
-let test_migrations () =
-  with_pool (fun pool ->
+let test_migrations ~(caps : < Ox_caps.Cap.time ; Ox_caps.Cap.fs_read ; .. >) () =
+  with_pool ~caps (fun pool ->
       let version = M.Version.from_int 1 |> Result.get_ok in
       let up =
         M.Migration.make ~version ~description:"create table"
@@ -110,40 +106,42 @@ let test_migrations () =
           ~migration_type:M.Reversible_down ~sql:"DROP TABLE demo" ()
       in
       let source = M.Source.from_migrations [ down; up ] in
-      let report = migration (M.run ~caps:(migrate_caps ()) pool source) in
+      let report = migration (M.run ~caps pool source) in
       Alcotest.(check int) "applied" 1 (List.length report.applied);
       Alcotest.(check int)
         "already applied" 1
-        (List.length
-           (migration (M.run ~caps:(migrate_caps ()) pool source)).already_applied);
+        (List.length (migration (M.run ~caps pool source)).already_applied);
       let drifted =
         M.Migration.make ~version ~description:"changed" ~migration_type:M.Reversible_up
           ~sql:"CREATE TABLE demo (name TEXT)" ()
       in
-      (match
-         M.run ~caps:(migrate_caps ()) pool (M.Source.from_migrations [ drifted ])
-       with
+      (match M.run ~caps pool (M.Source.from_migrations [ drifted ]) with
       | Error (M.Version_mismatch _) -> ()
       | _ -> Alcotest.fail "checksum change was accepted");
       ignore
-        (migration
-           (M.undo ~caps:(read_caps ()) pool source
-              ~target:(M.Version.from_int64_unchecked 0L)));
+        (migration (M.undo ~caps pool source ~target:(M.Version.from_int64_unchecked 0L)));
       let broken =
         M.Migration.make ~version ~description:"broken" ~migration_type:M.Simple
           ~sql:"CREATE TABLE bad (" ()
       in
       let broken_source = M.Source.from_migrations [ broken ] in
-      (match M.run ~caps:(migrate_caps ()) pool broken_source with
+      (match M.run ~caps pool broken_source with
       | Error (M.Sql_error _) -> ()
       | _ -> Alcotest.fail "invalid migration unexpectedly succeeded");
-      match M.run ~caps:(migrate_caps ()) pool broken_source with
+      match M.run ~caps pool broken_source with
       | Error (M.Dirty version2) when M.Version.equal version version2 -> ()
       | _ -> Alcotest.fail "failed migration did not leave a dirty marker")
 
 let case name f = Alcotest.test_case name `Quick f
 
 let () =
+  let caps =
+    (Ox_test.powerbox ()
+      :> < Ox_caps.Cap.time
+         ; Ox_caps.Cap.fs_read
+         ; Ox_caps.Cap.tmp
+         ; Ox_caps.Cap.fs_write >)
+  in
   Alcotest.run "ox_sql"
     [
       ( "sqlite ^nsql-7x9b ^nsql-c2jw",
@@ -156,9 +154,10 @@ let () =
           case "commit cleanup"
             Test_sqlite.test_sqlite_transaction_commit_failure_rolls_back;
           case "blob metadata" Test_sqlite.test_sqlite_float_blob_metadata_and_counters;
-          case "backup restore" Test_sqlite.test_sqlite_backup_and_restore;
+          case "backup restore" (Test_sqlite.test_sqlite_backup_and_restore ~caps);
           case "extension toggle" Test_sqlite.test_sqlite_load_extension_toggle;
-          case "config errors" Test_sqlite.test_sqlite_config_error_and_testing_helpers;
+          case "config errors"
+            (Test_sqlite.test_sqlite_config_error_and_testing_helpers ~caps);
           case "unexpected step"
             Test_sqlite.test_sqlite_unexpected_step_success_is_typed_error;
         ] );
@@ -183,9 +182,9 @@ let () =
       ("SQLite cancellation", Test_sqlite_cancellation.tests);
       ( "Eio pool and migration ^inncap-b8ts",
         [
-          case "typed CRUD and pragma" test_typed;
-          case "transaction rollback" test_rollback;
-          case "pool timeout and reuse" test_timeout;
-          case "migration checksum" test_migrations;
+          case "typed CRUD and pragma" (test_typed ~caps);
+          case "transaction rollback" (test_rollback ~caps);
+          case "pool timeout and reuse" (test_timeout ~caps);
+          case "migration checksum" (test_migrations ~caps);
         ] );
     ]

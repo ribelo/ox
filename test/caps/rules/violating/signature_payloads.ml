@@ -1,4 +1,5 @@
-(* ^ncapslint-8jcy: payload shape must not turn ambient tokens into arguments. *)
+[@@@ox_lint.fixture "ox-caps-signature: deliberate negative fixture"]
+
 type script_dir = (Ox_caps.Cap.fs_read * string) option
 
 let door_slot : script_dir ref = ref None

@@ -1,4 +1,5 @@
-(* ^nlintc-7be1 ^nlintc-kdcl *)
+[@@@ox_lint.fixture "ox-public-exception: deliberate negative fixture"]
+
 exception Error of string
 
 module Nested : sig

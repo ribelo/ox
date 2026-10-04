@@ -88,7 +88,7 @@ let telemetry ~sw (env : Eio_unix.Stdenv.base Ox_app.Env.t) (cfg : config) =
         }
   end
 
-let () =
+let main ~(caps : < Ox_caps.Cap.exit ; .. >) () =
   let code =
     Ox_app.run_with_args ~name:"signal-fixture" ~config ~validate ~pp_err ~telemetry
       ~service_args:(Cmdliner.Term.const ())
@@ -126,4 +126,6 @@ let () =
         Eio.Flow.copy_string "ready\n" env.Ox_app.Env.base#stdout;
         Ox_app.serve ~sw ())
   in
-  exit code
+  Ox_caps.Cap_stdlib.exit ~caps code
+
+let () = main ~caps:(Ox_test.powerbox ()) ()

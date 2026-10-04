@@ -1,4 +1,4 @@
-(* ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn *)
+[@@@ox_lint.fixture "ox-cancel-safety: deliberate negative fixture"]
 
 val receive : ('a, 'e) Ox.Channel.t -> 'a
 (** Suspension: may suspend. Cancellation: propagates. Finalizers: none. Locking: none. *)

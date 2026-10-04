@@ -39,8 +39,7 @@ let typed_sites ~caps (rule : Rules.t) source =
 
 let rule ~caps name = List.hd (Rules.select ~caps [ "ox-caps-" ^ name ])
 
-let () =
-  let caps = Ox_caps_door.powerbox () in
+let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let names =
     List.map (fun (op : Caps.operation) -> op.name) Caps.operations @ [ "signature" ]
   in
@@ -58,7 +57,7 @@ let () =
         failwith ("typed false negative: " ^ name))
     names;
   assert (
-    typed_sites ~caps (rule ~caps "signature") "violating/signature.ml" = [ 3; 5; 9 ]);
+    typed_sites ~caps (rule ~caps "signature") "violating/signature.ml" = [ 4; 6; 10 ]);
   List.iter
     (fun (name, expected) ->
       let actual = source_sites ~caps (rule ~caps name) "source_identity.ml" in
@@ -128,3 +127,8 @@ let () =
   Ox_caps.Cap_stdlib.print_endline ~caps
     "17 source/typed origins, typed signature, lexical binders and allowance evidence: \
      pass"
+
+let () =
+  let powerbox = Ox_test.powerbox () in
+  let caps = (powerbox :> < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout >) in
+  run ~caps ()

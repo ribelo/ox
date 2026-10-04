@@ -1,2 +1,3 @@
-(* ^ncapslint-nf4t ^ncapslint-w2tq: never run, compiled rule evidence. *)
+[@@@ox_lint.fixture "ox-caps-exec: deliberate negative fixture"]
+
 let violation () = Unix.system "true"

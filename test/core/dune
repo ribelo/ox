@@ -21,4 +21,4 @@
   (source_tree ../../lib)
   (glob_files ../../lib/ox/*.ml)
   (glob_files ../../lib/ox/*.mli))
- (libraries ox eio eio_main eio.mock alcotest))
+ (libraries ox ox_test eio eio_main eio.mock alcotest))

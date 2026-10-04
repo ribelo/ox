@@ -60,6 +60,7 @@ let with_server ?(tls = false) serve test =
 
 let good_response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"
 let expect_ok = function Ok x -> x | Error _ -> Alcotest.fail "HTTP request failed"
+let read_body = function `Read bytes -> Bytes.to_string bytes | `Skipped -> Alcotest.fail "body skipped"
 
 let plaintext () =
   (* nhttp-irnw nhttp-0qob nhttp-jdb0 *)
@@ -74,7 +75,7 @@ let plaintext () =
         |> expect_ok
       in
       Alcotest.(check int) "redirect returned unchanged" 302 response.status;
-      Alcotest.(check string) "body" "hello" (Bytes.to_string response.body))
+      Alcotest.(check string) "body" "hello" (read_body response.body))
 
 let tls_trust () =
   (* nhttp-gcka nhttp-5nqk nhttp-j0bc *)
@@ -84,7 +85,7 @@ let tls_trust () =
       Eio.Flow.copy_string good_response flow)
     (fun _ client url ->
       let response = H.Client.request client ~method_:"GET" ~url () |> expect_ok in
-      Alcotest.(check string) "TLS body" "hello" (Bytes.to_string response.body))
+      Alcotest.(check string) "TLS body" "hello" (read_body response.body))
 
 let tls_untrusted () =
   with_server ~tls:true
@@ -104,7 +105,7 @@ let oversized () =
       Eio.Flow.copy_string "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nabcdef" flow)
     (fun _ client url ->
       match H.Client.request client ~method_:"GET" ~url ~max_body_bytes:5 () with
-      | Error `Body_too_large -> ()
+      | Error (`Body { reason = `Too_large; _ }) -> ()
       | _ -> Alcotest.fail "oversized body was not rejected")
 
 let chunked () =
@@ -116,7 +117,7 @@ let chunked () =
         flow)
     (fun _ client url ->
       let response = H.Client.request client ~method_:"GET" ~url () |> expect_ok in
-      Alcotest.(check string) "chunked decoded" "hello" (Bytes.to_string response.body))
+      Alcotest.(check string) "chunked decoded" "hello" (read_body response.body))
 
 let idle_timeout () =
   (* nhttp-hmrw *)
@@ -182,7 +183,7 @@ let closed () =
       Eio.Flow.copy_string "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort" flow)
     (fun _ client url ->
       match H.Client.request client ~method_:"GET" ~url () with
-      | Error `Closed -> ()
+      | Error (`Body { status = 200; reason = `Truncated; _ }) -> ()
       | _ -> Alcotest.fail "truncated body not typed")
 
 let slow_progress () =
@@ -202,7 +203,7 @@ let slow_progress () =
       in
       Alcotest.(check string)
         "progressing response" "hello"
-        (Bytes.to_string response.body))
+        (read_body response.body))
 
 let cancel () =
   (* nhttp-6a47: cancellation interrupts the request and closes its socket. *)
@@ -232,7 +233,7 @@ let close_delimited () =
       Eio.Flow.copy_string "HTTP/1.0 200 OK\r\n\r\nhello" flow)
     (fun _ client url ->
       let response = H.Client.request client ~method_:"GET" ~url () |> expect_ok in
-      Alcotest.(check string) "EOF framed" "hello" (Bytes.to_string response.body))
+      Alcotest.(check string) "EOF framed" "hello" (read_body response.body))
 
 let tls_wrong_identity () =
   with_server ~tls:true
@@ -277,11 +278,11 @@ let chunked_overflow () =
         flow)
     (fun _ client url ->
       match H.Client.request client ~method_:"GET" ~url ~max_body_bytes:5 () with
-      | Error `Body_too_large -> ()
+      | Error (`Body { reason = `Too_large; _ }) -> ()
       | _ -> Alcotest.fail "chunked oversized body was not rejected")
 
-let smoke () =
-  if Sys.getenv_opt "OX_HTTP_LIVE_SMOKE" = Some "1" then
+let smoke ~(caps : < Ox_caps.Cap.env ; .. >) () =
+  if Ox_caps.Cap_sys.getenv_opt ~caps "OX_HTTP_LIVE_SMOKE" = Some "1" then
     Eio_main.run (fun env ->
         Eio.Switch.run (fun sw ->
             let client = H.Client.create ~sw ~net:env#net ~clock:env#clock () in
@@ -294,6 +295,7 @@ let smoke () =
             | Error _ -> Alcotest.fail "live HTTP smoke failed"))
 
 let () =
+  let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.env >) in
   Alcotest.run "HTTP client"
     [
       ( "copied codecs",
@@ -322,6 +324,7 @@ let () =
           Alcotest.test_case "pending BIO bounds" `Quick
             Test_openssl_bounds.test_invalid_slices_pending_bio;
         ] );
+      ("final heads and disposition", Test_client_heads.cases);
       ( "transport",
         [
           Alcotest.test_case "plaintext redirect POST" `Quick plaintext;
@@ -340,6 +343,6 @@ let () =
           Alcotest.test_case "cancel closes socket" `Quick cancel;
           Alcotest.test_case "TLS handshake deadline" `Quick tls_handshake_deadline;
           Alcotest.test_case "chunked body limit" `Quick chunked_overflow;
-          Alcotest.test_case "opt-in live smoke" `Quick smoke;
+          Alcotest.test_case "opt-in live smoke" `Quick (smoke ~caps);
         ] );
     ]

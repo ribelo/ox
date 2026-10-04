@@ -69,7 +69,7 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
     [
       ( "--caps-gate",
         Arg.Set caps_gate,
-        " Run capability policy (lib/packages/bin by default)" );
+        " Run capability policy (lib/packages/bin/test/tests by default)" );
       ( "--rules",
         Arg.String (fun id -> ids := id :: !ids),
         "RULE Select a rule (repeatable)" );
@@ -105,6 +105,8 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
   | Ok () ->
       let findings, failures = (ref 0, ref 0) in
       let undecided = ref 0 in
+      let data_only, fixtures = (ref 0, ref 0) in
+      let default_scan = !caps_gate && !paths = [] in
       let sites = Hashtbl.create 64 in
       let fail ?(typed = false) path ex =
         if typed then incr undecided;
@@ -125,7 +127,8 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
       in
       (try
          if !caps_gate && !paths = [] then
-           paths := List.filter Sys.file_exists [ "lib"; "packages"; "bin" ];
+           paths :=
+             List.filter Sys.file_exists [ "lib"; "packages"; "bin"; "test"; "tests" ];
          if !allows <> [] && not !caps_gate then
            invalid_arg "--allow requires --caps-gate";
          let rules =
@@ -172,10 +175,24 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
                let source =
                  match artifact with Some t -> Artifact.source t | None -> input
                in
-               if (not direct) && Artifact.membership ~caps source = Artifact.Not_built
-               then
+               let membership =
+                 if direct then Artifact.Unknown else Artifact.membership ~caps source
+               in
+               let marker =
+                 if
+                   membership = Artifact.Not_built
+                   || (default_scan && membership = Artifact.Data_only)
+                 then None
+                 else Artifact.fixture ~caps source
+               in
+               Option.iter (fun id -> ignore (Rules.select ~caps [ id ])) marker;
+               if default_scan && Option.is_some marker then incr fixtures
+               else if default_scan && membership = Artifact.Data_only then incr data_only
+               else if membership = Artifact.Not_built then
                  Cap_stdlib.printf ~caps
-                   "%s:1: ox-lint: not built (not in any Dune target)\n" source
+                   "%s:1: ox-lint: not built (not in any Dune target); absent from \
+                    workspace and @check rules\n"
+                   source
                else begin
                  (* ^nlintc-j03j ^nlintc-7be1: apply policy to the original source, not its annotation. *)
                  let root =
@@ -184,7 +201,9 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
                      ~default:(Sys.getcwd ())
                  in
                  let rules = List.filter (Rules.applies ~root ~source) rules in
+                 let fixture_hit = ref false in
                  let emit rule loc =
+                   if marker = Some rule.Rules.id then fixture_hit := true;
                    let key =
                      ( source,
                        loc.Location.loc_start.pos_lnum,
@@ -229,14 +248,22 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
                              | _ -> assert false))
                        rules
                    with ex -> fail ~typed:true input ex
-                   end
+                   end;
+                 if
+                   Option.fold ~none:false
+                     ~some:(fun id -> List.exists (fun r -> r.Rules.id = id) rules)
+                     marker
+                   && not !fixture_hit
+                 then
+                   fail source (Failure "dead fixture: declared rule produced no finding")
                end
              with ex -> fail input ex)
            inputs;
          if !caps_gate then
            Cap_stdlib.eprintf ~caps
-             "caps-gate: %d findings; %d modules with typed rules undecided%s\n" !findings
-             !undecided
+             "caps-gate: %d findings; %d modules with typed rules undecided; %d \
+              data-only files out of scope; %d fixture files skipped%s\n"
+             !findings !undecided !data_only !fixtures
              (if !require_typed then " (typed evidence required)"
               else " (build first for typed coverage)")
        with ex -> fail "ox-lint" ex);

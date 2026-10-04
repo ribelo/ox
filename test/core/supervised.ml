@@ -970,7 +970,7 @@ let schedule_vocabulary () =
 
 (* ---- nsup-gxmx: Timeout is an alias of Eio; no Resource module -------------------------- *)
 
-let timeout_alias () =
+let timeout_alias ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
       let slow () =
@@ -991,7 +991,7 @@ let timeout_alias () =
      use_in_scope over Switch.on_release. acquire_release stays gone. *)
   let resource_mli = Filename.concat lib "resource.mli" in
   if Sys.file_exists resource_mli then begin
-    let channel = open_in resource_mli in
+    let channel = Ox_caps.Cap_stdlib.open_in ~caps resource_mli in
     let text =
       Fun.protect
         (fun () -> really_input_string channel (in_channel_length channel))
@@ -1013,10 +1013,10 @@ let timeout_alias () =
 
 (* ---- nsup-o65j nsup-hje5: the doctrine is written down ---------------------------------- *)
 
-let doctrine_docs () =
+let doctrine_docs ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   let docs = if Sys.file_exists "docs/why-ox.md" then "docs" else "../../docs" in
   let read name =
-    let channel = open_in (Filename.concat docs name) in
+    let channel = Ox_caps.Cap_stdlib.open_in ~caps (Filename.concat docs name) in
     Fun.protect
       (fun () -> really_input_string channel (in_channel_length channel))
       ~finally:(fun () -> close_in channel)
@@ -1074,8 +1074,9 @@ let tests =
       [
         Alcotest.test_case "nsup-pzj6 retry policy" `Quick retry_policy;
         Alcotest.test_case "nsup-69fi schedule vocabulary" `Quick schedule_vocabulary;
-        Alcotest.test_case "nsup-gxmx timeout alias, no Resource module" `Quick
-          timeout_alias;
-        Alcotest.test_case "nsup-o65j nsup-hje5 doctrine in docs" `Quick doctrine_docs;
+        Alcotest.test_case "nsup-gxmx timeout alias, no Resource module" `Quick (fun () ->
+            timeout_alias ~caps:(Ox_test.powerbox ()) ());
+        Alcotest.test_case "nsup-o65j nsup-hje5 doctrine in docs" `Quick (fun () ->
+            doctrine_docs ~caps:(Ox_test.powerbox ()) ());
       ] );
   ]

@@ -16,29 +16,30 @@ let fd flow =
   | Some x -> x
   | None -> Alcotest.fail "expected unix fd"
 
-let with_script body fn =
-  let dir = Filename.temp_dir "ox-process-" "" in
+let with_script ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) body fn =
+  let dir = Ox_caps.Cap_stdlib.Filename.temp_dir ~caps "ox-process-" "" in
   let path = Filename.concat dir "child.sh" in
   Fun.protect
     ~finally:(fun () ->
-      if Sys.file_exists (path ^ ".ready") then Sys.remove (path ^ ".ready");
-      Sys.remove path;
-      Unix.rmdir dir)
+      if Sys.file_exists (path ^ ".ready") then
+        Ox_caps.Cap_sys.remove ~caps (path ^ ".ready");
+      Ox_caps.Cap_sys.remove ~caps path;
+      Ox_caps.Cap_unix.rmdir ~caps dir)
     (fun () ->
-      let oc = open_out path in
+      let oc = Ox_caps.Cap_stdlib.open_out ~caps path in
       output_string oc ("#!/bin/sh\n" ^ body ^ "\n");
       close_out oc;
-      Unix.chmod path 0o700;
+      Ox_caps.Cap_unix.chmod ~caps path 0o700;
       fn path)
 
-let test_invalid () =
+let test_invalid
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* nproc-7bkl *)
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [] in
       let spawn fds =
-        C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-          ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/never" ] ~grace:Ox.Duration.zero
-          ~fds ()
+        C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+          ~argv:[ "/bin/never" ] ~grace:Ox.Duration.zero ~fds ()
       in
       Alcotest.(check bool)
         "negative rejected" true
@@ -57,15 +58,15 @@ let test_invalid () =
         | _ -> false);
       Alcotest.(check int) "no spawn" 0 (List.length (Ox_test.Process.spawns fake)))
 
-let test_fake_retirement () =
+let test_fake_retirement
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* nproc-e5zc nproc-71a7 nproc-bqik *)
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let child =
         ok
-          (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-             ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
-             ~fds:[] ())
+          (C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+             ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       check_exit (C.Signaled Sys.sigterm) (C.stop child);
       check_exit (C.Signaled Sys.sigterm) (C.stop child);
@@ -74,7 +75,8 @@ let test_fake_retirement () =
         "TERM only; Eio backstop inert" [ Sys.sigterm ]
         (Ox_test.Process.signals fake))
 
-let test_supervision () =
+let test_supervision
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* nproc-cyeq nproc-msz4 nproc-pnnm nproc-ypzm *)
   Ox_test.run (fun env sw ->
       let fake =
@@ -88,9 +90,8 @@ let test_supervision () =
       in
       let supervisor =
         S.start ~sw ~clock:env#clock ~schedule ~spawn:(fun ~sw ->
-            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
-              ~fds:[] ())
+            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       let events = S.events supervisor in
       (match Eio.Stream.take events with
@@ -124,15 +125,15 @@ let test_supervision () =
            (Eio.Stream.take_nonblocking events));
       Ox_test.assert_no_fibers_left ())
 
-let test_stop () =
+let test_stop
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* nproc-svva nproc-pnnm *)
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let s =
         S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever ~spawn:(fun ~sw ->
-            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
-              ~fds:[] ())
+            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       (match Eio.Stream.take (S.events s) with
       | S.Started 1 -> ()
@@ -169,7 +170,8 @@ let test_spawn_failure () =
       | S.Stopped -> ()
       | _ -> Alcotest.fail "nlimit-a407: typed Gave_up then Stopped")
 
-let test_overflow () =
+let test_overflow
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* nproc-pnnm nproc-msz4 *)
   Ox_test.run (fun env sw ->
       let fake =
@@ -177,9 +179,8 @@ let test_overflow () =
       in
       let s =
         S.start ~sw ~clock:env#clock ~schedule:(Ox.Schedule.recurs 32) ~spawn:(fun ~sw ->
-            C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-              ~mgr:(Ox_test.Process.mgr fake) ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero
-              ~fds:[] ())
+            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       let rec settle attempts =
         if S.generation s < 33 && attempts > 0 then (
@@ -192,9 +193,15 @@ let test_overflow () =
       Alcotest.(check int) "bounded stream" 32 (Eio.Stream.length (S.events s));
       Alcotest.(check bool) "old events dropped" true (S.dropped s > 0))
 
-let test_fd_and_output () =
+let test_fd_and_output
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) () =
   (* nproc-1x05 nproc-giyu nproc-bqik *)
-  with_script
+  with_script ~caps
     "read line <&3; printf 'reply:%s\n' $line >&4; echo stdout; echo stderr >&2; exit 3"
     (fun script ->
       Eio_main.run (fun env ->
@@ -203,9 +210,9 @@ let test_fd_and_output () =
               let read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 40)
-                     ~stdout:C.Pipe ~stderr:C.Pipe
+                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                     ~argv:[ script ] ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe
+                     ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
                      ())
               in
@@ -228,10 +235,16 @@ let test_fd_and_output () =
               check_exit (C.Exited 3) (C.await child);
               check_exit (C.Exited 3) (C.stop child))))
 
-let test_mapped_fds_blocking () =
+let test_mapped_fds_blocking
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) () =
   (* nproc-1x05: the child sees blocking descriptors even though Eio's pipes are
      non-blocking in the parent *)
-  with_script
+  with_script ~caps
     "for n in 1 3 4; do awk '/^flags/ {print $2}' /proc/self/fdinfo/$n >&2; done"
     (fun script ->
       Eio_main.run (fun env ->
@@ -240,9 +253,9 @@ let test_mapped_fds_blocking () =
               let _read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 40)
-                     ~stdout:C.Pipe ~stderr:C.Pipe
+                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                     ~argv:[ script ] ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe
+                     ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
                      ())
               in
@@ -259,16 +272,22 @@ let test_mapped_fds_blocking () =
                 flags;
               ignore (C.stop child))))
 
-let test_retired_output_eof () =
+let test_retired_output_eof
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) () =
   (* nlimit-nzur *)
-  with_script "printf output; printf error >&2" (fun script ->
+  with_script ~caps "printf output; printf error >&2" (fun script ->
       Eio_main.run (fun env ->
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                     ~mgr:env#process_mgr ~argv:[ script ] ~grace:(Ox.Duration.ms 30)
-                     ~stdout:C.Pipe ~stderr:C.Pipe ~fds:[] ())
+                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                     ~argv:[ script ] ~grace:(Ox.Duration.ms 30) ~stdout:C.Pipe
+                     ~stderr:C.Pipe ~fds:[] ())
               in
               check_exit (C.Exited 0) (C.await child);
               check_exit (C.Exited 0) (C.stop child);
@@ -290,15 +309,20 @@ let wait_ready clock marker =
   | Ok () -> ()
   | Error `Timeout -> Alcotest.fail "child readiness timed out"
 
-let test_escalation grace () =
+let test_escalation
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) grace () =
   (* nproc-xmat nproc-e5zc nproc-ypzm *)
-  with_script {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
+  with_script ~caps {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
       Eio_main.run (fun env ->
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                     ~mgr:env#process_mgr
+                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                      ~argv:[ script; script ^ ".ready" ]
                      ~grace ~fds:[] ())
               in
@@ -306,9 +330,15 @@ let test_escalation grace () =
               check_exit (C.Signaled Sys.sigkill) (C.stop child);
               check_exit (C.Signaled Sys.sigkill) (C.await child))))
 
-let test_supervisor_real_stop () =
+let test_supervisor_real_stop
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) () =
   (* nproc-svva nproc-e5zc nproc-xmat *)
-  with_script {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
+  with_script ~caps {|trap '' TERM; printf ready > "$1"; exec sleep 30|} (fun script ->
       Eio_main.run (fun env ->
           Eio.Switch.run (fun sw ->
               let spawned = ref None in
@@ -316,8 +346,7 @@ let test_supervisor_real_stop () =
                 S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever
                   ~spawn:(fun ~sw ->
                     let result =
-                      C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                        ~mgr:env#process_mgr
+                      C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                         ~argv:[ script; script ^ ".ready" ]
                         ~grace:(Ox.Duration.ms 20) ~fds:[] ()
                     in
@@ -335,9 +364,15 @@ let test_supervisor_real_stop () =
               Alcotest.(check int)
                 "no replacement after shutdown" 1 (S.generation supervisor))))
 
-let test_cancel () =
+let test_cancel
+    ~(caps :
+       < Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.tmp
+       ; .. >) () =
   (* nproc-71a7 nproc-e5zc *)
-  with_script
+  with_script ~caps
     {|trap 'kill $worker; wait $worker; exit 0' TERM; sleep 30 & worker=$!; printf ready > "$1"; wait "$worker"|}
     (fun script ->
       Eio_main.run (fun env ->
@@ -348,8 +383,7 @@ let test_cancel () =
                     Ox.Scope.run (fun sw ->
                         let child =
                           ok
-                            (C.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                               ~mgr:env#process_mgr
+                            (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                                ~argv:[ script; script ^ ".ready" ]
                                ~grace:(Ox.Duration.ms 40) ~fds:[] ())
                         in
@@ -368,36 +402,45 @@ let test_cancel () =
               check_exit (C.Exited 0) (C.stop child))))
 
 let () =
+  let caps =
+    (Ox_test.powerbox ()
+      :> < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; Ox_caps.Cap.tmp >)
+  in
   Alcotest.run "ox_process"
     [
-      ("nproc-7bkl", [ Alcotest.test_case "invalid fd mappings" `Quick test_invalid ]);
+      ( "nproc-7bkl",
+        [ Alcotest.test_case "invalid fd mappings" `Quick (test_invalid ~caps) ] );
       ( "nproc-e5zc nproc-71a7 nproc-bqik",
-        [ Alcotest.test_case "fake retirement" `Quick test_fake_retirement ] );
+        [ Alcotest.test_case "fake retirement" `Quick (test_fake_retirement ~caps) ] );
       ( "nproc-cyeq nproc-msz4 nproc-pnnm nproc-ypzm",
-        [ Alcotest.test_case "scheduled restart" `Quick test_supervision ] );
+        [ Alcotest.test_case "scheduled restart" `Quick (test_supervision ~caps) ] );
       ( "nproc-svva nproc-pnnm",
-        [ Alcotest.test_case "stop never respawns" `Quick test_stop ] );
+        [ Alcotest.test_case "stop never respawns" `Quick (test_stop ~caps) ] );
       ( "nproc-pnnm nproc-msz4",
         [
           Alcotest.test_case "typed spawn failure" `Quick test_spawn_failure;
-          Alcotest.test_case "bounded event overflow" `Quick test_overflow;
+          Alcotest.test_case "bounded event overflow" `Quick (test_overflow ~caps);
         ] );
       ( "nproc-1x05 nproc-giyu nproc-bqik nlimit-nzur",
         [
-          Alcotest.test_case "real fd pipes and output" `Quick test_fd_and_output;
+          Alcotest.test_case "real fd pipes and output" `Quick (test_fd_and_output ~caps);
           Alcotest.test_case "nproc-1x05 mapped fds are blocking in the child" `Quick
-            test_mapped_fds_blocking;
-          Alcotest.test_case "retired output reaches EOF" `Quick test_retired_output_eof;
+            (test_mapped_fds_blocking ~caps);
+          Alcotest.test_case "retired output reaches EOF" `Quick
+            (test_retired_output_eof ~caps);
         ] );
       ( "nproc-xmat nproc-e5zc nproc-ypzm",
         [
           Alcotest.test_case "real escalation" `Quick
-            (test_escalation (Ox.Duration.ms 30));
+            ((test_escalation ~caps) (Ox.Duration.ms 30));
           Alcotest.test_case "zero grace immediate kill" `Quick
-            (test_escalation Ox.Duration.zero);
+            ((test_escalation ~caps) Ox.Duration.zero);
         ] );
       ( "nproc-svva nproc-e5zc nproc-xmat",
-        [ Alcotest.test_case "real supervisor shutdown" `Quick test_supervisor_real_stop ]
-      );
-      ("nproc-71a7 nproc-e5zc", [ Alcotest.test_case "cancel reaps" `Quick test_cancel ]);
+        [
+          Alcotest.test_case "real supervisor shutdown" `Quick
+            (test_supervisor_real_stop ~caps);
+        ] );
+      ( "nproc-71a7 nproc-e5zc",
+        [ Alcotest.test_case "cancel reaps" `Quick (test_cancel ~caps) ] );
     ]

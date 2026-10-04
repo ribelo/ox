@@ -28,15 +28,14 @@ let count ~caps (rule : Rules.t) dir =
     rule.typed;
   List.sort Int.compare !sites
 
-let () =
-  let caps = Ox_caps_door.powerbox () in
+let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let expectations =
     [
       ("ox-catch-all", [ 6; 14; 15; 16; 17; 18; 21; 25; 31 ]);
       ("ox-suspending-finalizer", [ 4; 5; 10; 14; 20 ]);
       ("ox-stdlib-lock", [ 6; 11; 18; 21; 29; 34 ]);
       ("ox-raw-concurrency", [ 4; 5; 6; 7; 8; 9; 10; 14 ]);
-      ("ox-public-exception", [ 2; 5 ]);
+      ("ox-public-exception", [ 3; 6 ]);
       ("ox-obj-magic", [ 4; 8; 12; 14 ]);
       ("ox-race-deadline", [ 5; 15; 23; 29 ]);
     ]
@@ -66,3 +65,8 @@ let () =
   Ox_caps.Cap_stdlib.print_endline ~caps
     "seven concurrency rules: exact violating sites, clean fixtures, allowances and \
      dormant raw policy: pass"
+
+let () =
+  let powerbox = Ox_test.powerbox () in
+  let caps = (powerbox :> < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout >) in
+  run ~caps ()

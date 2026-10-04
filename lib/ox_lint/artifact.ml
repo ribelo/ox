@@ -75,13 +75,73 @@ let candidates ~(caps : < Cap.fs_read ; .. >) dir =
       Hashtbl.add cache dir xs;
       xs
 
+let fixture ~caps path =
+  let open Parsetree in
+  Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
+      Lexer.handle_docstrings := true;
+      Docstrings.init ();
+      Lexer.init ();
+      let lexbuf = Lexing.from_channel channel in
+      Location.init lexbuf path;
+      let attributes =
+        if Filename.check_suffix path ".mli" then
+          (Parse.interface lexbuf).psg_items
+          |> List.filter_map (fun item ->
+              match item.psig_desc with
+              | Psig_attribute attribute -> Some attribute
+              | _ -> None)
+        else
+          Parse.implementation lexbuf
+          |> List.filter_map (fun item ->
+              match item.pstr_desc with
+              | Pstr_attribute attribute -> Some attribute
+              | _ -> None)
+      in
+      let markers =
+        List.filter (fun a -> a.attr_name.txt = "ox_lint.fixture") attributes
+      in
+      match markers with
+      | [] -> None
+      | [
+       {
+         attr_payload =
+           PStr
+             [
+               {
+                 pstr_desc =
+                   Pstr_eval
+                     ( {
+                         pexp_desc =
+                           Pexp_constant { pconst_desc = Pconst_string (text, _, _); _ };
+                         _;
+                       },
+                       _ );
+                 _;
+               };
+             ];
+         _;
+       };
+      ] -> (
+          match String.index_opt text ':' with
+          | Some separator ->
+              let rule = String.trim (String.sub text 0 separator) in
+              let reason =
+                String.trim
+                  (String.sub text (separator + 1) (String.length text - separator - 1))
+              in
+              if rule = "" || reason = "" then
+                failwith "fixture marker requires rule: reason";
+              Some rule
+          | None -> failwith "fixture marker requires rule: reason")
+      | _ -> failwith "expected one file-level ox_lint.fixture string")
+
 let relative ~root path =
   if path = root then ""
   else
     String.sub path (String.length root + 1) (String.length path - String.length root - 1)
 
 type target = Library | Executable
-type membership = Built of target | Not_built | Unknown
+type membership = Built of target | Data_only | Not_built | Unknown
 
 (* Dune's declared modules distinguish excluded sources from missing annotations.
    A failed/unavailable inventory is not evidence that a file is excluded. *)
@@ -130,6 +190,113 @@ let field name = function
         fields
   | Atom _ -> None
 
+(* [describe rules] uses ordinary, quoted S-expressions rather than csexp. *)
+let parse_rules text =
+  let length = String.length text in
+  let delimiter = function ' ' | '\n' | '\r' | '\t' | '(' | ')' -> true | _ -> false in
+  let rec items nested pos acc =
+    if pos = length then
+      if nested then failwith "truncated Dune rules" else (List.rev acc, pos)
+    else
+      match text.[pos] with
+      | ' ' | '\n' | '\r' | '\t' -> items nested (pos + 1) acc
+      | ';' ->
+          items nested
+            (Option.value (String.index_from_opt text pos '\n') ~default:length)
+            acc
+      | ')' ->
+          if nested then (List.rev acc, pos + 1) else failwith "unexpected Dune close"
+      | '(' ->
+          let values, next = items true (pos + 1) [] in
+          items nested next (List values :: acc)
+      | '"' ->
+          let rec stop i =
+            if i >= length then failwith "truncated Dune string"
+            else if text.[i] = '\\' then stop (i + 2)
+            else if text.[i] = '"' then i
+            else stop (i + 1)
+          in
+          let last = stop (pos + 1) in
+          let value = Scanf.unescaped (String.sub text (pos + 1) (last - pos - 1)) in
+          items nested (last + 1) (Atom value :: acc)
+      | _ ->
+          let rec stop i = if i = length || delimiter text.[i] then i else stop (i + 1) in
+          let last = stop pos in
+          items nested last (Atom (String.sub text pos (last - pos)) :: acc)
+  in
+  fst (items false 0 [])
+
+let describe ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root arguments =
+  let command =
+    "dune describe " ^ arguments ^ " --root " ^ Filename.quote root ^ " 2>/dev/null"
+  in
+  let channel = Cap_unix.open_process_in ~caps command in
+  let buffer = Buffer.create 4096 in
+  (try
+     try
+       while true do
+         Buffer.add_channel buffer channel 4096
+       done
+     with End_of_file -> ()
+   with ex ->
+     ignore (Unix.close_process_in channel);
+     raise ex);
+  if Unix.close_process_in channel <> Unix.WEXITED 0 then
+    failwith ("Dune inventory unavailable: describe " ^ arguments);
+  Buffer.contents buffer
+
+(* Dune 3.22's workspace description omits [test]/[tests]. Query declared
+   compiler rules, not existing artifacts: missing CMTs must remain undecided.
+   Recursive @check expands the lazy rules for all test modules, including helpers;
+   Dune itself resolves ordered module sets, includes and preprocessing. *)
+let rule_modules ~caps root resolve =
+  describe ~caps root "rules --recursive @check"
+  |> parse_rules
+  |> List.concat_map (fun rule ->
+      if field "targets" rule = None || field "deps" rule = None then
+        failwith "Dune rule inventory has an invalid rule";
+      match field "context" rule with
+      | Some (Atom "default") -> (
+          let targets =
+            match Option.bind (field "targets" rule) (field "files") with
+            | Some (List targets) -> targets
+            | _ -> failwith "Dune rule inventory has invalid targets"
+          in
+          let annotation =
+            List.find_map
+              (function
+                | Atom path
+                  when Filename.check_suffix path ".cmt"
+                       || Filename.check_suffix path ".cmti" ->
+                    Some path
+                | _ -> None)
+              targets
+          in
+          match annotation with
+          | None -> []
+          | Some target -> (
+              let kind =
+                if
+                  List.exists
+                    (fun part -> Filename.check_suffix part ".eobjs")
+                    (String.split_on_char '/' target)
+                then Executable
+                else Library
+              in
+              match field "deps" rule with
+              | Some (List deps) ->
+                  List.filter_map
+                    (function
+                      | List [ Atom "File"; List [ Atom "In_build_dir"; Atom path ] ]
+                        when Filename.check_suffix path ".ml"
+                             || Filename.check_suffix path ".mli" ->
+                          Some (resolve (original path), kind)
+                      | _ -> None)
+                    deps
+              | _ -> failwith "Dune rule inventory has invalid dependencies"))
+      | None | Some (Atom _) -> []
+      | Some (List _) -> failwith "Dune rule inventory has an invalid context")
+
 let inventory_cache = Hashtbl.create 8
 
 let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
@@ -138,65 +305,134 @@ let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
   | None ->
       let value =
         try
-          let command =
-            "dune describe workspace --root " ^ Filename.quote root
-            ^ " --format csexp --lang 0.1 2>/dev/null"
+          let description =
+            describe ~caps root "workspace --format csexp --lang 0.1" |> parse_inventory
           in
-          let channel = Cap_unix.open_process_in ~caps command in
-          let buffer = Buffer.create 4096 in
-          (try
-             try
-               while true do
-                 Buffer.add_channel buffer channel 4096
-               done
-             with End_of_file -> ()
-           with ex ->
-             ignore (Unix.close_process_in channel);
-             raise ex);
-          let status = Unix.close_process_in channel in
-          if status <> Unix.WEXITED 0 then None
-          else
-            let resolve path =
-              canonical ~caps
-                (if Filename.is_relative path then Filename.concat root path else path)
-            in
-            let modules kind fields =
-              match field "modules" fields with
-              | Some (List modules) ->
-                  List.concat_map
-                    (fun fields ->
-                      List.filter_map
-                        (fun key ->
-                          match field key fields with
-                          | Some (List [ Atom path ]) ->
-                              Some (resolve (original path), kind)
-                          | Some (List []) -> None
-                          | _ -> failwith "Dune inventory has an invalid source field")
-                        [ "impl"; "intf" ])
-                    modules
-              | _ -> failwith "Dune inventory has no module list"
-            in
-            let description = parse_inventory (Buffer.contents buffer) in
-            (match field "root" description with
-            | Some (Atom described) when canonical ~caps described = root -> ()
-            | _ -> failwith "Dune inventory has an invalid root");
-            (match field "build_context" description with
-            | Some (Atom "_build/default") -> ()
-            | _ -> failwith "Dune inventory is not the default build context");
-            match description with
-            | List entries ->
-                Some
-                  (List.concat_map
-                     (function
-                       | List [ Atom "library"; fields ] -> modules Library fields
-                       | List [ Atom "executables"; fields ] -> modules Executable fields
-                       | _ -> [])
-                     entries)
-            | Atom _ -> None
+          let resolve path =
+            canonical ~caps
+              (if Filename.is_relative path then Filename.concat root path else path)
+          in
+          let modules kind fields =
+            match field "modules" fields with
+            | Some (List modules) ->
+                List.concat_map
+                  (fun fields ->
+                    List.filter_map
+                      (fun key ->
+                        match field key fields with
+                        | Some (List [ Atom path ]) -> Some (resolve (original path), kind)
+                        | Some (List []) -> None
+                        | _ -> failwith "Dune inventory has an invalid source field")
+                      [ "impl"; "intf" ])
+                  modules
+            | _ -> failwith "Dune inventory has no module list"
+          in
+          (match field "root" description with
+          | Some (Atom described) when canonical ~caps described = root -> ()
+          | _ -> failwith "Dune inventory has an invalid root");
+          (match field "build_context" description with
+          | Some (Atom "_build/default") -> ()
+          | _ -> failwith "Dune inventory is not the default build context");
+          match description with
+          | List entries ->
+              Some
+                (List.concat_map
+                   (function
+                     | List [ Atom "library"; fields ] -> modules Library fields
+                     | List [ Atom "executables"; fields ] -> modules Executable fields
+                     | _ -> [])
+                   entries)
+          | Atom _ -> None
         with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
       in
       Hashtbl.add inventory_cache root value;
       value
+
+let rule_inventory_cache = Hashtbl.create 8
+
+let rule_inventory ~caps root =
+  match Hashtbl.find_opt rule_inventory_cache root with
+  | Some value -> value
+  | None ->
+      let value =
+        try
+          let resolve path =
+            canonical ~caps
+              (if Filename.is_relative path then Filename.concat root path else path)
+          in
+          Some (rule_modules ~caps root resolve)
+        with
+        | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
+        | Unix.Unix_error _
+        ->
+          None
+      in
+      Hashtbl.add rule_inventory_cache root value;
+      value
+
+(* Alias actions are absent from [describe rules] on Dune 3.22. Read their
+   declared data dependencies, but let the compiler inventories take precedence. *)
+let data_cache = Hashtbl.create 8
+
+let data_dependencies ~caps root =
+  match Hashtbl.find_opt data_cache root with
+  | Some dependencies -> dependencies
+  | None ->
+      let read path =
+        Cap_stdlib.In_channel.with_open_bin ~caps path In_channel.input_all
+      in
+      let rec stanzas seen path =
+        if List.mem path seen then []
+        else
+          parse_rules (read path)
+          |> List.concat_map (function
+            | List [ Atom "include"; Atom included ] ->
+                stanzas (path :: seen) (Filename.concat (Filename.dirname path) included)
+            | stanza -> [ stanza ])
+      in
+      let rec directories dir =
+        Array.to_list (Cap_sys.readdir ~caps dir)
+        |> List.concat_map (fun name ->
+            let path = Filename.concat dir name in
+            if name = "_build" || name = ".git" then []
+            else if Sys.is_directory path then directories path
+            else if name <> "dune" then []
+            else
+              let resolve p = canonical ~caps (Filename.concat dir p) in
+              let rec dependency = function
+                | Atom p when not (String.contains p '%') -> [ (resolve p, false) ]
+                | List [ Atom "source_tree"; Atom p ] when not (String.contains p '%') ->
+                    [ (resolve p, true) ]
+                | List [ Atom "file"; Atom p ] when not (String.contains p '%') ->
+                    [ (resolve p, false) ]
+                | List [ Atom "glob_files"; Atom pattern ]
+                  when not (String.contains pattern '%') ->
+                    let directory = resolve (Filename.dirname pattern) in
+                    if not (Sys.file_exists directory) then []
+                    else
+                      Array.to_list (Cap_sys.readdir ~caps directory)
+                      |> List.filter (fun name ->
+                          Caps_policy.excluded [ Filename.basename pattern ] name)
+                      |> List.map (fun name -> (Filename.concat directory name, false))
+                | List (Atom name :: values) when String.starts_with ~prefix:":" name ->
+                    List.concat_map dependency values
+                | _ -> []
+              in
+              stanzas [] path
+              |> List.concat_map (fun stanza ->
+                  match stanza with
+                  | List (_ :: fields) ->
+                      List.concat_map
+                        (function
+                          | List (Atom "deps" :: dependencies) ->
+                              List.concat_map dependency dependencies
+                          | _ -> [])
+                        fields
+                  | _ -> []))
+      in
+      let dependencies = directories root in
+      Hashtbl.add data_cache root dependencies;
+      dependencies
 
 let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
   let input = canonical ~caps input in
@@ -213,7 +449,26 @@ let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
           in
           match List.assoc_opt expected modules with
           | Some kind -> Built kind
-          | None -> Not_built))
+          | None -> (
+              match rule_inventory ~caps root with
+              | None -> Unknown
+              | Some modules -> (
+                  match List.assoc_opt expected modules with
+                  | Some kind -> Built kind
+                  | None ->
+                      let source =
+                        if String.starts_with ~prefix:(build ^ "/") input then
+                          Filename.concat root (relative ~root:build input)
+                        else input
+                      in
+                      if
+                        List.exists
+                          (fun (path, tree) ->
+                            source = path
+                            || (tree && String.starts_with ~prefix:(path ^ "/") source))
+                          (data_dependencies ~caps root)
+                      then Data_only
+                      else Not_built))))
 
 let rec object_directories ~(caps : < Cap.fs_read ; .. >) ~root dir =
   let here =

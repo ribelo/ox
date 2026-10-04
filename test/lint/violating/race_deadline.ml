@@ -1,4 +1,4 @@
-(* ^nlintc-kdcl: race_deadline violating evidence. *)
+[@@@ox_lint.fixture "ox-race-deadline: deliberate negative fixture"]
 [@@@warning "-32-34-37"]
 
 let race sw f =

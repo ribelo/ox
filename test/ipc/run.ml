@@ -8,28 +8,30 @@ let exists p =
   | _ -> true
   | exception Unix.Unix_error (Unix.ENOENT, _, _) -> false
 
-let with_dir f =
-  let dir = Filename.temp_file ~temp_dir:"/tmp" "ip" "" in
-  Unix.unlink dir;
-  Unix.mkdir dir 0o700;
+let with_dir
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_read ; Ox_caps.Cap.fs_write ; .. >) f =
+  let dir = Ox_caps.Cap_stdlib.Filename.temp_file ~caps ~temp_dir:"/tmp" "ip" "" in
+  Ox_caps.Cap_unix.unlink ~caps dir;
+  Ox_caps.Cap_unix.mkdir ~caps dir 0o700;
   Fun.protect
     ~finally:(fun () ->
       let rec clean path =
         if (Unix.lstat path).st_kind = Unix.S_DIR then (
-          Array.iter (fun name -> clean (Filename.concat path name)) (Sys.readdir path);
-          Unix.rmdir path)
-        else Unix.unlink path
+          Array.iter
+            (fun name -> clean (Filename.concat path name))
+            (Ox_caps.Cap_sys.readdir ~caps path);
+          Ox_caps.Cap_unix.rmdir ~caps path)
+        else Ox_caps.Cap_unix.unlink ~caps path
       in
       clean dir)
     (fun () -> f dir (dir ^ "/s"))
 
-let start ?policy ?on_peer_error ?on_budget_exceeded ?error_response
-    ?(decode = fun s -> Ok s) ?(budget = fun _ -> None) ?(handler = fun x -> Ok x) env sw
-    path =
+let start ~(caps : < Ox_caps.Cap.fs_write ; Ox_caps.Cap.network ; .. >) ?policy
+    ?on_peer_error ?on_budget_exceeded ?error_response ?(decode = fun s -> Ok s)
+    ?(budget = fun _ -> None) ?(handler = fun x -> Ok x) env sw path =
   (* ^pcaps-pdn5: only the Door/test powerbox grants socket creation and path writes. *)
-  L.run ~caps:(Ox_test.powerbox ()) ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path
-    ?policy ~decode ~encode:Fun.id ~budget ~handler ?on_budget_exceeded ?error_response
-    ?on_peer_error ()
+  L.run ~caps ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ?policy ~decode
+    ~encode:Fun.id ~budget ~handler ?on_budget_exceeded ?error_response ?on_peer_error ()
 
 let client env sw path = Eio.Net.connect ~sw env#net (`Unix path)
 
@@ -41,13 +43,19 @@ let request env sw path data =
 let check_error name expected actual =
   Alcotest.(check bool) name true (actual = Error expected)
 
-let ownership () =
+let ownership
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz *)
-  with_dir (fun dir path ->
+  with_dir ~caps (fun dir path ->
       Ox_test.run (fun env _ ->
           let nested = dir ^ "/private/s" in
           Eio.Switch.run (fun sw ->
-              check_ok (start env sw nested);
+              check_ok (start ~caps env sw nested);
               Alcotest.(check int)
                 "private parent" 0o700
                 ((Unix.stat (dir ^ "/private")).st_perm land 0o777);
@@ -55,53 +63,59 @@ let ownership () =
                 "private socket" 0o600
                 ((Unix.stat nested).st_perm land 0o777));
           Alcotest.(check bool) "retired socket" false (exists nested);
-          Unix.chmod dir 0o750;
+          Ox_caps.Cap_unix.chmod ~caps dir 0o750;
           Eio.Switch.run (fun sw ->
-              check_error "unsafe directory" `Unsafe_runtime_dir (start env sw path));
-          Unix.chmod dir 0o700;
-          let oc = open_out path in
+              check_error "unsafe directory" `Unsafe_runtime_dir (start ~caps env sw path));
+          Ox_caps.Cap_unix.chmod ~caps dir 0o700;
+          let oc = Ox_caps.Cap_stdlib.open_out ~caps path in
           output_string oc "sentinel";
           close_out oc;
           Eio.Switch.run (fun sw ->
-              match start env sw path with
+              match start ~caps env sw path with
               | Error (`Ownership_conflict path) -> ()
               | _ -> fail "regular file overwritten");
-          let ic = open_in path in
+          let ic = Ox_caps.Cap_stdlib.open_in ~caps path in
           let text = input_line ic in
           close_in ic;
           Alcotest.(check string) "sentinel preserved" "sentinel" text;
-          Unix.unlink path;
-          Unix.symlink "missing" path;
+          Ox_caps.Cap_unix.unlink ~caps path;
+          Ox_caps.Cap_unix.symlink ~caps "missing" path;
           Eio.Switch.run (fun sw ->
-              match start env sw path with
+              match start ~caps env sw path with
               | Error (`Ownership_conflict path) -> ()
               | _ -> fail "symlink followed");
-          Unix.unlink path;
-          let fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+          Ox_caps.Cap_unix.unlink ~caps path;
+          let fd = Ox_caps.Cap_unix.socket ~caps Unix.PF_UNIX Unix.SOCK_STREAM 0 in
           Unix.bind fd (Unix.ADDR_UNIX path);
           Unix.close fd;
           Eio.Switch.run (fun sw ->
-              check_ok (start env sw path);
+              check_ok (start ~caps env sw path);
               Alcotest.(check string)
                 "stale socket replaced by live listener" "probe"
                 (request env sw path "probe\n"));
           Alcotest.(check bool) "stale retired" false (exists path)))
 
-let live_and_replacement () =
+let live_and_replacement
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-4kuy nipc-vayc nipc-uatz *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           Eio.Switch.run (fun sw ->
-              check_ok (start env sw path);
+              check_ok (start ~caps env sw path);
               Eio.Switch.run (fun competing ->
                   check_error "same-process registry" `Lock_conflict
-                    (start env competing path));
+                    (start ~caps env competing path));
               Alcotest.(check string)
                 "survivor serves" "ping"
                 (request env sw path "ping\n");
               let old = Unix.stat path in
-              Unix.unlink path;
-              let oc = open_out path in
+              Ox_caps.Cap_unix.unlink ~caps path;
+              let oc = Ox_caps.Cap_stdlib.open_out ~caps path in
               output_string oc "replacement";
               close_out oc;
               Alcotest.(check bool)
@@ -109,9 +123,15 @@ let live_and_replacement () =
                 ((Unix.stat path).st_ino <> old.st_ino));
           Alcotest.(check bool) "replacement retained" true (exists path)))
 
-let line_and_policy () =
+let line_and_policy
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let policy =
             { L.default_policy with max_line_bytes = 4; max_reply_bytes = 4; peers = 1 }
@@ -120,7 +140,7 @@ let line_and_policy () =
           let oversized, signal_oversized = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~on_peer_error:(fun x ->
                      errors := x :: !errors;
                      if x = `Ingress_too_large then
@@ -137,9 +157,15 @@ let line_and_policy () =
                 (List.mem `Ingress_too_large !errors));
           Alcotest.(check bool) "endpoint unlinked" false (exists path)))
 
-let deadlines () =
+let deadlines
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-x8ph nipc-6i86 nipc-eiy8 nipc-1v8z *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let errors = ref [] and cleaned = ref false in
           let started, signal_started = Eio.Promise.create () in
@@ -147,7 +173,7 @@ let deadlines () =
           let ingress_done, signal_ingress_done = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
@@ -182,16 +208,22 @@ let deadlines () =
                 "typed ingress" true
                 (List.mem `Ingress_timeout !errors))))
 
-let disconnect () =
+let disconnect
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-1v8z nipc-uatz nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           let left, signal_left = Eio.Promise.create () in
           let disconnected, signal_disconnect = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_entered ();
                      Fun.protect
@@ -211,9 +243,15 @@ let disconnect () =
               Alcotest.(check bool) "listener still active" true (exists path));
           Alcotest.(check bool) "retired after disconnect" false (exists path)))
 
-let saturated () =
+let saturated
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-skdt nipc-6i86 nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let first, signal_first = Eio.Promise.create () in
           let release, signal_release = Eio.Promise.create () in
@@ -221,7 +259,7 @@ let saturated () =
           Eio.Switch.run (fun sw ->
               let policy = { L.default_policy with peers = 1; backlog = 1 } in
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~handler:(fun x ->
                      incr count;
                      if !count = 1 then (
@@ -242,15 +280,21 @@ let saturated () =
                 (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 second));
               Alcotest.(check int) "second handler admitted" 2 !count)))
 
-let reply_bound () =
+let reply_bound
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-eiy8 nipc-ajmi nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let rejected, signal_rejected = Eio.Promise.create () in
           let policy = { L.default_policy with max_reply_bytes = 4 } in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~handler:(fun x -> Ok (if x = "large" then "oversize" else x))
                    ~on_peer_error:(function
                      | `Egress_too_large -> Eio.Promise.resolve signal_rejected ()
@@ -269,22 +313,34 @@ let reply_bound () =
               Eio.Flow.copy_string "large\n" large;
               Eio.Promise.await rejected)))
 
-let cross_process () =
+let cross_process
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-4kuy nipc-vayc nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           Eio.Switch.run (fun sw ->
-              check_ok (start env sw path);
+              check_ok (start ~caps env sw path);
               Eio.Process.run env#process_mgr
                 [ Sys.executable_name; "--check-lock"; path ];
               Alcotest.(check string)
                 "survives child lock contention" "ok" (request env sw path "ok\n"))))
 
-let live_external () =
+let live_external
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-4kuy nipc-vayc nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
-          let fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+          let fd = Ox_caps.Cap_unix.socket ~caps Unix.PF_UNIX Unix.SOCK_STREAM 0 in
           Fun.protect
             ~finally:(fun () -> Unix.close fd)
             (fun () ->
@@ -292,18 +348,24 @@ let live_external () =
               Unix.listen fd 1;
               Eio.Switch.run (fun sw ->
                   check_error "active external listener" `Active_listener
-                    (start env sw path));
+                    (start ~caps env sw path));
               Alcotest.(check bool) "external endpoint preserved" true (exists path))))
 
-let shutdown_active () =
+let shutdown_active
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-uatz nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cancelled = ref false in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~handler:(fun _ ->
                      Fun.protect
                        ~finally:(fun () -> cancelled := true)
@@ -318,9 +380,15 @@ let shutdown_active () =
           Alcotest.(check bool) "active peer cancelled and joined" true !cancelled;
           Alcotest.(check bool) "endpoint retired" false (exists path)))
 
-let egress_timeout () =
+let egress_timeout
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-eiy8 nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           let timed_out, signal_timed_out = Eio.Promise.create () in
@@ -330,7 +398,7 @@ let egress_timeout () =
           in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_entered ();
                      Ok payload)
@@ -346,14 +414,20 @@ let egress_timeout () =
               Ox_test.advance env#clock (Ox.Duration.seconds 2);
               Eio.Promise.await timed_out)))
 
-let unbounded_budget () =
+let unbounded_budget
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-6i86 nipc-01bn *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let entered, signal_entered = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_entered ();
                      Eio.Time.sleep env#clock 20.;
@@ -367,16 +441,22 @@ let unbounded_budget () =
                 "None budget permits long work" "eventual"
                 (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:32 flow)))))
 
-let budget_reply () =
+let budget_reply
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
           let handled = ref false in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun request d ->
                      Printf.sprintf "timeout %s %d" request (Ox.Duration.to_ms d))
@@ -407,9 +487,15 @@ let budget_reply () =
                 | _ -> false
                 | exception End_of_file -> true))))
 
-let budget_reply_byte_bound () =
+let budget_reply_byte_bound
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-i5ni nipc-eiy8 *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let errors = ref [] in
           let started, signal_started = Eio.Promise.create () in
@@ -418,7 +504,7 @@ let budget_reply_byte_bound () =
           let policy = { L.default_policy with max_reply_bytes = 4 } in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun _ _ -> "oversize")
                    ~handler:(fun _ ->
@@ -447,9 +533,15 @@ let budget_reply_byte_bound () =
                 | _ -> false
                 | exception End_of_file -> true))))
 
-let budget_reply_egress_deadline () =
+let budget_reply_egress_deadline
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-i5ni nipc-eiy8 *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
@@ -460,7 +552,7 @@ let budget_reply_egress_deadline () =
           in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~on_budget_exceeded:(fun _ _ -> payload)
                    ~handler:(fun _ ->
@@ -488,15 +580,21 @@ let budget_reply_egress_deadline () =
               settle 5;
               Eio.Promise.await timed_out)))
 
-let budget_reply_absent () =
+let budget_reply_absent
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-i5ni nipc-6i86 nipc-ajmi *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let started, signal_started = Eio.Promise.create () in
           let cut, signal_cut = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~budget:(fun _ -> Some (Ox.Duration.seconds 2))
                    ~handler:(fun _ ->
                      Eio.Promise.resolve signal_started ();
@@ -517,14 +615,20 @@ let budget_reply_absent () =
                 | _ -> false
                 | exception End_of_file -> true))))
 
-let error_reply_decode () =
+let error_reply_decode
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-x8ph nipc-ajmi *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~decode:(fun line ->
                      if line = "ping" then Ok line
                      else Error (Printf.sprintf "unparsable: %s" line))
@@ -552,15 +656,21 @@ let error_reply_decode () =
                 (request env sw path "ping\n");
               Alcotest.(check int) "only the valid request was admitted" 1 !admitted)))
 
-let error_reply_oversized () =
+let error_reply_oversized
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-x8ph *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           let policy = { L.default_policy with max_line_bytes = 4 } in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~error_response:(function
                      | `Ingress_too_large -> Some "error too-large" | _ -> None)
                    ~handler:(fun x ->
@@ -580,14 +690,20 @@ let error_reply_oversized () =
                 | exception End_of_file -> true);
               Alcotest.(check int) "no handler admitted" 0 !admitted)))
 
-let error_reply_ingress_timeout () =
+let error_reply_ingress_timeout
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-x8ph *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let reported, signal_reported = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~error_response:(function
                      | `Ingress_timeout -> Some "error timeout" | _ -> None)
                    ~on_peer_error:(function
@@ -604,14 +720,20 @@ let error_reply_ingress_timeout () =
                 "stalled ingress answered with the chosen reply" "error timeout"
                 (Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:64 flow)))))
 
-let error_reply_declined () =
+let error_reply_declined
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-ajmi *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let admitted = ref 0 in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~decode:(fun _ -> Error "unparsable")
                    ~error_response:(fun _ -> None)
                    ~handler:(fun x ->
@@ -627,9 +749,15 @@ let error_reply_declined () =
                 | exception End_of_file -> true);
               Alcotest.(check int) "no handler admitted" 0 !admitted)))
 
-let error_reply_byte_bound () =
+let error_reply_byte_bound
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-eiy8 *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let seen = ref [] in
           let decoded, signal_decoded = Eio.Promise.create () in
@@ -637,7 +765,7 @@ let error_reply_byte_bound () =
           let policy = { L.default_policy with max_reply_bytes = 4 } in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~decode:(fun _ -> Error "unparsable")
                    ~error_response:(fun _ -> Some "oversize")
                    ~on_peer_error:(fun e ->
@@ -659,9 +787,15 @@ let error_reply_byte_bound () =
                 | _ -> false
                 | exception End_of_file -> true))))
 
-let error_reply_egress_timeout () =
+let error_reply_egress_timeout
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-eiy8 *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let decoded, signal_decoded = Eio.Promise.create () in
           let timed_out, signal_timed_out = Eio.Promise.create () in
@@ -671,7 +805,7 @@ let error_reply_egress_timeout () =
           in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start ~policy
+                (start ~caps ~policy
                    ~decode:(fun _ -> Error "unparsable")
                    ~error_response:(function `Decode _ -> Some payload | _ -> None)
                    ~on_peer_error:(function
@@ -694,16 +828,22 @@ let error_reply_egress_timeout () =
               settle 5;
               Eio.Promise.await timed_out)))
 
-let error_reply_disconnect () =
+let error_reply_disconnect
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; .. >) () =
   (* nipc-c871 nipc-1v8z *)
-  with_dir (fun _ path ->
+  with_dir ~caps (fun _ path ->
       Ox_test.run (fun env _ ->
           let seen = ref [] in
           let asked = ref 0 in
           let reported, signal_reported = Eio.Promise.create () in
           Eio.Switch.run (fun sw ->
               check_ok
-                (start
+                (start ~caps
                    ~decode:(fun line ->
                      if line = "ok" then Ok line else Error "unparsable")
                    ~error_response:(fun _ ->
@@ -726,71 +866,96 @@ let error_reply_disconnect () =
                 "listener still serves after the disconnect" "ok"
                 (request env sw path "ok\n"))))
 
-let () =
+let main
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.network
+       ; Ox_caps.Cap.exit
+       ; .. >) () =
   if Array.length Sys.argv = 3 && Sys.argv.(1) = "--check-lock" then (
-    let fd = Unix.openfile (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0 in
+    let fd = Ox_caps.Cap_unix.openfile ~caps (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0 in
     let exit_code =
       match Unix.lockf fd Unix.F_TLOCK 0 with
       | () -> 2
       | exception Unix.Unix_error ((Unix.EACCES | Unix.EAGAIN), _, _) -> 0
     in
     Unix.close fd;
-    exit exit_code)
+    Ox_caps.Cap_stdlib.exit ~caps exit_code);
 
-let () =
   Alcotest.run "ox_ipc"
     [
       ( "nipc-tafd nipc-4kuy nipc-vayc nipc-f264 nipc-uatz",
-        [ Alcotest.test_case "directory and ownership (^pcaps-pdn5)" `Quick ownership ] );
+        [
+          Alcotest.test_case "directory and ownership (^pcaps-pdn5)" `Quick
+            (ownership ~caps);
+        ] );
       ( "nipc-4kuy nipc-vayc nipc-uatz",
-        [ Alcotest.test_case "live and replacement" `Quick live_and_replacement ] );
+        [ Alcotest.test_case "live and replacement" `Quick (live_and_replacement ~caps) ]
+      );
       ( "nipc-skdt nipc-x8ph nipc-eiy8 nipc-ajmi nipc-01bn",
-        [ Alcotest.test_case "bounded line and reply" `Quick line_and_policy ] );
+        [ Alcotest.test_case "bounded line and reply" `Quick (line_and_policy ~caps) ] );
       ( "nipc-x8ph nipc-6i86 nipc-eiy8 nipc-1v8z",
-        [ Alcotest.test_case "deadlines and interruption" `Quick deadlines ] );
+        [ Alcotest.test_case "deadlines and interruption" `Quick (deadlines ~caps) ] );
       ( "nipc-1v8z nipc-uatz nipc-01bn",
-        [ Alcotest.test_case "disconnect cancels handler" `Quick disconnect ] );
+        [ Alcotest.test_case "disconnect cancels handler" `Quick (disconnect ~caps) ] );
       ( "nipc-skdt nipc-6i86 nipc-01bn",
-        [ Alcotest.test_case "admission saturation" `Quick saturated ] );
+        [ Alcotest.test_case "admission saturation" `Quick (saturated ~caps) ] );
       ( "nipc-eiy8 nipc-ajmi nipc-01bn",
-        [ Alcotest.test_case "bounded single reply" `Quick reply_bound ] );
+        [ Alcotest.test_case "bounded single reply" `Quick (reply_bound ~caps) ] );
       ( "nipc-4kuy nipc-vayc nipc-01bn",
         [
-          Alcotest.test_case "cross-process lock" `Quick cross_process;
-          Alcotest.test_case "external listener" `Quick live_external;
+          Alcotest.test_case "cross-process lock" `Quick (cross_process ~caps);
+          Alcotest.test_case "external listener" `Quick (live_external ~caps);
         ] );
       ( "nipc-uatz nipc-01bn",
-        [ Alcotest.test_case "shutdown joins active peer" `Quick shutdown_active ] );
+        [ Alcotest.test_case "shutdown joins active peer" `Quick (shutdown_active ~caps) ]
+      );
       ( "nipc-eiy8 nipc-01bn",
-        [ Alcotest.test_case "blocked egress deadline" `Quick egress_timeout ] );
+        [ Alcotest.test_case "blocked egress deadline" `Quick (egress_timeout ~caps) ] );
       ( "nipc-6i86 nipc-01bn",
         [
-          Alcotest.test_case "None does not impose handler budget" `Quick unbounded_budget;
+          Alcotest.test_case "None does not impose handler budget" `Quick
+            (unbounded_budget ~caps);
         ] );
       ( "nipc-c871 nipc-x8ph nipc-eiy8 nipc-ajmi nipc-1v8z",
         [
           Alcotest.test_case "malformed request gets the chosen error reply" `Quick
-            error_reply_decode;
+            (error_reply_decode ~caps);
           Alcotest.test_case "overlong request gets the chosen error reply" `Quick
-            error_reply_oversized;
+            (error_reply_oversized ~caps);
           Alcotest.test_case "stalled ingress gets the chosen error reply" `Quick
-            error_reply_ingress_timeout;
+            (error_reply_ingress_timeout ~caps);
           Alcotest.test_case "no chosen reply closes without writing" `Quick
-            error_reply_declined;
+            (error_reply_declined ~caps);
           Alcotest.test_case "error reply obeys the reply byte bound" `Quick
-            error_reply_byte_bound;
+            (error_reply_byte_bound ~caps);
           Alcotest.test_case "stalled reader hits the egress deadline" `Quick
-            error_reply_egress_timeout;
+            (error_reply_egress_timeout ~caps);
           Alcotest.test_case "disconnect never asks for a reply" `Quick
-            error_reply_disconnect;
+            (error_reply_disconnect ~caps);
         ] );
       ( "nipc-i5ni nipc-6i86 nipc-eiy8 nipc-ajmi",
         [
-          Alcotest.test_case "chosen budget reply reaches the peer" `Quick budget_reply;
+          Alcotest.test_case "chosen budget reply reaches the peer" `Quick
+            (budget_reply ~caps);
           Alcotest.test_case "chosen budget reply obeys the byte bound" `Quick
-            budget_reply_byte_bound;
+            (budget_reply_byte_bound ~caps);
           Alcotest.test_case "chosen budget reply obeys the egress deadline" `Quick
-            budget_reply_egress_deadline;
-          Alcotest.test_case "absent callback still closes" `Quick budget_reply_absent;
+            (budget_reply_egress_deadline ~caps);
+          Alcotest.test_case "absent callback still closes" `Quick
+            (budget_reply_absent ~caps);
         ] );
     ]
+
+let () =
+  main
+    ~caps:
+      (Ox_test.powerbox ()
+        :> < Ox_caps.Cap.tmp
+           ; Ox_caps.Cap.fs_read
+           ; Ox_caps.Cap.fs_write
+           ; Ox_caps.Cap.network
+           ; Ox_caps.Cap.exit >)
+    ()

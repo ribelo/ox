@@ -550,9 +550,9 @@ let test_realtime_session () =
       | Ok () -> ()
       | Error _ -> Alcotest.fail "close failed")
 
-let live_smoke () =
+let live_smoke ~(caps : < Ox_caps.Cap.env ; .. >) () =
   let key =
-    match Sys.getenv_opt "OPENROUTER_API_KEY" with
+    match Ox_caps.Cap_sys.getenv_opt ~caps "OPENROUTER_API_KEY" with
     | Some key when String.trim key <> "" -> Ox_observability.Redact.make key
     | _ -> Alcotest.fail "OPENROUTER_API_KEY is required for opt-in smoke"
   in
@@ -561,7 +561,7 @@ let live_smoke () =
       let logger = fst (Test_helpers.memory_logger env) in
       let model =
         Option.value ~default:"qwen/qwen3-embedding-4b"
-          (Sys.getenv_opt "OX_AI_LIVE_EMBEDDING_MODEL")
+          (Ox_caps.Cap_sys.getenv_opt ~caps "OX_AI_LIVE_EMBEDDING_MODEL")
       in
       let result =
         E.create ~http ~clock:env#clock ~logger ~api_key:key
@@ -570,10 +570,14 @@ let live_smoke () =
       in
       ignore (ok result))
 
-let () =
+let main ~(caps : < Ox_caps.Cap.env ; .. >) () =
   let live =
-    if Sys.getenv_opt "OX_AI_LIVE_SMOKE" = Some "1" then
-      [ ("live", [ Alcotest.test_case "opt-in embedding ^air2-tst5" `Quick live_smoke ]) ]
+    if Ox_caps.Cap_sys.getenv_opt ~caps "OX_AI_LIVE_SMOKE" = Some "1" then
+      [
+        ( "live",
+          [ Alcotest.test_case "opt-in embedding ^air2-tst5" `Quick (live_smoke ~caps) ]
+        );
+      ]
     else []
   in
   Alcotest.run "AI OpenRouter"
@@ -596,3 +600,5 @@ let () =
          ] );
      ]
     @ live)
+
+let () = main ~caps:(Ox_test.powerbox () :> < Ox_caps.Cap.env >) ()

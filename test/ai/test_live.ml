@@ -11,20 +11,20 @@
    The question is the smallest real one: one choice question whose criteria are the three
    operations jev-ultrafast always offers (`reference/model.py`). *)
 
-let model =
-  match Sys.getenv_opt "OX_AI_LIVE_MODEL" with
+let model ~(caps : < Ox_caps.Cap.env ; .. >) () =
+  match Ox_caps.Cap_sys.getenv_opt ~caps "OX_AI_LIVE_MODEL" with
   | Some model -> model
   | None -> Test_helpers.model
 
-let endpoint =
-  match Sys.getenv_opt "OX_AI_LIVE_ENDPOINT" with
+let endpoint ~(caps : < Ox_caps.Cap.env ; .. >) () =
+  match Ox_caps.Cap_sys.getenv_opt ~caps "OX_AI_LIVE_ENDPOINT" with
   | Some endpoint -> endpoint
   | None -> Ox_ai_systemone.Client.default_endpoint
 
-let smoke () =
-  match Sys.getenv_opt "OX_AI_LIVE_SMOKE" with
+let smoke ~(caps : < Ox_caps.Cap.env ; .. >) ~model ~endpoint () =
+  match Ox_caps.Cap_sys.getenv_opt ~caps "OX_AI_LIVE_SMOKE" with
   | Some "1" -> (
-      match Sys.getenv_opt "OPENROUTER_API_KEY" with
+      match Ox_caps.Cap_sys.getenv_opt ~caps "OPENROUTER_API_KEY" with
       | Some key when not (String.equal (String.trim key) "") ->
           Test_helpers.run (fun ~sw env ->
               let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in

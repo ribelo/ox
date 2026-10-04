@@ -1,7 +1,8 @@
 (* ^ncaps-0mvw ^nfloor-6n2e: returning and exiting Doors agree. *)
 type outcome = { code : int; stdout : string; stderr : string }
 
-let spawn mode =
+let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)
+    mode =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let fixture =
@@ -9,8 +10,8 @@ let spawn mode =
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr ~argv:[ fixture; mode ] ~grace:(Ox.Duration.ms 50)
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; mode ] ~grace:(Ox.Duration.ms 50)
                 ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
@@ -32,10 +33,11 @@ let spawn mode =
           let stderr = Eio.Flow.read_all stderr in
           { code; stdout; stderr }))
 
-let parity () =
+let parity ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)
+    () =
   List.iter
     (fun (mode, expected) ->
-      let returned = spawn ("return-" ^ mode) in
+      let returned = spawn ~caps ("return-" ^ mode) in
       Alcotest.(check int) "returning fixture returns normally" 0 returned.code;
       Alcotest.(check string)
         "returning status after cleanup"
@@ -43,7 +45,7 @@ let parity () =
         returned.stdout;
       List.iter
         (fun entry ->
-          let exited = spawn (entry ^ "-" ^ mode) in
+          let exited = spawn ~caps (entry ^ "-" ^ mode) in
           Alcotest.(check int) "same exit status" expected exited.code;
           Alcotest.(check string) "cleanup before exit" "released\n" exited.stdout;
           Alcotest.(check string)
@@ -53,4 +55,10 @@ let parity () =
 
 let () =
   Alcotest.run "Door exit"
-    [ ("^ncaps-0mvw", [ Alcotest.test_case "return and exit parity" `Quick parity ]) ]
+    [
+      ( "^ncaps-0mvw",
+        [
+          Alcotest.test_case "return and exit parity" `Quick (fun () ->
+              parity ~caps:(Ox_test.powerbox ()) ());
+        ] );
+    ]

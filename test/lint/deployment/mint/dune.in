@@ -1,0 +1,13 @@
+(executable
+ (name allowed)
+ (modules allowed)
+ (libraries ox_test))
+
+(executable
+ (name direct_door)
+ (modules direct_door)
+ (libraries ox_test))
+
+(executable
+ (name sibling)
+ (modules sibling))

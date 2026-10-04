@@ -14,3 +14,5 @@ This rule resolves Obj.magic references, including aliases. It does not establis
 
 [Violating fixture](<../../test/caps/rules/violating/forge.ml>) and
 [clean fixture](<../../test/caps/rules/clean/forge.ml>) form the rule/fixture/page triangle, checked by --self-check.
+
+Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

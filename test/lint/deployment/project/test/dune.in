@@ -1,0 +1,9 @@
+; ^nlint-2nwm: test entry, helper and excluded orphan.
+(test
+ (name entry)
+ (modules (:standard \ orphan))
+ (modes exe)
+ (libraries unix)
+ (deps (source_tree data) (glob_files inputs/*.ml) entry.ml))
+
+(data_only_dirs data)

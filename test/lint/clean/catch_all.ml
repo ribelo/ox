@@ -17,10 +17,10 @@ let aliased f = try f () with C.Cancelled _ as exn -> raise exn | _ -> ()
 let rebound f = try f () with Stopped _ as exn -> raise exn | _ -> ()
 let propagate f = try f () with exn -> raise exn
 
-let tail f =
+let tail ~(caps : < Ox_caps.Cap.stdout ; .. >) f =
   try f ()
   with exn ->
-    print_endline "ordinary logging";
+    Ox_caps.Cap_stdlib.print_endline ~caps "ordinary logging";
     raise exn
 
 let specific f = try f () with Not_found -> ()
@@ -43,10 +43,10 @@ let backtrace f =
     let bt = Printexc.get_raw_backtrace () in
     Printexc.raise_with_backtrace exn bt
 
-let cleanup f =
+let cleanup ~(caps : < Ox_caps.Cap.stdout ; .. >) f =
   try f ()
   with Eio.Cancel.Cancelled _ as exn ->
-    print_endline "release";
+    Ox_caps.Cap_stdlib.print_endline ~caps "release";
     raise exn
 
 let branch f = try f () with exn -> if true then raise exn else ()

@@ -4,7 +4,10 @@ module W = Ox_http.Ws_client
 
 let fail fmt = Printf.ksprintf failwith fmt
 let check label condition = if not condition then fail "%s" label
-let fd_count () = Array.length (Sys.readdir "/proc/self/fd")
+
+let fd_count ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
+  Array.length (Ox_caps.Cap_sys.readdir ~caps "/proc/self/fd")
+
 let flood_error = `Protocol "too many control frames per second"
 
 let expect_ok = function
@@ -59,7 +62,7 @@ let upgrade flow =
 (* Only the dial capability is scripted: both returned endpoints are real TCP
    loopback sockets. Keeping the client's raw endpoint lets us half-close it
    without reaching into Ws_client's abstract connection. *)
-let with_pair ?(timeout = 2.) env f =
+let with_pair ~(caps : < Ox_caps.Cap.stderr ; .. >) ?(timeout = 2.) env f =
   let finished = ref false in
   let leaked =
     Ox_test.with_census (fun () ->
@@ -83,7 +86,8 @@ let with_pair ?(timeout = 2.) env f =
                 let quiet_trace =
                   {
                     Eio.Debug.traceln =
-                      (fun ?__POS__:_ fmt -> Format.ifprintf Format.err_formatter fmt);
+                      (fun ?__POS__:_ fmt ->
+                        Format.ifprintf (Ox_caps.Cap_stdlib.err_formatter ~caps) fmt);
                   }
                 in
                 let ws =
@@ -107,9 +111,9 @@ let drain input observe =
   in
   try loop () with End_of_file | Eio.Io _ -> ()
 
-let quiet env =
+let quiet ~(caps : < Ox_caps.Cap.stderr ; .. >) env =
   (* More than 32 pings over one receive: quiet keepalives have no lifetime cap. *)
-  with_pair ~timeout:6. env (fun sw ws _ server input ->
+  with_pair ~caps ~timeout:6. env (fun sw ws _ server input ->
       let pongs = ref 0 and texts = ref 0 in
       Eio.Fiber.fork ~sw (fun () ->
           drain input (fun frame ->
@@ -139,10 +143,10 @@ let quiet env =
           check "quiet ping replies lost" (!pongs = 48);
           check "full-duplex sends lost" (!texts = 48)))
 
-let flood env opcode interleaved =
+let flood ~(caps : < Ox_caps.Cap.stderr ; .. >) env opcode interleaved =
   let processed = ref 0 and pongs = ref 0 in
   let started = Eio.Time.now env#clock in
-  with_pair env (fun sw ws _ server input ->
+  with_pair ~caps env (fun sw ws _ server input ->
       let payload = "flood" in
       let packet =
         String.concat ""
@@ -180,8 +184,8 @@ let flood env opcode interleaved =
           check "unsolicited pongs produced replies" (opcode <> C.Pong || !pongs = 0)));
   !processed
 
-let half_close env random =
-  with_pair env (fun sw ws raw server input ->
+let half_close ~(caps : < Ox_caps.Cap.stderr ; .. >) env random =
+  with_pair ~caps env (fun sw ws raw server input ->
       let count = 8 + Random.State.int random 16 in
       let ready, signal = Eio.Promise.create () in
       let sent, done_sending = Eio.Promise.create () in
@@ -219,25 +223,33 @@ let half_close env random =
           check "both endpoints must half-close" (!client_cut && !server_cut);
           check "in-flight client messages lost before half-close" (!received = count)))
 
-let () =
-  let random = Stress_support.random ~default:60057 () in
+let run
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.stdout
+       ; Ox_caps.Cap.stderr
+       ; Ox_caps.Cap.fs_read
+       ; .. >) () =
+  let random = Stress_support.random ~caps ~default:60057 () in
   Eio_main.run (fun env ->
       (* Establish scheduler resources before taking the descriptor baseline. *)
       Eio.Time.sleep env#clock 0.001;
-      with_pair env (fun _ ws _ _ _ -> W.close ws |> expect_ok);
-      let before = fd_count () in
+      with_pair ~caps env (fun _ ws _ _ _ -> W.close ws |> expect_ok);
+      let before = fd_count ~caps () in
       let rounds = ref 0 in
       Eio.Time.with_timeout_exn env#clock 50. (fun () ->
           let deadline = Eio.Time.now env#clock +. 30. in
-          quiet env;
+          quiet ~caps env;
           while Eio.Time.now env#clock < deadline do
-            ignore (flood env C.Ping (Random.State.bool random));
-            ignore (flood env C.Pong true);
-            half_close env random;
+            ignore (flood ~caps env C.Ping (Random.State.bool random));
+            ignore (flood ~caps env C.Pong true);
+            half_close ~caps env random;
             incr rounds;
             Eio.Time.sleep env#clock 0.01
           done);
       check "no storm rounds executed" (!rounds > 0);
-      check "WebSocket storm leaked descriptors" (fd_count () = before);
-      Printf.printf
+      check "WebSocket storm leaked descriptors" (fd_count ~caps () = before);
+      Ox_caps.Cap_stdlib.printf ~caps
         "ws_storm: 30s, %d flood/half-close rounds; fibers and fds released\n%!" !rounds)
+
+let () = run ~caps:(Ox_test.powerbox ()) ()

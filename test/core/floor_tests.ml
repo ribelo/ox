@@ -482,7 +482,7 @@ let closeable () =
 
 (* ---- nfloor-twpq: one time type ------------------------------------------------------- *)
 
-let durations () =
+let durations ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   check_float "to_seconds" 0.25 (Duration.to_seconds (Duration.ms 250));
   check_bool "of_seconds" true
     (Duration.equal (Duration.of_seconds 1.5) (Duration.ms 1500));
@@ -516,7 +516,7 @@ let durations () =
   (* no public interface of the tree takes a bare float for a delay, deadline, interval or timeout *)
   let root = if Sys.file_exists "lib/ox/dune" then "lib" else "../../lib" in
   let read path =
-    let ic = open_in path in
+    let ic = Ox_caps.Cap_stdlib.open_in ~caps path in
     Fun.protect
       ~finally:(fun () -> close_in ic)
       (fun () -> really_input_string ic (in_channel_length ic))
@@ -552,18 +552,18 @@ let durations () =
                     offenders :=
                       (package ^ "/" ^ file ^ ": " ^ String.trim line) :: !offenders)
                 (String.split_on_char '\n' (read (Filename.concat dir file))))
-          (Sys.readdir dir))
-    (Sys.readdir root);
+          (Ox_caps.Cap_sys.readdir ~caps dir))
+    (Ox_caps.Cap_sys.readdir ~caps root);
   Alcotest.(check (list string))
     "no float seconds in a public timing parameter" [] !offenders
 
 (* ---- design documents and vocabulary: nfloor-pjnk nfloor-idvp nfloor-t8w5 nfloor-tv7b
    nfloor-37ic nfloor-igt7 nfloor-8qx2 ---------------------------------------------------- *)
 
-let docs () =
+let docs ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   let docs = if Sys.file_exists "docs/why-ox.md" then "docs" else "../../docs" in
   let read name =
-    let ic = open_in (Filename.concat docs name) in
+    let ic = Ox_caps.Cap_stdlib.open_in ~caps (Filename.concat docs name) in
     Fun.protect
       ~finally:(fun () -> close_in ic)
       (fun () -> really_input_string ic (in_channel_length ic))
@@ -642,10 +642,11 @@ let tests =
           select_cancellation_and_misuse;
         Alcotest.test_case "nfloor-elwp use_in_scope" `Quick resources;
         Alcotest.test_case "nfloor-elwp use_closeable_in_scope" `Quick closeable;
-        Alcotest.test_case "nfloor-twpq Duration at the surface" `Quick durations;
+        Alcotest.test_case "nfloor-twpq Duration at the surface" `Quick (fun () ->
+            durations ~caps:(Ox_test.powerbox ()) ());
         Alcotest.test_case
           "nfloor-pjnk nfloor-idvp nfloor-t8w5 nfloor-tv7b nfloor-37ic nfloor-igt7 \
            nfloor-8qx2 documents"
-          `Quick docs;
+          `Quick (fun () -> docs ~caps:(Ox_test.powerbox ()) ());
       ] );
   ]

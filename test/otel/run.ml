@@ -384,13 +384,13 @@ let exporter_ok result =
   | Ok x -> x
   | Error err -> Alcotest.failf "exporter error: %a" O.pp_error err
 
-let log_and_spans () =
+let log_and_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
   (* ^notel-6m2q ^notel-j9vc ^notel-p4xe ^pcaps-wury: one logger, two signal endpoints,
      nested spans, correlated logs, explicit drain before borrowed client release. *)
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -434,12 +434,12 @@ let log_and_spans () =
 
 (* ^notel-1stb: the switch that owns the exporter ends without a caller's shutdown, and
    the record logged just before it still reaches the collector. *)
-let release_exports_pending () =
+let release_exports_pending ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
-              ~http_client:client ~endpoint ~service_name:"nema" ()
+            O.create ~caps ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
             |> exporter_ok
           in
           let logger =
@@ -455,12 +455,12 @@ let release_exports_pending () =
 (* ^notel-1stb: the exporter registers its own release hook when it is created, so a
    release hook registered later runs first (releases are LIFO) and the record it logs
    while the switch is stopping is still exported — the shape of a Door SIGTERM stop. *)
-let release_hook_records () =
+let release_hook_records ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
-              ~http_client:client ~endpoint ~service_name:"nema" ()
+            O.create ~caps ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
             |> exporter_ok
           in
           let logger =
@@ -476,13 +476,13 @@ let release_hook_records () =
 (* ^notel-1stb: a consumer that registers shutdown with the switch's release no longer
    waits for the cancelled worker, and the ending it reads is the one the release
    recorded — a later shutdown returns the same result instead of blocking. *)
-let shutdown_in_release () =
+let shutdown_in_release ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let opened = ref None and released = ref None in
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
-              ~http_client:client ~endpoint ~service_name:"nema" ()
+            O.create ~caps ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
             |> exporter_ok
           in
           opened := Some exporter;
@@ -505,13 +505,13 @@ let shutdown_in_release () =
       check_int "and it carried the pending record" 1
         (List.length (log_records !received)))
 
-let spans_without_ids_remain_logs () =
+let spans_without_ids_remain_logs ~(caps : < Ox_caps.Cap.random ; .. >) () =
   (* ^notel-6m2q: enabling the exporter without ID generation must preserve
      both legacy start/end records as logs rather than silently drop the start. *)
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -531,12 +531,12 @@ let spans_without_ids_remain_logs () =
 
 (* ^notel-na2w: the collector refuses only traces; a log from the same span
    still succeeds, while both failure callbacks keep their respective contracts. *)
-let trace_failure_names_signal () =
+let trace_failure_names_signal ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector ~refuse_traces:true (fun env sw client endpoint received ->
       let errors = ref [] and signal_errors = ref [] in
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema"
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema"
           ~on_error:(fun error -> errors := error :: !errors)
           ~on_signal_error:(fun signal error ->
             signal_errors := (signal, error) :: !signal_errors)
@@ -563,14 +563,14 @@ let trace_failure_names_signal () =
       | _ -> Alcotest.fail "only the trace failure should be named Traces");
       exporter_ok (O.shutdown exporter))
 
-let bounded_and_failure () =
+let bounded_and_failure ~(caps : < Ox_caps.Cap.random ; .. >) () =
   (* ^notel-p4xe ^notel-t8br: full queue rejects newest; failure reported on
      shutdown, not as a false drained success. No collector body is surfaced. *)
   with_collector ~status:503 (fun env sw client endpoint received ->
       let errors = ref [] in
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ~max_queue:2 ~batch_size:2
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ~max_queue:2 ~batch_size:2
           ~on_error:(fun error -> errors := error :: !errors)
           ()
         |> exporter_ok
@@ -601,11 +601,11 @@ let bounded_and_failure () =
 (* ^notel-6o5v ^notel-jzdm: the API key and the tenant accompany every export request,
    logs and traces alike, with the resource attributes beside the exporter's own
    [service.name]; no header value reaches a request body. *)
-let headers_and_resource_on_the_wire () =
+let headers_and_resource_on_the_wire ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema"
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema"
           ~resource:
             [ ("service.version", "1.2.3"); ("deployment.environment", "staging") ]
           ~headers:[ ("authorization", "Bearer sk-live-secret"); ("x-tenant", "acme") ]
@@ -655,12 +655,12 @@ let headers_and_resource_on_the_wire () =
 
 (* ^notel-6o5v: a refused export reports a typed failure that renders neither the header
    names nor their values. *)
-let header_values_never_rendered () =
+let header_values_never_rendered ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector ~status:503 (fun env sw client endpoint _received ->
       let errors = ref [] in
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema"
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema"
           ~headers:[ ("authorization", "Bearer sk-live-secret") ]
           ~on_error:(fun error -> errors := error :: !errors)
           ()
@@ -689,13 +689,13 @@ let header_values_never_rendered () =
             (contains rendered "authorization"))
         !errors)
 
-let flush_failure_and_closed () =
+let flush_failure_and_closed ~(caps : < Ox_caps.Cap.random ; .. >) () =
   (* ^notel-p4xe ^notel-t8br: flush returns the failed batch once; a sealed
      exporter refuses further flushes and repeated shutdown stays idempotent. *)
   with_collector ~status:503 (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -729,11 +729,11 @@ let wait_for_metrics env received =
 (* ^notel-bez2 ^notel-8ixo ^notel-jzdm: counter, up-down counter and histogram reach the
    collector's metrics path with the exporter's resource attributes and headers, and a
    flush settles the window. *)
-let counter_and_histogram_on_the_wire () =
+let counter_and_histogram_on_the_wire ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema"
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema"
           ~resource:[ ("service.version", "1.2.3") ]
           ~headers:[ ("authorization", "Bearer sk-live-secret") ]
           ()
@@ -798,12 +798,12 @@ let counter_and_histogram_on_the_wire () =
 
 (* ^notel-8ixo ^notel-1stb: the switch that owns the exporter exports the window it
    still holds when it ends, without a caller's shutdown. *)
-let metrics_drain_on_release () =
+let metrics_drain_on_release ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
-              ~http_client:client ~endpoint ~service_name:"nema" ()
+            O.create ~caps ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ()
             |> exporter_ok
           in
           let meter = O.meter exporter in
@@ -816,11 +816,11 @@ let metrics_drain_on_release () =
         |> member "asDouble" |> Yojson.Safe.Util.to_float))
 
 (* ^notel-8ixo: the interval posts the window on its own, with no flush. *)
-let metrics_exported_periodically () =
+let metrics_exported_periodically ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 30) ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 30) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -836,11 +836,11 @@ let metrics_exported_periodically () =
 (* ^notel-8ixo: a window is taken once, so flushing again posts nothing. This is the
    steady-state half of the at-least-once rule the release drain relies on: a duplicate
    window can only come from an interrupted send, never from a completed one. *)
-let drained_window_is_not_reposted () =
+let drained_window_is_not_reposted ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ~metrics_interval:(Ox.Duration.seconds 3600) ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ~metrics_interval:(Ox.Duration.seconds 3600) ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -855,15 +855,14 @@ let drained_window_is_not_reposted () =
 
 (* ^notel-8ixo: a worker busy with logs still exports the metrics window on its
    interval — the wait is bounded by the time left, not re-armed by every record. *)
-let metrics_export_under_load () =
+let metrics_export_under_load ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       (* The exporter lives on its own switch, so a failing assertion still drains
          against a live collector instead of waiting on one the teardown cancelled. *)
       Eio.Switch.run (fun owned ->
           let exporter =
-            O.create ~caps:(Ox_test.powerbox ()) ~sw:owned ~clock:env#clock
-              ~http_client:client ~endpoint ~service_name:"nema"
-              ~metrics_interval:(Ox.Duration.ms 40) ()
+            O.create ~caps ~sw:owned ~clock:env#clock ~http_client:client ~endpoint
+              ~service_name:"nema" ~metrics_interval:(Ox.Duration.ms 40) ()
             |> exporter_ok
           in
           let logger =
@@ -885,11 +884,11 @@ let metrics_export_under_load () =
 
 (* ^notel-8ixo: the series bound drops the record that would begin one more series and
    counts it, so attribute cardinality a program does not control stays finite. *)
-let metric_series_bound () =
+let metric_series_bound ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ~max_metric_series:1 ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ~max_metric_series:1 ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -908,11 +907,11 @@ let metric_series_bound () =
 
 (* ^notel-8ixo: a refused metrics window is a typed failure on flush, never a false
    drained success. *)
-let metrics_failure_reaches_flush () =
+let metrics_failure_reaches_flush ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector ~status:503 (fun env sw client endpoint _received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ()
         |> exporter_ok
       in
       let meter = O.meter exporter in
@@ -971,11 +970,11 @@ let attrs_of row = row |> member "attributes" |> list
    reaches every exported span and its correlated logs through the public exporter; an
    explicit field replaces a duplicate inherited key, once; trace controls stay native IDs;
    forked siblings keep their own context and local fields; a secret stays redacted. *)
-let inherited_context_on_spans_and_logs () =
+let inherited_context_on_spans_and_logs ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema"
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema"
           ~resource:[ ("service.version", "context-slice") ]
           ()
         |> exporter_ok
@@ -1239,11 +1238,11 @@ let inherited_context_on_spans_and_logs () =
 
 (* ^notel-nbvl ^notel-dzpj: a completion field is an ordinary end-record field, so it is a
    span attribute too, winning a duplicate span field once. *)
-let completion_fields_on_spans () =
+let completion_fields_on_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
-        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+        O.create ~caps ~sw ~clock:env#clock ~http_client:client ~endpoint
+          ~service_name:"nema" ()
         |> exporter_ok
       in
       let logger =
@@ -1266,6 +1265,7 @@ let completion_fields_on_spans () =
         (string_attr (attrs_of span) "http.status"))
 
 let () =
+  let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.random >) in
   Alcotest.run "ox_otel"
     [
       ( "wire",
@@ -1282,54 +1282,57 @@ let () =
             `Quick instruments_stamp_points;
           Alcotest.test_case
             "counter and histogram on the wire (^notel-bez2 ^notel-8ixo ^notel-jzdm)"
-            `Quick counter_and_histogram_on_the_wire;
+            `Quick
+            (counter_and_histogram_on_the_wire ~caps);
           Alcotest.test_case "metrics drain on release (^notel-8ixo ^notel-1stb)" `Quick
-            metrics_drain_on_release;
+            (metrics_drain_on_release ~caps);
           Alcotest.test_case "the interval posts the window (^notel-8ixo)" `Quick
-            metrics_exported_periodically;
+            (metrics_exported_periodically ~caps);
           Alcotest.test_case "a drained window is not reposted (^notel-8ixo)" `Quick
-            drained_window_is_not_reposted;
+            (drained_window_is_not_reposted ~caps);
           Alcotest.test_case "a busy worker still exports the window (^notel-8ixo)" `Quick
-            metrics_export_under_load;
+            (metrics_export_under_load ~caps);
           Alcotest.test_case "the series bound drops and counts (^notel-8ixo)" `Quick
-            metric_series_bound;
+            (metric_series_bound ~caps);
           Alcotest.test_case "a refused window reaches flush (^notel-8ixo)" `Quick
-            metrics_failure_reaches_flush;
+            (metrics_failure_reaches_flush ~caps);
         ] );
       ( "exporter",
         [
           Alcotest.test_case
             "logs, nested traces and shutdown (^notel-6m2q ^notel-j9vc ^notel-p4xe \
              ^pcaps-wury)"
-            `Quick log_and_spans;
+            `Quick (log_and_spans ~caps);
           Alcotest.test_case "release exports the pending queue (^notel-1stb)" `Quick
-            release_exports_pending;
+            (release_exports_pending ~caps);
           Alcotest.test_case "a release hook's last record is exported (^notel-1stb)"
-            `Quick release_hook_records;
+            `Quick (release_hook_records ~caps);
           Alcotest.test_case "shutdown inside a release hook returns (^notel-1stb)" `Quick
-            shutdown_in_release;
+            (shutdown_in_release ~caps);
           Alcotest.test_case "legacy spans remain logs (^notel-6m2q)" `Quick
-            spans_without_ids_remain_logs;
+            (spans_without_ids_remain_logs ~caps);
           Alcotest.test_case "trace refusal names signal (^notel-na2w)" `Quick
-            trace_failure_names_signal;
+            (trace_failure_names_signal ~caps);
           Alcotest.test_case "bounded queue and typed status (^notel-p4xe ^notel-t8br)"
-            `Quick bounded_and_failure;
+            `Quick (bounded_and_failure ~caps);
           Alcotest.test_case
             "headers and resource attributes on the wire (^notel-6o5v ^notel-jzdm)" `Quick
-            headers_and_resource_on_the_wire;
+            (headers_and_resource_on_the_wire ~caps);
           Alcotest.test_case "header values are never rendered (^notel-6o5v)" `Quick
-            header_values_never_rendered;
+            (header_values_never_rendered ~caps);
           Alcotest.test_case "flush failure and closed state (^notel-p4xe ^notel-t8br)"
-            `Quick flush_failure_and_closed;
+            `Quick
+            (flush_failure_and_closed ~caps);
         ] );
       ( "context",
         [
           Alcotest.test_case
             "inherited context on spans and logs (^notel-nbvl ^notel-uydw ^notel-p11y \
              ^notel-jda9 ^notel-dzpj)"
-            `Quick inherited_context_on_spans_and_logs;
+            `Quick
+            (inherited_context_on_spans_and_logs ~caps);
           Alcotest.test_case
             "completion fields are span attributes (^notel-nbvl ^notel-dzpj)" `Quick
-            completion_fields_on_spans;
+            (completion_fields_on_spans ~caps);
         ] );
     ]

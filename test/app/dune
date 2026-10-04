@@ -12,7 +12,16 @@
 (executable
  (name signal_fixture)
  (modules signal_fixture)
- (libraries ox ox_app ox_http ox_observability ox_otel eio eio.unix cmdliner)
+ (libraries
+  ox_test
+  ox
+  ox_app
+  ox_http
+  ox_observability
+  ox_otel
+  eio
+  eio.unix
+  cmdliner)
  (preprocess
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
@@ -20,7 +29,7 @@
 (executable
  (name wakeup_fixture)
  (modules wakeup_fixture)
- (libraries ox_app ox_observability cmdliner eio eio_main unix))
+ (libraries ox_test ox_app ox_observability cmdliner eio eio_main unix))
 
 (test
  (name wakeup)
@@ -41,7 +50,7 @@
 (executable
  (name simple_fixture)
  (modules simple_fixture)
- (libraries ox ox_app eio eio_main))
+ (libraries ox_test ox ox_app eio eio_main))
 
 (test
  (name oxapp)

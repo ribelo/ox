@@ -6,22 +6,28 @@ type outcome = Pending | Answered | Dropped
 
 let fail fmt = Printf.ksprintf failwith fmt
 let check label condition = if not condition then fail "%s" label
-let fd_count () = Array.length (Sys.readdir "/proc/self/fd")
+
+let fd_count ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
+  Array.length (Ox_caps.Cap_sys.readdir ~caps "/proc/self/fd")
+
 let clients = 200
 
-let with_dir f =
-  let dir = Filename.temp_file ~temp_dir:"/tmp" "ox-ipc-storm-" "" in
-  Unix.unlink dir;
-  Unix.mkdir dir 0o700;
+let with_dir ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) f =
+  let dir =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps ~temp_dir:"/tmp" "ox-ipc-storm-" ""
+  in
+  Ox_caps.Cap_unix.unlink ~caps dir;
+  Ox_caps.Cap_unix.mkdir ~caps dir 0o700;
   let path = Filename.concat dir "socket" in
   Fun.protect
     ~finally:(fun () ->
       (* Only our private directory's two known artifacts are removed. *)
       List.iter
         (fun path ->
-          try Unix.unlink path with Unix.Unix_error (Unix.ENOENT, _, _) -> ())
+          try Ox_caps.Cap_unix.unlink ~caps path
+          with Unix.Unix_error (Unix.ENOENT, _, _) -> ())
         [ path; path ^ ".lock" ];
-      Unix.rmdir dir)
+      Ox_caps.Cap_unix.rmdir ~caps dir)
     (fun () -> f path)
 
 let mode_name = function
@@ -29,7 +35,7 @@ let mode_name = function
   | Budget -> "budget"
   | Handler_drop -> "drop"
 
-let round env random path =
+let round ~(caps : < Ox_caps.Cap.fs_write ; Ox_caps.Cap.network ; .. >) env random path =
   let modes =
     Array.init clients (fun id ->
         (* Guarantee all four cases, then vary the rest from the printed seed. *)
@@ -93,8 +99,8 @@ let round env random path =
               }
             in
             (match
-               L.run ~caps:(Ox_test.powerbox ()) ~sw ~fs:env#fs ~net:env#net
-                 ~clock:env#clock ~path ~policy ~decode ~encode:Fun.id
+               L.run ~caps ~sw ~fs:env#fs ~net:env#net ~clock:env#clock ~path ~policy
+                 ~decode ~encode:Fun.id
                  ~budget:(fun id ->
                    if modes.(id) = Budget then Some (Ox.Duration.ms 50) else None)
                  ~handler:(fun id ->
@@ -195,25 +201,35 @@ let round env random path =
   check "IPC listener left its socket behind" (not (Sys.file_exists path));
   (!normal_count, !budget_count, !partial_count + !drop_count)
 
-let () =
-  let random = Stress_support.random ~default:60036 () in
-  with_dir (fun path ->
+let run
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.stdout
+       ; Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fs_read
+       ; Ox_caps.Cap.network
+       ; .. >) () =
+  let random = Stress_support.random ~caps ~default:60036 () in
+  with_dir ~caps (fun path ->
       Eio_main.run (fun env ->
           Eio.Time.sleep env#clock 0.001;
-          let before = fd_count () in
+          let before = fd_count ~caps () in
           let replies = ref 0 and budgets = ref 0 and dropped = ref 0 in
           Eio.Time.with_timeout_exn env#clock 45. (fun () ->
               for _ = 1 to 8 do
-                let answered, budget, drops = round env random path in
+                let answered, budget, drops = round ~caps env random path in
                 replies := !replies + answered;
                 budgets := !budgets + budget;
                 dropped := !dropped + drops;
-                check "IPC storm leaked descriptors" (fd_count () = before)
+                check "IPC storm leaked descriptors" (fd_count ~caps () = before)
               done);
           check "connections were not all accounted for"
             (!replies + !budgets + !dropped = 8 * clients);
-          Printf.printf
+          Ox_caps.Cap_stdlib.printf ~caps
             "ipc_storm: 8 x 200 concurrent clients; %d replies, %d budget replies, %d \
              clean drops; no leaked fibers/fds\n\
              %!"
             !replies !budgets !dropped))
+
+let () = run ~caps:(Ox_test.powerbox ()) ()

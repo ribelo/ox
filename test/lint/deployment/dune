@@ -5,11 +5,14 @@
  (deps
   check.sh
   (source_tree project)
+  (source_tree mint)
   (source_tree ../../../docs/rules)
   ../../../docs/caps.md
   (source_tree ../clean)
   (source_tree ../violating)
-  (source_tree ../../caps/rules))
+  (source_tree ../../caps/rules)
+  ../violating/concurrency_violating.cma
+  ../../caps/rules/violating/caps_violating.cma)
  (action
   (run
    bash

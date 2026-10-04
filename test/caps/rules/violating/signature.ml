@@ -1,4 +1,5 @@
-(* ^ncapslint-8jcy: a global token is ambient, not an argument. *)
+[@@@ox_lint.fixture "ox-caps-signature: deliberate negative fixture"]
+
 let ambient : Ox_caps.Cap.fork = Obj.magic ()
 let violation () = Ox_caps.Cap_unix.fork ~caps:ambient ()
 

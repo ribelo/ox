@@ -553,10 +553,10 @@ let test_contract () =
       | _ -> Alcotest.fail "background accepted closed switch");
       Alcotest.(check bool) "closed switch never started work" false !never)
 
-let test_package_contract () =
+let test_package_contract ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   let lib = if Sys.file_exists "lib/ox/dune" then "lib/ox" else "../../lib/ox" in
   let read_file path =
-    let channel = open_in path in
+    let channel = Ox_caps.Cap_stdlib.open_in ~caps path in
     Fun.protect
       (fun () -> really_input_string channel (in_channel_length channel))
       ~finally:(fun () -> close_in channel)
@@ -660,6 +660,6 @@ let () =
           [
             Alcotest.test_case
               "ncore-kyk3 ncore-161o deps and documented public interfaces" `Quick
-              test_package_contract;
+              (fun () -> test_package_contract ~caps:(Ox_test.powerbox ()) ());
           ] );
       ])

@@ -1,5 +1,5 @@
 (* ^nstress-xn75: runner setup is explicit, never a module-load RNG side effect. *)
-let seed ~default () =
+let seed ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) ~default () =
   let parse source value =
     match int_of_string_opt value with
     | Some seed -> seed
@@ -13,12 +13,12 @@ let seed ~default () =
     else argument (i + 1)
   in
   let selected =
-    Ox_app.with_powerbox (fun caps ->
-        match Ox_caps.Cap_sys.getenv_opt ~caps "OX_STRESS_SEED" with
-        | Some value -> parse "OX_STRESS_SEED" value
-        | None -> argument 1)
+    match Ox_caps.Cap_sys.getenv_opt ~caps "OX_STRESS_SEED" with
+    | Some value -> parse "OX_STRESS_SEED" value
+    | None -> argument 1
   in
-  Printf.printf "OX_STRESS_SEED=%d\n%!" selected;
+  Ox_caps.Cap_stdlib.printf ~caps "OX_STRESS_SEED=%d\n%!" selected;
   selected
 
-let random ~default () = Random.State.make [| seed ~default () |]
+let random ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) ~default () =
+  Random.State.make [| seed ~caps ~default () |]

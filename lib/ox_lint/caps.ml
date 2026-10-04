@@ -263,7 +263,13 @@ let source ~caps name emit context (base : Ast_iterator.iterator) =
             (match Syntax.value_origin ~caps context id.txt with
             | Some path when List.mem path targets ->
                 if name = "mint" then
-                  begin if not (door_boundary ~caps e.pexp_loc) then emit e.pexp_loc
+                  begin if
+                    (not (door_boundary ~caps e.pexp_loc))
+                    && not
+                         (path = "Ox_test.powerbox"
+                         && Caps_policy.declares_test ~caps e.pexp_loc.loc_start.pos_fname
+                         )
+                  then emit e.pexp_loc
                   end
                 else if name = "forge" || not !potential_authority then emit e.pexp_loc
             | _ -> ());
@@ -278,6 +284,7 @@ let source ~caps name emit context (base : Ast_iterator.iterator) =
 let boundary ~caps name emit =
   let operation = List.find (fun op -> op.name = name) operations in
   let targets = Paths.values ~caps (resolved_calls operation.calls) in
+  let test_mint = Paths.values ~caps [ [ "Ox_test"; "powerbox" ] ] in
   let doors = Paths.modules ~caps [ [ "Ox_caps_door" ] ] in
   let rec door_path en path =
     List.exists (Path.same (Env.normalize_module_path None en path)) doors
@@ -322,7 +329,11 @@ let boundary ~caps name emit =
         | _ -> ());
         if
           Paths.is_value ~caps targets e
-          && (name <> "mint" || not (door_boundary ~caps e.exp_loc))
+          && (name <> "mint"
+             || (not (door_boundary ~caps e.exp_loc))
+                && not
+                     (Paths.is_value ~caps test_mint e
+                     && Caps_policy.declares_test ~caps e.exp_loc.loc_start.pos_fname))
         then emit e.exp_loc;
         base.expr self e);
   }

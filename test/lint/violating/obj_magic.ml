@@ -1,4 +1,4 @@
-(* ^nlintc-kdcl: obj_magic violating evidence. *)
+[@@@ox_lint.fixture "ox-obj-magic: deliberate negative fixture"]
 [@@@warning "-32-34-37"]
 
 let cast x = Obj.magic x

@@ -1,4 +1,4 @@
-(* ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn *)
+[@@@ox_lint.fixture "ox-val-behaviour: deliberate negative fixture"]
 
 val missing : Eio.Switch.t -> unit
 

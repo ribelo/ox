@@ -104,12 +104,12 @@ let test_lost_events_stay_in_their_run () =
         (Ox_test.with_census (fun () -> ()));
       Ox_test.assert_no_fibers_left ())
 
-let test_census_ring () =
+let test_census_ring ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
   (* nlimit-gmur *)
   Ox_test.run (fun _ _ ->
       Alcotest.(check int) "census still counts" 0 (Ox_test.with_census (fun () -> ()));
       let rings =
-        Sys.readdir (Sys.getcwd ())
+        Ox_caps.Cap_sys.readdir ~caps (Sys.getcwd ())
         |> Array.to_list
         |> List.filter (fun name -> Filename.check_suffix name ".events")
       in
@@ -181,9 +181,11 @@ let err ?(after = Ox.Duration.zero) data = { Fake.stream = Fake.Stderr; data; af
 
 (* The same notify-send-shaped child every output test scripts: the real executable path
    the fake manager still has to be handed, and the argv Leash would run. *)
-let fake_child (env : Ox_test.env) ~sw fake =
+let fake_child
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)
+    (env : Ox_test.env) ~sw fake =
   match
-    Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
+    Child.spawn ~caps ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
       ~argv:[ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
       ~stdout:Child.Pipe ~stderr:Child.Pipe ~grace:Ox.Duration.zero ~fds:[] ()
   with
@@ -197,7 +199,8 @@ let check_child_exit expected actual =
   in
   Alcotest.(check string) "child exit" (pp expected) (pp actual)
 
-let test_process_output () =
+let test_process_output
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* ntest-f2rm *)
   Ox_test.run (fun env sw ->
       let fake =
@@ -207,7 +210,7 @@ let test_process_output () =
               ([ out "done\n"; err "warn\n"; out "again\n" ], Fake.Exit (`Exited 0));
           ]
       in
-      let child = fake_child env ~sw fake in
+      let child = fake_child ~caps env ~sw fake in
       Alcotest.(check string)
         "stdout read through the real Child path" "done\nagain\n"
         (Eio.Flow.read_all (some (Child.stdout child)));
@@ -220,7 +223,8 @@ let test_process_output () =
         [ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
         (List.hd (Fake.spawns fake)).argv)
 
-let test_process_output_delayed () =
+let test_process_output_delayed
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* ntest-8v5z *)
   Ox_test.run (fun env sw ->
       let fake =
@@ -230,7 +234,7 @@ let test_process_output_delayed () =
               ([ out ~after:(Ox.Duration.minutes 30) "done\n" ], Fake.Block_until_signal);
           ]
       in
-      let child = fake_child env ~sw fake in
+      let child = fake_child ~caps env ~sw fake in
       let source = some (Child.stdout child) in
       let buffer = Cstruct.create 5 in
       let reading =
@@ -249,7 +253,8 @@ let test_process_output_delayed () =
       Alcotest.(check string)
         "EOF when the child is stopped" "" (Eio.Flow.read_all source))
 
-let test_process_output_stopped () =
+let test_process_output_stopped
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   (* ntest-8v5z *)
   Ox_test.run (fun env sw ->
       let fake =
@@ -259,7 +264,7 @@ let test_process_output_stopped () =
               ([ out ~after:(Ox.Duration.hours 1) "done\n" ], Fake.Block_until_signal);
           ]
       in
-      let child = fake_child env ~sw fake in
+      let child = fake_child ~caps env ~sw fake in
       let source = some (Child.stdout child) in
       check_child_exit (Child.Signaled Sys.sigterm) (Child.stop child);
       Alcotest.(check string) "EOF, not the pending chunk" "" (Eio.Flow.read_all source);
@@ -288,7 +293,8 @@ let () =
       ( "ntest-8ug3",
         [
           Alcotest.test_case "detect actual leaked fiber" `Quick test_census;
-          Alcotest.test_case "census ring outside the cwd" `Quick test_census_ring;
+          Alcotest.test_case "census ring outside the cwd" `Quick (fun () ->
+              test_census_ring ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "nactor-8z1n lost events stay in their run" `Quick
             test_lost_events_stay_in_their_run;
         ] );
@@ -297,15 +303,15 @@ let () =
         [ Alcotest.test_case "process spawn fds and signals" `Quick test_process ] );
       ( "ntest-f2rm",
         [
-          Alcotest.test_case "scripted child output through Child" `Quick
-            test_process_output;
+          Alcotest.test_case "scripted child output through Child" `Quick (fun () ->
+              test_process_output ~caps:(Ox_test.powerbox ()) ());
         ] );
       ( "ntest-8v5z",
         [
-          Alcotest.test_case "delayed chunk on the mock clock" `Quick
-            test_process_output_delayed;
-          Alcotest.test_case "stopped before its delayed chunk" `Quick
-            test_process_output_stopped;
+          Alcotest.test_case "delayed chunk on the mock clock" `Quick (fun () ->
+              test_process_output_delayed ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "stopped before its delayed chunk" `Quick (fun () ->
+              test_process_output_stopped ~caps:(Ox_test.powerbox ()) ());
         ] );
       ("ntest-n53y", [ Alcotest.test_case "package links" `Quick test_package ]);
     ]

@@ -11,7 +11,7 @@ let contains text part =
   in
   loop 0
 
-let ticker backend interval_ms () =
+let ticker ~(caps : < Ox_caps.Cap.env ; .. >) backend interval_ms () =
   Eio_main.run (fun real ->
       let clock = Eio_mock.Clock.make () in
       let env =
@@ -29,7 +29,7 @@ let ticker backend interval_ms () =
           ()
       in
       Eio.Switch.run (fun sw ->
-          Ox_app.posix_wakeup ~caps:(Ox_test.powerbox ()) ~sw ~interval_ms ~logger env;
+          Ox_app.posix_wakeup ~caps ~sw ~interval_ms ~logger env;
           let enabled = backend = "posix" && interval_ms > 0 in
           check_bool "only posix with nonzero interval arms a timer" enabled
             (Eio_mock.Clock.try_advance clock);
@@ -63,7 +63,13 @@ type outcome = { code : int; stdout : string; stderr : string }
 
 (* An OS timeout still fires if ppoll stops the child runtime. The parent's Eio
    deadline bounds its own wait; it does not mask the fixture's cleanup race. *)
-let fixture ?option_ms ?env_ms ?(cleanup = false) ?(owned = false)
+let fixture
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) ?option_ms ?env_ms ?(cleanup = false) ?(owned = false)
     ?(quiet_journal = false) () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
@@ -71,7 +77,8 @@ let fixture ?option_ms ?env_ms ?(cleanup = false) ?(owned = false)
             Filename.concat (Filename.dirname Sys.executable_name) "wakeup_fixture.exe"
           in
           let variables =
-            Unix.environment () |> Array.to_list
+            Ox_caps.Cap_unix.environment ~caps ()
+            |> Array.to_list
             |> List.filter (fun entry ->
                 not
                   (List.exists
@@ -89,8 +96,7 @@ let fixture ?option_ms ?env_ms ?(cleanup = false) ?(owned = false)
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                 ~argv:
                   ([ "timeout"; "--kill-after=1"; "5"; path ]
                   @ if owned then [ "owned" ] else [])
@@ -124,29 +130,85 @@ let check_choice expected outcome =
        (String.split_on_char '\n' outcome.stderr
        |> List.filter (fun line -> contains line "posix wakeup")))
 
-let default () = check_choice 50 (fixture ())
-let disabled () = check_choice 0 (fixture ~env_ms:"0" ())
-let overridden () = check_choice 7 (fixture ~env_ms:"0" ~option_ms:7 ())
-let environment () = check_choice 9 (fixture ~env_ms:"9" ())
+let default
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  check_choice 50 (fixture ~caps ())
 
-let owned_stderr () =
-  let outcome = fixture ~owned:true ~option_ms:50 () in
+let disabled
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  check_choice 0 (fixture ~caps ~env_ms:"0" ())
+
+let overridden
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  check_choice 7 (fixture ~caps ~env_ms:"0" ~option_ms:7 ())
+
+let environment
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  check_choice 9 (fixture ~caps ~env_ms:"9" ())
+
+let owned_stderr
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = fixture ~caps ~owned:true ~option_ms:50 () in
   check_int "owned command completes with ticker enabled" 0 outcome.code;
   Alcotest.(check string) "owned command keeps stderr empty" "" outcome.stderr
 
-let journal_filter () =
-  let outcome = fixture ~quiet_journal:true () in
+let journal_filter
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = fixture ~caps ~quiet_journal:true () in
   check_int "service succeeds with quiet journal" 0 outcome.code;
   Alcotest.(check string) "journal_level filters startup log" "" outcome.stderr
 
-let invalid () =
+let invalid
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
   List.iter
     (fun value ->
-      check_bool "invalid interval rejected" true ((fixture ~env_ms:value ()).code <> 0))
+      check_bool "invalid interval rejected" true
+        ((fixture ~caps ~env_ms:value ()).code <> 0))
     [ "-1"; "invalid" ]
 
-let protected_sigterm () =
-  let outcome = fixture ~cleanup:true () in
+let protected_sigterm
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = fixture ~caps ~cleanup:true () in
   check_choice 50 outcome;
   Alcotest.(check string)
     "protected cleanup completed before clean SIGTERM exit"
@@ -157,21 +219,32 @@ let () =
     [
       ( "^nwake-y4cx",
         [
-          Alcotest.test_case "posix 50 ms daemon" `Quick (ticker "posix" 50);
-          Alcotest.test_case "custom 7 ms cadence" `Quick (ticker "posix" 7);
-          Alcotest.test_case "zero creates no daemon" `Quick (ticker "posix" 0);
+          Alcotest.test_case "posix 50 ms daemon" `Quick (fun () ->
+              ticker ~caps:(Ox_test.powerbox ()) "posix" 50 ());
+          Alcotest.test_case "custom 7 ms cadence" `Quick (fun () ->
+              ticker ~caps:(Ox_test.powerbox ()) "posix" 7 ());
+          Alcotest.test_case "zero creates no daemon" `Quick (fun () ->
+              ticker ~caps:(Ox_test.powerbox ()) "posix" 0 ());
           Alcotest.test_case "linux creates no daemon despite EIO_BACKEND=posix" `Quick
-            (ticker "linux" 50);
-          Alcotest.test_case "default and one startup log" `Quick default;
+            (fun () -> ticker ~caps:(Ox_test.powerbox ()) "linux" 50 ());
+          Alcotest.test_case "default and one startup log" `Quick (fun () ->
+              default ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "owned command stderr stays empty with ticker on" `Quick
-            owned_stderr;
-          Alcotest.test_case "journal threshold filters startup log" `Quick journal_filter;
-          Alcotest.test_case "env disables" `Quick disabled;
-          Alcotest.test_case "env configures" `Quick environment;
-          Alcotest.test_case "Door option wins over env" `Quick overridden;
-          Alcotest.test_case "malformed and negative intervals rejected" `Quick invalid;
+            (fun () -> owned_stderr ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "journal threshold filters startup log" `Quick (fun () ->
+              journal_filter ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "env disables" `Quick (fun () ->
+              disabled ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "env configures" `Quick (fun () ->
+              environment ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "Door option wins over env" `Quick (fun () ->
+              overridden ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "malformed and negative intervals rejected" `Quick (fun () ->
+              invalid ~caps:(Ox_test.powerbox ()) ());
         ] );
       ( "^nwake-27rc",
-        [ Alcotest.test_case "SIGTERM protected child cleanup" `Quick protected_sigterm ]
-      );
+        [
+          Alcotest.test_case "SIGTERM protected child cleanup" `Quick (fun () ->
+              protected_sigterm ~caps:(Ox_test.powerbox ()) ());
+        ] );
     ]

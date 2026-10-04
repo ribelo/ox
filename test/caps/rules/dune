@@ -5,14 +5,14 @@
 (executable
  (name test_caps)
  (modules test_caps)
- (libraries lint_engine ox_caps.door))
+ (libraries lint_engine ox_test))
 
 ; ^ncapslint-8jcy: payload projections retain parameter provenance.
 
 (executable
  (name test_signature_payloads)
  (modules test_signature_payloads)
- (libraries lint_engine ox_caps.door))
+ (libraries lint_engine ox_test))
 
 (rule
  (alias runtest)

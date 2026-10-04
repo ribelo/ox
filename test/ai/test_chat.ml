@@ -508,6 +508,9 @@ let test_key_never_logged () =
            lines))
 
 let () =
+  let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.env >) in
+  let model = Test_chat_live.model ~caps () in
+  let endpoint = Test_chat_live.endpoint ~caps () in
   Alcotest.run "AI chat"
     [
       ( "complete",
@@ -565,6 +568,7 @@ let () =
         ] );
       ( "live",
         [
-          Alcotest.test_case "^nchat-kk3g live smoke (opt-in)" `Quick Test_chat_live.smoke;
+          Alcotest.test_case "^nchat-kk3g live smoke (opt-in)" `Quick
+            (Test_chat_live.smoke ~caps ~model ~endpoint);
         ] );
     ]

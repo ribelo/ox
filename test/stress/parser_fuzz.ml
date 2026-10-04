@@ -102,8 +102,9 @@ let fuzz_gen corpus =
   in
   G.oneof_weighted [ (4, mutated); (1, bytes_gen) ]
 
-let run_property random name count generator property =
-  Printf.printf "%s (%d cases)\n%!" name count;
+let run_property ~(caps : < Ox_caps.Cap.stdout ; .. >) random name count generator
+    property =
+  Ox_caps.Cap_stdlib.printf ~caps "%s (%d cases)\n%!" name count;
   QCheck2.Test.check_exn ~rand:random
     (QCheck2.Test.make ~name ~count ~print:print_bytes generator (fun bytes ->
          property bytes;
@@ -404,7 +405,7 @@ let deterministic_requests corpus exchange =
 
 (* Port of v1:test/http_fuzz/fuzz_h1_write.ml. Current writers serialize requests
    only; roundtrip uses the real request boundary, then H1_parse on its response. *)
-let writer_properties random exchange =
+let writer_properties ~(caps : < Ox_caps.Cap.stdout ; .. >) random exchange =
   let url = H.Url.of_string "https://example.test:8443/fuzz/path?x=1" in
   let string_gen bound = G.map Bytes.to_string (bounded_bytes bound) in
   let safe_string bound =
@@ -502,7 +503,7 @@ let writer_properties random exchange =
     true
   in
   let name = "h1 writers agree or reject together; valid requests roundtrip" in
-  Printf.printf "%s (500 cases)\n%!" name;
+  Ox_caps.Cap_stdlib.printf ~caps "%s (500 cases)\n%!" name;
   QCheck2.Test.check_exn ~rand:random
     (QCheck2.Test.make ~name ~count:500 ~print generator property)
 
@@ -516,8 +517,8 @@ let corpus_directory () =
   in
   loop 1
 
-let run () =
-  let random = Stress_support.random ~default:6060 () in
+let run ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) () =
+  let random = Stress_support.random ~caps ~default:6060 () in
   Eio_main.run (fun env ->
       Eio.Time.with_timeout_exn env#clock 55.0 (fun () ->
           let load = load_corpus env#fs (corpus_directory ()) in
@@ -550,23 +551,24 @@ let run () =
           deterministic_ws ws;
           with_requests env (fun exchange ->
               deterministic_requests requests exchange;
-              writer_properties random (fun ~expected bytes -> exchange ~expected bytes);
-              run_property random "h1 response: mutated corpus and arbitrary bytes" 3000
-                (fuzz_gen responses) (fun bytes -> ignore (response bytes));
-              run_property random
+              writer_properties ~caps random (fun ~expected bytes ->
+                  exchange ~expected bytes);
+              run_property ~caps random "h1 response: mutated corpus and arbitrary bytes"
+                3000 (fuzz_gen responses) (fun bytes -> ignore (response bytes));
+              run_property ~caps random
                 "ws: mutated corpus and arbitrary bytes, both masking modes" 3000
                 (fuzz_gen ws) (fun bytes ->
                   ignore (websocket ~masked:false bytes);
                   ignore (websocket ~masked:true bytes));
-              run_property random "h1 request: mutated corpus and arbitrary bytes" 800
-                (fuzz_gen requests) (fun bytes -> ignore (exchange bytes));
-              run_property random "h1 response: advertised lengths" 300
+              run_property ~caps random "h1 request: mutated corpus and arbitrary bytes"
+                800 (fuzz_gen requests) (fun bytes -> ignore (exchange bytes));
+              run_property ~caps random "h1 response: advertised lengths" 300
                 (G.map decimal_response (G.oneof_list lengths))
                 (fun bytes -> ignore (response bytes));
-              run_property random "h1 request: advertised lengths" 100
+              run_property ~caps random "h1 request: advertised lengths" 100
                 (G.map decimal_request (G.oneof_list lengths))
                 (fun bytes -> ignore (exchange bytes)));
-          Printf.printf
+          Ox_caps.Cap_stdlib.printf ~caps
             "parser_fuzz: corpus truncations, boundaries and seeded properties passed\n%!"))
 
-let () = run ()
+let () = run ~caps:(Ox_test.powerbox ()) ()

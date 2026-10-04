@@ -17,6 +17,9 @@ val check_dune :
   caps:< Ox_caps.Cap.fs_read ; .. > -> string list -> (string -> int -> unit) -> unit
 (** Declaring a dependency is a grant, not an error; retained CLI integration point. *)
 
+val declares_test : caps:< Ox_caps.Cap.fs_read ; .. > -> string -> bool
+(** The owning stanza directly depends on [ox_test], authorizing only its test mint. *)
+
 val private_module : caps:< Ox_caps.Cap.fs_read ; .. > -> string -> bool
 (** Whether the source belongs to a module listed in its owning Dune stanza's
     [private_modules]. Such an interface is not a package-published API. *)

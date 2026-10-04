@@ -69,8 +69,16 @@ let door_hands_the_powerbox () =
         "both received the Door's powerbox" [ "config caps"; "program" ] !seen)
 
 (* ^ncaps-4btv: each wrapper is the raw call behind its capability. *)
-let wrappers_are_the_raw_calls () =
-  let caps = Ox_test.powerbox () in
+let wrappers_are_the_raw_calls
+    ~(caps :
+       < Cap.tmp
+       ; Cap.fs_read
+       ; Cap.fs_write
+       ; Cap.random
+       ; Cap.fork
+       ; Cap.exec
+       ; Cap.env
+       ; .. >) () =
   let path = Cap_stdlib.Filename.temp_file ~caps "ox-caps-" ".txt" in
   let out = Cap_stdlib.open_out_bin ~caps path in
   output_string out "written through Cap.fs_write";
@@ -96,7 +104,8 @@ let wrappers_are_the_raw_calls () =
     (String.length (Cap_sys.urandom ~caps 16));
   check_bool "system runs a program" true (Cap_unix.system ~caps "true" = Unix.WEXITED 0);
   check_bool "getenv_opt agrees with the environment" true
-    (Cap_sys.getenv_opt ~caps "PATH" = Sys.getenv_opt "PATH");
+    (Cap_sys.getenv_opt ~caps "PATH"
+    = try Some (Cap_unix.getenv ~caps "PATH") with Not_found -> None);
   let null = Cap_unix.open_dev_null ~caps () in
   check_int "dev_null takes writes" 3 (Unix.write_substring null "abc" 0 3);
   Unix.close null;
@@ -110,9 +119,8 @@ let wrappers_are_the_raw_calls () =
    (^ncaps-sojd ^ncaps-4btv). *)
 let read_home ~(caps : < Cap.env ; .. >) () = Cap_sys.getenv_opt ~caps "HOME"
 
-let local_closures_compose () =
+let local_closures_compose ~(caps : < Cap.env ; .. >) () =
   Ox_test.run (fun env sw ->
-      let caps = Ox_test.powerbox () in
       let limiter =
         Ox.Rate_limiter.create ~sw ~clock:env#clock
           (Ox.Rate_limiter.Fixed_window { n = 1; per = Ox.Duration.seconds 1 })
@@ -128,9 +136,9 @@ let local_closures_compose () =
 (* ^ncaps-x7z8 ^ncaps-jkku: ox_process says in its interface that spawning a child forks
    and execs; Eio's process manager stays the value that does the work, so the call
    takes both. Discarded output opens /dev/null, which also requires fs_write. *)
-let spawn_needs_fork_exec_and_fs_write () =
+let spawn_needs_fork_exec_and_fs_write
+    ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_write ; .. >) () =
   Ox_test.run (fun env sw ->
-      let caps = (Ox_test.powerbox () :> < Cap.fork ; Cap.exec ; Cap.fs_write >) in
       match
         Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
           ~argv:[ "true" ] ~grace:(Ox.Duration.ms 100) ~fds:[] ()
@@ -149,11 +157,11 @@ let () =
           Alcotest.test_case "ncaps-0mvw the Door hands the powerbox" `Quick
             door_hands_the_powerbox;
           Alcotest.test_case "ncaps-4btv pcaps-pdn5 wrappers are the raw calls" `Quick
-            wrappers_are_the_raw_calls;
-          Alcotest.test_case "ncaps-4btv capabilities in local closures" `Quick
-            local_closures_compose;
+            (fun () -> wrappers_are_the_raw_calls ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "ncaps-4btv capabilities in local closures" `Quick (fun () ->
+              local_closures_compose ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case
             "ncaps-x7z8 ncaps-jkku spawn takes fork, exec, fs_write and mgr" `Quick
-            spawn_needs_fork_exec_and_fs_write;
+            (fun () -> spawn_needs_fork_exec_and_fs_write ~caps:(Ox_test.powerbox ()) ());
         ] );
     ]

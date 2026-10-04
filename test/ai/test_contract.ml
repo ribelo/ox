@@ -159,6 +159,9 @@ let test_configurable_endpoint () =
         (List.assoc_opt "host" headers))
 
 let () =
+  let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.env >) in
+  let model = Test_live.model ~caps () in
+  let endpoint = Test_live.endpoint ~caps () in
   Alcotest.run "AI System One contract"
     [
       ( "contract",
@@ -174,5 +177,8 @@ let () =
             test_configurable_endpoint;
         ] );
       ( "live",
-        [ Alcotest.test_case "^nso-hcfr live smoke (opt-in)" `Quick Test_live.smoke ] );
+        [
+          Alcotest.test_case "^nso-hcfr live smoke (opt-in)" `Quick
+            (Test_live.smoke ~caps ~model ~endpoint);
+        ] );
     ]

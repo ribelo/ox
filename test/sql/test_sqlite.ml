@@ -102,10 +102,11 @@ let test_sqlite_close_with_live_statement () =
   check_rc "reset finalized stmt" S.misuse (S.reset stmt);
   check_ok "close twice" (S.close db)
 
-let test_sqlite_path_and_read_only_mode () =
-  let path = Filename.temp_file "ox-sqlite-" ".db" in
+let test_sqlite_path_and_read_only_mode
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) () =
+  let path = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-" ".db" in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    ~finally:(fun () -> if Sys.file_exists path then Ox_caps.Cap_sys.remove ~caps path)
     (fun () ->
       let db = S.open_ path in
       S.exec db "CREATE TABLE items (id INTEGER PRIMARY KEY)";
@@ -244,10 +245,14 @@ let test_sqlite_float_blob_metadata_and_counters () =
   check_done "drain typed values" (S.step query);
   check_ok "finalize typed query" (S.finalize query)
 
-let test_sqlite_backup_and_restore () =
-  let backup_path = Filename.temp_file "ox-sqlite-backup-" ".db" in
+let test_sqlite_backup_and_restore
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) () =
+  let backup_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-backup-" ".db"
+  in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists backup_path then Sys.remove backup_path)
+    ~finally:(fun () ->
+      if Sys.file_exists backup_path then Ox_caps.Cap_sys.remove ~caps backup_path)
     (fun () ->
       with_db @@ fun db ->
       S.exec db "CREATE TABLE items (id INTEGER PRIMARY KEY)";
@@ -262,13 +267,18 @@ let process_cpu_seconds () =
   let t = Unix.times () in
   t.Unix.tms_utime +. t.tms_stime +. t.tms_cutime +. t.tms_cstime
 
-let test_sqlite_backup_waits_without_busy_spinning () =
-  let source_path = Filename.temp_file "ox-sqlite-source-" ".db" in
-  let backup_path = Filename.temp_file "ox-sqlite-backup-" ".db" in
+let test_sqlite_backup_waits_without_busy_spinning
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; Ox_caps.Cap.time ; .. >) () =
+  let source_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-source-" ".db"
+  in
+  let backup_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-backup-" ".db"
+  in
   Fun.protect
     ~finally:(fun () ->
-      if Sys.file_exists source_path then Sys.remove source_path;
-      if Sys.file_exists backup_path then Sys.remove backup_path)
+      if Sys.file_exists source_path then Ox_caps.Cap_sys.remove ~caps source_path;
+      if Sys.file_exists backup_path then Ox_caps.Cap_sys.remove ~caps backup_path)
     (fun () ->
       let setup = S.open_ source_path in
       Fun.protect
@@ -293,9 +303,9 @@ let test_sqlite_backup_waits_without_busy_spinning () =
               ()
           in
           let cpu_before = process_cpu_seconds () in
-          let wall_before = Unix.gettimeofday () in
+          let wall_before = Ox_caps.Cap_unix.gettimeofday ~caps () in
           let result = S.backup_to_path_result source backup_path in
-          let wall_elapsed = Unix.gettimeofday () -. wall_before in
+          let wall_elapsed = Ox_caps.Cap_unix.gettimeofday ~caps () -. wall_before in
           let cpu_elapsed = process_cpu_seconds () -. cpu_before in
           Thread.join releaser;
           (match result with
@@ -310,13 +320,11 @@ let test_sqlite_load_extension_toggle () =
   check_ok "enable extension loading" (S.enable_load_extension db true);
   check_ok "disable extension loading" (S.enable_load_extension db false)
 
-let test_sqlite_config_error_and_testing_helpers () =
+let test_sqlite_config_error_and_testing_helpers
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) () =
   let result =
     (* ^inncap-b8ts: tmp and fs_write, even for an in-memory helper. *)
-    S.Testing.with_db
-      ~caps:(Ox_test.powerbox () :> < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write >)
-      (S.Config.in_memory ())
-    @@ fun db ->
+    S.Testing.with_db ~caps (S.Config.in_memory ()) @@ fun db ->
     S.exec db "CREATE TABLE items (id INTEGER PRIMARY KEY)";
     S.exec db "INSERT INTO items (id) VALUES (1)";
     Ok (S.query_one_int db "SELECT COUNT(*) FROM items")

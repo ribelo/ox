@@ -121,7 +121,7 @@ let check_actor book outcomes ~stopped =
     book.applied;
   (!answered, !cancelled, !timed_out, !ended)
 
-let actor_storm ~clock rng capacity =
+let actor_storm ~(caps : < Ox_caps.Cap.stdout ; .. >) ~clock rng capacity =
   let n = 2048 in
   let book = ledger rng n in
   let outcomes = Array.make n None in
@@ -157,14 +157,14 @@ let actor_storm ~clock rng capacity =
       require
         (answered > 0 && cancelled > 0 && timed_out > 0)
         "Actor storm did not exercise replies, cancellation and timeouts";
-      Printf.printf
+      Ox_caps.Cap_stdlib.printf ~caps
         "actor capacity=%d asks=%d answered=%d cancelled=%d timed_out=%d applied=%d\n%!"
         capacity n answered cancelled timed_out book.applied);
   require (!stopped = [ book.applied ]) "Actor finalizer missed final state or ran twice"
 
 (* All these asks are certainly queued: the mailbox fits the entire burst and the
    first handler is held. Cancellation must abandon replies, never queued messages. *)
-let actor_queued_cancellation ~clock rng =
+let actor_queued_cancellation ~(caps : < Ox_caps.Cap.stdout ; .. >) ~clock rng =
   let n = 512 in
   let book = ledger rng n in
   let delays = Array.init n (fun _ -> 1 + Random.State.int rng 20) in
@@ -209,11 +209,12 @@ let actor_queued_cancellation ~clock rng =
         (fun id count -> require (count = 1) "Queued ask %d was lost" id)
         book.visits;
       ignore (check_actor book outcomes ~stopped:false);
-      Printf.printf "actor queued-cancel asks=%d applied=%d\n%!" n book.applied)
+      Ox_caps.Cap_stdlib.printf ~caps "actor queued-cancel asks=%d applied=%d\n%!" n
+        book.applied)
 
 (* A handshake cancels an asker while its handler is definitely running. Even then
    the protected invocation must finish and commit exactly once after release. *)
-let actor_inflight_cancellation ~clock rng =
+let actor_inflight_cancellation ~(caps : < Ox_caps.Cap.stdout ; .. >) ~clock rng =
   let n = 128 in
   let book = ledger rng n in
   let signals = Array.init n (fun _ -> Eio.Promise.create ()) in
@@ -256,11 +257,12 @@ let actor_inflight_cancellation ~clock rng =
         book.visits;
       ignore (check_actor book outcomes ~stopped:false);
       require (Actor.state actor = book.applied) "In-flight actor state differs";
-      Printf.printf "actor in-flight-cancel asks=%d applied=%d\n%!" n book.applied)
+      Ox_caps.Cap_stdlib.printf ~caps "actor in-flight-cancel asks=%d applied=%d\n%!" n
+        book.applied)
 
 (* Askers outlive the actor's own switch, so actor shutdown must settle pending replies
    and wake senders blocked on the full mailbox, rather than cancelling them all. *)
-let actor_stop_storm ~clock rng =
+let actor_stop_storm ~(caps : < Ox_caps.Cap.stdout ; .. >) ~clock rng =
   let n = 512 in
   let book = ledger rng n in
   let plans = Array.init n (fun id -> interruption rng id) in
@@ -296,7 +298,7 @@ let actor_stop_storm ~clock rng =
   let answered, cancelled, timed_out, ended = check_actor book outcomes ~stopped:true in
   require (ended > 0) "Actor shutdown had no pending asks";
   require (!stopped = [ book.applied ]) "Stopped actor finalizer count/state differs";
-  Printf.printf
+  Ox_caps.Cap_stdlib.printf ~caps
     "actor stop asks=%d answered=%d cancelled=%d timed_out=%d stopped=%d applied=%d\n%!" n
     answered cancelled timed_out ended book.applied
 
@@ -335,7 +337,7 @@ let channel_blocked_cancellation ~clock rng capacity =
   Channel.done_ channel;
   require (Channel.receive channel = Error `Done) "Closed Channel did not finish"
 
-let channel_storm ~clock rng capacity =
+let channel_storm ~(caps : < Ox_caps.Cap.stdout ; .. >) ~clock rng capacity =
   let n = 4096 in
   let channel = Channel.create ~capacity () in
   let sent = Array.make n 0 and received = Array.make n 0 in
@@ -417,24 +419,26 @@ let channel_storm ~clock rng capacity =
   require
     (Channel.try_receive channel = Error `Done)
     "Channel retained an extra item after close";
-  Printf.printf
+  Ox_caps.Cap_stdlib.printf ~caps
     "channel capacity=%d items=%d send_cancelled=%d recv_cancelled=%d send_timeouts=%d \
      recv_timeouts=%d\n\
      %!"
     capacity n !send_cancelled !recv_cancelled !send_timeouts !recv_timeouts
 
-let () =
-  let rng = Stress_support.random ~default:6060 () in
+let run ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) () =
+  let rng = Stress_support.random ~caps ~default:6060 () in
   Eio_main.run (fun env ->
       let clock = Eio.Stdenv.clock env in
       Eio.Time.with_timeout_exn clock 50.0 (fun () ->
-          List.iter (actor_storm ~clock rng) [ 1; 8; 64 ];
-          actor_queued_cancellation ~clock rng;
-          actor_inflight_cancellation ~clock rng;
-          actor_stop_storm ~clock rng;
+          List.iter (actor_storm ~caps ~clock rng) [ 1; 8; 64 ];
+          actor_queued_cancellation ~caps ~clock rng;
+          actor_inflight_cancellation ~caps ~clock rng;
+          actor_stop_storm ~caps ~clock rng;
           List.iter
             (fun capacity ->
               channel_blocked_cancellation ~clock rng capacity;
-              channel_storm ~clock rng capacity)
+              channel_storm ~caps ~clock rng capacity)
             [ 1; 8; 64 ]));
-  Printf.printf "nstress-ttto: cancellation storms passed\n%!"
+  Ox_caps.Cap_stdlib.printf ~caps "nstress-ttto: cancellation storms passed\n%!"
+
+let () = run ~caps:(Ox_test.powerbox ()) ()

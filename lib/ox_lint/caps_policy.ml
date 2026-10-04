@@ -246,6 +246,12 @@ let declares_door ~caps source =
       | Some libraries -> List.mem (Atom "ox_caps.door") libraries
       | None -> false)
 
+let declares_test ~caps source =
+  declared_boundary ~caps source (fun _ fields ->
+      match field "libraries" fields with
+      | Some libraries -> List.mem (Atom "ox_test") libraries
+      | None -> false)
+
 let private_module ~caps source =
   declared_boundary ~caps source (fun module_ fields ->
       match field "private_modules" fields with

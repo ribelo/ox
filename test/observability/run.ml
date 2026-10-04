@@ -32,8 +32,8 @@ let contains haystack needle =
   in
   needle_length = 0 || search 0
 
-let read_file path =
-  let channel = open_in_bin path in
+let read_file ~(caps : < Ox_caps.Cap.fs_read ; .. >) path =
+  let channel = Ox_caps.Cap_stdlib.open_in_bin ~caps path in
   Fun.protect
     ~finally:(fun () -> close_in_noerr channel)
     (fun () -> really_input_string channel (in_channel_length channel))
@@ -466,8 +466,10 @@ let test_span_minimum_level () =
    opam file is the contract, so this reads it: every runtime dependency must be
    one of those (plus Eio's own mtime type for the monotonic clock, and the
    compiler and build-tool entries dune generates). *)
-let test_dependency_ceiling () =
-  let lines = read_file "../../ox_observability.opam" |> String.split_on_char '\n' in
+let test_dependency_ceiling ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
+  let lines =
+    read_file ~caps "../../ox_observability.opam" |> String.split_on_char '\n'
+  in
   let rec drop_while predicate = function
     | line :: rest when predicate line -> drop_while predicate rest
     | rest -> rest
@@ -625,6 +627,7 @@ let test_reporter_at_least () =
         (messages telemetry))
 
 let () =
+  let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.fs_read >) in
   Alcotest.run "ox_observability"
     (V1_logger.tests @ Span_complete.tests
     @ [
@@ -704,6 +707,7 @@ let () =
           [
             Alcotest.test_case
               "depends on ox, eio, ox_json and yojson only (^nobs-6x58 ^nnoschema-ifg0)"
-              `Quick test_dependency_ceiling;
+              `Quick
+              (test_dependency_ceiling ~caps);
           ] );
       ])

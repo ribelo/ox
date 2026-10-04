@@ -17,7 +17,7 @@ let caller ~caps () = Ox_caps.Cap_unix.fork ~caps ()
 
 ## Minting boundary
 
-The Dune stanza owning a source must directly list `ox_caps.door` before that source can name Ox_caps_door or mint through its powerbox, Ox_test.powerbox or Ox_app.with_powerbox. A transitive dependency, another stanza's dependency or a comment grants nothing. Module selectors and include_subdirs determine ownership.
+The Dune stanza owning a source must directly list `ox_caps.door` before that source can name Ox_caps_door or mint through its powerbox or Ox_app.with_powerbox. A direct `ox_test` dependency additionally authorizes only `Ox_test.powerbox ()`, the sanctioned test entry: mint once there and narrow the resulting row for each helper. This is not a general transitive grant; another stanza's dependency or a comment grants nothing. Module selectors and include_subdirs determine ownership.
 
 The Door, tests and build tools follow this same structural rule. CLI-owning entries mint directly through `Ox_caps_door.powerbox ()`, avoiding Ox_app's runtime closure. Ox_app still mints once per process and passes capabilities in its Env. Tokens remain abstract; no mint alert suppression or path exception is needed.
 
@@ -33,6 +33,14 @@ nix develop -c scripts/caps-gate
 ox_lint installs bin/caps-gate beside bin/ox-lint; its launcher execs the sibling with --caps-gate. ox_caps installs no launcher and does not depend on ox_lint. Consumers install the compiler-matched build tool. --allow, --rules, --self-check and --require-typed remain supported. Exit codes are 0 (clean), 1 (findings/missing required evidence), and 2 (usage/setup failure).
 
 The shipped allow-list is empty. Both registries and the checkout launcher's absence of --allow entries are regression-tested. Explicit --allow patterns and their existing fixture remain available for a future deliberate policy change; no default entry exists today.
+
+## Fixture scope
+
+The default gate inventories compilation targets, including tests. A source consumed by a declared data dependency but compiled by no target is counted as data-only and is out of default scope; an orphan remains reported as not built. Compilation takes precedence over data dependencies. Literal file, `source_tree` and `glob_files` dependencies (including named dependencies and included Dune stanzas) are recognized; variable dependencies are not treated as proof of data-only scope.
+
+Compiled negative fixtures declare a file-level attribute such as `[@@@ox_lint.fixture "ox-caps-fork: raw fork without authority"]`. This removes a file only from the default scan, whose summary reports the fixture count; explicit file or directory paths still report its findings. When the declared rule is selected, an explicit scan that produces none of its findings fails as a dead fixture. Markers are not an allowance and carry no authority.
+
+Repository `dune test` explicitly scans every marked compiled fixture and verifies its named finding using fresh typed evidence. Installed `--self-check` audits the rule/replacement/fixture/page bundle structurally because installations ship source fixtures without compiler annotations. Empty interface companions stay unmarked because they contain no violation; the raw-concurrency fixture stays unmarked because that entire rule is deliberately dormant until rows 61, 64 and 65 land.
 
 ## Rules
 

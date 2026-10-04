@@ -1,7 +1,7 @@
 (executable
  (name reap)
  (modules reap)
- (libraries ox_app eio eio_main))
+ (libraries ox_app ox_test ox_caps eio eio_main))
 
 (executable
  (name plain)

@@ -30,15 +30,75 @@ contains() {
     exit 1
   fi
 }
+# Owning ox_test dependency grants its constructor, never Door or sibling access.
+cp -R "$(dirname "$0")/mint" "$scratch/mint"
+chmod -R u+w "$scratch/mint"
+inside_scratch "$scratch/mint/dune.in"; inside_scratch "$scratch/mint/dune"
+mv "$scratch/mint/dune.in" "$scratch/mint/dune"
+expect 0 "$engine" --caps-gate --rules ox-caps-mint "$scratch/mint/allowed.ml"
+[[ ! -s "$scratch/out" ]]
+expect 1 "$engine" --caps-gate --rules ox-caps-mint "$scratch/mint/direct_door.ml"
+contains "$scratch/out" 'ox-caps-mint:'
+expect 1 "$engine" --caps-gate --rules ox-caps-mint "$scratch/mint/sibling.ml"
+contains "$scratch/out" 'ox-caps-mint:'
 cp -R "$fixture" "$scratch/project"
 chmod -R u+w "$scratch/project"
-for path in dune-project qualified/dune bin/dune private/dune consumer/dune; do
+for path in dune-project qualified/dune bin/dune private/dune consumer/dune test/dune; do
   inside_scratch "$scratch/project/$path.in"
   inside_scratch "$scratch/project/$path"
   mv "$scratch/project/$path.in" "$scratch/project/$path"
 done
 project="$scratch/project"
 dune build --root "$project" @install @check
+# A test executable and its helper/interface are decided, not silently skipped.
+expect 1 "$engine" --require-typed --rules ox-discarded-result "$project/test/entry.ml"
+contains "$scratch/out" 'entry.ml:2: ox-discarded-result:'
+expect 0 "$engine" --caps-gate --require-typed "$project/test/entry.mli" "$project/test/helper.ml" "$project/test/helper.mli"
+[[ ! -s "$scratch/out" ]]
+contains "$scratch/err" '0 modules with typed rules undecided'
+expect 0 "$engine" --caps-gate --require-typed "$project/test/orphan.ml"
+contains "$scratch/out" 'not built (not in any Dune target)'
+contains "$scratch/err" '0 modules with typed rules undecided'
+# Default inventory distinguishes declared data, marked compiled fixtures and orphans.
+(cd "$project"; expect 0 "$engine" --caps-gate --require-typed)
+contains "$scratch/err" ' data-only files out of scope; 1 fixture files skipped'
+[[ $(<"$scratch/err") != *'; 0 data-only files out of scope;'* ]]
+contains "$scratch/out" 'orphan.ml:1: ox-lint: not built'
+expect 1 "$engine" --caps-gate --require-typed "$project/test/marked.ml"
+contains "$scratch/out" 'ox-caps-fork:'
+expect 1 "$engine" --caps-gate "$project/test/data/raw.ml"
+contains "$scratch/out" 'ox-caps-fork:'
+# A dead marker fails an explicit scan, while comments cannot mark a file.
+cp "$project/test/marked.ml" "$scratch/marked.saved"
+printf '[@@@ox_lint.fixture "ox-caps-fork: dead fixture"]\nlet fork () = 0\n' > "$project/test/marked.ml"
+dune build --root "$project" @check
+expect 2 "$engine" --caps-gate --require-typed "$project/test/marked.ml"
+contains "$scratch/err" 'dead fixture: declared rule produced no finding'
+printf '(* [@@@ox_lint.fixture "ox-caps-fork: only a comment"] *)\nlet fork () = Unix.fork ()\n' > "$project/test/marked.ml"
+dune build --root "$project" @check
+(cd "$project"; expect 1 "$engine" --caps-gate --require-typed)
+contains "$scratch/out" 'marked.ml:2: ox-caps-fork:'
+contains "$scratch/err" '0 fixture files skipped'
+inside_scratch "$scratch/marked.saved"; inside_scratch "$project/test/marked.ml"
+mv "$scratch/marked.saved" "$project/test/marked.ml"
+dune build --root "$project" @check
+test_cmt="$project/_build/default/test/.entry.eobjs/byte/dune__exe__Entry.cmt"
+[[ -f "$test_cmt" ]]
+inside_scratch "$test_cmt"
+mv "$test_cmt" "$scratch/test.cmt.saved"
+expect 2 "$engine" --caps-gate --require-typed "$project/test/entry.ml"
+contains "$scratch/err" 'missing typed annotation; run dune build @check'
+contains "$scratch/err" '1 modules with typed rules undecided'
+# No explicit paths: the conventional test tree belongs to the default gate scope.
+(cd "$project"; expect 2 "$engine" --caps-gate --require-typed)
+contains "$scratch/err" '1 modules with typed rules undecided'
+# A successful workspace query alone cannot prove exclusion when rules are unavailable.
+mkdir "$scratch/no-rules"
+printf '%s\n' '#!/usr/bin/env bash' 'if [[ $1 == describe && $2 == rules ]]; then exit 1; fi' 'exec "$DUNE_REAL" "$@"' > "$scratch/no-rules/dune"
+chmod +x "$scratch/no-rules/dune"
+expect 2 env DUNE_REAL="$(command -v dune)" PATH="$scratch/no-rules:$PATH" "$engine" --caps-gate --require-typed "$project/test/entry.ml"
+contains "$scratch/err" '1 modules with typed rules undecided'
+mv "$scratch/test.cmt.saved" "$test_cmt"
 # Dune exposes only public_cmi to build-tree consumers; private CMIs stay in byte.
 private_objects="$project/_build/default/private/.deployment_private.objs"
 [[ -f "$private_objects/byte/deployment_private__Hidden.cmi" ]]
@@ -84,6 +144,8 @@ expect 1 "$engine" --rules ox-discarded-result "$project/qualified/assistant/dic
 contains "$scratch/out" 'dictation.ml:2: ox-discarded-result:'
 expect 0 "$engine" --require-typed --rules ox-discarded-result \
   "$project/qualified/assistant/dictation.mli" "$project/qualified/other/dictation.ml"
+# Keep the renamed-evidence assertion above; Dune rule discovery may clean unknown targets.
+mv "$objects/evidence.cmt" "$cmt"
 expect 0 "$engine" --caps-gate --require-typed "$project/bin/skill_cli.mli"
 contains "$scratch/out" 'not built (not in any Dune target)'
 contains "$scratch/err" '0 modules with typed rules undecided'
@@ -120,6 +182,17 @@ inside_scratch "$sibling"; rm -- "$sibling"
 printf '\n(* changed after the build *)\n' >> "$project/qualified/assistant/dictation.ml"
 expect 2 "$engine" --require-typed --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"
 contains "$scratch/err" 'stale typed annotation'
+
+# Every compiled marked fixture must still trip its named rule.
+for source in "$root"/test/lint/violating/*.{ml,mli} "$root"/test/caps/rules/violating/*.ml; do
+  [[ -f "$source" ]] || continue
+  IFS= read -r first < "$source" || true
+  if [[ "$first" == '[@@@ox_lint.fixture "'* ]]; then
+    rule=${first#*\"}; rule=${rule%%:*}
+    expect 1 "$engine" --require-typed --rules "$rule" "$source"
+    contains "$scratch/out" "$rule:"
+  fi
+done
 
 prefix="$scratch/prefix"
 data="$prefix/share/ox_lint"

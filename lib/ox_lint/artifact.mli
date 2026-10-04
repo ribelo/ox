@@ -11,12 +11,23 @@ type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
 
 val read : caps:< Cap.fs_read ; .. > -> string -> t
 
+val fixture : caps:< Cap.fs_read ; .. > -> string -> string option
+(** Parse a file-level fixture declaration, returning its named rule. Malformed or
+    duplicate declarations fail; comments and nested attributes do not mark a file. *)
+
 type target = Library | Executable
-type membership = Built of target | Not_built | Unknown
+type membership = Built of target | Data_only | Not_built | Unknown
 
 val membership : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> membership
-(** Query Dune's declared modules, cached per project. [Not_built] requires a successful
-    inventory; unavailable or failed inventories return [Unknown], never an exclusion. *)
+(** Query Dune declarations, cached per project. [describe workspace] answers for
+    libraries/executables; [describe rules --recursive @check] supplies compilation
+    sources omitted by workspace (notably [test]/[tests] on Dune 3.22). Dune resolves
+    module sets and includes; existing annotations are never membership evidence. Absent
+    compilation, a declared literal file, [source_tree] or [glob_files] dependency yields
+    [Data_only]; [Not_built] means neither compiled nor consumed as data. Compilation
+    always wins. Alias data declarations are read from Dune stanzas because
+    [describe rules] omits alias actions. A failed query or unrecognised format returns
+    [Unknown], never an exclusion. *)
 
 val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
 (** Match the recorded source identity in local and enclosing build object directories,

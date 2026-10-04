@@ -39,12 +39,13 @@ let typed_errors cause =
   in
   collect cause
 
-let run ?cancel_at operation branches =
+let run ~(caps : < Ox_caps.Cap.stderr ; .. >) ?cancel_at operation branches =
   Eio_mock.Backend.run_full (fun env ->
       Eio.Fiber.with_binding env#debug#traceln
         {
           Eio.Debug.traceln =
-            (fun ?__POS__:_ fmt -> Format.ifprintf Format.err_formatter fmt);
+            (fun ?__POS__:_ fmt ->
+              Format.ifprintf (Ox_caps.Cap_stdlib.err_formatter ~caps) fmt);
         }
         (fun () ->
           Eio.Switch.run (fun control_sw ->
@@ -150,8 +151,8 @@ let run ?cancel_at operation branches =
               in
               (observed, List.rev !events, started, !high_water))))
 
-let verify operation branches =
-  let observed, events, started, high_water = run operation branches in
+let verify ~(caps : < Ox_caps.Cap.stderr ; .. >) operation branches =
+  let observed, events, started, high_water = run ~caps operation branches in
   let count = List.length branches in
   (match operation with
   | For_each concurrency ->
@@ -222,7 +223,7 @@ let generator count =
 
 (* Caller cancellation during suspended loser cleanup must win over a typed
    failure which the boundary has already observed; Scope.exit_on_error says so. *)
-let cancel_during_release operation position =
+let cancel_during_release ~(caps : < Ox_caps.Cap.stderr ; .. >) operation position =
   let count = if operation = Par then 2 else 6 in
   let position = position mod count in
   let caller = (position + 1) mod count in
@@ -235,15 +236,15 @@ let cancel_during_release operation position =
         })
   in
   let cancel_at = float_of_int (position + 1) +. 0.1875 in
-  let observed, _, _, _ = run ~cancel_at operation branches in
+  let observed, _, _, _ = run ~caps ~cancel_at operation branches in
   match observed with
   | Raised (Eio.Cancel.Cancelled (External i)) when i = caller -> true
   | _ -> fail "caller cancellation during typed-failure release was swallowed"
 
-let properties () =
+let properties ~(caps : < Ox_caps.Cap.stderr ; .. >) () =
   let make name operation size =
     QCheck2.Test.make ~name ~count:1500 ~print:print_pattern (generator size)
-      (verify operation)
+      (verify ~caps operation)
   in
   let open QCheck2.Gen in
   [
@@ -256,11 +257,11 @@ let properties () =
     QCheck2.Test.make ~name:"caller cancellation wins during typed-error teardown"
       ~count:500 ~print:string_of_int (int_range 0 5) (fun position ->
         List.for_all
-          (fun operation -> cancel_during_release operation position)
+          (fun operation -> cancel_during_release ~caps operation position)
           [ Par; All; For_each 6; Supervised ]);
   ]
 
-let positional_matrix () =
+let positional_matrix ~(caps : < Ox_caps.Cap.stderr ; .. >) () =
   List.iter
     (fun operation ->
       let count = if operation = Par then 2 else 6 in
@@ -276,18 +277,24 @@ let positional_matrix () =
                         delay = (if i = position then delay else 4);
                       })
                 in
-                ignore (verify operation branches))
+                ignore (verify ~caps operation branches))
               [ 0; 4; 8 ]
           done)
         [ Success; Typed; Defect; Cancel ])
     [ Par; All; For_each 2; For_each 6; Race; Supervised ];
-  ignore (verify All []);
-  ignore (verify (For_each 2) []);
+  ignore (verify ~caps All []);
+  ignore (verify ~caps (For_each 2) []);
   (* No success: every typed rejection survives, in input order. *)
-  ignore (verify Race (List.init 8 (fun i -> { outcome = Typed; delay = 8 - i })))
+  ignore (verify ~caps Race (List.init 8 (fun i -> { outcome = Typed; delay = 8 - i })))
 
-let () =
-  let rng = Stress_support.random ~default:6075 () in
+let main
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.stdout
+       ; Ox_caps.Cap.stderr
+       ; Ox_caps.Cap.exit
+       ; .. >) () =
+  let rng = Stress_support.random ~caps ~default:6075 () in
   let code =
     Eio_mock.Backend.run_full (fun env ->
         (* The auto-clock advances outside its inner backend's fiber handler, so
@@ -295,10 +302,13 @@ let () =
         Eio.Fiber.with_binding env#debug#traceln
           {
             Eio.Debug.traceln =
-              (fun ?__POS__:_ fmt -> Format.ifprintf Format.err_formatter fmt);
+              (fun ?__POS__:_ fmt ->
+                Format.ifprintf (Ox_caps.Cap_stdlib.err_formatter ~caps) fmt);
           }
           (fun () ->
-            positional_matrix ();
-            QCheck_base_runner.run_tests ~rand:rng ~verbose:true (properties ())))
+            positional_matrix ~caps ();
+            QCheck_base_runner.run_tests ~rand:rng ~verbose:true (properties ~caps ())))
   in
-  exit code
+  Ox_caps.Cap_stdlib.exit ~caps code
+
+let () = main ~caps:(Ox_test.powerbox ()) ()

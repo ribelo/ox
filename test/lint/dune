@@ -34,7 +34,7 @@
 (executable
  (name test_concurrency)
  (modules test_concurrency)
- (libraries lint_engine ox_caps.door))
+ (libraries lint_engine ox_test))
 
 (rule
  (alias runtest)

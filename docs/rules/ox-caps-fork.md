@@ -14,3 +14,5 @@ The source tier reports naked or argumentless references. Non-wildcard/non-unit 
 
 [Violating fixture](<../../test/caps/rules/violating/fork.ml>) and
 [clean fixture](<../../test/caps/rules/clean/fork.ml>) form the rule/fixture/page triangle, checked by --self-check.
+
+Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

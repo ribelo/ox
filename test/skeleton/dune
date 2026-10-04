@@ -4,4 +4,5 @@
 ; this one cites the delivery map instead.
 
 (test
- (name test_build_skeleton))
+ (name test_build_skeleton)
+ (libraries ox_test))

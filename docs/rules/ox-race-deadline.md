@@ -28,3 +28,5 @@ branch's semantic intent or inspect wall-clock durations.
 [the exact-site tests](<../../test/lint/test_concurrency.ml>). The rule table
 registers the replacement, both fixtures and this page for `--self-check`.
 Compiler artifacts inherit the engine's strict freshness and CMI checks.
+
+Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

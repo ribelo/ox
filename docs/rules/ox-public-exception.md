@@ -15,3 +15,5 @@ This syntax-only tier does not expand includes or aliased module types to discov
 ## Evidence
 
 [Violating fixture](<../../test/lint/violating/public_exception.mli>) and [clean fixture](<../../test/lint/clean/public_exception.mli>) are checked by [exact-site tests](<../../test/lint/test_concurrency.ml>). The registry keeps the rule/fixture/page triangle.
+
+Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

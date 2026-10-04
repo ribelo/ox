@@ -1,4 +1,4 @@
-(* ^nlintc-kdcl: suspending_finalizer violating evidence. *)
+[@@@ox_lint.fixture "ox-suspending-finalizer: deliberate negative fixture"]
 [@@@warning "-32-34-37"]
 
 let yield () = Fun.protect ~finally:(fun () -> Eio.Fiber.yield ()) (fun () -> ())

@@ -1,4 +1,5 @@
-(* ^ncapslint-nf4t ^ncapslint-w2tq: never run, compiled rule evidence. *)
+[@@@ox_lint.fixture "ox-caps-mint: deliberate negative fixture"]
+
 let violation () = Ox_app.with_powerbox (fun _ -> ())
 
 module Door = Ox_caps_door

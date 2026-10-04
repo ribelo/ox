@@ -436,7 +436,13 @@ let test_absent_default_config () =
    as absence, so the real executable starts on its defaults when the default path holds no
    file, config check prints those defaults, and the path --config names must exist. The
    fixture runs with XDG_CONFIG_HOME pointing at a directory that is not there. *)
-let test_default_path_absent () =
+let test_default_path_absent
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
   let absent =
     Filename.concat
       (Filename.get_temp_dir_name ())
@@ -448,7 +454,7 @@ let test_default_path_absent () =
       (("XDG_CONFIG_HOME=" ^ absent)
       :: List.filter
            (fun entry -> not (String.starts_with ~prefix:"XDG_CONFIG_HOME=" entry))
-           (Array.to_list (Unix.environment ())))
+           (Array.to_list (Ox_caps.Cap_unix.environment ~caps ())))
   in
   Eio_main.run (fun base ->
       Eio.Switch.run (fun sw ->
@@ -457,9 +463,9 @@ let test_default_path_absent () =
           in
           let spawn argv =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:base#clock
-                ~mgr:base#process_mgr ~argv ~env ~grace:(Ox.Duration.ms 50)
-                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~caps ~sw ~clock:base#clock ~mgr:base#process_mgr
+                ~argv ~env ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
+                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid absent-config fixture spawn"
@@ -660,8 +666,9 @@ let test_validate_env_and_config () =
 (* ^napp-57qi: an environment-dependent check reads the capability the Door passed: the
    validator accepts the file while it exists and fails once it is gone, like a check for
    the Chrome binary the problem statement names. *)
-let test_validate_uses_door_fs () =
-  let path = Filename.temp_file "ox-app-validate-" ".bin" in
+let test_validate_uses_door_fs ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >)
+    () =
+  let path = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-app-validate-" ".bin" in
   let validate env cfg =
     match cfg.models.api_key with
     | Some key
@@ -672,12 +679,12 @@ let test_validate_uses_door_fs () =
   in
   let text = Printf.sprintf "port = 42\n[models]\napi_key = %S\n" path in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    ~finally:(fun () -> if Sys.file_exists path then Ox_caps.Cap_sys.remove ~caps path)
     (fun () ->
       let code, _, err, _ = run ~validate ~text () in
       check_int "^napp-57qi validator sees the Door's fs" 0 code;
       check_string "no diagnostics" "" err;
-      Sys.remove path;
+      Ox_caps.Cap_sys.remove ~caps path;
       let code, _, err, _ = run ~validate ~text () in
       check_int "^napp-57qi missing environment file exits 2" 2 code;
       expect_part err "/models/api_key";
@@ -1047,12 +1054,21 @@ let test_cli_and_io_errors () =
 
 (* ^napp-57qi: Ox_app.run itself, not only run_for_test, runs the validator before the
    program's switch. The fixture is the only executable that goes through Ox_app.run. *)
-let test_run_validates () =
-  let config_path = Filename.temp_file "ox-app-validate-run-" ".toml" in
+let test_run_validates
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
+  let config_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-app-validate-run-" ".toml"
+  in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    ~finally:(fun () ->
+      if Sys.file_exists config_path then Ox_caps.Cap_sys.remove ~caps config_path)
     (fun () ->
-      let output = open_out config_path in
+      let output = Ox_caps.Cap_stdlib.open_out ~caps config_path in
       output_string output "port = 7\n";
       close_out output;
       Eio_main.run (fun env ->
@@ -1064,8 +1080,7 @@ let test_run_validates () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                    ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1091,12 +1106,20 @@ let test_run_validates () =
               check_string "^napp-57qi the program never printed" "" printed)))
 
 (* nlimit-s3f4: real SIGTERM and SIGINT travel through the Door. *)
-let test_real_signal signo () =
-  let config_path = Filename.temp_file "ox-app-signal-" ".toml" in
+let test_real_signal
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) signo () =
+  let config_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-app-signal-" ".toml"
+  in
   Fun.protect
-    ~finally:(fun () -> Sys.remove config_path)
+    ~finally:(fun () -> Ox_caps.Cap_sys.remove ~caps config_path)
     (fun () ->
-      let output = open_out config_path in
+      let output = Ox_caps.Cap_stdlib.open_out ~caps config_path in
       output_string output "port = 42\n";
       close_out output;
       Eio_main.run (fun env ->
@@ -1108,8 +1131,7 @@ let test_real_signal signo () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                    ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1141,12 +1163,21 @@ let test_real_signal signo () =
 (* ^napp-idii: the telemetry the program's config switches on receives the program's
    record on the real SIGTERM path, and its root-switch resource flushes before the
    process exits. *)
-let test_real_signal_telemetry () =
-  let config_path = Filename.temp_file "ox-app-telemetry-" ".toml" in
+let test_real_signal_telemetry
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
+  let config_path =
+    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-app-telemetry-" ".toml"
+  in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    ~finally:(fun () ->
+      if Sys.file_exists config_path then Ox_caps.Cap_sys.remove ~caps config_path)
     (fun () ->
-      let output = open_out config_path in
+      let output = Ox_caps.Cap_stdlib.open_out ~caps config_path in
       output_string output "port = 42\ntelemetry = true\n";
       close_out output;
       Eio_main.run (fun env ->
@@ -1158,8 +1189,7 @@ let test_real_signal_telemetry () =
               in
               let child =
                 match
-                  Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                    ~mgr:env#process_mgr
+                  Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                     ~argv:[ fixture; "--config"; config_path ]
                     ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                     ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1247,13 +1277,20 @@ let otlp_messages bodies =
 
 (* ^notel-1stb: run the fixture to a real SIGTERM stop with a configured OTLP exporter
    and report its exit status, its stdout, and the messages the collector received. *)
-let signal_stop_otlp env sw ~shutdown =
-  let config_path = Filename.temp_file "ox-app-otlp-" ".toml" in
+let signal_stop_otlp
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) env sw ~shutdown =
+  let config_path = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-app-otlp-" ".toml" in
   Fun.protect
-    ~finally:(fun () -> if Sys.file_exists config_path then Sys.remove config_path)
+    ~finally:(fun () ->
+      if Sys.file_exists config_path then Ox_caps.Cap_sys.remove ~caps config_path)
     (fun () ->
       with_otlp_collector env sw (fun port received ->
-          let output = open_out config_path in
+          let output = Ox_caps.Cap_stdlib.open_out ~caps config_path in
           output_string output
             (Printf.sprintf
                "port = 42\n\
@@ -1267,8 +1304,7 @@ let signal_stop_otlp env sw ~shutdown =
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
                 ~argv:[ fixture; "--config"; config_path ]
                 ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                 ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1296,10 +1332,16 @@ let signal_stop_otlp env sw ~shutdown =
 (* ^notel-1stb: the exporter the telemetry hook builds exports on the root switch's
    release, so the record the program logs while SIGTERM stops it reaches the collector
    even though nothing calls Ox_otel.shutdown. *)
-let test_real_signal_otlp () =
+let test_real_signal_otlp
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
-          let clean, printed, messages = signal_stop_otlp env sw ~shutdown:false in
+          let clean, printed, messages = signal_stop_otlp ~caps env sw ~shutdown:false in
           Alcotest.(check bool) "signal maps to exit code zero" true clean;
           expect_part printed "telemetry flushed";
           Alcotest.(check (list string))
@@ -1309,10 +1351,16 @@ let test_real_signal_otlp () =
 (* ^notel-1stb: the pre-fix consumer pattern — [Ox_otel.shutdown] registered with
    [Eio.Switch.on_release] — used to wait for the daemon the switch had already
    cancelled and hang the stop; the record logged just before it still arrives. *)
-let test_real_signal_otlp_shutdown () =
+let test_real_signal_otlp_shutdown
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
-          let clean, _, messages = signal_stop_otlp env sw ~shutdown:true in
+          let clean, _, messages = signal_stop_otlp ~caps env sw ~shutdown:true in
           Alcotest.(check bool)
             "^notel-1stb shutdown in a release hook does not hang the stop" true clean;
           Alcotest.(check (list string))
@@ -1322,7 +1370,8 @@ let test_real_signal_otlp_shutdown () =
 (* ^napp-ytqk: default and named invocation parse exactly one typed term. *)
 (* ^napp-x11e: an extra long-lived verb uses production signal handling and
    completes its owned switch's finalizers before its process exits. *)
-let test_door2_real_signal_extra () =
+let test_door2_real_signal_extra
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let fixture =
@@ -1330,8 +1379,8 @@ let test_door2_real_signal_extra () =
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr ~argv:[ fixture; "long" ] ~grace:(Ox.Duration.ms 50)
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long" ] ~grace:(Ox.Duration.ms 50)
                 ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
@@ -1359,12 +1408,18 @@ let test_door2_real_signal_extra () =
 
 (* ^napp-ersz: the production reader policy is actually wired to both startup
    and config check, not merely available as an isolated helper. *)
-let test_door2_production_reader () =
-  let file = Filename.temp_file "ox-door2-reader-" ".toml" in
+let test_door2_production_reader
+    ~(caps :
+       < Ox_caps.Cap.tmp
+       ; Ox_caps.Cap.fs_write
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; .. >) () =
+  let file = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-door2-reader-" ".toml" in
   Fun.protect
-    ~finally:(fun () -> Sys.remove file)
+    ~finally:(fun () -> Ox_caps.Cap_sys.remove ~caps file)
     (fun () ->
-      let out = open_out file in
+      let out = Ox_caps.Cap_stdlib.open_out ~caps file in
       output_string out (String.make 2048 'x');
       close_out out;
       Eio_main.run (fun env ->
@@ -1378,8 +1433,8 @@ let test_door2_production_reader () =
                 (fun command ->
                   let child =
                     match
-                      Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw
-                        ~clock:env#clock ~mgr:env#process_mgr
+                      Ox_process.Child.spawn ~caps ~sw ~clock:env#clock
+                        ~mgr:env#process_mgr
                         ~argv:((fixture :: command) @ [ "--config"; file ])
                         ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                         ~stderr:Ox_process.Child.Pipe ~fds:[] ()
@@ -1534,16 +1589,17 @@ let test_door2_source_policy () =
            (fun _ _ _ () _ -> Alcotest.fail "missing file must not run"));
       expect_part (Buffer.contents err) "/demo/stt.toml: no such file")
 
-let test_door2_bounded_reader () =
-  let file = Filename.temp_file "ox-door2-" ".toml" in
+let test_door2_bounded_reader ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) ()
+    =
+  let file = Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-door2-" ".toml" in
   let fifo = file ^ "-fifo" in
   Unix.mkfifo fifo 0o600;
   Fun.protect
     ~finally:(fun () ->
-      Sys.remove fifo;
-      Sys.remove file)
+      Ox_caps.Cap_sys.remove ~caps fifo;
+      Ox_caps.Cap_sys.remove ~caps file)
     (fun () ->
-      let out = open_out file in
+      let out = Ox_caps.Cap_stdlib.open_out ~caps file in
       output_string out "12345";
       close_out out;
       Eio_main.run (fun env ->
@@ -1651,7 +1707,8 @@ let test_door3_exit_codes () =
 
 (* ^napp-izjt: production SIGTERM cancellation of the int runner waits for its
    switch release before the process exits and returns 130, unlike legacy runner. *)
-let test_door3_real_signal_owned_code () =
+let test_door3_real_signal_owned_code
+    ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let fixture =
@@ -1659,10 +1716,9 @@ let test_door3_real_signal_owned_code () =
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr ~argv:[ fixture; "long-code" ]
-                ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
-                ~stderr:Ox_process.Child.Pipe ~fds:[] ()
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture; "long-code" ] ~grace:(Ox.Duration.ms 50)
+                ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid owned-code fixture spawn"
@@ -2405,18 +2461,18 @@ let () =
             test_door3_bare_help_and_usage;
           Alcotest.test_case "^napp-j3qu ^napp-izjt exit codes" `Quick
             test_door3_exit_codes;
-          Alcotest.test_case "^napp-izjt real SIGTERM owned code" `Quick
-            test_door3_real_signal_owned_code;
+          Alcotest.test_case "^napp-izjt real SIGTERM owned code" `Quick (fun () ->
+              test_door3_real_signal_owned_code ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^napp-ytqk typed service args" `Quick
             test_door2_service_args;
           Alcotest.test_case "^napp-x11e Eio commands" `Quick test_door2_commands;
-          Alcotest.test_case "^napp-x11e real SIGTERM extra command" `Quick
-            test_door2_real_signal_extra;
+          Alcotest.test_case "^napp-x11e real SIGTERM extra command" `Quick (fun () ->
+              test_door2_real_signal_extra ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^napp-ersz source policy" `Quick test_door2_source_policy;
-          Alcotest.test_case "^napp-ersz production reader" `Quick
-            test_door2_production_reader;
-          Alcotest.test_case "^napp-ersz bounded regular reader" `Quick
-            test_door2_bounded_reader;
+          Alcotest.test_case "^napp-ersz production reader" `Quick (fun () ->
+              test_door2_production_reader ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "^napp-ersz bounded regular reader" `Quick (fun () ->
+              test_door2_bounded_reader ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^napp-3j07 ^napp-o6d6 ^napp-mbpr clean door" `Quick
             test_clean;
           Alcotest.test_case "^nnoschema-5mdj ^nnoschema-ifg0 derived config" `Quick
@@ -2431,8 +2487,8 @@ let () =
           Alcotest.test_case "^napp-78pf child fiber stop" `Quick test_daemon_stop;
           Alcotest.test_case "^napp-2aa6 path precedence" `Quick test_config;
           Alcotest.test_case "^napp-9x0s absent config" `Quick test_absent_default_config;
-          Alcotest.test_case "^napp-9x0s absent default path, real Door" `Quick
-            test_default_path_absent;
+          Alcotest.test_case "^napp-9x0s absent default path, real Door" `Quick (fun () ->
+              test_default_path_absent ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^nnoschema-zi2m decode failures" `Quick test_decode_failure;
           Alcotest.test_case
             "^nnoschema-5mdj ^nnoschema-36cj ^nnoschema-ifg0 env and check" `Quick
@@ -2441,8 +2497,8 @@ let () =
             test_validate_blocks;
           Alcotest.test_case "^napp-57qi validator env and effective config" `Quick
             test_validate_env_and_config;
-          Alcotest.test_case "^napp-57qi validator uses the Door's fs" `Quick
-            test_validate_uses_door_fs;
+          Alcotest.test_case "^napp-57qi validator uses the Door's fs" `Quick (fun () ->
+              test_validate_uses_door_fs ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^napp-57qi ^napp-noiv raising validator" `Quick
             test_validate_defect;
           Alcotest.test_case "^napp-noiv check runs the validator" `Quick
@@ -2463,16 +2519,17 @@ let () =
             test_telemetry_check_path;
           Alcotest.test_case "^napp-2aa6 ^nnoschema-boxo CLI and IO errors" `Quick
             test_cli_and_io_errors;
-          Alcotest.test_case "^napp-57qi run runs the validator" `Quick test_run_validates;
-          Alcotest.test_case "^napp-idii telemetry flush on SIGTERM" `Quick
-            test_real_signal_telemetry;
-          Alcotest.test_case "^notel-1stb OTLP drain on SIGTERM" `Quick
-            test_real_signal_otlp;
+          Alcotest.test_case "^napp-57qi run runs the validator" `Quick (fun () ->
+              test_run_validates ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "^napp-idii telemetry flush on SIGTERM" `Quick (fun () ->
+              test_real_signal_telemetry ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "^notel-1stb OTLP drain on SIGTERM" `Quick (fun () ->
+              test_real_signal_otlp ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^notel-1stb shutdown in a release hook on SIGTERM" `Quick
-            test_real_signal_otlp_shutdown;
-          Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick
-            (test_real_signal Sys.sigterm);
-          Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick
-            (test_real_signal Sys.sigint);
+            (fun () -> test_real_signal_otlp_shutdown ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "nlimit-s3f4 real SIGTERM" `Quick (fun () ->
+              test_real_signal ~caps:(Ox_test.powerbox ()) Sys.sigterm ());
+          Alcotest.test_case "nlimit-s3f4 real SIGINT" `Quick (fun () ->
+              test_real_signal ~caps:(Ox_test.powerbox ()) Sys.sigint ());
         ] );
     ]

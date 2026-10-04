@@ -18,6 +18,7 @@
 
 (test
  (name size_bound)
+ (libraries ox_test)
  (modules size_bound)
  (deps wide_defaults.pp.ml)
  (action

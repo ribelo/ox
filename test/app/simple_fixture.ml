@@ -3,8 +3,10 @@
 let pp_err fmt = function `Usage -> Format.pp_print_string fmt "usage error"
 let say env text = Eio.Flow.copy_string (text ^ "\n") env.Ox_app.Env.base#stdout
 
-let () =
-  let mode = Option.value (Sys.getenv_opt "SIMPLE_MODE") ~default:"serve" in
+let main ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.exit ; .. >) () =
+  let mode =
+    Option.value (Ox_caps.Cap_sys.getenv_opt ~caps "SIMPLE_MODE") ~default:"serve"
+  in
   let code =
     Ox_app.run_simple ~name:"simple-fixture" ~pp_err
       ~exit_code:(function `Usage -> 64)
@@ -26,4 +28,6 @@ let () =
             say env "ready";
             Ox_app.serve ~sw ())
   in
-  exit code
+  Ox_caps.Cap_stdlib.exit ~caps code
+
+let () = main ~caps:(Ox_test.powerbox ()) ()

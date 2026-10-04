@@ -13,3 +13,5 @@ Release the lock before yielding, awaiting or performing known Eio IO, or use a 
 This is local typed control-flow analysis, not a whole-program lock proof. Branch states are joined conservatively; correlated branches may need a clearer release boundary. Opaque imported callbacks, foreign primitives and unlisted suspension APIs are not inferred. An unknown callback is not proof of suspension. Eio locks and shadowing local modules are not Stdlib locks.
 
 [Violating fixture](<../../test/lint/violating/stdlib_lock.ml>) and [clean fixture](<../../test/lint/clean/stdlib_lock.ml>) pin unsafe suspensions and safe synchronous scopes.
+
+Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

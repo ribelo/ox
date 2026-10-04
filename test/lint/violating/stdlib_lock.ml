@@ -1,4 +1,4 @@
-(* ^nlintc-kdcl: a Stdlib mutex held across known suspension is unsafe. *)
+[@@@ox_lint.fixture "ox-stdlib-lock: deliberate negative fixture"]
 [@@@warning "-32-34-37"]
 
 let yield mutex =

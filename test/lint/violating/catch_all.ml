@@ -1,4 +1,4 @@
-(* ^nlintc-kdcl: catch_all violating evidence. *)
+[@@@ox_lint.fixture "ox-catch-all: deliberate negative fixture"]
 [@@@warning "-32-34-37"]
 
 exception Stopped = Eio.Cancel.Cancelled

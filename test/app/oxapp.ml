@@ -17,7 +17,13 @@ let contains hay needle =
 type outcome = { code : int; stdout : string; stderr : string }
 
 (* Spawn the Simple fixture in [mode]; [after_ready] runs once its first line was read. *)
-let spawn_simple ?(after_ready = fun _ -> ()) mode =
+let spawn_simple
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) ?(after_ready = fun _ -> ()) mode =
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let fixture =
@@ -25,9 +31,12 @@ let spawn_simple ?(after_ready = fun _ -> ()) mode =
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock
-                ~mgr:env#process_mgr ~argv:[ fixture ]
-                ~env:(Array.append (Unix.environment ()) [| "SIMPLE_MODE=" ^ mode |])
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                ~argv:[ fixture ]
+                ~env:
+                  (Array.append
+                     (Ox_caps.Cap_unix.environment ~caps ())
+                     [| "SIMPLE_MODE=" ^ mode |])
                 ~grace:(Ox.Duration.ms 50) ~stdout:Ox_process.Child.Pipe
                 ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with
@@ -52,9 +61,15 @@ let spawn_simple ?(after_ready = fun _ -> ()) mode =
           { code; stdout; stderr }))
 
 (* OxApp.Simple: run(using Ox): Unit — no config, no arguments, the root scope in hand. *)
-let simple_variant () =
+let simple_variant
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
   let outcome =
-    spawn_simple "serve" ~after_ready:(fun (child, reader, clock) ->
+    spawn_simple ~caps "serve" ~after_ready:(fun (child, reader, clock) ->
         check_string "Door ready without any config file" "ready"
           (Eio.Time.with_timeout_exn clock 5. (fun () -> Eio.Buf_read.line reader));
         Ox_process.Child.signal child Sys.sigterm)
@@ -66,22 +81,40 @@ let simple_variant () =
     outcome.stdout
 
 (* forkUser: a background fork of the app's own scope is waited for; the exit is 0. *)
-let background_forks () =
-  let outcome = spawn_simple "background" in
+let background_forks
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = spawn_simple ~caps "background" in
   check_int "exit 0" 0 outcome.code;
   check_string "the fork finished before the Door returned" "body done\nfork finished\n"
     outcome.stdout
 
 (* OxApp.WithEitherErrors.handleError: a typed error becomes the exit code. *)
-let typed_error_exit_code () =
-  let outcome = spawn_simple "fail" in
+let typed_error_exit_code
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = spawn_simple ~caps "fail" in
   check_int "typed error through exit_code" 64 outcome.code;
   Alcotest.(check bool) "rendered on stderr" true (contains outcome.stderr "usage error")
 
 (* handleException: a defect is rendered in full and exits 2 (Ox's Simple: stack trace,
    exit 1); a typed failure keeps its own code, so the two can be told apart. *)
-let defect_rendering () =
-  let outcome = spawn_simple "defect" in
+let defect_rendering
+    ~(caps :
+       < Ox_caps.Cap.env
+       ; Ox_caps.Cap.fork
+       ; Ox_caps.Cap.exec
+       ; Ox_caps.Cap.fs_write
+       ; .. >) () =
+  let outcome = spawn_simple ~caps "defect" in
   check_int "defect exits 2" 2 outcome.code;
   Alcotest.(check bool) "cause on stderr" true (contains outcome.stderr "simple defect")
 
@@ -131,11 +164,13 @@ let () =
           Alcotest.test_case "^nfloor-6n2e run args: exit code and typed error handler"
             `Quick args_and_exit_code;
           Alcotest.test_case "^nfloor-6n2e OxApp.Simple and SIGTERM stop" `Quick
-            simple_variant;
+            (fun () -> simple_variant ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^nfloor-6n2e forkUser: background forks in the app scope"
-            `Quick background_forks;
-          Alcotest.test_case "^nfloor-6n2e handleError" `Quick typed_error_exit_code;
-          Alcotest.test_case "^nfloor-6n2e handleException" `Quick defect_rendering;
+            `Quick (fun () -> background_forks ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "^nfloor-6n2e handleError" `Quick (fun () ->
+              typed_error_exit_code ~caps:(Ox_test.powerbox ()) ());
+          Alcotest.test_case "^nfloor-6n2e handleException" `Quick (fun () ->
+              defect_rendering ~caps:(Ox_test.powerbox ()) ());
           Alcotest.test_case "^nfloor-6n2e no config" `Quick no_config;
         ] );
     ]
