@@ -210,14 +210,23 @@ let create ?(level = Info) ?(fields = []) ?span_ids ~service ~clock ~mono_clock 
 
 let enabled t level = rank level >= rank t.min_level
 
-let emit t level ~msg ~fields =
+(* [reserved] names are kernel-owned: a base or caller field with such a name is
+   dropped, and [kernel] supplies the value, so a lifecycle field always wins. *)
+let emit ?(reserved = []) ?(kernel = []) t level ~msg ~fields =
+  let caller =
+    match reserved with
+    | [] -> merge_fields ~base:t.base_fields ~fields
+    | reserved ->
+        merge_fields ~base:t.base_fields ~fields
+        |> List.filter (fun (name, _) -> not (List.mem name reserved))
+  in
   let record =
     {
       ts = t.now ();
       level;
       service = t.service;
       msg;
-      fields = merge_fields ~base:t.base_fields ~fields;
+      fields = (match kernel with [] -> caller | kernel -> merge_fields ~base:caller ~fields:kernel);
       context = sort_by_name (Context.fields (Context.current ()));
     }
   in
@@ -225,8 +234,8 @@ let emit t level ~msg ~fields =
 
 (* The minimum level is the logger's own filter: it applies to every record the
    logger writes, spans included. *)
-let emit_if_enabled t level ~msg ~fields =
-  if enabled t level then emit t level ~msg ~fields
+let emit_if_enabled ?reserved ?kernel t level ~msg ~fields =
+  if enabled t level then emit ?reserved ?kernel t level ~msg ~fields
 
 let milliseconds_between start finish =
   Mtime.Span.to_float_ns (Mtime.span start finish) /. 1_000_000.
@@ -265,7 +274,9 @@ let info t ?fields ?limit msg = log t Info ~msg ?fields ?limit ()
 let warn t ?fields ?limit msg = log t Warn ~msg ?fields ?limit ()
 let error t ?fields ?limit msg = log t Error ~msg ?fields ?limit ()
 
-let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
+let end_reserved = [ "event"; "elapsed_ms"; "outcome"; "error" ]
+
+let span t ?(level = Info) ?(fields = []) ?pp_err ?complete msg f =
   let started = t.mono_now () in
   let pp_err =
     match pp_err with
@@ -274,24 +285,21 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
   in
   let summarize cause = Format.asprintf "%a" (Ox.Cause.pp_compact pp_err) cause in
   let run () =
-  emit_if_enabled t level ~msg ~fields:(("event", String "start") :: fields);
-  let finish outcome exit_level extra =
-    let elapsed_ms = int_of_float (milliseconds_between started (t.mono_now ())) in
-    emit_if_enabled t exit_level ~msg
-      ~fields:
-        (("event", String "end")
-        :: ("elapsed_ms", Int elapsed_ms)
-        :: ("outcome", String outcome) :: (extra @ fields))
-  in
-  match f () with
-  | Ok value ->
-      finish "ok" level [];
-      Ok value
-  | Error error ->
-      finish "failed" Error [ ("error", String (summarize (Ox.Cause.Fail error))) ];
-      Error error
-  | exception exn ->
-      let backtrace = Printexc.get_raw_backtrace () in
+    emit_if_enabled t level ~msg ~reserved:[ "event" ]
+      ~kernel:[ ("event", String "start") ]
+      ~fields;
+    let finish ?(completion = []) outcome exit_level extra =
+      let elapsed_ms = int_of_float (milliseconds_between started (t.mono_now ())) in
+      emit_if_enabled t exit_level ~msg ~reserved:end_reserved
+        ~kernel:
+          (("event", String "end")
+          :: ("elapsed_ms", Int elapsed_ms)
+          :: ("outcome", String outcome) :: extra)
+        ~fields:(fields @ completion)
+    in
+    (* A body or completion extractor that raised: one end record, best effort; the
+       caller then re-raises the exception with its original backtrace. *)
+    let finish_raised exn backtrace =
       let outcome, exit_level, extra =
         match exn with
         | Eio.Cancel.Cancelled _ -> ("interrupt", level, [])
@@ -304,8 +312,35 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
          propagating out of the span, but cancellation must propagate. *)
       (try finish outcome exit_level extra with
       | Eio.Cancel.Cancelled _ as cancelled -> raise cancelled
-      | _ -> ());
-      Printexc.raise_with_backtrace exn backtrace
+      | _ -> ())
+    in
+    match f () with
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        (* ^nobs-h6pt: no result exists, so the extractor is never called. *)
+        finish_raised exn backtrace;
+        Printexc.raise_with_backtrace exn backtrace
+    | result ->
+        (* ^nobs-pzpr ^nobs-wrzs: the extractor runs once, after a normal return; if it
+           raises, that is the span's defect and nothing else is written. *)
+        let completion =
+          match complete with
+          | None -> []
+          | Some complete -> (
+              match complete result with
+              | completion -> completion
+              | exception exn ->
+                  let backtrace = Printexc.get_raw_backtrace () in
+                  finish_raised exn backtrace;
+                  Printexc.raise_with_backtrace exn backtrace)
+        in
+        (match result with
+        | Ok _ -> finish ~completion "ok" level []
+        | Error error ->
+            finish ~completion "failed" Error
+              [ ("error", String (summarize (Ox.Cause.Fail error))) ]);
+        (* ^nobs-jc4q: the very value [f] returned, never a rebuilt one. *)
+        result
   in
   match t.span_ids with
   | None -> run ()

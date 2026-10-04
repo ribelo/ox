@@ -626,7 +626,7 @@ let test_reporter_at_least () =
 
 let () =
   Alcotest.run "ox_observability"
-    (V1_logger.tests
+    (V1_logger.tests @ Span_complete.tests
     @ [
         ( "Redact",
           [

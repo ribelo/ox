@@ -1,5 +1,5 @@
 ---
-status: ready-for-agent
+status: done
 package: ox_observability
 consumer: Exergy and existing Logger users
 priority: P1
@@ -61,3 +61,6 @@ A mutable span handle, OpenTelemetry SDK, provider error classification, exporte
 - Evidence: [public span signature:202–209](<../../../lib/observability/logger.mli#L202-L209>) and [span lifecycle:264–306](<../../../lib/observability/logger.ml#L264-L306>).
 - Consumer contracts: [Gateway tracing requirements:22–29](</home/ribelo/projects/exergy/docs/requirements/ibkr-gateway-session.md#L22-L29>), [Gateway result fields:702–713](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L702-L713>), [Flex result fields:969–981](</home/ribelo/projects/exergy/lib/ibkr/ibkr.ml#L969-L981>), and [observed-result wrapper:119–130](</home/ribelo/projects/exergy/lib/facade_core/exergy_runtime.ml#L119-L130>).
 - Already present, not new work: typed Error versus Ok classification, elapsed-time measurement, correlation IDs, fiber context and Redact. Existing context export has a distinct repair in the [OTel capability](<../otel/01-otel.md>).
+
+Verified 2026-10-04: `Logger.span ?complete` (stories 9–18) by `test/observability/span_complete.ml` ("Span completion": ok/error completion, identity, timing, precedence, body defect, Eio cancellation, extractor defect, redaction, sibling/nested isolation) on the memory, journal and typed-record reporters; stories 1–8 by the existing `test/observability/run.ml` and `v1_logger.ml`, all passing.
+The Door/OTLP local-collector integration named in Testing Decisions is deliberately left to the OTel slice ([OTel capability](<../otel/01-otel.md>)); no ox_otel dependency was added.

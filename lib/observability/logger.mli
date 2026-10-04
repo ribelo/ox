@@ -216,6 +216,7 @@ val span :
   ?level:level ->
   ?fields:(string * value) list ->
   ?pp_err:(Format.formatter -> 'e -> unit) ->
+  ?complete:(('a, 'e) result -> (string * value) list) ->
   string ->
   (unit -> ('a, 'e) result) ->
   ('a, 'e) result
@@ -241,4 +242,22 @@ val span :
     the typed payload of a failure; without it the summary names the cause and prints
     ["<error>"] in place of the payload. On the exception path the end record is written
     best effort: a reporter that raises cannot replace the exception that is already
-    propagating. *)
+    propagating.
+
+    [complete] derives fields known only once [f] has finished — a response status, a
+    row count — from what [f] returned, [Ok] or [Error]. It is called exactly once, after
+    [f] returned normally and before the end record is written, and never when [f]
+    raised or was cancelled; its fields appear on the end record only, never on the start
+    record and never in the inherited context. It is a pure summary: it must not await,
+    log or bind context. If it raises, the span writes one ["defect"] end record (or
+    ["interrupt"] for [Eio.Cancel.Cancelled]) without completion fields, in place of the
+    ["ok"] or ["failed"] one, and re-raises the extractor's exception with its original
+    backtrace. Whatever [complete] does, the span returns the very value [f] returned.
+
+    A field name used more than once has one meaning on the end record: the logger's base
+    fields lose to the span's [fields], which lose to [complete]'s fields, which lose to
+    the kernel-owned [event], [elapsed_ms], [outcome] and [error] — a caller field with
+    one of those four names is dropped from the end record even when the kernel writes no
+    value for it (there is no [error] on an ["ok"] end), and [event] is likewise the
+    kernel's on the start record. Use a namespaced name such as [http.outcome] instead.
+    ^nobs-pzpr ^nobs-3cck ^nobs-ze6n ^nobs-h6pt ^nobs-wrzs ^nobs-jc4q *)
