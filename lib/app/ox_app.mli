@@ -399,6 +399,128 @@ val run :
     clean. Its outer switch outlives the program's cancellation and all protected cleanup
     (^nwake-27rc, ^nwake-y4cx). *)
 
+val run_and_exit_with_args :
+  ?wakeup_ms:int ->
+  ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands_with_env:
+    (Eio_unix.Stdenv.base Env.t -> (unit -> int) Cmdliner.Cmd.t list) ->
+  ?commands_with_env:
+    (Eio_unix.Stdenv.base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?commands_with_env_code:
+    (Eio_unix.Stdenv.base Env.t ->
+    ((Eio.Switch.t -> (unit, 'err) result) -> int) ->
+    ((Eio.Switch.t -> int) -> int) ->
+    (unit -> int) Cmdliner.Cmd.t list) ->
+  ?bare:
+    [ `Service
+    | `Help
+    | `Command of Eio_unix.Stdenv.base Env.t -> (unit -> int) Cmdliner.Term.t ] ->
+  ?usage_exit:int ->
+  ?exit_code:('err -> int) ->
+  ?defect_exit:int ->
+  ?interrupt_exit:int ->
+  ?doc:string ->
+  ?version:string ->
+  ?man:Cmdliner.Manpage.block list ->
+  ?exits:Cmdliner.Cmd.Exit.info list ->
+  ?diagnostic:
+    (kind:[ `Usage | `Config | `Validation | `Defect ] -> message:string -> string) ->
+  ?validation_exit:int ->
+  ?log_level:Ox_observability.Logger.level ->
+  ?journal_level:Ox_observability.Logger.level ->
+  ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
+  ?decode_with_env:(Eio_unix.Stdenv.base Env.t -> Yojson.Safe.t -> ('cfg, string) result) ->
+  ?read_file:(Eio_unix.Stdenv.base -> string -> (string, Config.read_error) result) ->
+  ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    (Eio_unix.Stdenv.base Env.t ->
+    Config.source ->
+    'cfg ->
+    (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:
+    (sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> (telemetry, 'err) result) ->
+  service_args:'args Cmdliner.Term.t ->
+  name:string ->
+  config:'cfg Config.t ->
+  pp_err:(Format.formatter -> 'err -> unit) ->
+  (Eio_unix.Stdenv.base Env.t ->
+  Config.source ->
+  'cfg ->
+  'args ->
+  Eio.Switch.t ->
+  (unit, 'err) result) ->
+  'a
+(** Like {!run_with_args}, but does not return: exits the process with the resulting
+    status through [Cap_stdlib.exit], using the same powerbox minted for the program. No
+    caller capability or additional powerbox is required. Status mapping, Cause rendering,
+    signal handling and [config check] output are unchanged.
+
+    Suspension: may suspend during config loading, callbacks, the program and cleanup, or
+    in registered at_exit hooks. Cancellation: classified at the same owned scope
+    boundaries as {!run_with_args}; outside those boundaries it propagates, and exit-hook
+    cancellation depends on the hooks. Finalizers: the Door closes its switches and
+    restores signal handlers before exiting; Stdlib then runs at_exit hooks. Locking: no
+    additional lock spans caller code; callbacks retain their own locking. Cancellation
+    safety: unsafe because progress is lost if interrupted after callbacks have committed
+    external effects; replay may repeat those effects. ^ncaps-0mvw *)
+
+val run_and_exit :
+  ?wakeup_ms:int ->
+  ?commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?config_commands:(unit -> int) Cmdliner.Cmd.t list ->
+  ?exit_code:('err -> int) ->
+  ?defect_exit:int ->
+  ?bare:
+    [ `Service
+    | `Help
+    | `Command of Eio_unix.Stdenv.base Env.t -> (unit -> int) Cmdliner.Term.t ] ->
+  ?doc:string ->
+  ?man:Cmdliner.Manpage.block list ->
+  ?exits:Cmdliner.Cmd.Exit.info list ->
+  ?diagnostic:
+    (kind:[ `Usage | `Config | `Validation | `Defect ] -> message:string -> string) ->
+  ?validation_exit:int ->
+  ?log_level:Ox_observability.Logger.level ->
+  ?journal_level:Ox_observability.Logger.level ->
+  ?service_command:string ->
+  ?config_file:string ->
+  ?missing:Config.missing ->
+  ?decode_with_env:(Eio_unix.Stdenv.base Env.t -> Yojson.Safe.t -> ('cfg, string) result) ->
+  ?read_file:(Eio_unix.Stdenv.base -> string -> (string, Config.read_error) result) ->
+  ?validate:(Eio_unix.Stdenv.base Env.t -> 'cfg -> (unit, validation_error list) result) ->
+  ?validate_source:
+    (Eio_unix.Stdenv.base Env.t ->
+    Config.source ->
+    'cfg ->
+    (unit, validation_error list) result) ->
+  ?telemetry:(sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> telemetry) ->
+  ?telemetry_result:
+    (sw:Eio.Switch.t -> Eio_unix.Stdenv.base Env.t -> 'cfg -> (telemetry, 'err) result) ->
+  name:string ->
+  config:'cfg Config.t ->
+  pp_err:(Format.formatter -> 'err -> unit) ->
+  (Eio_unix.Stdenv.base Env.t -> 'cfg -> Eio.Switch.t -> (unit, 'err) result) ->
+  'a
+(** Like {!run}, but does not return: exits the process with the resulting status through
+    [Cap_stdlib.exit], using the same powerbox minted for the program. No caller
+    capability or additional powerbox is required. Status mapping, Cause rendering, signal
+    handling and [config check] output are unchanged.
+
+    Suspension: may suspend during config loading, callbacks, the program and cleanup, or
+    in registered at_exit hooks. Cancellation: classified at the same owned scope
+    boundaries as {!run}; outside those boundaries it propagates, and exit-hook
+    cancellation depends on the hooks. Finalizers: the Door closes its switches and
+    restores signal handlers before exiting; Stdlib then runs at_exit hooks. Locking: no
+    additional lock spans caller code; callbacks retain their own locking. Cancellation
+    safety: unsafe because progress is lost if interrupted after callbacks have committed
+    external effects; replay may repeat those effects. ^ncaps-0mvw *)
+
 val posix_wakeup :
   caps:< Ox_caps.Cap.env ; .. > ->
   sw:Eio.Switch.t ->

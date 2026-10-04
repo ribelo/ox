@@ -1,4 +1,15 @@
 (executable
+ (name exit_fixture)
+ (modules exit_fixture)
+ (libraries ox ox_app ox_observability eio eio_main cmdliner))
+
+(test
+ (name exit_entry)
+ (modules exit_entry)
+ (deps exit_fixture.exe)
+ (libraries ox ox_app ox_test ox_process eio eio_main alcotest))
+
+(executable
  (name signal_fixture)
  (modules signal_fixture)
  (libraries ox ox_app ox_http ox_observability ox_otel eio eio.unix cmdliner)

@@ -337,12 +337,12 @@ let posix_wakeup ~(caps : < Cap.env ; .. >) ~sw ?interval_ms ?logger env =
         in
         tick ())
 
-let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_env
-    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit
-    ?interrupt_exit ?doc ?version ?man ?exits ?diagnostic ?validation_exit ?log_level
-    ?journal_level ?service_command ?config_file ?missing ?decode_with_env ?read_file
-    ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config
-    ~pp_err program =
+let run_with_args_then ~finish ?wakeup_ms ?commands ?config_commands
+    ?config_commands_with_env ?commands_with_env ?commands_with_env_code ?bare ?usage_exit
+    ?exit_code ?defect_exit ?interrupt_exit ?doc ?version ?man ?exits ?diagnostic
+    ?validation_exit ?log_level ?journal_level ?service_command ?config_file ?missing
+    ?decode_with_env ?read_file ?validate ?validate_source ?telemetry ?telemetry_result
+    ~service_args ~name ~config ~pp_err program =
   let run ~(caps : Cap.all_caps) () =
     Eio_main.run (fun env ->
         (* The daemon belongs to this OUTER switch. SIGTERM fails only the inner
@@ -425,7 +425,39 @@ let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_en
                   ~stdout:(fun text -> Eio.Flow.copy_string text env#stdout)
                   ~argv:Sys.argv program)))
   in
-  run ~caps:((Ox_caps_door.powerbox [@alert "-mint"]) ()) ()
+  let caps = (Ox_caps_door.powerbox [@alert "-mint"]) () in
+  let code = run ~caps () in
+  finish caps code
+
+let run_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_env
+    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit
+    ?interrupt_exit ?doc ?version ?man ?exits ?diagnostic ?validation_exit ?log_level
+    ?journal_level ?service_command ?config_file ?missing ?decode_with_env ?read_file
+    ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config
+    ~pp_err program =
+  run_with_args_then
+    ~finish:(fun _ code -> code)
+    ?wakeup_ms ?commands ?config_commands ?config_commands_with_env ?commands_with_env
+    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit ?interrupt_exit ?doc
+    ?version ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?decode_with_env ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err
+    program
+
+let run_and_exit_with_args ?wakeup_ms ?commands ?config_commands ?config_commands_with_env
+    ?commands_with_env ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit
+    ?interrupt_exit ?doc ?version ?man ?exits ?diagnostic ?validation_exit ?log_level
+    ?journal_level ?service_command ?config_file ?missing ?decode_with_env ?read_file
+    ?validate ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config
+    ~pp_err program =
+  run_with_args_then
+    ~finish:(fun caps code -> Ox_caps.Cap_stdlib.exit ~caps code)
+    ?wakeup_ms ?commands ?config_commands ?config_commands_with_env ?commands_with_env
+    ?commands_with_env_code ?bare ?usage_exit ?exit_code ?defect_exit ?interrupt_exit ?doc
+    ?version ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?decode_with_env ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args ~name ~config ~pp_err
+    program
 
 let run ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc ?man
     ?exits ?diagnostic ?validation_exit ?log_level ?journal_level ?service_command
@@ -436,6 +468,16 @@ let run ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc
     ?config_file ?missing ?decode_with_env ?read_file ?validate ?validate_source
     ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ()) ~name ~config
     ~pp_err (fun env _source settings () sw -> program env settings sw)
+
+let run_and_exit ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit ?bare ?doc
+    ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level ?service_command
+    ?config_file ?missing ?decode_with_env ?read_file ?validate ?validate_source
+    ?telemetry ?telemetry_result ~name ~config ~pp_err program =
+  run_and_exit_with_args ?wakeup_ms ?commands ?config_commands ?exit_code ?defect_exit
+    ?bare ?doc ?man ?exits ?diagnostic ?validation_exit ?log_level ?journal_level
+    ?service_command ?config_file ?missing ?decode_with_env ?read_file ?validate
+    ?validate_source ?telemetry ?telemetry_result ~service_args:(Cmdliner.Term.const ())
+    ~name ~config ~pp_err (fun env _source settings () sw -> program env settings sw)
 
 let with_powerbox f = f ((Ox_caps_door.powerbox [@alert "-mint"]) ())
 

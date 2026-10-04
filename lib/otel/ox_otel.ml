@@ -91,7 +91,7 @@ let span_of_end (record : Logger.record) =
           (fun (key, value) ->
             if List.mem key [ "event"; "outcome"; "elapsed_ms"; "error" ] then None
             else Some (key, Format.asprintf "%a" Logger.pp_value value))
-          (List.filter (fun (k, _) -> not (List.mem_assoc k record.context) || true) record.fields)
+          (Json.record_attributes record)
       in
       let outcome =
         match field "outcome" with Some (Logger.String value) -> value | _ -> ""

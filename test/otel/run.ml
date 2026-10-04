@@ -975,7 +975,9 @@ let inherited_context_on_spans_and_logs () =
   with_collector (fun env sw client endpoint received ->
       let exporter =
         O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
-          ~endpoint ~service_name:"nema" ()
+          ~endpoint ~service_name:"nema"
+          ~resource:[ ("service.version", "context-slice") ]
+          ()
         |> exporter_ok
       in
       let logger =
@@ -990,7 +992,9 @@ let inherited_context_on_spans_and_logs () =
             L.span logger ("leg." ^ provider)
               ~fields:[ ("leg.local", String provider) ]
               (fun () ->
+                Eio.Fiber.yield ();
                 L.info logger ("in leg " ^ provider);
+                Eio.Fiber.yield ();
                 Ok ()))
       in
       Ox_observability.Context.with_fields
@@ -999,8 +1003,12 @@ let inherited_context_on_spans_and_logs () =
           ("endpoint", "/inherited");
           ("db", "ladybug");
           ("symbol", "BTCUSDT");
+          ("retry", "inherited");
         ]
         (fun () ->
+          let before =
+            Ox_observability.Context.fields (Ox_observability.Context.current ())
+          in
           ignore
             (L.span logger "outer"
                ~fields:
@@ -1008,18 +1016,42 @@ let inherited_context_on_spans_and_logs () =
                    ("endpoint", String "/explicit");
                    ("outer.local", Bool true);
                    ("token", Redacted (Ox_observability.Redact.make secret));
+                   ("trace_id", String "fake-trace");
+                   ("span_id", String "fake-span");
+                   ("parent_span_id", String "fake-parent");
                  ]
                (fun () ->
                  L.info logger "correlated"
-                   ~fields:[ ("db", String "explicit-db"); ("trace_id", String "bogus") ];
-                 ignore (L.span logger "inner" (fun () -> Ok ()) : (unit, string) result);
+                   ~fields:
+                     [
+                       ("db", String "explicit-db");
+                       ("retry", Int 7);
+                       ("trace_id", String "fake-trace");
+                       ("span_id", String "fake-span");
+                       ("parent_span_id", String "fake-parent");
+                       ("token", Redacted (Ox_observability.Redact.make secret));
+                     ];
+                 ignore
+                   (L.span logger "inner"
+                      ~fields:[ ("inner.local", Bool true) ]
+                      (fun () ->
+                        L.info logger "inner-correlated";
+                        Ok ())
+                     : (unit, string) result);
                  let a, b =
                    Eio.Fiber.pair (fun () -> leg "kraken") (fun () -> leg "okx")
                  in
                  ignore (a : (unit, string) result);
                  ignore (b : (unit, string) result);
+                 L.info logger "outer-after-children";
                  Ok ())
-              : (unit, string) result));
+              : (unit, string) result);
+          Alcotest.(check bool)
+            "nested and forked bindings restore the caller" true
+            (Ox_observability.Context.fields (Ox_observability.Context.current ())
+            = before);
+          L.info logger "after-span");
+      L.info logger "caller";
       exporter_ok (O.flush exporter);
       let spans = exported_spans !received and logs = log_records !received in
       List.iter
@@ -1049,7 +1081,20 @@ let inherited_context_on_spans_and_logs () =
         (string_attr inner_attrs "outer.local");
       check_string "a redacted field stays redacted" "<redacted>"
         (string_attr outer_attrs "token");
+      List.iter
+        (fun key ->
+          check_string
+            ("kernel span field " ^ key ^ " is not a business attribute")
+            "<absent>" (string_attr outer_attrs key))
+        [ "event"; "outcome"; "elapsed_ms"; "error" ];
       (* ^notel-p11y: parentage still comes from the trace controls. *)
+      check_int "native trace ID length" 32
+        (String.length (outer |> member "traceId" |> string));
+      check_int "native span ID length" 16
+        (String.length (outer |> member "spanId" |> string));
+      Alcotest.(check bool)
+        "an explicit field cannot forge root parentage" true
+        (member "parentSpanId" outer = `Null);
       check_string "nested trace"
         (outer |> member "traceId" |> string)
         (inner |> member "traceId" |> string);
@@ -1065,6 +1110,40 @@ let inherited_context_on_spans_and_logs () =
       check_string "log trace stays native"
         (outer |> member "traceId" |> string)
         (with_body "correlated" logs |> member "traceId" |> string);
+      check_string "log span stays native"
+        (outer |> member "spanId" |> string)
+        (with_body "correlated" logs |> member "spanId" |> string);
+      check_string "a redacted log field stays redacted" "<redacted>"
+        (string_attr correlated "token");
+      let retry =
+        List.find (fun attr -> attr |> member "key" |> string = "retry") correlated
+      in
+      check_string "an explicit log value keeps its integer type" "7"
+        (retry |> member "value" |> member "intValue" |> string);
+      List.iter
+        (fun body ->
+          let row = with_body body logs in
+          let attrs = attrs_of row in
+          List.iter
+            (fun (key, expected) ->
+              check_string (body ^ " inherits " ^ key) expected (string_attr attrs key))
+            [
+              ("provider", "binance");
+              ("endpoint", "/inherited");
+              ("db", "ladybug");
+              ("symbol", "BTCUSDT");
+            ];
+          List.iter
+            (fun key ->
+              check_string (body ^ " has no " ^ key) "<absent>" (string_attr attrs key))
+            [ "outer.local"; "inner.local"; "leg.local" ])
+        [ "inner-correlated"; "outer-after-children"; "after-span" ];
+      check_string "nested log trace stays native"
+        (inner |> member "traceId" |> string)
+        (with_body "inner-correlated" logs |> member "traceId" |> string);
+      check_string "nested log span stays native"
+        (inner |> member "spanId" |> string)
+        (with_body "inner-correlated" logs |> member "spanId" |> string);
       (* ^notel-jda9: forked siblings keep their own context and local fields. *)
       List.iter
         (fun provider ->
@@ -1074,6 +1153,17 @@ let inherited_context_on_spans_and_logs () =
             (string_attr attrs "provider");
           check_string (provider ^ " leg inherits db") "ladybug" (string_attr attrs "db");
           check_string (provider ^ " leg local") provider (string_attr attrs "leg.local");
+          check_string
+            (provider ^ " leg inherits endpoint")
+            "/inherited"
+            (string_attr attrs "endpoint");
+          check_string
+            (provider ^ " leg inherits symbol")
+            "BTCUSDT" (string_attr attrs "symbol");
+          check_string
+            (provider ^ " leg has no parent local field")
+            "<absent>"
+            (string_attr attrs "outer.local");
           check_string (provider ^ " leg parent")
             (outer |> member "spanId" |> string)
             (span |> member "parentSpanId" |> string);
@@ -1085,15 +1175,65 @@ let inherited_context_on_spans_and_logs () =
             (provider ^ " leg log has no local span field")
             "<absent>" (string_attr log "leg.local"))
         [ "kraken"; "okx" ];
-      check_string "the caller keeps its own provider" "binance"
-        (string_attr outer_attrs "provider");
-      check_string "no sibling field leaks to the caller" "<absent>"
-        (string_attr outer_attrs "leg.local");
+      List.iter
+        (fun key ->
+          check_string
+            ("no child field leaks to the parent: " ^ key)
+            "<absent>" (string_attr outer_attrs key))
+        [ "inner.local"; "leg.local" ];
+      let caller = with_body "caller" logs and after_span = with_body "after-span" logs in
+      List.iter
+        (fun key ->
+          check_string
+            ("no context leaks outside its binding: " ^ key)
+            "<absent>"
+            (string_attr (attrs_of caller) key))
+        [
+          "provider";
+          "endpoint";
+          "db";
+          "symbol";
+          "outer.local";
+          "inner.local";
+          "leg.local";
+        ];
+      List.iter
+        (fun row ->
+          List.iter
+            (fun key ->
+              Alcotest.(check bool)
+                (key ^ " does not leak out of a span")
+                true
+                (member key row = `Null))
+            [ "traceId"; "spanId" ])
+        [ caller; after_span ];
+      List.iter
+        (fun row ->
+          List.iter
+            (fun key ->
+              check_string
+                ("resource identity stays separate: " ^ key)
+                "<absent>"
+                (string_attr (attrs_of row) key))
+            [ "service.name"; "service.version" ])
+        (spans @ logs);
       List.iter
         (fun request ->
           Alcotest.(check bool)
             "the secret never reaches the collector" false
-            (contains (Yojson.Safe.to_string request.body) secret))
+            (contains (Yojson.Safe.to_string request.body) secret);
+          let envelope =
+            if contains request.target "/v1/traces" then "resourceSpans"
+            else "resourceLogs"
+          in
+          let attrs =
+            request.body |> first envelope |> member "resource" |> member "attributes"
+            |> list
+          in
+          check_string "resource service name is retained" "nema"
+            (string_attr attrs "service.name");
+          check_string "resource version is retained" "context-slice"
+            (string_attr attrs "service.version"))
         !received;
       exporter_ok (O.shutdown exporter))
 
