@@ -423,7 +423,10 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ?(scope_name = 
            worker that cannot run. Registered during [create], so release hooks
            registered later — a program's own, on a Door stop — run first and the last
            records they log are still exported. *)
-        Eio.Switch.on_release sw (fun () -> ignore (finish t : (unit, error) result));
+        Eio.Switch.on_release sw (fun () ->
+            (* ^nlint-hxar: finish records the outcome; callbacks already report export failures. *)
+            let _finish_result = (finish t : (unit, error) result) in
+            ());
         Ok t
 
 (* ^notel-bez2: instruments record into the exporter's own aggregation table — one table
@@ -452,7 +455,10 @@ let shutdown ?timeout t =
     t.closed <- true;
     (* ^notel-1stb: a worker the switch has already cancelled never takes another
        command, so the queue is exported here, in the caller, instead. *)
-    if t.worker_done then ignore (finish t : (unit, error) result)
+    if t.worker_done then
+      (* ^nlint-hxar: finish records the outcome that shutdown awaits below. *)
+      let _finish_result = (finish t : (unit, error) result) in
+      ()
     else Eio.Stream.add t.queue Stop
   end;
   match timeout with

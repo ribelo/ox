@@ -15,6 +15,7 @@ allow=(
   # A build-time preprocessor executable, not a Door program: it reads its input file,
   # prints to stdout and exits with its status.
   --allow lib/ppx_yojson_minimal/main.ml
+  --allow lib/ox_lint # ^nlint-r01u ^nlint-4sct: compiler build tool, not a Door program; reads sources/evidence and writes CLI output/status.
 )
 
 exec lib/caps/caps-gate "${allow[@]}" "$@"

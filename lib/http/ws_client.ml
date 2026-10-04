@@ -423,7 +423,8 @@ let receive t =
                 Bytes.sub_string frame.payload 2 (Bytes.length frame.payload - 2) )
           in
           if not (valid_utf8 reason) then fail (`Protocol "invalid close reason UTF-8");
-          ignore (close ~code ~reason t);
+          (* ^nlint-hxar: close is best effort; preserve the peer's Closed outcome. *)
+          let _close_result = close ~code ~reason t in
           fail (`Closed (code, reason))
       | (Text | Binary | Continuation) as op ->
           let kind =

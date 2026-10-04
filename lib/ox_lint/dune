@@ -1,0 +1,31 @@
+; ^nlint-r01u: build-time only; compiler-matched tool installed under share/ox_lint.
+
+(library
+ (name lint_engine)
+ (wrapped false)
+ (modules syntax artifact rules)
+ (libraries ocaml-compiler-libs.common unix))
+
+(executable
+ (name main)
+ (modules main)
+ (modes byte exe)
+ (libraries lint_engine))
+
+; ^nlint-2nwm: private native-only targets otherwise have no retained CMT.
+
+(alias
+ (name install)
+ (package ox_lint)
+ (deps main.bc))
+
+(install
+ (package ox_lint)
+ (section share)
+ (files
+  (main.exe as ox-lint)
+  (../../docs/rules/ox-discarded-result.md
+   as
+   docs/rules/ox-discarded-result.md)
+  (../../test/lint/violating/discard.ml as test/lint/violating/discard.ml)
+  (../../test/lint/clean/discard.ml as test/lint/clean/discard.ml)))

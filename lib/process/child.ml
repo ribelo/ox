@@ -131,7 +131,10 @@ let spawn ~caps:_ ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr =
       (* This cancellable daemon is the outer-switch cancellation bridge. Its
        protected sibling never inherits the parent's cancellation. *)
       Eio.Fiber.fork_daemon ~sw (fun () ->
-          (try ignore (Eio.Promise.await finished : (exit, exn) result)
+          (try
+             (* ^nlint-hxar: this bridge only waits; stop observes the retained defect. *)
+             let _finished_result = (Eio.Promise.await finished : (exit, exn) result) in
+             ()
            with Eio.Cancel.Cancelled _ -> ignore (Eio.Promise.try_resolve request_u ()));
           `Stop_daemon);
       match Eio.Promise.await ready with

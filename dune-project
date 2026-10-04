@@ -3,6 +3,17 @@
 (generate_opam_files true)
 
 (name ox)
+
+; ^nlint-r01u: compiler-matched lint decider, never a runtime dependency.
+(package
+ (name ox_lint)
+ (synopsis "Compiler-matched build-time lint rules for Ox")
+ (depends
+  (ocaml (>= 5.4.0))
+  (conf-ox-oxcaml (= :version))
+  ocaml-compiler-libs
+  base-unix))
+
 (authors "Rafal Krzywaznia")
 (maintainers "Rafal Krzywaznia <r.krzywaznia@gmail.com>")
 (license MIT)

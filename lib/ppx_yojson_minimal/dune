@@ -10,4 +10,11 @@
  (modules main)
  (package ppx_yojson_minimal)
  (public_name ppx-yojson-minimal)
+ ; ^nlint-2nwm: retain byte CMT evidence even for the installed native tool.
+ (modes byte exe)
  (libraries ppx_yojson_minimal))
+
+(alias
+ (name install)
+ (package ppx_yojson_minimal)
+ (deps main.bc))

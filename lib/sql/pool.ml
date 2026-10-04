@@ -25,7 +25,12 @@ let shutdown_state s =
         Eio.Condition.await s.changed s.mutex
       done);
   guard s (fun () ->
-      List.iter (fun c -> ignore (Connection.close c)) !(s.handles);
+      List.iter
+        (fun c ->
+          (* ^nlint-hxar: shutdown closes every handle best effort without changing its outcome. *)
+          let _close_result = Connection.close c in
+          ())
+        !(s.handles);
       s.handles := []);
   Ok ()
 
@@ -54,7 +59,10 @@ let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
         let resources =
           Eio.Pool.create
             ~validate:(fun c -> Connection.ping c)
-            ~dispose:(fun c -> ignore (Connection.close c))
+            ~dispose:(fun c ->
+              (* ^nlint-hxar: disposal is best effort and must not replace a checkout failure. *)
+              let _close_result = Connection.close c in
+              ())
             max_size make
         in
         let s =
@@ -70,7 +78,10 @@ let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
           }
         in
         (* The first handle is already owned even if nobody checks it out. *)
-        Eio.Switch.on_release sw (fun () -> ignore (shutdown_state s));
+        Eio.Switch.on_release sw (fun () ->
+            (* ^nlint-hxar: switch release retains the pool's best-effort shutdown policy. *)
+            let _shutdown_result = shutdown_state s in
+            ());
         Ok (Pool s)
 
 let shutdown = function Pool s -> shutdown_state s | Transaction _ -> assert false
@@ -102,7 +113,10 @@ let use ?timeout runner f =
                       ~finally:(fun () ->
                         (match Connection.ensure_autocommit c with
                         | Ok () -> ()
-                        | Error _ -> ignore (Connection.close c));
+                        | Error _ ->
+                            (* ^nlint-hxar: close the unusable handle without replacing run's outcome. *)
+                            let _close_result = Connection.close c in
+                            ());
                         guard s (fun () -> s.active <- s.active - 1);
                         Eio.Condition.broadcast s.changed)
                       (fun () -> run s c)))

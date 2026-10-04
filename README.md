@@ -26,6 +26,7 @@ Every change cites a story in a spec; Ox is its own consumer (`AGENTS.md`). Scal
 - `ox_blocking` — bounded native worker calls over Eio system threads, with explicit cancellation and drain policies
 - `ox_observability` — structured logs with fiber-local fields, redacted secrets, spans, and one JSON object per line for the journal
 - `ox_app` — one Door for Eio services: TOML configuration decoded by the config type's derived codecs, status, a journal logger and the telemetry hook that adds reporters and span IDs to it
+- `ox_lint` — build-time compiler-matched linter, installed as `share/ox_lint/ox-lint`; typed discarded-result checks with source-driven annotation coverage (^nlint-r01u)
 - `ppx_yojson_minimal` — minimal `[@@deriving yojson]` preprocessor for OxCaml: a build-time text preprocessor on `compiler-libs`, no ppxlib
 
 Shapes we own are plain types with `[@@deriving yojson]`; `ox_json` stays for JSON whose

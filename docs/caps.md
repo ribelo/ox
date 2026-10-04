@@ -112,7 +112,7 @@ The rule id names the capability. Fix it by giving the enclosing function `~caps
 | `ox_test` | mints them all | the test entry |
 | `ox_http`, `ox_ai*`, `ox_rpc`, `ox_json`, `ox_observability`, `ox_blocking`, `ox_sql_dsl` | nothing beyond the Eio values they take | — |
 
-`ox_sql` takes its capabilities (row 52, ^inncap-b8ts). Grip takes its capabilities (row 53, ^grpcap-4kdm). `Ox_otel.create` requires `~caps`, and `Schedule.start` no longer seeds a default random state, so neither file is on the allow-list. What remains is the wrappers (`lib/caps`), the Door (`lib/app/ox_app.ml`), and the ppx driver (`lib/ppx_yojson_minimal/main.ml`).
+`ox_sql` takes its capabilities (row 52, ^inncap-b8ts). Grip takes its capabilities (row 53, ^grpcap-4kdm). `Ox_otel.create` requires `~caps`, and `Schedule.start` no longer seeds a default random state, so neither file is on the allow-list. What remains is the wrappers (`lib/caps`), the Door (`lib/app/ox_app.ml`), the ppx driver (`lib/ppx_yojson_minimal/main.ml`), and the build-time `ox-lint` tool (`lib/ox_lint`, ^nlint-r01u ^nlint-4sct).
 
 ## Cost (^ncaps-21nk)
 
