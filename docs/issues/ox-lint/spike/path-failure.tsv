@@ -1,0 +1,212 @@
+EXCEPTION	lib/ai/transport.ml:38:7	Scanf.Scan_failure	Stdlib.Scanf.Scan_failure	Stdlib__Scanf.Scan_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ai/transport.ml:38:30	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ai/transport.ml:38:44	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+SITE	lib/app/ox_app.ml:369:14	ignore	false	Stdlib.Sys.signal_behavior	Sys.signal_behavior
+IDENT	lib/app/ox_app.ml:369:14	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/app/ox_app.ml:370:14	ignore	false	Stdlib.Sys.signal_behavior	Sys.signal_behavior
+IDENT	lib/app/ox_app.ml:370:14	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/app/ox_app.ml:395:22	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/app/ox_app.ml:395:30	Eio.Fs.E	Eio.Fs.E	Eio__Fs.E	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/app/ox_app.ml:396:22	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/app/config.ml:181:4	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/app/config.ml:181:12	Eio.Fs.E	Eio.Fs.E	Eio__Fs.E	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/app/config.ml:182:4	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+SITE	lib/blocking/ox_blocking.ml:31:16	ignore	false	int	int
+IDENT	lib/blocking/ox_blocking.ml:31:16	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/blocking/ox_blocking.ml:83:12	ignore	false	int	int
+IDENT	lib/blocking/ox_blocking.ml:83:12	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/blocking/ox_blocking.ml:84:12	ignore	false	int	int
+IDENT	lib/blocking/ox_blocking.ml:84:12	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/blocking/ox_blocking.ml:169:7	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/http/client.ml:45:54	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:149:19	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:175:23	Http_failure	Http_failure	Http_failure	cancel_path=false	cancel_uid=false
+SITE	lib/http/client.ml:229:32	ignore	false	Unix.inet_addr	Unix.inet_addr
+IDENT	lib/http/client.ml:229:32	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/http/client.ml:231:35	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:255:14	Http_failure	Http_failure	Http_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:256:14	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:257:14	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:258:14	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/client.ml:263:14	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:54:12	Request_limit	Request_limit	Request_limit	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:58:12	Invalid_request	Invalid_request	Invalid_request	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:60:12	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:501:13	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:549:4	Invalid_request	Invalid_request	Invalid_request	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:554:4	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+IDENT	lib/http/server.ml:580:6	Eio.Fiber.fork	Eio.Fiber.fork	Eio__core.Fiber.fork	eio_fork=true
+EXCEPTION	lib/http/server.ml:588:16	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/http/server.ml:604:13	Eio.Time.Timeout	Eio.Time.Timeout	Eio__Time.Timeout	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/server.ml:606:30	Eio.Time.Timeout	Eio.Time.Timeout	Eio__Time.Timeout	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/tls_flow.ml:126:57	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/tls_flow.ml:156:14	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/tls_flow.ml:204:61	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/url.ml:143:11	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:57:13	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+SITE	lib/http/ws_client.ml:154:6	ignore	false	Unix.inet_addr	Unix.inet_addr
+IDENT	lib/http/ws_client.ml:154:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/http/ws_client.ml:156:9	Stdlib.Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:201:21	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:215:20	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:215:31	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:215:45	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:273:10	Failure	Failure	Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:274:10	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:275:10	Stdlib.Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:276:10	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:282:10	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:300:4	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:301:4	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:301:15	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:340:17	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:340:28	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:340:42	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+SITE	lib/http/ws_client.ml:426:10	ignore	true	Stdlib.result	(unit, error) result
+lib/http/ws_client.ml:426:10: ox-lint-discard-result: ignore discards (unit, error) result; match Ok/Error or propagate the error
+IDENT	lib/http/ws_client.ml:426:10	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/http/ws_client.ml:451:4	Failure	Failure	Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:452:4	Tls_flow.Tls_failure	Ox_http.Tls_flow.Tls_failure	Ox_http__Tls_flow.Tls_failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:453:4	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/http/ws_client.ml:453:15	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:70:14	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:72:12	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:74:14	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:80:14	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:103:16	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:113:20	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:119:18	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:132:18	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:133:18	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:134:18	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:148:22	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:150:14	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:157:14	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:169:4	End_of_file	Stdlib.End_of_file	Stdlib.End_of_file	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:170:4	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:172:4	Eio.Io	Eio.Io	Eio.Io	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:172:12	Eio.Net.E	Eio.Net.E	Eio__Net.E	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:352:14	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ipc/listener.ml:358:4	Refusal	Refusal	Refusal	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ipc/listener.ml:359:4	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/observability/context.ml:13:14	Effect.Unhandled	Stdlib.Effect.Unhandled	Stdlib__Effect.Unhandled	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/observability/logger.ml:140:16	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/observability/logger.ml:297:10	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+SITE	lib/otel/ox_otel.ml:279:8	ignore	false	bool	bool
+IDENT	lib/otel/ox_otel.ml:279:8	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/otel/ox_otel.ml:292:6	ignore	false	bool	bool
+IDENT	lib/otel/ox_otel.ml:292:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/otel/ox_otel.ml:426:44	ignore	true	Stdlib.result	(unit, error/2) result
+lib/otel/ox_otel.ml:426:44: ox-lint-discard-result: ignore discards (unit, error/2) result; match Ok/Error or propagate the error
+IDENT	lib/otel/ox_otel.ml:426:44	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/otel/ox_otel.ml:455:26	ignore	true	Stdlib.result	(unit, error/2) result
+lib/otel/ox_otel.ml:455:26: ox-lint-discard-result: ignore discards (unit, error/2) result; match Ok/Error or propagate the error
+IDENT	lib/otel/ox_otel.ml:455:26	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/otel/ox_otel.ml:464:11	Eio.Time.Timeout	Eio.Time.Timeout	Eio__Time.Timeout	cancel_path=false	cancel_uid=false
+SITE	lib/otel/metric_aggregation.ml:169:26	ignore	false	bool	bool
+IDENT	lib/otel/metric_aggregation.ml:169:26	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+IDENT	lib/ox/actor.ml:35:15	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/ox/actor.ml:41:8	ignore	false	option	'a item option
+IDENT	lib/ox/actor.ml:41:8	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/ox/actor.ml:85:17	ignore	false	bool	bool
+IDENT	lib/ox/actor.ml:85:17	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/ox/actor.ml:176:20	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+IDENT	lib/ox/agent.ml:87:60	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+IDENT	lib/ox/agent.ml:87:80	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/ox/interrupt_id.ml:12:22	Stop	Stop	Stop	cancel_path=false	cancel_uid=false
+SITE	lib/ox/rate_limiter.ml:37:6	ignore	false	int	int
+IDENT	lib/ox/rate_limiter.ml:37:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/ox/scope.ml:12:4	Ended	Ended	Ended	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ox/scope.ml:15:4	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ox/scope.ml:15:26	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ox/scope.ml:16:4	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ox/scope.ml:23:4	Eio.Exn.Multiple	Eio.Exn.Multiple	Eio__core.Exn.Multiple	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ox/scope.ml:28:4	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ox/scope.ml:29:4	Eio.Exn.Multiple	Eio.Exn.Multiple	Eio__core.Exn.Multiple	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ox/scope.ml:37:6	Eio.Exn.Multiple	Eio.Exn.Multiple	Eio__core.Exn.Multiple	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ox/scope.ml:63:21	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/ox/scope.ml:109:4	Ended	Ended	Ended	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/ox/scope.ml:110:4	Eio.Exn.Multiple	Eio.Exn.Multiple	Eio__core.Exn.Multiple	cancel_path=false	cancel_uid=false
+IDENT	lib/ox/scope.ml:154:2	Eio.Fiber.fork	Eio.Fiber.fork	Eio__core.Fiber.fork	eio_fork=true
+IDENT	lib/ox/scope.ml:160:15	Eio.Fiber.fork	Eio.Fiber.fork	Eio__core.Fiber.fork	eio_fork=true
+IDENT	lib/ox/supervisor.ml:258:8	Eio.Fiber.fork	Eio.Fiber.fork	Eio__core.Fiber.fork	eio_fork=true
+SITE	lib/ox/supervisor.ml:344:22	ignore	false	Ox.Exit.t	(unit, e) Ox.Exit.t
+IDENT	lib/ox/supervisor.ml:344:22	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/ox/supervisor.ml:349:12	ignore	false	Ox.Exit.t	(unit, e) Ox.Exit.t
+IDENT	lib/ox/supervisor.ml:349:12	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/ox/supervisor.ml:393:18	ignore	false	Ox.Exit.t	(unit, 'a) Ox.Exit.t
+IDENT	lib/ox/supervisor.ml:393:18	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/ppx_yojson_minimal/derive.ml:676:2	ignore	false	bool	bool
+IDENT	lib/ppx_yojson_minimal/derive.ml:676:2	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/process/child.ml:30:6	ignore	false	bool	bool
+IDENT	lib/process/child.ml:30:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/process/child.ml:134:15	ignore	true	Stdlib.result	(exit, exn) result
+lib/process/child.ml:134:15: ox-lint-discard-result: ignore discards (exit, exn) result; match Ok/Error or propagate the error
+IDENT	lib/process/child.ml:134:15	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/process/child.ml:135:16	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+SITE	lib/process/child.ml:135:42	ignore	false	bool	bool
+IDENT	lib/process/child.ml:135:42	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/process/child.ml:139:46	ignore	false	exit	exit
+IDENT	lib/process/child.ml:139:46	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/process/supervised.ml:24:4	ignore	false	option	'a event option
+IDENT	lib/process/supervised.ml:24:4	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/process/supervised.ml:90:20	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+SITE	lib/rpc/correlator.ml:43:8	ignore	false	option	'a notification option
+IDENT	lib/rpc/correlator.ml:43:8	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/rpc/correlator.ml:58:4	ignore	false	option	'a notification option
+IDENT	lib/rpc/correlator.ml:58:4	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/rpc/correlator.ml:120:22	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/rpc/correlator.ml:131:15	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+EXCEPTION	lib/rpc/correlator.ml:166:16	Eio.Cancel.Cancelled	Eio.Cancel.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+REBIND	lib/sql/ox_sql.ml:15:0	Error	Ox_sql__Types.Error
+SITE	lib/sql/connection.ml:31:6	ignore	false	Ox_sql__.Sqlite.rc	Ox_sql__.Sqlite.rc
+IDENT	lib/sql/connection.ml:31:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/sql/connection.ml:44:14	Sqlite.Error	Ox_sql__.Sqlite.Error	Ox_sql__Sqlite.Error	cancel_path=false	cancel_uid=false
+SITE	lib/sql/connection.ml:58:26	ignore	false	Ox_sql__.Sqlite.rc	Ox_sql__.Sqlite.rc
+IDENT	lib/sql/connection.ml:58:26	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+REBIND	lib/sql/dsl.ml:6:2	Error	Ox_sql__Types.Error
+EXCEPTION	lib/sql/migrate.ml:41:18	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:283:16	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:291:16	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:292:16	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:323:22	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:342:36	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:356:20	Read_file_failed	Read_file_failed	Read_file_failed	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/sql/migrate.ml:358:20	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+SITE	lib/sql/pool.ml:28:26	ignore	true	Stdlib.result	(unit, Ox_sql__.Types.sql_error) result
+lib/sql/pool.ml:28:26: ox-lint-discard-result: ignore discards (unit, Ox_sql__.Types.sql_error) result; match Ok/Error or propagate the error
+IDENT	lib/sql/pool.ml:28:26	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/sql/pool.ml:57:31	ignore	true	Stdlib.result	(unit, Ox_sql__.Types.sql_error) result
+lib/sql/pool.ml:57:31: ox-lint-discard-result: ignore discards (unit, Ox_sql__.Types.sql_error) result; match Ok/Error or propagate the error
+IDENT	lib/sql/pool.ml:57:31	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/sql/pool.ml:73:44	ignore	true	Stdlib.result	(unit, 'a) result
+lib/sql/pool.ml:73:44: ox-lint-discard-result: ignore discards (unit, 'a) result; match Ok/Error or propagate the error
+IDENT	lib/sql/pool.ml:73:44	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/sql/pool.ml:105:37	ignore	true	Stdlib.result	(unit, Ox_sql__.Types.sql_error) result
+lib/sql/pool.ml:105:37: ox-lint-discard-result: ignore discards (unit, Ox_sql__.Types.sql_error) result; match Ok/Error or propagate the error
+IDENT	lib/sql/pool.ml:105:37	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/sql/pool.ml:109:17	Types.Error	Ox_sql__.Types.Error	Ox_sql__Types.Error	cancel_path=false	cancel_uid=false
+SITE	lib/sql/sqlite.ml:502:6	ignore	false	int	int
+IDENT	lib/sql/sqlite.ml:502:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/sql/sqlite.ml:507:34	ignore	false	int	int
+IDENT	lib/sql/sqlite.ml:507:34	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/sql/sqlite.ml:512:14	Failure	Stdlib.Failure	Stdlib.Failure	cancel_path=false	cancel_uid=false
+SITE	lib/sql/sqlite.ml:527:6	ignore	false	int	int
+IDENT	lib/sql/sqlite.ml:527:6	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+SITE	lib/sql/sqlite.ml:719:30	ignore	false	int	int
+IDENT	lib/sql/sqlite.ml:719:30	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/sql/sqlite.ml:724:16	Error	Error	Error	cancel_path=false	cancel_uid=false
+SITE	lib/sql/types.ml:149:10	ignore	false	Ox_sql__.Sqlite.rc	Ox_sql__.Sqlite.rc
+IDENT	lib/sql/types.ml:149:10	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false
+EXCEPTION	lib/sql/types.ml:161:14	Sqlite.Error	Ox_sql__.Sqlite.Error	Ox_sql__Sqlite.Error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:37:61	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:61:67	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:63:8	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:64:25	Sys_error	Stdlib.Sys_error	Stdlib.Sys_error	cancel_path=false	cancel_uid=false
+SITE	lib/test/ox_test.ml:83:6	let _ =	false	<not-constructor>	'a
+IDENT	lib/test/ox_test.ml:121:2	Eio.Fiber.fork	Eio.Fiber.fork	Eio__core.Fiber.fork	eio_fork=true
+EXCEPTION	lib/test/ox_test.ml:297:20	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:300:20	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+EXCEPTION	lib/test/ox_test.ml:337:53	Unix.Unix_error	Unix.Unix_error	Unix.Unix_error	cancel_path=false	cancel_uid=false
+SITE	lib/test/ox_test.ml:353:16	ignore	false	Eio.Process.exit_status	Eio.Process.exit_status
+IDENT	lib/test/ox_test.ml:353:16	ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false

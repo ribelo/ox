@@ -1,0 +1,69 @@
+module Lattices = Mode.Lattices
+module For_testing = Mode.For_testing
+val print_longident : (Mode_intf.Fmt.formatter -> Longident.t -> unit) ref
+val erase_hints : unit -> unit
+module Hint = Mode_hint
+val print_pinpoint :
+  Hint.pinpoint ->
+  (definite:bool -> capitalize:bool -> Mode_intf.Fmt.formatter -> unit)
+  option
+val print_pinpoint_desc :
+  Hint.pinpoint_desc ->
+  (definite:bool -> capitalize:bool -> Mode_intf.Fmt.formatter -> unit)
+  option
+type nonrec 'a simple_error = 'a Mode_intf.simple_error
+type changes = Mode.changes
+val undo_changes : changes -> unit
+val set_append_changes : (changes ref -> unit) -> unit
+type nonrec allowed = Allowance.allowed
+type nonrec disallowed = Allowance.disallowed
+type nonrec equate_step = Mode_intf.equate_step
+type ('a, 'b) mode = ('a, 'b) Mode.mode constraint 'b = 'l * 'r
+type ('a, 'b) monadic_comonadic =
+  ('a, 'b) Mode.monadic_comonadic = {
+  monadic : 'a;
+  comonadic : 'b;
+}
+module type Common_axis_pos = Mode.Common_axis_pos
+module type Common_axis_neg = Mode.Common_axis_neg
+module Locality = Mode.Locality
+module Regionality = Mode.Regionality
+module Linearity = Mode.Linearity
+module Portability = Mode.Portability
+module Uniqueness = Mode.Uniqueness
+module Contention = Mode.Contention
+module Forkable = Mode.Forkable
+module Yielding = Mode.Yielding
+module Statefulness = Mode.Statefulness
+module Visibility = Mode.Visibility
+module Staticity = Mode.Staticity
+type 'a comonadic_with =
+  'a Mode.comonadic_with = {
+  areality : 'a;
+  linearity : Linearity.Const.t;
+  portability : Portability.Const.t;
+  forkable : Forkable.Const.t;
+  yielding : Yielding.Const.t;
+  statefulness : Statefulness.Const.t;
+}
+type monadic =
+  Mode.monadic = {
+  uniqueness : Uniqueness.Const.t;
+  contention : Contention.Const.t;
+  visibility : Visibility.Const.t;
+  staticity : Staticity.Const.t;
+}
+module Axis = Mode.Axis
+module Value = Mode.Value
+module Alloc = Mode.Alloc
+module Const = Mode.Const
+val locality_as_regionality : Locality.l -> Regionality.l
+val alloc_as_value :
+  ?allocation:Hint.allocation -> ('l * 'r) Alloc.t -> ('l * 'r) Value.t
+val alloc_to_value_l2r : ('l * 'r) Alloc.t -> ('l * disallowed) Value.t
+val value_to_alloc_r2l : ('l * 'r) Value.t -> ('l * 'r) Alloc.t
+val value_to_alloc_r2g :
+  ?allocation:Hint.allocation ->
+  ('l * 'r) Value.t -> (disallowed * 'r) Alloc.t
+module Modality = Mode.Modality
+module Crossing = Mode.Crossing

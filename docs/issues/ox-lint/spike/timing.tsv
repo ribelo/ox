@@ -1,0 +1,30 @@
+read+raw-traverse	1	0.095434	exit	0	SUMMARY implementations=113 expressions=53238 result_expressions=0 candidates=0 findings=0 failures=0
+read+raw-traverse	2	0.096776	exit	0	SUMMARY implementations=113 expressions=53238 result_expressions=0 candidates=0 findings=0 failures=0
+read+raw-traverse	3	0.095764	exit	0	SUMMARY implementations=113 expressions=53238 result_expressions=0 candidates=0 findings=0 failures=0
+read+raw-traverse	4	0.096769	exit	0	SUMMARY implementations=113 expressions=53238 result_expressions=0 candidates=0 findings=0 failures=0
+read+raw-traverse	5	0.096914	exit	0	SUMMARY implementations=113 expressions=53238 result_expressions=0 candidates=0 findings=0 failures=0
+MEDIAN	read+raw-traverse	0.096769
+full-types+discard-rule	1	0.459997	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+full-types+discard-rule	2	0.427627	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+full-types+discard-rule	3	0.425897	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+full-types+discard-rule	4	0.426702	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+full-types+discard-rule	5	0.425798	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+MEDIAN	full-types+discard-rule	0.426702
+noop-install-in-shell	1	0.128647	exit	0	
+noop-install-in-shell	2	0.212698	exit	0	
+noop-install-in-shell	3	0.149843	exit	0	
+noop-install-in-shell	4	0.217983	exit	0	
+noop-install-in-shell	5	0.150182	exit	0	
+MEDIAN	noop-install-in-shell	0.150182
+nix+noop-install	1	0.458548	exit	0	
+nix+noop-install	2	0.496527	exit	0	
+nix+noop-install	3	0.441289	exit	0	
+nix+noop-install	4	0.440902	exit	0	
+nix+noop-install	5	0.440856	exit	0	
+MEDIAN	nix+noop-install	0.441289
+nix+full-types+discard-rule	1	0.753764	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+nix+full-types+discard-rule	2	0.742658	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+nix+full-types+discard-rule	3	0.744085	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+nix+full-types+discard-rule	4	0.740555	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+nix+full-types+discard-rule	5	0.742859	exit	1	SUMMARY implementations=113 expressions=53238 result_expressions=3039 candidates=40 findings=8 failures=0
+MEDIAN	nix+full-types+discard-rule	0.742859

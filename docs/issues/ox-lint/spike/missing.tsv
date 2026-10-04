@@ -1,0 +1,3 @@
+COMPILER	5.4.0+ox	Caml1999T581	Caml1999I581
+FAIL	/tmp/ox-lint-spike/noannot.cmt	Sys_error("/tmp/ox-lint-spike/noannot.cmt: No such file or directory")
+FAIL	/tmp/ox-lint-spike/noannot.cmi	Cmt_format.Error(_)

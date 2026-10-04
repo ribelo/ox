@@ -1,0 +1,30 @@
+SITE	/tmp/ox-lint-spike/fixture.ml:5:16	ignore	true	Std.result	(int, string) Std.result
+/tmp/ox-lint-spike/fixture.ml:5:16: ox-lint-discard-result: ignore discards (int, string) Std.result; match Ok/Error or propagate the error
+IDENT	/tmp/ox-lint-spike/fixture.ml:5:16	ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:6:22	let _ =	true	Std.result	(int, string) Std.result
+/tmp/ox-lint-spike/fixture.ml:6:22: ox-lint-discard-result: let _ = discards (int, string) Std.result; match Ok/Error or propagate the error
+SITE	/tmp/ox-lint-spike/fixture.ml:8:20	ignore	true	outcome	(int, string) outcome
+/tmp/ox-lint-spike/fixture.ml:8:20: ox-lint-discard-result: ignore discards (int, string) outcome; match Ok/Error or propagate the error
+IDENT	/tmp/ox-lint-spike/fixture.ml:8:20	Alias.ignore	Alias.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:10:17	ignore	false	Own.result	(int, string) Own.result
+IDENT	/tmp/ox-lint-spike/fixture.ml:10:17	ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:11:15	ignore	false	int	int
+IDENT	/tmp/ox-lint-spike/fixture.ml:11:15	ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:11:29	let _ =	false	bool	bool
+IDENT	/tmp/ox-lint-spike/fixture.ml:13:83	ignore	ignore	ignore	eio_fork=false
+IDENT	/tmp/ox-lint-spike/fixture.ml:17:25	fork	F.fork	Eio__core.Fiber.fork	eio_fork=true
+IDENT	/tmp/ox-lint-spike/fixture.ml:18:26	F.fork	F.fork	Eio__core.Fiber.fork	eio_fork=true
+IDENT	/tmp/ox-lint-spike/fixture.ml:19:39	fork	fork	fork	eio_fork=false
+EXCEPTION	/tmp/ox-lint-spike/fixture.ml:22:37	Cancelled	C.Cancelled	Eio__core.Cancel.Cancelled	cancel_path=true	cancel_uid=true
+REBIND	/tmp/ox-lint-spike/fixture.ml:23:0	Stopped	C.Cancelled
+EXCEPTION	/tmp/ox-lint-spike/fixture.ml:24:38	Stopped	Stopped	Stopped	cancel_path=true	cancel_uid=false
+IDENT	/tmp/ox-lint-spike/fixture.ml:26:11	Std.ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+IDENT	/tmp/ox-lint-spike/fixture.ml:28:79	Std.ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:29:23	ignore	true	Std.result	(int, string) Std.result
+/tmp/ox-lint-spike/fixture.ml:29:23: ox-lint-discard-result: ignore discards (int, string) Std.result; match Ok/Error or propagate the error
+IDENT	/tmp/ox-lint-spike/fixture.ml:29:23	Std.ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:30:18	ignore	true	Std.result	(int, string) Std.result
+/tmp/ox-lint-spike/fixture.ml:30:18: ox-lint-discard-result: ignore discards (int, string) Std.result; match Ok/Error or propagate the error
+IDENT	/tmp/ox-lint-spike/fixture.ml:30:51	Std.ignore	Std.ignore	Stdlib.ignore	eio_fork=false
+SITE	/tmp/ox-lint-spike/fixture.ml:35:27	let _ =	false	Stdlib.result	(int, string) Stdlib/2.result
+IDENT	/tmp/ox-lint-spike/fixture.ml:36:23	Stdlib.ignore	Stdlib.ignore	Stdlib.ignore	eio_fork=false

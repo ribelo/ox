@@ -1,0 +1,26 @@
+{
+  "sources": 97,
+  "covered": 96,
+  "missing": [
+    "lib/ppx_yojson_minimal/main.ml"
+  ],
+  "generated": [
+    "lib/ai/ox_ai__.ml-gen",
+    "lib/ai_chat/ox_ai_chat__.ml-gen",
+    "lib/ai_openrouter/ox_ai_openrouter__.ml-gen",
+    "lib/ai_realtime/ox_ai_realtime__.ml-gen",
+    "lib/ai_systemone/ox_ai_systemone__.ml-gen",
+    "lib/app/ox_app__.ml-gen",
+    "lib/caps/ox_caps.ml-gen",
+    "lib/http/ox_http.ml-gen",
+    "lib/ipc/ox_ipc.ml-gen",
+    "lib/observability/ox_observability.ml-gen",
+    "lib/otel/ox_otel__.ml-gen",
+    "lib/ox/ox.ml-gen",
+    "lib/ppx_yojson_minimal/ppx_yojson_minimal.ml-gen",
+    "lib/process/ox_process.ml-gen",
+    "lib/rpc/ox_rpc.ml-gen",
+    "lib/sql/ox_sql__.ml-gen",
+    "lib/sql_dsl/ox_sql_dsl__.ml-gen"
+  ]
+}

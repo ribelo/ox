@@ -1,0 +1,16 @@
+findlib: [WARNING] Interface opttopdirs.cmi occurs in several directories: /home/ribelo/.cache/opam/5.4.0+ox/lib/ocaml, /home/ribelo/.cache/opam/5.4.0+ox/lib/ocaml/compiler-libs
+findlib: [WARNING] Interface topdirs.cmi occurs in several directories: /home/ribelo/.cache/opam/5.4.0+ox/lib/ocaml, /home/ribelo/.cache/opam/5.4.0+ox/lib/ocaml/compiler-libs
+File "/tmp/ox-lint-spike/spike.ml", line 77, characters 2-54:
+77 |   Envaux.reset_cache ~preserve_persistent_env:false ();
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: The function Envaux.reset_cache has type
+         preserve_persistent_env:bool -> unit
+       It is applied to too many arguments
+File "/tmp/ox-lint-spike/spike.ml", line 77, characters 50-52:
+77 |   Envaux.reset_cache ~preserve_persistent_env:false ();
+                                                       ^^
+  Hint: Did you forget a ';'?
+File "/tmp/ox-lint-spike/spike.ml", line 77, characters 52-54:
+77 |   Envaux.reset_cache ~preserve_persistent_env:false ();
+                                                         ^^
+  This extra argument is not expected.

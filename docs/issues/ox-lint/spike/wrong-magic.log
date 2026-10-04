@@ -1,0 +1,2 @@
+FAIL	/tmp/ox-lint-spike/wrong-magic.cmt	Cmt_format.Error(_)
+SUMMARY implementations=0 expressions=0 result_expressions=0 candidates=0 findings=0 failures=1

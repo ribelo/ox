@@ -1,0 +1,211 @@
+module Const :
+  sig
+    type t =
+        (Mode.Locality.Const.t, Mode.Linearity.Const.t,
+         Mode.Uniqueness.Const.t, Mode.Portability.Const.t,
+         Mode.Contention.Const.t, Mode.Forkable.Const.t,
+         Mode.Yielding.Const.t, Mode.Statefulness.Const.t,
+         Mode.Visibility.Const.t, Mode.Staticity.Const.t)
+        Mode.Alloc.modes
+    val min : t
+    val max : t
+    val le : t -> t -> bool
+    val equal : t -> t -> bool
+    val join : t -> t -> t
+    val meet : t -> t -> t
+    val print : Mode_intf.Fmt.formatter -> t -> unit
+    val legacy : t
+    val all : t list lazy_t
+    module Option = Mode.Alloc.Const.Option
+    val is_max : 'a Mode.Alloc.Axis.t -> 'a -> bool
+    val is_min : 'a Mode.Alloc.Axis.t -> 'a -> bool
+    val split :
+      t ->
+      (Mode.Alloc.Monadic.Const.t, Mode.Alloc.Comonadic.Const.t)
+      Mode.monadic_comonadic
+    val merge :
+      (Mode.Alloc.Monadic.Const.t, Mode.Alloc.Comonadic.Const.t)
+      Mode.monadic_comonadic -> t
+    val diff : t -> t -> Option.t
+    val close_over : t -> Mode.Alloc.Comonadic.Const.t
+    val partial_apply : t -> Mode.Alloc.Comonadic.Const.t
+    val comonadic_to_monadic_min :
+      Mode.Alloc.Comonadic.Const.t -> Mode.Alloc.Monadic.Const.t
+    val print_axis :
+      'a Mode.Alloc.Axis.t -> Mode_intf.Fmt.formatter -> 'a -> unit
+  end
+module Alloc :
+  sig
+    module Monadic = Mode.Alloc.Monadic
+    module Comonadic = Mode.Alloc.Comonadic
+    module Axis = Mode.Alloc.Axis
+    type ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j) modes =
+      ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j) Mode.Alloc.modes = {
+      areality : 'a;
+      linearity : 'b;
+      uniqueness : 'c;
+      portability : 'd;
+      contention : 'e;
+      forkable : 'f;
+      yielding : 'g;
+      statefulness : 'h;
+      visibility : 'i;
+      staticity : 'j;
+    }
+    module Const = Mode.Alloc.Const
+    type atom = Mode.Alloc.atom = Atom : 'a Axis.t * 'a -> atom
+    type error =
+      Mode.Alloc.error =
+        Monadic of Monadic.error
+      | Comonadic of Comonadic.error
+    type simple_error =
+      Mode.Alloc.simple_error =
+        Error : 'a Axis.t * 'a Mode.simple_error -> simple_error
+    type 'a t = ('a Monadic.t, 'a Comonadic.t) Mode.monadic_comonadic
+      constraint 'a = 'b * 'c
+    val print_error : Mode_hint.pinpoint -> error -> Mode_intf.print_error
+    type equate_error = Mode_intf.equate_step * error
+    val to_simple_error : error -> simple_error
+    type l = (Allowance.allowed * Allowance.disallowed) t
+    type r = (Allowance.disallowed * Allowance.allowed) t
+    type lr = (Allowance.allowed * Allowance.allowed) t
+    type ('a, 'b, 'c) sided = 'c t constraint 'c = 'l * 'r
+    val disallow_right :
+      ('a, 'b, 'l * 'r) sided -> ('a, 'b, 'l * Allowance.disallowed) sided
+    val disallow_left :
+      ('a, 'b, 'l * 'r) sided -> ('a, 'b, Allowance.disallowed * 'r) sided
+    val allow_right :
+      ('a, 'b, 'l * Allowance.allowed) sided -> ('a, 'b, 'l * 'r) sided
+    val allow_left :
+      ('a, 'b, Allowance.allowed * 'r) sided -> ('a, 'b, 'l * 'r) sided
+    val min : lr
+    val max : lr
+    val legacy : lr
+    val newvar : unit -> ('l * 'r) t
+    val submode :
+      ?pp:Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t ->
+      ('l * Allowance.allowed) t -> (unit, error) result
+    val submode_err :
+      Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t -> ('l * Allowance.allowed) t -> unit
+    val equate : lr -> lr -> (unit, equate_error) result
+    val submode_exn :
+      ?pp:Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t -> ('l * Allowance.allowed) t -> unit
+    val equate_exn : lr -> lr -> unit
+    val join : (Allowance.allowed * 'r) t list -> Allowance.left_only t
+    val meet : ('l * Allowance.allowed) t list -> Allowance.right_only t
+    val newvar_above : (Allowance.allowed * 'r) t -> ('l * 'r_) t * bool
+    val newvar_below : ('l * Allowance.allowed) t -> ('l_ * 'r) t * bool
+    val print :
+      ?verbose:bool -> unit -> Mode_intf.Fmt.formatter -> ('l * 'r) t -> unit
+    val zap_to_ceil : ('l * Allowance.allowed) t -> Const.t
+    val zap_to_floor : (Allowance.allowed * 'r) t -> Const.t
+    val of_const :
+      ?hint_monadic:('l * 'r) Allowance.neg Mode.Hint.const ->
+      ?hint_comonadic:('l * 'r) Allowance.pos Mode.Hint.const ->
+      Const.t -> ('l * 'r) t
+    val to_const_exn : lr -> Const.t
+    module List = Mode.Alloc.List
+    val proj_comonadic :
+      'a Comonadic.Axis.t -> ('l * 'r) t -> ('a, 'l * 'r) Mode.mode
+    val proj_monadic :
+      'a Monadic.Axis.t -> ('l * 'r) t -> ('a, 'r * 'l) Mode.mode
+    val meet_const :
+      Comonadic.Const.t -> ('l * 'r) t -> ('l * Mode.disallowed) t
+    val join_const :
+      Monadic.Const.t -> ('l * 'r) t -> (Mode.disallowed * 'r) t
+    val meet_const_with :
+      'a Comonadic.Axis.t -> 'a -> ('l * 'r) t -> ('l * Mode.disallowed) t
+    val join_const_with :
+      'a Monadic.Axis.t -> 'a -> ('l * 'r) t -> (Mode.disallowed * 'r) t
+    val max_with_comonadic :
+      'a Comonadic.Axis.t ->
+      ('a, 'l * 'r) Mode.mode -> (Mode.disallowed * 'r) t
+    val min_with_comonadic :
+      'a Comonadic.Axis.t ->
+      ('a, 'l * 'r) Mode.mode -> ('l * Mode.disallowed) t
+    val min_with_monadic :
+      'a Monadic.Axis.t ->
+      ('a, 'l * 'r) Mode.mode -> ('r * Mode.disallowed) t
+    val zap_to_legacy : lr -> Const.t
+    val comonadic_to_monadic_min :
+      ?hint:('r * Mode.disallowed) Allowance.neg Mode.Hint.morph ->
+      ('l * 'r) Comonadic.t -> ('r * Mode.disallowed) Monadic.t
+    val monadic_to_comonadic_max :
+      ('r * Mode.disallowed) Monadic.t -> (Mode.disallowed * 'r) Comonadic.t
+    val close_over :
+      (('l * Mode.allowed) Monadic.t, (Mode.allowed * 'r) Comonadic.t)
+      Mode.monadic_comonadic -> l
+    val partial_apply : (Mode.allowed * 'r) t -> l
+  end
+module Locality :
+  sig
+    module Const = Mode.Locality.Const
+    type error = Mode.Locality.error
+    val print_error : Mode_hint.pinpoint -> error -> Mode_intf.print_error
+    type equate_error = Mode_intf.equate_step * error
+    type simple_error = Const.t Mode_intf.simple_error
+    val to_simple_error : error -> simple_error
+    type 'a t = (Const.t, 'a Allowance.pos) Mode.mode constraint 'a = 'l * 'r
+    type l = (Allowance.allowed * Allowance.disallowed) t
+    type r = (Allowance.disallowed * Allowance.allowed) t
+    type lr = (Allowance.allowed * Allowance.allowed) t
+    type ('a, 'b, 'c) sided = 'c t constraint 'c = 'l * 'r
+    val disallow_right :
+      ('a, 'b, 'l * 'r) sided -> ('a, 'b, 'l * Allowance.disallowed) sided
+    val disallow_left :
+      ('a, 'b, 'l * 'r) sided -> ('a, 'b, Allowance.disallowed * 'r) sided
+    val allow_right :
+      ('a, 'b, 'l * Allowance.allowed) sided -> ('a, 'b, 'l * 'r) sided
+    val allow_left :
+      ('a, 'b, Allowance.allowed * 'r) sided -> ('a, 'b, 'l * 'r) sided
+    val min : lr
+    val max : lr
+    val legacy : lr
+    val newvar : unit -> ('l * 'r) t
+    val submode :
+      ?pp:Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t ->
+      ('l * Allowance.allowed) t -> (unit, error) result
+    val submode_err :
+      Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t -> ('l * Allowance.allowed) t -> unit
+    val equate : lr -> lr -> (unit, equate_error) result
+    val submode_exn :
+      ?pp:Mode_hint.pinpoint ->
+      (Allowance.allowed * 'r) t -> ('l * Allowance.allowed) t -> unit
+    val equate_exn : lr -> lr -> unit
+    val join : (Allowance.allowed * 'r) t list -> Allowance.left_only t
+    val meet : ('l * Allowance.allowed) t list -> Allowance.right_only t
+    val newvar_above : (Allowance.allowed * 'r) t -> ('l * 'r_) t * bool
+    val newvar_below : ('l * Allowance.allowed) t -> ('l_ * 'r) t * bool
+    val print :
+      ?verbose:bool -> unit -> Mode_intf.Fmt.formatter -> ('l * 'r) t -> unit
+    val zap_to_ceil : ('l * Allowance.allowed) t -> Const.t
+    val zap_to_floor : (Allowance.allowed * 'r) t -> Const.t
+    val of_const :
+      ?hint:('a * 'b) Mode_intf.pos_hint_const -> Const.t -> ('a * 'b) t
+    val global : lr
+    val local : lr
+    module Guts = Mode.Locality.Guts
+  end
+module Moda :
+  sig
+    type t = Mode.Modality.Const.t
+    val id : t
+    val is_id : t -> bool
+    val apply_left :
+      ?is_contained_by:Mode.Hint.is_contained_by ->
+      t -> (Mode.allowed * 'r) Mode.Value.t -> Mode.Value.l
+    val apply_right :
+      ?is_contained_by:Mode.Hint.is_contained_by ->
+      t -> ('l * Mode.allowed) Mode.Value.t -> Mode.Value.r
+    val concat : then_:t -> t -> t
+    val set : 'a Mode.Modality.Axis.t -> 'a -> t -> t
+    val proj : 'a Mode.Modality.Axis.t -> t -> 'a
+    val diff : t -> t -> Mode.Modality.atom list
+    val equate : t -> t -> (unit, Mode.Modality.equate_error) Result.t
+    val print : Mode_intf.Fmt.formatter -> t -> unit
+  end

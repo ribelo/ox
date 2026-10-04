@@ -1,0 +1,4 @@
+FAIL	_build/default/lib/caps/.ox_caps.objs/byte/ox_caps__Cap_unix.cmt	Env.Error(_)
+FAIL	_build/default/lib/json/.ox_json.objs/byte/ox_json.cmt	Env.Error(_)
+FAIL	_build/default/lib/ppx_yojson_minimal/.ppx_yojson_minimal.objs/byte/ppx_yojson_minimal__Derive.cmt	Env.Error(_)
+SUMMARY implementations=113 expressions=52494 result_expressions=2979 candidates=40 findings=8 failures=3

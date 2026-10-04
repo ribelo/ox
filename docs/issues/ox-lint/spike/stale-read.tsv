@@ -1,0 +1,2 @@
+COMPILER	5.4.0+ox	Caml1999T581	Caml1999I581
+READ	/tmp/ox-lint-spike/stale.cmt	Implementation	1	/tmp/ox-lint-spike/stale.ml	/home/ribelo/projects/ribelo/ocaml/ox	3b673f89b9da8568bca05c6a9e4856c1	true	ocamlc -bin-annot -c /tmp/ox-lint-spike/stale.ml

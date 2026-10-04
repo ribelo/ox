@@ -1,0 +1,21 @@
+{
+  "source_interfaces": 97,
+  "cmti": 97,
+  "sources_missing_cmti": [],
+  "artifact_sources_not_in_manifest": [],
+  "matching_source_digest": 97,
+  "nonmatching_source_digest": [],
+  "source_values": 1301,
+  "typed_values": 1301,
+  "duplicate_source_keys": 0,
+  "duplicate_typed_keys": 0,
+  "missing_typed_values": [],
+  "extra_typed_values": [],
+  "source_values_with_docs": 488,
+  "typed_values_with_docs": 488,
+  "declaration_span_mismatches": [],
+  "attached_doc_mismatches": [],
+  "types_value_doc_mismatches": [],
+  "source_external_declarations": 0,
+  "typed_nonempty_types": 1301
+}

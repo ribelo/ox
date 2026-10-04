@@ -1,0 +1,29 @@
+---
+status: ready
+package: ox_lint (rules), every `lib/**/*.mli`
+consumer: Ox (row 86 stories 6 and 9; the convention Eio practises and never wrote down)
+---
+
+# The interface-documentation contract, decided by `ox-lint`
+
+## Problem Statement
+
+Eio's `.mli` files state cancellation, finalizer and locking behaviour per function consistently, and the convention is written nowhere — not in its `HACKING.md` — so an agent cannot check itself against it (row 86, ^nguide-2hvs). Ox inherits the habit without the contract. Row 87's spike established that the material is reachable: **1,301 of 1,301** `val` declarations expose their name, span, type and attached documentation, and all **488** attached-doc sets match the source. It also established the size of the gap: **813** `val`s carry no attached doc at all.
+
+## Solution
+
+Write the contract, then check it: every `val` in `lib/**/*.mli` that can suspend, cancel, acquire or release says so, in a stated shape, and `ox-lint` decides it from the `.cmti`.
+
+## User Stories
+
+1. As a kernel maintainer, I want the contract written as one page — the sentence shapes for suspension, cancellation, finalizers and locking, with ox's own best existing examples quoted (`lib/ox/scope.mli`, `lib/ox/resource.mli`) — so that "documented" has a form and not a feeling. ^nlintd-von6
+2. As a kernel maintainer, I want `ox-val-behaviour` to require that sentence on every `val` whose type involves a switch, a clock, a flow, a channel, an actor, a mutex or `Ox.Io` once row 71 lands, and to leave pure values alone, so that the 813 undocumented `val`s are triaged by type rather than all at once. ^nlintd-z5p5
+3. As a service author, I want `ox-cancel-safety` to require, on every operation that can be cancelled midway, tokio's three-valued statement — safe to re-run, unsafe because data is lost, unsafe because progress is lost — since a caller retrying after a cancelled `receive` needs to know which. ^nlintd-vneh
+4. As a maintainer, I want module-level defaults to count: a `(** Cancellation and finalizers: ... *)` paragraph on the module satisfies the rule for the `val`s it covers, so that the contract does not force 1,301 repetitions. ^nlintd-4ja0
+5. As a maintainer, I want the rule to state plainly that it checks **presence and shape, never truth**: a `val` can state wrong behaviour and pass, which is why the simulation of row 85 and the tests remain the thing that decides behaviour. ^nlintd-6abn
+6. As a maintainer, I want the triage done in this row — every `val` the rule selects either documented or recorded in a list with a reason — and the count reported, so that the row ends with a number rather than a backlog. ^nlintd-a7oq
+7. As a maintainer, I want the contract page and the rule cited from `docs/caps.md`'s sibling pages and from `AGENTS.md`'s "How code is written", so that an agent writing a new `.mli` meets it before the check does. ^nlintd-7r1a
+
+## Out of Scope
+
+Rewriting existing doc comments wholesale; proving any documented claim true (story 5).

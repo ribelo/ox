@@ -32,7 +32,7 @@ There is a third option already proven in this tree. [`evidence/census.ml`](../s
 
 The parser is `Parse.implementation`/`interface` through `compiler-libs`, as `evidence/census.ml` and `lib/ppx_yojson_minimal` already do (ADR-0007 admits `ocaml-compiler-libs` as a build-time dependency for exactly this reason; this row extends that admission to `ox_lint` and nothing else). The traversal is `Ast_iterator` with the `open` stack and alias map the census tool already builds. The Typedtree tier reads `.cmt` files with `Cmt_format` and is **optional per rule**: a rule that needs types is skipped with a named warning when the `.cmt` is absent, and `--require-typed` makes that a failure for the gate run.
 
-Two risks, recorded: `compiler-libs` has no stability promise across compiler versions, which is the same exposure `ppx_yojson_minimal` already carries and is bounded by ox pinning one compiler exactly (ADR-0005); and reading `.cmt` on 5.4.0+ox is **unverified** — story 3 starts with a spike that proves one typed rule end to end before the rest are written.
+Two risks, recorded: `compiler-libs` has no stability promise across compiler versions, which is the same exposure `ppx_yojson_minimal` already carries and is bounded by ox pinning one compiler exactly (ADR-0005); and reading `.cmt` on 5.4.0+ox was unverified until the spike below settled it.
 
 What this cannot do, and what therefore stays elsewhere: timing (row 85's simulation), "this handler cannot raise" (undecidable, hence the "does not re-raise" form), and anything about a consumer's runtime configuration (row 75 found Leash's logging conflict is real in the type and absent at its configured level — a linter sees the first, not the second).
 
@@ -43,3 +43,18 @@ One violating and one clean fixture per rule under `test/lint/`, in the shape of
 ## Out of Scope
 
 Replacing the caps gate (story 9); formatting (`ocamlformat` owns it); type-driven whole-program analysis beyond the suspension closure.
+
+## Spike result (2026-10-04): the typed tier is feasible, with conditions
+
+Two workers settled story ^nlint-hxar on the pinned compiler; evidence and reproduction commands in [spike/REPORT.md](spike/REPORT.md) and [spike/interfaces/REPORT.md](spike/interfaces/REPORT.md), prototypes beside them.
+
+**What works.** All **113** library `.cmt` files read as `Implementation` and traverse — zero failures, 53,238 expressions visited. The decisive rule runs end to end: of **40** `ignore`/`let _ =` discard candidates in `lib/`, **8** are genuinely `result`-typed — `http/ws_client.ml:426`, `otel/ox_otel.ml:426` and `:455`, `process/child.ml:134`, `sql/pool.ml:28`, `:57`, `:73`, `:105` — against the 39 sites a name-matching count had reported. Classification expands manifest aliases with `Ctype.expand_head` and compares type paths with `Path.same` against the canonical `result` looked up in the **initial** environment, so a local module named `Stdlib` cannot redefine what "really `result`" means; a local function named `ignore` is not mistaken for `Stdlib.ignore`; `@@` and `|>` forms elaborate to the real call and are caught. Interfaces: **97/97** `.cmti`, **1,301/1,301** `val` declarations with their types, spans and attached docs, and all **488** attached-doc sets matching the source — so story ^nlint-yf56 needs no second mechanism. OxCaml modes are inspectable in both the source and the artifact for all six mode-carrying files tested, including the four Semgrep cannot parse. Warm run over the whole typed corpus: **0.44 s** (0.76 s including `nix develop`).
+
+**Conditions the implementation must meet, each from a measured failure.**
+
+- **Environment reconstruction is not optional.** The stored environments are summaries: each annotation needs `Envaux.env_of_only_summary ~allow_missing_modules:false`, cache resets, and its visible and hidden load paths initialised. Dune records the remapped `/workspace_root` as `cmt_builddir`, which does not exist, so relative includes must be rebased onto the real `_build/default` — without this the typed tier does not work at all.
+- **Inventory the expected modules; never glob what exists.** `lib/ppx_yojson_minimal/main.ml` is a native-only executable whose Dune rule omits `-bin-annot`, so it has no `.cmt` after `@install` while its interface annotation exists. A gate that globs would silently skip it. The gate declares the modules it must cover and fails when an annotation is missing or stale (story ^nlint-2nwm).
+- **Exception identity needs the origin, not the UID.** Same-unit rebinding (`exception Stopped = Cancelled`) is matched through origin metadata, and UID equality alone is insufficient. Cross-unit rebinding is **unproven**; the rule states that limit.
+- **Documented limits.** A node whose inferred type is still a variable is not established to be `result` and is not reported; there is no interprocedural reasoning; value aliases are not followed. Inferred parameter modes can retain bounds rather than constants, so a mode-reading rule must say which it tests. And 813 of the 1,301 `val`s carry no attached doc today — that number is a rule-design decision for row 89, not automatically 813 violations.
+
+**Consequence for this row:** it delivers the engine, the rule table and the first typed rule (discarded `result`, with those eight sites fixed or allow-listed). The concurrency rules of row 66 move to [row 88](../ox-lint-rules/01-ox-lint-rules.md) and the interface-documentation rules to [row 89](../ox-lint-docs/01-ox-lint-docs.md), so each lands on its own evidence.
