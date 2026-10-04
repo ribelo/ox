@@ -1,0 +1,3 @@
+(lang dune 3.21)
+; ^nlintcov-q6n2: independent workspace, not parent build coverage.
+(name nested)

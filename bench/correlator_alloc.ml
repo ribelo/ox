@@ -3,7 +3,23 @@ type message = { id : int option; payload : int }
 
 let iterations = 10_000
 
+let report ~caps:(_caps : < Ox_caps.Cap.stdout ; .. >) ~before ~after =
+  let per_call delta = delta /. float_of_int iterations in
+  Ox_caps.Cap_stdlib.printf ~caps:_caps "correlator call+reply: %d iterations\n"
+    iterations;
+  Ox_caps.Cap_stdlib.printf ~caps:_caps "minor_words/call: %.2f\n"
+    (per_call (after.Gc.minor_words -. before.Gc.minor_words));
+  Ox_caps.Cap_stdlib.printf ~caps:_caps "major_words/call: %.2f\n"
+    (per_call (after.Gc.major_words -. before.Gc.major_words));
+  Ox_caps.Cap_stdlib.printf ~caps:_caps "total allocated words/call: %.2f\n"
+    (per_call
+       (after.Gc.minor_words +. after.Gc.major_words -. before.Gc.minor_words
+      -. before.Gc.major_words))
+
+(* ^ncapslint-t4c6: a benchmark is code the gate reads like any other, so its
+   output goes through the capability its signature declares. *)
 let () =
+  let caps = Ox_caps_door.powerbox () in
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let replies = Eio.Stream.create 64 in
@@ -16,7 +32,9 @@ let () =
               ()
           in
           let request = { id = None; payload = 42 } in
-          ignore (Ox_rpc.Correlator.call correlator request);
+          (* ^nlint-hxar: the warm-up call's outcome is irrelevant; the loop below
+             asserts every reply. *)
+          let _warmup : (message, _) result = Ox_rpc.Correlator.call correlator request in
           Gc.full_major ();
           let before = Gc.quick_stat () in
           for _ = 1 to iterations do
@@ -25,13 +43,5 @@ let () =
             | _ -> failwith "correlator reply mismatch"
           done;
           let after = Gc.quick_stat () in
-          Printf.printf "correlator call+reply: %d iterations\n" iterations;
-          Printf.printf "minor_words/call: %.2f\n"
-            ((after.minor_words -. before.minor_words) /. float_of_int iterations);
-          Printf.printf "major_words/call: %.2f\n"
-            ((after.major_words -. before.major_words) /. float_of_int iterations);
-          Printf.printf "total allocated words/call: %.2f\n"
-            ((after.minor_words +. after.major_words -. before.minor_words
-            -. before.major_words)
-            /. float_of_int iterations);
+          report ~caps:(caps :> < Ox_caps.Cap.stdout >) ~before ~after;
           Ox_rpc.Correlator.close correlator))

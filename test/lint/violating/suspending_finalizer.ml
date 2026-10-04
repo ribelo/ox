@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-suspending-finalizer: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 [@@@warning "-32-34-37"]
 
 let yield () = Fun.protect ~finally:(fun () -> Eio.Fiber.yield ()) (fun () -> ())

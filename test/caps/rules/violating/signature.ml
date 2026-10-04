@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-caps-signature: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 let ambient : Ox_caps.Cap.fork = Obj.magic ()
 let violation () = Ox_caps.Cap_unix.fork ~caps:ambient ()

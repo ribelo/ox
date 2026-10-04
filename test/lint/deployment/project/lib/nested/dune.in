@@ -1,0 +1,9 @@
+(library
+ (name nested)
+ (libraries unix))
+
+; A foreign dependency must not classify a parent orphan as data.
+(rule
+ (alias audit)
+ (deps ../../orphan.ml)
+ (action (echo "foreign data declaration")))

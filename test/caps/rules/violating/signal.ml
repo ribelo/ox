@@ -1,3 +1,3 @@
-[@@@ox_lint.fixture "ox-caps-signal: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 let violation () = Unix.kill 0 0

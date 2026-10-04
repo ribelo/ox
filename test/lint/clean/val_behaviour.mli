@@ -34,6 +34,6 @@ end
 (** Cancellation and finalizers: Suspension: may suspend in arbitrary callback code.
     Cancellation: protected throughout this example operation. Finalizers: none. Locking:
     none. *)
-module type Protected = sig
+module Protected : sig
   val inside : Eio.Switch.t -> unit
 end

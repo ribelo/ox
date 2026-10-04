@@ -69,6 +69,7 @@ let operations =
       calls =
         [
           [ "Stdlib"; "stdin" ];
+          [ "Unix"; "stdin" ];
           [ "In_channel"; "stdin" ];
           [ "Stdlib"; "read_line" ];
           [ "Stdlib"; "read_int" ];
@@ -88,6 +89,7 @@ let operations =
           [ "Stdlib"; "print_endline" ];
           [ "Stdlib"; "print_newline" ];
           [ "Stdlib"; "stdout" ];
+          [ "Unix"; "stdout" ];
           [ "Out_channel"; "stdout" ];
           [ "Printf"; "printf" ];
           [ "Format"; "printf" ];
@@ -106,6 +108,7 @@ let operations =
           [ "Stdlib"; "prerr_endline" ];
           [ "Stdlib"; "prerr_newline" ];
           [ "Stdlib"; "stderr" ];
+          [ "Unix"; "stderr" ];
           [ "Out_channel"; "stderr" ];
           [ "Printf"; "eprintf" ];
           [ "Format"; "eprintf" ];

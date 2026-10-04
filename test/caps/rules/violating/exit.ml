@@ -1,3 +1,3 @@
-[@@@ox_lint.fixture "ox-caps-exit: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 let violation () = Stdlib.exit 0

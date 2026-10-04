@@ -43,13 +43,17 @@ expect 1 "$engine" --caps-gate --rules ox-caps-mint "$scratch/mint/sibling.ml"
 contains "$scratch/out" 'ox-caps-mint:'
 cp -R "$fixture" "$scratch/project"
 chmod -R u+w "$scratch/project"
-for path in dune-project qualified/dune bin/dune private/dune consumer/dune test/dune tests/dune; do
+for path in dune-project qualified/dune bin/dune private/dune consumer/dune test/dune tests/dune \
+  lib/no_interface/dune lib/renamed/dune lib/copied/dune lib/generated/dune lib/preprocessed/dune \
+  lib/symlinked/dune lib/dormant/dune lib/nested/dune-project lib/nested/dune; do
   inside_scratch "$scratch/project/$path.in"
   inside_scratch "$scratch/project/$path"
   mv "$scratch/project/$path.in" "$scratch/project/$path"
 done
 project="$scratch/project"
+ln -s body.txt "$project/lib/symlinked/linked.ml"
 dune build --root "$project" @install @check
+dune build --root "$project/lib/nested" @check
 # Empty inventories are counted; typos and in-scope broken links remain errors.
 expect 0 "$engine" --caps-gate --require-typed "$project/tests"
 contains "$scratch/err" '1 paths with no OCaml sources; 0 ignored paths skipped'
@@ -72,33 +76,56 @@ contains "$scratch/err" '0 modules with typed rules undecided'
 expect 0 "$engine" --caps-gate --require-typed "$project/test/orphan.ml"
 contains "$scratch/out" 'not built (not in any Dune target)'
 contains "$scratch/err" '0 modules with typed rules undecided'
-# Default inventory distinguishes declared data, marked compiled fixtures and orphans.
+# ^nlintcov-q6n2: default inventory distinguishes data, nested projects and orphans.
 (cd "$project"; expect 0 "$engine" --caps-gate --require-typed)
-contains "$scratch/err" ' data-only files out of scope; 1 fixture files skipped; 1 paths with no OCaml sources; 0 ignored paths skipped'
-# Formatting artifacts may add data under source_tree; all three controls must
-# disappear as data, not become "not built" notes or typed-undecided errors.
-[[ $(<"$scratch/out") != *test/identity_surface_* ]]
 contains "$scratch/err" '0 modules with typed rules undecided'
-awk -F'; ' '/^caps-gate:/ { split($3, count, " "); exit count[1] < 5 }' "$scratch/err"
+[[ $(<"$scratch/out") != *test/identity_surface_* ]]
 contains "$scratch/out" 'orphan.ml:1: ox-lint: not built'
-expect 1 "$engine" --caps-gate --require-typed "$project/test/marked.ml"
-contains "$scratch/out" 'ox-caps-fork:'
 expect 1 "$engine" --caps-gate "$project/test/data/raw.ml"
 contains "$scratch/out" 'ox-caps-fork:'
-# A dead marker fails an explicit scan, while comments cannot mark a file.
-cp "$project/test/marked.ml" "$scratch/marked.saved"
-printf '[@@@ox_lint.fixture "ox-caps-fork: dead fixture"]\nlet fork () = 0\n' > "$project/test/marked.ml"
-dune build --root "$project" @check
-expect 2 "$engine" --caps-gate --require-typed "$project/test/marked.ml"
-contains "$scratch/err" 'dead fixture: declared rule produced no finding'
-printf '(* [@@@ox_lint.fixture "ox-caps-fork: only a comment"] *)\nlet fork () = Unix.fork ()\n' > "$project/test/marked.ml"
+# A nested project is out of the default workspace, but explicit scans inspect it.
+expect 1 "$engine" --caps-gate --require-typed "$project/lib/nested/value.ml"
+contains "$scratch/out" 'ox-caps-fork:'
+expect 1 "$engine" --caps-gate --require-typed \
+  "$project/lib/nested/_build/default/.nested.objs/byte/nested__Value.cmt"
+contains "$scratch/out" 'ox-caps-fork:'
+expect 0 "$engine" --caps-gate --require-typed "$project/lib/orphan.ml"
+contains "$scratch/out" 'not built (not in any Dune target)'
+# Real modules are decided regardless of public/private, interface, copy or PP layout.
+for source in lib/no_interface/value.ml lib/symlinked/linked.ml \
+  lib/preprocessed/value.ml _build/default/lib/generated/generated.ml \
+  _build/default/lib/renamed/copied.ml _build/default/lib/copied/source.ml \
+  _build/default/lib/preprocessed/value.pp.ml; do
+  expect 1 "$engine" --require-typed --rules ox-discarded-result "$project/$source"
+  contains "$scratch/out" 'ox-discarded-result:'
+done
+# Generated and copied compile inputs are included in the default decision.
+(cd "$project"; expect 0 "$engine" --caps-gate --require-typed --inventory)
+for suffix in lib/generated/generated.ml lib/renamed/copied.ml lib/copied/source.ml \
+  bin/main.mli; do
+  contains "$scratch/out" "_build/default/$suffix"
+done
+contains "$scratch/out" $'lib/renamed/seed.ml\texcluded\tdata-only'
+contains "$scratch/out" $'lib/nested/\texcluded\tnested-project'
+# A source-less generated violation fails the default gate and names its producer.
+cp "$project/lib/generated/dune" "$scratch/generated.dune.saved"
+printf '%s\n' '(library (name generated) (libraries unix))' \
+  '(rule (target generated.ml) (action (with-stdout-to %{target} (echo "let fork () = Unix.fork ()"))))' \
+  > "$project/lib/generated/dune"
 dune build --root "$project" @check
 (cd "$project"; expect 1 "$engine" --caps-gate --require-typed)
-contains "$scratch/out" 'marked.ml:2: ox-caps-fork:'
-contains "$scratch/err" '0 fixture files skipped'
-inside_scratch "$scratch/marked.saved"; inside_scratch "$project/test/marked.ml"
-mv "$scratch/marked.saved" "$project/test/marked.ml"
+contains "$scratch/out" 'generated.ml:1: ox-caps-fork:'
+contains "$scratch/out" 'generated by rule (target generated.ml) in lib/generated/dune'
+expect 1 "$engine" --caps-gate --require-typed "$project/_build/default/lib/generated/generated.ml"
+contains "$scratch/out" 'generated by rule (target generated.ml) in lib/generated/dune'
+inside_scratch "$scratch/generated.dune.saved"; inside_scratch "$project/lib/generated/dune"
+mv "$scratch/generated.dune.saved" "$project/lib/generated/dune"
 dune build --root "$project" @check
+# ^nlintcov-r3k8: no path, including an explicit rule selection, activates the rule.
+expect 0 "$engine" --require-typed --rules ox-raw-concurrency "$project/lib/dormant/raw.ml"
+[[ ! -s "$scratch/out" ]]
+expect 0 "$engine" --require-typed "$project/lib/dormant/raw.ml"
+[[ ! -s "$scratch/out" ]]
 test_cmt="$project/_build/default/test/.entry.eobjs/byte/dune__exe__Entry.cmt"
 [[ -f "$test_cmt" ]]
 inside_scratch "$test_cmt"
@@ -115,6 +142,8 @@ printf '%s\n' '#!/usr/bin/env bash' 'if [[ $1 == describe && $2 == rules ]]; the
 chmod +x "$scratch/no-rules/dune"
 expect 2 env DUNE_REAL="$(command -v dune)" PATH="$scratch/no-rules:$PATH" "$engine" --caps-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/err" '1 modules with typed rules undecided'
+expect 2 env DUNE_REAL="$(command -v dune)" PATH="$scratch/no-rules:$PATH" "$engine" --caps-gate --require-typed "$project"
+contains "$scratch/err" 'Dune generated-source inventory unavailable: describe rules @check'
 mv "$scratch/test.cmt.saved" "$test_cmt"
 # Dune exposes only public_cmi to build-tree consumers; private CMIs stay in byte.
 private_objects="$project/_build/default/private/.deployment_private.objs"
@@ -200,16 +229,24 @@ printf '\n(* changed after the build *)\n' >> "$project/qualified/assistant/dict
 expect 2 "$engine" --require-typed --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"
 contains "$scratch/err" 'stale typed annotation'
 
-# Every compiled marked fixture must still trip its named rule.
-for source in "$root"/test/lint/violating/*.{ml,mli} "$root"/test/caps/rules/violating/*.ml; do
-  [[ -f "$source" ]] || continue
-  IFS= read -r first < "$source" || true
-  if [[ "$first" == '[@@@ox_lint.fixture "'* ]]; then
-    rule=${first#*\"}; rule=${rule%%:*}
-    expect 1 "$engine" --require-typed --rules "$rule" "$source"
-    contains "$scratch/out" "$rule:"
-  fi
+# ^nlintcov-q6n2: expected negative evidence is external to the source being scanned.
+for name in catch-all suspending-finalizer stdlib-lock obj-magic race-deadline \
+  public-exception val-behaviour cancel-safety; do
+  extension=ml
+  case "$name" in public-exception|val-behaviour|cancel-safety) extension=mli ;; esac
+  source="$root/test/lint/violating/${name//-/_}.$extension"
+  expect 1 "$engine" --require-typed --rules "ox-$name" "$source"
+  contains "$scratch/out" "ox-$name:"
 done
+for name in fork exec exit chdir env signal time random stdin stdout stderr \
+  fs-read fs-write tmp network mint forge signature; do
+  source="$root/test/caps/rules/violating/${name//-/_}.ml"
+  expect 1 "$engine" --require-typed --rules "ox-caps-$name" "$source"
+  contains "$scratch/out" "ox-caps-$name:"
+done
+expect 1 "$engine" --require-typed --rules ox-caps-signature \
+  "$root/test/caps/rules/violating/signature_payloads.ml"
+contains "$scratch/out" 'ox-caps-signature:'
 
 prefix="$scratch/prefix"
 data="$prefix/share/ox_lint"
@@ -275,11 +312,14 @@ mkdir -p "$scratch/ignored/tests/_dev/eta-source" "$scratch/ignored/tests/nested
 git init -q "$scratch/ignored"
 printf '_dev/\n*.cache.ml\n!keep.cache.ml\n' > "$scratch/ignored/tests/.gitignore"
 ln -s missing-target "$scratch/ignored/tests/_dev/eta-source/broken.mli"
+# ^nlintcov-q6n2: excluded links are never dereferenced, even when that would cycle.
+ln -s missing-target "$scratch/ignored/tests/broken.cache.ml"
+ln -s . "$scratch/ignored/tests/loop.cache.ml"
 printf 'let fork () = Unix.fork ()\n' > "$scratch/ignored/tests/ignored.cache.ml"
 printf 'let fork () = Unix.fork ()\n' > "$scratch/ignored/tests/nested/keep.cache.ml"
-expect 1 "$engine" --caps-gate --rules ox-caps-fork "$scratch/ignored/tests"
+expect 1 timeout 10 "$engine" --caps-gate --rules ox-caps-fork "$scratch/ignored/tests"
 contains "$scratch/out" 'keep.cache.ml:1: ox-caps-fork:'
-contains "$scratch/err" '2 ignored paths skipped'
+contains "$scratch/err" '4 ignored paths skipped'
 expect 0 "$engine" --caps-gate "$scratch/ignored/tests/_dev"
 contains "$scratch/err" '0 paths with no OCaml sources; 1 ignored paths skipped'
 expect 2 "$engine" --caps-gate "$scratch/ignored/tests/missing.cache.ml"

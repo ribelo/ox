@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-caps-signature: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 type script_dir = (Ox_caps.Cap.fs_read * string) option
 

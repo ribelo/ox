@@ -1,6 +1,6 @@
 # Interface documentation triage
 
-^nlintd-a7oq ^nlintd-6abn. This is the explicit-val accounting ledger, not a suppression list. Missing claims below remain rule diagnostics. The [contract](<../../rules/interface-documentation.md>) checks sentence **shape, never truth**; tests and row 85 own behavioural evidence. No interface types or production implementations were changed for this audit.
+^nlintd-a7oq ^nlintd-6abn. This is the explicit-val accounting ledger, not a suppression list. Missing claims below remain rule diagnostics. The [contract](<../../rules/interface-documentation.md>) now checks each sentence **against the implementation** — suspension reachability, raises and cleanup on the cancellation path — and names undecided whatever evidence it cannot resolve; tests and row 85 still own behavioural evidence beyond those three claims. No interface types or production implementations were changed for this audit.
 
 ## Numerical accounting
 

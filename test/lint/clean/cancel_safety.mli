@@ -1,6 +1,6 @@
 (* ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn *)
 
-val safe : ('a, 'e) Ox.Channel.t -> 'a
+val safe : ('a, 'e) Ox.Channel.t -> unit
 (** Cancellation safety: safe to re-run. *)
 
 val data : 'a Eio.Flow.source -> unit

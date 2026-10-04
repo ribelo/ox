@@ -14,4 +14,4 @@ This is local typed control-flow analysis, not a whole-program lock proof. Branc
 
 [Violating fixture](<../../test/lint/violating/stdlib_lock.ml>) and [clean fixture](<../../test/lint/clean/stdlib_lock.ml>) pin unsafe suspensions and safe synchronous scopes.
 
-Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).
+Compiled negative fixtures belong to separate nested Dune projects, which the default gate does not descend into. The workspace still builds their typed evidence; explicit scans retain every finding, and exact-site regression tests fail if a fixture stops violating. Installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>) (^ncapslint-2606).

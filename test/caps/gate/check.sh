@@ -25,7 +25,8 @@ check() {
 }
 check violating 1 'ox-caps-fork'
 expected="ox-caps-chdir ox-caps-env ox-caps-exec ox-caps-exit ox-caps-forge ox-caps-fork ox-caps-fs-read ox-caps-fs-write ox-caps-mint ox-caps-network ox-caps-random ox-caps-signal ox-caps-stderr ox-caps-stdin ox-caps-stdout ox-caps-time ox-caps-tmp"
-found="$(grep -o 'ox-caps-[a-z-]*' "$work/violating.out" | sort -u | tr '\n' ' ' | sed 's/ $//')"
+# ^ncapslint-2606: absolute diagnostic paths can contain ox-caps-gate, not a rule ID.
+found="$(grep -o ': ox-caps-[a-z-]*:' "$work/violating.out" | sed 's/^: //; s/:$//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 if [[ "$found" != "$expected" ]]  || ! grep -q 'lib/raw.ml:22: ox-caps-fork' "$work/violating.out"; then
   echo "FAIL: exact pinned IDs, test coverage or ignored inline suppression"; status=1
 fi

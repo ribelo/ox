@@ -1,0 +1,3 @@
+(lang dune 3.21)
+; ^ncapslint-2606: compiled negative evidence belongs to its own Dune project.
+(name caps_negative_evidence)

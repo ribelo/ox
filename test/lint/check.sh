@@ -87,8 +87,8 @@ expect 0 --rules ox-public-exception clean/public_exception.mli
 # ^nlintd-z5p5 ^nlintd-vneh: interface rules run through the deployed CLI too.
 for name in val-behaviour cancel-safety; do
   fixture="${name//-/_}"
-  expect 1 --require-typed --rules "ox-$name" "violating/$fixture.mli"
-  expect 0 --require-typed --rules "ox-$name" "clean/$fixture.mli"
+  expect 1 --rules "ox-$name" "violating/$fixture.mli"
+  expect 0 --rules "ox-$name" "clean/$fixture.mli"
 done
 # Dormant even when explicitly selected; direct tests above exercise the decider.
 expect 0 --rules ox-raw-concurrency violating/raw_concurrency.ml

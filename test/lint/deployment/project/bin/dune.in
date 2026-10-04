@@ -2,4 +2,4 @@
 (executable
  (name main)
  (modules main)
- (modes exe))
+ (modes byte exe))

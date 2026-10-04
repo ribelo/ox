@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-public-exception: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 exception Error of string
 

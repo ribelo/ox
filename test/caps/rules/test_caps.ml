@@ -1,4 +1,4 @@
-(* ^ncapslint-w2tq ^ncapslint-8jcy ^ncapslint-snhg: each tier independently. *)
+(* ^ncapslint-w2tq ^ncapslint-8jcy ^ncapslint-snhg ^ncapslint-t4c6: each tier independently. *)
 open Ocaml_common
 
 let sites make source =
@@ -49,12 +49,23 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       let file = String.map (function '-' -> '_' | c -> c) name ^ ".ml" in
       let clean, violating = ("clean/" ^ file, "violating/" ^ file) in
       assert (source_sites ~caps rule clean = []);
-      if name <> "signature" then assert (source_sites ~caps rule violating <> []);
+      let expected =
+        match name with
+        | "stdin" | "stdout" | "stderr" -> [ 3; 6; 7 ]
+        | "mint" -> [ 3; 5; 7 ]
+        | "signature" -> [ 4; 6; 10 ]
+        | _ -> [ 3 ]
+      in
+      let source_expected =
+        match name with "stdin" | "stdout" | "stderr" -> [ 3; 6 ] | _ -> expected
+      in
+      if name <> "signature" && source_sites ~caps rule violating <> source_expected then
+        failwith ("source exact-site regression: " ^ name);
       assert (typed_sites ~caps rule clean = []);
       if name <> "mint" && name <> "forge" then
         assert (typed_sites ~caps rule "clean/signature.ml" = []);
-      if typed_sites ~caps rule violating = [] then
-        failwith ("typed false negative: " ^ name))
+      if typed_sites ~caps rule violating <> expected then
+        failwith ("typed exact-site regression: " ^ name))
     names;
   assert (
     typed_sites ~caps (rule ~caps "signature") "violating/signature.ml" = [ 4; 6; 10 ]);

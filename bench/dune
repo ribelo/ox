@@ -1,3 +1,3 @@
 (executable
  (name correlator_alloc)
- (libraries ox_rpc ox eio eio_main))
+ (libraries ox_rpc ox ox_caps ox_caps.door eio eio_main))

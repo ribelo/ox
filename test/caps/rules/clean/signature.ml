@@ -150,3 +150,24 @@ type shared18 = Graph_left18 of shared17 | Graph_right18 of shared17
 let via_shared_graph source =
   let selected = match source with Graph_left18 value | Graph_right18 value -> value in
   ignore selected
+
+(* ^ncapslint-t4c6: genuine argument authority permits standard descriptor access. *)
+let stdin ~(caps : Ox_caps.Cap.stdin) () =
+  ignore caps;
+  Unix.stdin
+
+let stdout ~(caps : Ox_caps.Cap.stdout) () =
+  ignore caps;
+  Unix.stdout
+
+let stderr ~(caps : Ox_caps.Cap.stderr) () =
+  ignore caps;
+  Unix.stderr
+
+let redirect ~(caps : Ox_caps.Cap.stdout) source =
+  ignore caps;
+  Unix.dup2 source Unix.stdout
+
+(* Already-held arbitrary descriptors do not demand filesystem authority. *)
+let duplicate descriptor = Unix.dup descriptor
+let redirect_held source destination = Unix.dup2 source destination

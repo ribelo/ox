@@ -1,3 +1,3 @@
-[@@@ox_lint.fixture "ox-caps-tmp: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 let violation () = Filename.temp_file "ox" "tmp"

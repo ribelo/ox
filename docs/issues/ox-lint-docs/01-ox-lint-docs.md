@@ -20,10 +20,14 @@ Write the contract, then check it: every `val` in `lib/**/*.mli` that can suspen
 2. As a kernel maintainer, I want `ox-val-behaviour` to require that sentence on every `val` whose type involves a switch, a clock, a flow, a channel, an actor, a mutex or `Ox.Io` once row 71 lands, and to leave pure values alone, so that the 813 undocumented `val`s are triaged by type rather than all at once. ^nlintd-z5p5
 3. As a service author, I want `ox-cancel-safety` to require, on every operation that can be cancelled midway, tokio's three-valued statement — safe to re-run, unsafe because data is lost, unsafe because progress is lost — since a caller retrying after a cancelled `receive` needs to know which. ^nlintd-vneh
 4. As a maintainer, I want module-level defaults to count: a `(** Cancellation and finalizers: ... *)` paragraph on the module satisfies the rule for the `val`s it covers, so that the contract does not force 1,301 repetitions. ^nlintd-4ja0
-5. As a maintainer, I want the rule to state plainly that it checks **presence and shape, never truth**: a `val` can state wrong behaviour and pass, which is why the simulation of row 85 and the tests remain the thing that decides behaviour. ^nlintd-6abn
+5. As a maintainer, I want the rule to distinguish sentence shape from implementation evidence, reporting a false claim or a named undecided claim rather than treating a well-shaped sentence as proof. The historical shape-only checker is superseded by stories 8–10. ^nlintd-6abn
 6. As a maintainer, I want the triage done in this row — every `val` the rule selects either documented or recorded in a list with a reason — and the count reported, so that the row ends with a number rather than a backlog. ^nlintd-a7oq
 7. As a maintainer, I want the contract page and the rule cited from `docs/caps.md`'s sibling pages and from `AGENTS.md`'s "How code is written", so that an agent writing a new `.mli` meets it before the check does. ^nlintd-7r1a
 
+8. As a kernel maintainer, I want no-suspension and no-cancellation-check claims compared with typed implementation reachability across the package, with opaque calls and invoked callback parameters named unless the sentence explicitly qualifies them, so that wrappers cannot claim what caller code does. ^nlintd-truth
+9. As a kernel maintainer, I want documented exceptions matched against reachable explicit raises and known Eio cancellation checks, and unmentioned reachable raises reported, so that a sentence cannot invent Invalid_argument for cancellation. ^nlintd-raises
+10. As a kernel maintainer, I want resource-cleanup claims compared with cancellation-path finalization, mutation fixtures that distinguish a real finalizer from success-only cleanup, and measured limits and whole-library runtime, so that safety-looking code is not enforcement. ^nlintd-cleanup
+
 ## Out of Scope
 
-Rewriting existing doc comments wholesale; proving any documented claim true (story 5).
+Rewriting implementation behaviour or choosing intended retry semantics. Unsupported evidence must remain explicitly undecided; path feasibility beyond literal conditions and arbitrary user cleanup correctness are not proofs supplied by this checker.

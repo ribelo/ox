@@ -1,0 +1,8 @@
+(library
+ (name generated))
+
+(rule
+ (target generated.ml)
+ (action
+  (with-stdout-to %{target}
+   (echo "let result () : (unit, string) result = Ok ()\nlet run () = ignore (result ())"))))

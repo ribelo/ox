@@ -15,4 +15,4 @@ Only literal Dune library/executable/test stanzas, modules selectors and include
 [Violating fixture](<../../test/caps/rules/violating/mint.ml>) and
 [clean fixture](<../../test/caps/rules/clean/mint.ml>) form the rule/fixture/page triangle, checked by --self-check.
 
-Compiled negative fixtures use a file-level `ox_lint.fixture` marker naming their rule: only the default scan skips them; explicit scans retain every finding and reject a dead marker when its rule is selected. Repository tests verify these findings with typed evidence; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).
+Compiled negative fixtures belong to a nested Dune project: the default scan excludes that separate workspace structurally. Explicit sources and annotations are still inspected. Repository tests compile and verify their findings; installed `--self-check` audits the source-only bundle structurally. See [fixture scope](<../caps.md#fixture-scope>).

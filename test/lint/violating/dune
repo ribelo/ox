@@ -11,9 +11,8 @@
   race_deadline
   public_exception
   val_behaviour
-  cancel_safety)
- (modules_without_implementation
-  public_exception
-  val_behaviour
-  cancel_safety)
+  cancel_safety
+  docs_dependency
+  docs_truth)
+ (modules_without_implementation public_exception)
  (libraries eio ox ox_caps unix threads))

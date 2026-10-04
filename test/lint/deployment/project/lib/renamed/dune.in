@@ -1,0 +1,8 @@
+(library
+ (name renamed)
+ (modules copied))
+
+(rule
+ (target copied.ml)
+ (deps seed.ml)
+ (action (copy %{dep:seed.ml} %{target})))

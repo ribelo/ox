@@ -1,0 +1,3 @@
+(library
+ (name preprocessed)
+ (preprocess (action (run cat %{input-file}))))

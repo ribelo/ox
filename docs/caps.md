@@ -2,7 +2,7 @@
 
 Rows 48, 54 and 90 (^ncaps-xzx5 ^ncaps-uiq6 ^ncapslint-nf4t). A function touching ambient process resources declares its authority in argument types. No repository file is exempted.
 
-Resource-bearing interface vals also follow the [documentation contract](<rules/interface-documentation.md>); its rules check shape, never truth (^nlintd-7r1a).
+Resource-bearing interface vals also follow the [documentation contract](<rules/interface-documentation.md>); its rules check the sentence against the implementation, and name undecided whatever evidence they cannot resolve (^nlintd-7r1a).
 
 ## Authority
 
@@ -36,13 +36,15 @@ The shipped allow-list is empty. Both registries and the checkout launcher's abs
 
 ## Fixture scope
 
-Explicit source or annotation arguments override Git ignores, fixture skipping and data-only classification; directory discovery (including the data-dependency inventory) honors Git ignores, and missing named paths remain errors even if ignored.
+Explicit source or annotation arguments override Git ignores, project boundaries and data-only classification; directory discovery (including the data-dependency inventory) honors Git ignores, and missing named paths remain errors even if ignored.
 
-The default gate inventories compilation targets, including tests. A source consumed by a declared data dependency but compiled by no target is counted as data-only and is out of default scope; an orphan remains reported as not built. Compilation takes precedence over data dependencies. Literal file, `source_tree` and `glob_files` dependencies (including named dependencies and included Dune stanzas) are recognized; variable dependencies are not treated as proof of data-only scope.
+The default gate discovers the entire Dune workspace, with no hardcoded source-root list, then inventories each source against declared compilation targets (including tests and benchmarks). A source consumed by a declared data dependency but compiled by no target is counted as data-only and is out of default scope; an orphan remains reported as not built. Compilation takes precedence over data dependencies. Literal file, `source_tree` and `glob_files` dependencies (including named dependencies and included Dune stanzas) are recognized; variable dependencies are not treated as proof of data-only scope.
 
-Compiled negative fixtures declare a file-level attribute such as `[@@@ox_lint.fixture "ox-caps-fork: raw fork without authority"]`. This removes a file only from the default scan, whose summary reports the fixture count; explicit file or directory paths still report its findings. When the declared rule is selected, an explicit scan that produces none of its findings fails as a dead fixture. Markers are not an allowance and carry no authority.
+Compiled negative evidence belongs to nested directories with their own `dune-project` (^ncapslint-2606). These are separate Dune projects in the same workspace: Dune still builds their libraries and fresh `.cmt`/`.cmti` artifacts, but default gate discovery stops at each nested project boundary. No source attribute or per-file exemption exists. Explicit source, annotation and directory arguments cross project boundaries. Exact-site source/typed regression tests fail if a fixture stops violating; installed self-check audits the source-only bundle structurally.
 
-Repository `dune test` explicitly scans every marked compiled fixture and verifies its named finding using fresh typed evidence. Installed `--self-check` audits the rule/replacement/fixture/page bundle structurally because installations ship source fixtures without compiler annotations. Empty interface companions stay unmarked because they contain no violation; the raw-concurrency fixture stays unmarked because that entire rule is deliberately dormant until rows 61, 64 and 65 land.
+Repository `dune test` explicitly scans every declared compiled negative fixture and verifies its exact finding sites using fresh typed evidence. Expectations live in the test harness, not in source attributes. Installed `--self-check` audits the rule/replacement/fixture/page bundle structurally because installations ship source fixtures without compiler annotations. The raw-concurrency rule stays deliberately dormant until rows 61, 64 and 65 land.
+
+`--inventory` emits one tab-separated `PATH`, `DECISION`, `REASON` record per inventoried path on stdout. Decisions are `decided`, `undecided`, or `excluded`; structural exclusions name `data-only`, `not-built`, `ignored`, `nested-project`, `directory-cycle` or `no-ocaml` (directory records ending `/` cover their subtree). Findings and diagnostics stay on stderr. Compiled generated inputs join directory scans and name their producing Dune rule or stanza; unresolved provenance is undecided, never an exclusion.
 
 ## Rules
 

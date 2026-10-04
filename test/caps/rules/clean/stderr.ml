@@ -3,3 +3,12 @@ let exit x = x
 let fork () = 0
 let stdout = "local"
 let value () = (exit (fork ()), stdout)
+
+(* ^ncapslint-t4c6: lookalike constants are not process-standard descriptors. *)
+module Unix = struct
+  let stderr = 0
+  let dup2 _ destination = destination
+end
+
+let descriptor () = Unix.stderr
+let redirect source = Unix.dup2 source Unix.stderr

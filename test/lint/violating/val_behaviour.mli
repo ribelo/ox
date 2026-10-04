@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-val-behaviour: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 val missing : Eio.Switch.t -> unit
 

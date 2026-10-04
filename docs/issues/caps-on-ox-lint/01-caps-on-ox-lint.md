@@ -29,7 +29,15 @@ Reimplement the 17 `ox-caps-*` rules as `ox-lint` rules, prove them equivalent-o
 7. As a maintainer, I want Semgrep removed from the dev shells of ox and of the consumers, and `caps.yaml` deleted, once story 2 passes — so that the gate has no external dependency and one rule set in one language. ^ncapslint-ebh6
 8. As a maintainer, I want `docs/caps.md`'s rule table rewritten against the new ids with the same rule/fixture/page triangle `ox-lint --self-check` enforces, and the allow-list checked against its documentation by the tool rather than by eye. ^ncapslint-snhg
 
+9. As a maintainer, I want the default scan to discover the whole Dune workspace and classify every source against declared build membership, with deliberately violating evidence in compiled nested Dune projects excluded at their project boundary and explicit paths still deciding every rule, so that no source can exempt itself, new source directories cannot escape discovery, and a fixture that stops violating still fails the exact-site regression tests. ^ncapslint-2606
+
+10. As a maintainer, I want raw `Unix.stdin`, `Unix.stdout` and `Unix.stderr` descriptor acquisition checked by their stream rules, including `dup2` destinations, so that standard-descriptor access cannot bypass stream authority. ^ncapslint-t4c6
+
 ## Implementation Decisions
+
+^ncapslint-t4c6: the three Unix descriptor constants were absent from the operation roots, a measured source/typed false negative. They now join the existing stream roots. `Unix.dup` and `Unix.dup2` themselves remain unclassified: arbitrary descriptors can be sockets or already-authorized handles, and naming them `fs_write` would be false. Acquiring a process-standard destination is still checked by its stream rule. Compiled positive/negative fixtures cover each constant, `dup2` destinations, a shadowed local Unix module, and explicit argument authority.
+
+^ncapslint-2606: a nested `dune-project` declares a separate Dune **project**, not a separate workspace. The enclosing workspace still builds the negative libraries, and their tests consume fresh `.cmt`/`.cmti` files rather than linking those libraries. Default gate discovery begins at the workspace root (not a fixed list of source directories), exempts that root from the nested-project stop, and does not cross nested project roots; explicit file, annotation and directory arguments do. Git-ignored paths, data-only files, orphans and directory cycles are named inventory exclusions, and each directory cycle is counted in the summary. The negative lint and capability fixture directories retain their existing paths and exact finding lines; their former source opt-out is deleted. The summary has no fixture counter. Data-only `compile_fail` trees keep their existing classification.
 
 Depends on row 88. Both backends ran while equivalence evidence was gathered. After story 2’s recorded equivalence passed, the human authorized working-tree removal with this evidence in the same change; the human alone commits. Consumer development-shell edits remain separately authorization-gated.
 

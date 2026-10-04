@@ -1,6 +1,6 @@
-[@@@ox_lint.fixture "ox-cancel-safety: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
-val receive : ('a, 'e) Ox.Channel.t -> 'a
+val receive : ('a, 'e) Ox.Channel.t -> unit
 (** Suspension: may suspend. Cancellation: propagates. Finalizers: none. Locking: none. *)
 
 val unknown : Eio.Switch.t -> unit

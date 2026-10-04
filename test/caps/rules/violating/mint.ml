@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-caps-mint: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 
 let violation () = Ox_app.with_powerbox (fun _ -> ())
 

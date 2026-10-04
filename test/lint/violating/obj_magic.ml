@@ -1,4 +1,4 @@
-[@@@ox_lint.fixture "ox-obj-magic: deliberate negative fixture"]
+(* ^ncapslint-2606: compiled negative evidence in a separate Dune project. *)
 [@@@warning "-32-34-37"]
 
 let cast x = Obj.magic x

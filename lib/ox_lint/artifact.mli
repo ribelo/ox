@@ -16,29 +16,46 @@ val ignored :
   string list
 (** Return entries ignored by Git in [directory], without following their symlinks.
     Missing Git/repository information excludes nothing. Explicit source or annotation
-    arguments override Git ignores, fixture skipping and data-only classification;
-    directory discovery (including the data-dependency inventory) honors Git ignores, and
-    missing named paths remain errors even if ignored. *)
+    arguments override Git ignores, nested-project boundaries and data-only
+    classification; directory discovery (including the data-dependency inventory) honors
+    Git ignores, and missing named paths remain errors even if ignored. *)
+
+val workspace : caps:< Cap.fs_read ; .. > -> string -> string option
+(** Workspace owning evidence for a source, directory or annotation. An annotation below
+    [_build/default] is owned by that build tree, even below a nested project. Sources
+    select the nearest project with their build copy, falling back to the nearest project
+    when nothing was built. Nested projects compiled by an outer invocation therefore
+    resolve evidence from the outer build root. This differs from the nearest
+    [dune-project] used as a default-scan boundary. *)
 
 val read : caps:< Cap.fs_read ; .. > -> string -> t
-
-val fixture : caps:< Cap.fs_read ; .. > -> string -> string option
-(** Parse a file-level fixture declaration, returning its named rule. Malformed or
-    duplicate declarations fail; comments and nested attributes do not mark a file. *)
 
 type target = Library | Executable
 type membership = Built of target | Data_only | Not_built | Unknown
 
 val membership : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> membership
-(** Query Dune declarations, cached per project. [describe workspace] answers for
+(** Query Dune declarations, cached per build workspace. [describe workspace] answers for
     libraries/executables; [describe rules --recursive @check] supplies compilation
     sources omitted by workspace (notably [test]/[tests] on Dune 3.22). Dune resolves
     module sets and includes; existing annotations are never membership evidence. Absent
     compilation, a declared literal file, [source_tree] or [glob_files] dependency yields
     [Data_only]; [Not_built] means neither compiled nor consumed as data. Compilation
     always wins. Alias data declarations are read from Dune stanzas because
-    [describe rules] omits alias actions. A failed query or unrecognised format returns
-    [Unknown], never an exclusion. *)
+    [describe rules] omits alias actions. Data traversal stops at nested Dune projects and
+    Git-ignored directories. A failed query or unrecognised format returns [Unknown],
+    never an exclusion. *)
+
+type generated = { path : string; producer : string option }
+
+val generated_sources :
+  caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > ->
+  root:string ->
+  (generated list, string) result
+(** Declared compiled inputs without a checked-in counterpart. PP duplicates, Dune
+    wrappers and nested projects are not returned. [producer] names the generating
+    rule/copy stanza or executable/test empty-interface stanza and its source Dune file;
+    [None] must be reported undecided. [Error] means the compilation inventory was
+    unavailable, never an exclusion. *)
 
 val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
 (** Match the recorded source identity in local and enclosing build object directories,

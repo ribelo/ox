@@ -23,7 +23,9 @@
  (alias runtest)
  (deps
   clean/.concurrency_clean.objs/byte/concurrency_clean__Val_behaviour.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Val_behaviour.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_safety.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_safety.cmt
   violating/.concurrency_violating.objs/byte/concurrency_violating__Val_behaviour.cmti
   violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_safety.cmti)
  (action
@@ -295,3 +297,24 @@
   (progn
    (run ./test_engine.exe)
    (run bash check.sh %{exe:../../lib/ox_lint/main.exe}))))
+
+; ^nlintd-truth ^nlintd-raises ^nlintd-cleanup: implementation-backed mutations.
+
+(executable
+ (name test_documentation_truth)
+ (modules test_documentation_truth)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree clean)
+  (source_tree violating)
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_dependency.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_dependency.cmt)
+ (action
+  (run ./test_documentation_truth.exe)))

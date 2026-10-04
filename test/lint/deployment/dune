@@ -1,5 +1,8 @@
 ; ^nlint-hxar ^nlint-2nwm: standalone consumers, with no nested Dune lock on ox.
 
+; ^nlintcov-8g4p: coverage.py runs outside Dune, after the live workspace build.
+; Its inventory subprocess must not contend for the enclosing builder's workspace.
+
 (rule
  (alias runtest)
  (deps

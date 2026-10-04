@@ -47,6 +47,48 @@ let rec project ~(caps : < Cap.fs_read ; .. >) dir =
     let parent = Filename.dirname dir in
     if parent = dir then None else project ~caps parent
 
+(* ^nlintcov-q6n2: nested projects are scan boundaries, not necessarily build
+   workspaces. An outer Dune invocation compiles them into its own _build tree. *)
+let workspace ~(caps : < Cap.fs_read ; .. >) input =
+  let input = absolute ~caps input in
+  let directory =
+    if Sys.file_exists input && Sys.is_directory input then input
+    else Filename.dirname input
+  in
+  let rec build_owner directory =
+    let parent = Filename.dirname directory in
+    if Filename.basename directory = "default" && Filename.basename parent = "_build" then
+      Some (Filename.dirname parent)
+    else if parent = directory then None
+    else build_owner parent
+  in
+  match build_owner directory with
+  | Some root -> Some root
+  | None -> (
+      let rec projects directory =
+        let here =
+          if Sys.file_exists (Filename.concat directory "dune-project") then [ directory ]
+          else []
+        in
+        let parent = Filename.dirname directory in
+        if parent = directory then here else here @ projects parent
+      in
+      let roots = projects directory in
+      match
+        List.find_opt
+          (fun root ->
+            let relative =
+              String.sub input
+                (String.length root + 1)
+                (String.length input - String.length root - 1)
+            in
+            Sys.file_exists
+              (Filename.concat (Filename.concat root "_build/default") relative))
+          (List.filter (fun root -> String.length input > String.length root) roots)
+      with
+      | Some _ as root -> root
+      | None -> List.find_opt (fun _ -> true) roots)
+
 let read ~(caps : < Cap.fs_read ; .. >) path =
   ignore caps#fs_read;
   let info = Cmt_format.read_cmt path in
@@ -55,7 +97,7 @@ let read ~(caps : < Cap.fs_read ; .. >) path =
       info.cmt_builddir = "/workspace_root"
       || String.starts_with ~prefix:"/workspace_root/" info.cmt_builddir
     then
-      match project ~caps (Filename.dirname (absolute ~caps path)) with
+      match workspace ~caps path with
       | Some root ->
           let base = Filename.concat root "_build/default" in
           if info.cmt_builddir = "/workspace_root" then base
@@ -102,66 +144,6 @@ let candidates ~(caps : < Cap.fs_read ; .. >) dir =
       in
       Hashtbl.add cache dir xs;
       xs
-
-let fixture ~caps path =
-  let open Parsetree in
-  Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
-      Lexer.handle_docstrings := true;
-      Docstrings.init ();
-      Lexer.init ();
-      let lexbuf = Lexing.from_channel channel in
-      Location.init lexbuf path;
-      let attributes =
-        if Filename.check_suffix path ".mli" then
-          (Parse.interface lexbuf).psg_items
-          |> List.filter_map (fun item ->
-              match item.psig_desc with
-              | Psig_attribute attribute -> Some attribute
-              | _ -> None)
-        else
-          Parse.implementation lexbuf
-          |> List.filter_map (fun item ->
-              match item.pstr_desc with
-              | Pstr_attribute attribute -> Some attribute
-              | _ -> None)
-      in
-      let markers =
-        List.filter (fun a -> a.attr_name.txt = "ox_lint.fixture") attributes
-      in
-      match markers with
-      | [] -> None
-      | [
-       {
-         attr_payload =
-           PStr
-             [
-               {
-                 pstr_desc =
-                   Pstr_eval
-                     ( {
-                         pexp_desc =
-                           Pexp_constant { pconst_desc = Pconst_string (text, _, _); _ };
-                         _;
-                       },
-                       _ );
-                 _;
-               };
-             ];
-         _;
-       };
-      ] -> (
-          match String.index_opt text ':' with
-          | Some separator ->
-              let rule = String.trim (String.sub text 0 separator) in
-              let reason =
-                String.trim
-                  (String.sub text (separator + 1) (String.length text - separator - 1))
-              in
-              if rule = "" || reason = "" then
-                failwith "fixture marker requires rule: reason";
-              Some rule
-          | None -> failwith "fixture marker requires rule: reason")
-      | _ -> failwith "expected one file-level ox_lint.fixture string")
 
 let relative ~root path =
   if path = root then ""
@@ -318,7 +300,7 @@ let rule_modules ~caps root resolve =
                       | List [ Atom "File"; List [ Atom "In_build_dir"; Atom path ] ]
                         when Filename.check_suffix path ".ml"
                              || Filename.check_suffix path ".mli" ->
-                          Some (resolve (original path), kind)
+                          Some (resolve path, kind)
                       | _ -> None)
                     deps
               | _ -> failwith "Dune rule inventory has invalid dependencies"))
@@ -326,6 +308,8 @@ let rule_modules ~caps root resolve =
       | Some (List _) -> failwith "Dune rule inventory has an invalid context")
 
 let inventory_cache = Hashtbl.create 8
+let workspace_inputs = Hashtbl.create 8
+let rule_inputs = Hashtbl.create 8
 
 let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
   match Hashtbl.find_opt inventory_cache root with
@@ -348,7 +332,7 @@ let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
                     List.filter_map
                       (fun key ->
                         match field key fields with
-                        | Some (List [ Atom path ]) -> Some (resolve (original path), kind)
+                        | Some (List [ Atom path ]) -> Some (resolve path, kind)
                         | Some (List []) -> None
                         | _ -> failwith "Dune inventory has an invalid source field")
                       [ "impl"; "intf" ])
@@ -363,13 +347,16 @@ let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
           | _ -> failwith "Dune inventory is not the default build context");
           match description with
           | List entries ->
-              Some
-                (List.concat_map
-                   (function
-                     | List [ Atom "library"; fields ] -> modules Library fields
-                     | List [ Atom "executables"; fields ] -> modules Executable fields
-                     | _ -> [])
-                   entries)
+              let inputs =
+                List.concat_map
+                  (function
+                    | List [ Atom "library"; fields ] -> modules Library fields
+                    | List [ Atom "executables"; fields ] -> modules Executable fields
+                    | _ -> [])
+                  entries
+              in
+              Hashtbl.replace workspace_inputs root (List.map fst inputs);
+              Some (List.map (fun (path, kind) -> (original path, kind)) inputs)
           | Atom _ -> None
         with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
       in
@@ -388,7 +375,9 @@ let rule_inventory ~caps root =
             canonical ~caps
               (if Filename.is_relative path then Filename.concat root path else path)
           in
-          Some (rule_modules ~caps root resolve)
+          let inputs = rule_modules ~caps root resolve in
+          Hashtbl.replace rule_inputs root (List.map fst inputs);
+          Some (List.map (fun (path, kind) -> (original path, kind)) inputs)
         with
         | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
         | Unix.Unix_error _
@@ -425,7 +414,10 @@ let data_dependencies ~caps root =
         |> List.concat_map (fun name ->
             let path = Filename.concat dir name in
             if name = "_build" || name = ".git" || List.mem name ignored then []
-            else if Sys.is_directory path then directories path
+            else if Sys.is_directory path then
+              (* ^nlintcov-q6n2: another project cannot classify this project's data. *)
+              if Sys.file_exists (Filename.concat path "dune-project") then []
+              else directories path
             else if name <> "dune" then []
             else
               let resolve p = canonical ~caps (Filename.concat dir p) in
@@ -464,9 +456,15 @@ let data_dependencies ~caps root =
       Hashtbl.add data_cache root dependencies;
       dependencies
 
+(* ^nlintcov-q6n2: source symlinks retain their declared module name. Canonicalising
+   the final component would classify linked.ml by the unrelated target body.txt. *)
+let declared_source ~caps input =
+  let input = original (absolute ~caps input) in
+  Filename.concat (canonical ~caps (Filename.dirname input)) (Filename.basename input)
+
 let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
-  let input = canonical ~caps input in
-  match project ~caps (Filename.dirname input) with
+  let input = declared_source ~caps input in
+  match workspace ~caps input with
   | None -> Unknown
   | Some root -> (
       match inventory ~caps root with
@@ -500,6 +498,123 @@ let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
                       then Data_only
                       else Not_built))))
 
+type generated = { path : string; producer : string option }
+
+(* ^nlintcov-q6n2: compilation declarations, not an annotation glob, are the second
+   discovery channel. Missing outputs still reach main and fail typed evidence. *)
+let generated_sources ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~root =
+  let root = canonical ~caps root in
+  let build = Filename.concat root "_build/default" in
+  let read_stanzas path =
+    Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
+        parse_rules (In_channel.input_all channel))
+  in
+  let producer source =
+    let target = Filename.basename source in
+    let rec stanzas seen file =
+      if List.mem file seen then None
+      else
+        read_stanzas file
+        |> List.find_map (function
+          | List [ Atom "include"; Atom included ] ->
+              stanzas (file :: seen) (Filename.concat (Filename.dirname file) included)
+          | List (Atom "rule" :: fields) ->
+              let targets =
+                List.concat_map
+                  (function
+                    | List (Atom ("target" | "targets") :: targets) ->
+                        List.filter_map
+                          (function Atom name -> Some name | _ -> None)
+                          targets
+                    | _ -> [])
+                  fields
+              in
+              if List.mem target targets then
+                Some ("rule (target " ^ target ^ ") in " ^ relative ~root file)
+              else None
+          | List (Atom ("copy_files" | "copy_files#") :: values) ->
+              if
+                List.exists
+                  (function
+                    | Atom pattern when not (String.contains pattern '%') ->
+                        Caps_policy.excluded [ Filename.basename pattern ] target
+                    | _ -> false)
+                  values
+              then Some ("copy_files stanza in " ^ relative ~root file ^ " for " ^ target)
+              else None
+          | _ -> None)
+    in
+    let inferred_interface file =
+      if not (Filename.check_suffix source ".mli") then None
+      else
+        let name = Filename.remove_extension target in
+        read_stanzas file
+        |> List.find_map (function
+          | List
+              (Atom (("test" | "tests" | "executable" | "executables") as kind) :: fields)
+            ->
+              let names =
+                List.concat_map
+                  (function
+                    | List (Atom ("name" | "names") :: names) ->
+                        List.filter_map
+                          (function Atom name -> Some name | _ -> None)
+                          names
+                    | _ -> [])
+                  fields
+              in
+              if List.mem name names then
+                Some
+                  ("Dune empty interface from " ^ kind ^ " (name " ^ name ^ ") in "
+                 ^ relative ~root file)
+              else None
+          | _ -> None)
+    in
+    let rec locate directory =
+      let file = Filename.concat directory "dune" in
+      if Sys.file_exists file then
+        match stanzas [] file with
+        | Some _ as found -> found
+        | None -> inferred_interface file
+      else if directory = root then None
+      else
+        let parent = Filename.dirname directory in
+        if parent = directory then None else locate parent
+    in
+    try locate (Filename.dirname source)
+    with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
+  in
+  match (inventory ~caps root, rule_inventory ~caps root) with
+  | _, None -> Error "Dune generated-source inventory unavailable: describe rules @check"
+  | None, _ -> Error "Dune generated-source inventory unavailable: describe workspace"
+  | Some _, Some _ ->
+      let inputs =
+        Hashtbl.find workspace_inputs root @ Hashtbl.find rule_inputs root
+        |> List.sort_uniq String.compare
+      in
+      (* Keep the actual PP input if no unpreprocessed input was declared. Dune
+         emits some implicit executable interfaces directly as .pp.mli. *)
+      let inputs =
+        List.filter
+          (fun path -> path = original path || not (List.mem (original path) inputs))
+          inputs
+      in
+      Ok
+        (inputs
+        |> List.filter_map (fun path ->
+            if
+              (not (String.starts_with ~prefix:(build ^ "/") path))
+              || not
+                   (Filename.check_suffix path ".ml" || Filename.check_suffix path ".mli")
+            then None
+            else
+              let source = Filename.concat root (relative ~root:build (original path)) in
+              if
+                Sys.file_exists source
+                || project ~caps (Filename.dirname source) <> Some root
+              then None
+              else Some { path; producer = producer source }))
+
 let rec object_directories ~(caps : < Cap.fs_read ; .. >) ~root dir =
   let here =
     if not (Sys.file_exists dir) then []
@@ -520,7 +635,7 @@ let rec object_directories ~(caps : < Cap.fs_read ; .. >) ~root dir =
     if parent = dir then here else here @ object_directories ~caps ~root parent
 
 let find ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
-  let input = canonical ~caps input in
+  let input = declared_source ~caps input in
   let suffix = if Filename.check_suffix input ".mli" then ".cmti" else ".cmt" in
   let sibling = Filename.remove_extension input ^ suffix in
   let same_source expected t =
@@ -548,7 +663,7 @@ let find ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
     | Some t -> t
     | None -> (
         let dirs, expected =
-          match project ~caps (Filename.dirname input) with
+          match workspace ~caps input with
           | Some root ->
               let build = Filename.concat root "_build/default" in
               let expected =

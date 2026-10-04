@@ -2,7 +2,7 @@
 
 Row 89: ^nlintd-von6 ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0 ^nlintd-6abn ^nlintd-a7oq.
 
-Document behaviour from the implementation, not from the handle's name. If a callback, upstream dependency or cancellation race has not been audited, leave the missing claim in the [per-val reason ledger](../issues/ox-lint-docs/triage.md). The linter checks **presence and sentence shape, never truth**. Concurrency tests and row 85 establish behaviour; a clean lint result is not that evidence.
+Document behaviour from the implementation, not from the handle's name. If a callback, upstream dependency or cancellation race has not been audited, leave the missing claim in the [per-val reason ledger](../issues/ox-lint-docs/triage.md). The linter checks **sentence shape and finite typed implementation evidence**. Definite contradictions fail; unavailable or opaque evidence is a named undecided, fatal under `--require-typed`. Concurrency tests are still needed for behaviour outside that evidence model. ^nlintd-truth ^nlintd-raises ^nlintd-cleanup
 
 ## Required sentences
 
@@ -27,7 +27,7 @@ Explain what is retained, lost or already committed; `cancellable` and `unsafe` 
 
 ## Existing good contracts
 
-These existing Ox sentences are semantic exemplars, not phrases the linter proves:
+These existing Ox sentences are semantic exemplars. The linter checks reachable waits, checks, explicit raises and recognised cleanup obligations, not the whole sentence or protocol law:
 
 - [Channel.send](../../lib/ox/channel.mli): “[send t v] appends [v], suspending while the buffer is full.” Name that wait rather than simply saying “asynchronous”.
 - [Scope.run](../../lib/ox/scope.mli): “Cancellation is classified as [Interrupt].” Name the classification when a boundary returns cancellation rather than propagating it.
@@ -56,7 +56,17 @@ A module paragraph begins `Cancellation and finalizers:`:
 
 Free signature paragraphs apply to the whole signature regardless of textual position. Leading paragraphs attached by the parser to its first declaration are also recognised. Defaults attached to module/module-type declarations apply to their signatures. Children inherit defaults; siblings do not inherit a child's changes. Per-val fields override corresponding defaults. Overriding suspension or cancellation discards inherited cancellation safety unless that val supplies it again. Put a blank line between an attached doc comment and the next declaration to avoid OCaml attaching it twice.
 
-Labels and shape prefixes are case-insensitive; whitespace is normalised. Each label must occur once in a local/default paragraph. Duplicates, empty fields, vague prefixes and missing sentence-ending periods are invalid. Dots within `Eio.Switch.t` do not terminate a sentence. The header itself is not a `Finalizers:` field. Shape acceptance says nothing about whether the sentences are true.
+Labels and shape prefixes are case-insensitive; whitespace is normalised. Each label must occur once in a local/default paragraph. Duplicates, empty fields, vague prefixes and missing sentence-ending periods are invalid. Dots within `Eio.Switch.t` do not terminate a sentence. The header itself is not a `Finalizers:` field. Shape acceptance alone says nothing about truth; the implementation-evidence pass is separate.
+
+## Implementation evidence
+
+The paired implementation and sibling `.cmt` files supply a finite typed call graph. Physical-expression memoization prevents recursive AST re-expansion; a reverse-dependency work queue propagates monotonically growing effect sets. Function bodies are analysed when invoked, not merely when a callback is created. Compiler-normalised paths identify Eio semantic leaves, primitive contracts, exceptions and cleanup operations; a local lookalike does not become a scheduling point or destructor by its name. Alias-only generated Dune wrappers have no executable bodies; their compiler paths resolve to the real compilation units.
+
+The verifier checks no-suspension/no-cancellation-check claims against reachable Eio leaves, explicit raises against exception prose and `@raise` tags, and recognised typed channel acquisitions against ordered same-resource cleanup witnesses; Eio path/network acquisitions with their mandatory switch use the upstream registration contract. Unguarded constructor handlers remove caught exceptions; constrained payloads and guards do not establish a general catch. Constant boolean branches and `assert true` are pruned. Cancellation protection masks cancellation delivery, not explicit exception raises; no-added-check claims still see shielded checks.
+
+An opaque dependency, callback parameter/argument, partial application or returned closure, dynamic re-raise, arbitrary stored promise exception or unsupported functor path is named undecided unless the relevant effect sentence explicitly states that limit. “Locking is delegated” does not qualify “never suspends”. A qualification must name the dependency or caller callback governing the answer. Unavailable bodies, stale fingerprints and non-alias generated wrappers cannot be excused by prose. Cleanup through unsupported helpers remains undecided; qualifying a helper does not invent a resource-release witness.
+
+This is not arbitrary path feasibility, termination, lock-order, idempotence or protocol-state proof. Whole-package effect propagation can cost more than linear time in highly connected graphs because each discovered effect travels along reachable edges; it never unfolds recursively to a nesting-depth cap. Runtime must be measured beside the recorded 2.4 s `lib/` baseline, not inferred from small fixtures.
 
 ## Running the rules
 
