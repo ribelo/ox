@@ -50,8 +50,12 @@ let () =
       match ex with
       | Failure s | Invalid_argument s | Sys_error s -> s
       | _ -> (
-          try Format.asprintf "%a" Location.report_exception ex
-          with _ -> Printexc.to_string ex)
+          (* ^nlintc-du4v: ask whether the compiler recognises this exception,
+             rather than catch and suppress an exception from its printer. *)
+          match Location.error_of_exn ex with
+          | Some (`Ok error) -> Format.asprintf "%a" Location.print_report error
+          | Some `Already_displayed -> "error already displayed"
+          | None -> Printexc.to_string ex)
     in
     let message = String.map (function '\n' | '\r' -> ' ' | c -> c) message in
     Printf.eprintf "%s:1: ox-lint: %s\n" path message
@@ -97,6 +101,11 @@ let () =
            let source =
              match artifact with Some t -> Artifact.source t | None -> input
            in
+           (* ^nlintc-j03j ^nlintc-7be1: apply policy to the original source, not its annotation. *)
+           let root =
+             Option.value (data_root (Filename.dirname source)) ~default:(Sys.getcwd ())
+           in
+           let rules = List.filter (Rules.applies ~root ~source) rules in
            let emit rule loc =
              incr findings;
              Printf.printf "%s:%d: %s: %s\n" source loc.Location.loc_start.Lexing.pos_lnum

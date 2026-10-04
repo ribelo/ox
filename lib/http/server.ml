@@ -550,7 +550,10 @@ let serve_flow ~clock:_ ~config ~stopping ~stop ~busy flow handler =
       try
         write_response flow config ~close:true ~head:false
           (Response.text ~status (message ^ "\n"))
-      with _ -> ())
+      with
+      (* ^nlintc-du4v: error responses are best effort, but interruption propagates. *)
+      | Eio.Cancel.Cancelled _ as exn -> raise exn
+      | _ -> ())
   | End_of_file -> ()
 
 let run_h1_on_socket ~sw:_ ~clock ?stop ?(drain_timeout = Ox.Duration.seconds 30)
@@ -568,7 +571,12 @@ let run_h1_on_socket ~sw:_ ~clock ?stop ?(drain_timeout = Ox.Duration.seconds 30
   let remove flow = flows := List.filter (fun (x, _) -> x != flow) !flows in
   let close_idle () =
     List.iter
-      (fun (flow, busy) -> if not !busy then try Eio.Flow.close flow with _ -> ())
+      (fun (flow, busy) ->
+        if not !busy then
+          try Eio.Flow.close flow with
+          (* ^nlintc-du4v: idle-close failures are best effort, not cancellation. *)
+          | Eio.Cancel.Cancelled _ as exn -> raise exn
+          | _ -> ())
       !flows
   in
   let run inner_sw =

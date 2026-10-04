@@ -57,6 +57,8 @@ let validation_failure ~validation_exit ~defect_exit ~validate ~pp_err ~diagnose
       Some
         (diagnose ~kind:`Validation (Config.render_validation_errors errors ^ "\n");
          validation_exit)
+  (* ^nlintc-du4v: validator cancellation is not a configuration defect. *)
+  | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
   | exception exn ->
       let cause = Cause.Die (exn, Printexc.get_raw_backtrace ()) in
       Some

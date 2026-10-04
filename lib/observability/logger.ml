@@ -300,9 +300,11 @@ let span t ?(level = Info) ?(fields = []) ?pp_err msg f =
               Error,
               [ ("error", String (summarize (Ox.Cause.Die (exn, backtrace)))) ] )
       in
-      (* Best effort: a reporter failure must not replace the exception that is
-         already propagating out of the span. *)
-      (try finish outcome exit_level extra with _ -> ());
+      (* ^nlintc-du4v: a reporter defect must not replace the exception already
+         propagating out of the span, but cancellation must propagate. *)
+      (try finish outcome exit_level extra with
+      | Eio.Cancel.Cancelled _ as cancelled -> raise cancelled
+      | _ -> ());
       Printexc.raise_with_backtrace exn backtrace
   in
   match t.span_ids with

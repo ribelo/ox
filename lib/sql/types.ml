@@ -152,6 +152,11 @@ let with_dynamic_statement @ portable = fun (db @ local) sql params (f @ local) 
           let result =
             match f stmt with
             | value -> value
+            (* ^nlintc-du4v: release the statement before propagating interruption. *)
+            | exception (Eio.Cancel.Cancelled _ as exn) ->
+                let backtrace = Printexc.get_raw_backtrace () in
+                ignore (Sqlite.finalize stmt);
+                Printexc.raise_with_backtrace exn backtrace
             | exception exn ->
                 Result.Error
                   (Decode_error

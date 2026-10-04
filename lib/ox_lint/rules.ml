@@ -63,6 +63,33 @@ let discarded_result emit =
         base.value_binding self vb);
   }
 
+(* ^nlintc-7be1: implementations may hide exceptions; signatures expose them. *)
+let public_exception emit _context (base : Ast_iterator.iterator) =
+  {
+    base with
+    Ast_iterator.signature_item =
+      (fun self item ->
+        (match item.Parsetree.psig_desc with
+        | Psig_exception _ -> emit item.psig_loc
+        | _ -> ());
+        base.signature_item self item);
+  }
+
+let concurrency_rule name message typed =
+  {
+    id = "ox-" ^ name;
+    message;
+    violating =
+      "test/lint/violating/"
+      ^ String.map (fun c -> if c = '-' then '_' else c) name
+      ^ ".ml";
+    clean =
+      "test/lint/clean/" ^ String.map (fun c -> if c = '-' then '_' else c) name ^ ".ml";
+    documentation = "docs/rules/ox-" ^ name ^ ".md";
+    source = None;
+    typed = Some typed;
+  }
+
 let all =
   [
     {
@@ -76,7 +103,95 @@ let all =
       source = None;
       typed = Some discarded_result;
     };
+    concurrency_rule "catch-all"
+      "cancellation swallowed; re-raise Eio.Cancel.Cancelled or return the original \
+       exception as data"
+      Concurrency.catch_all;
+    concurrency_rule "suspending-finalizer"
+      "unprotected suspension in cleanup; wrap the suspension in Eio.Cancel.protect or \
+       use Eio.Switch.on_release"
+      Concurrency.suspending_finalizer;
+    concurrency_rule "stdlib-lock"
+      "domain-blocking Stdlib lock; use a fiber-aware Eio.Mutex/Condition/Semaphore \
+       (Ox.Mutex when row 65 lands)"
+      Concurrency.stdlib_lock;
+    concurrency_rule "raw-concurrency"
+      "raw Eio concurrency; use Scope.fork @ once, Spawner.t or Ox.Mutex when rows \
+       61/64/65 land"
+      Concurrency.raw_concurrency;
+    {
+      id = "ox-public-exception";
+      message =
+        "public exception; hide the exception and expose a result-returning boundary";
+      violating = "test/lint/violating/public_exception.mli";
+      clean = "test/lint/clean/public_exception.mli";
+      documentation = "docs/rules/ox-public-exception.md";
+      source = Some public_exception;
+      typed = None;
+    };
+    concurrency_rule "obj-magic"
+      "unchecked Obj.magic* cast; use a typed representation or confine the trusted cast \
+       to lib/ox/once.ml"
+      Concurrency.obj_magic;
+    concurrency_rule "race-deadline"
+      "race against sleep is not a deadline (race selects first success); use \
+       Ox.Timeout.timeout"
+      Concurrency.race_deadline;
   ]
+
+(* ^nlintc-j03j ^nlintc-7be1: narrowly authorised existing boundaries, never suffix matches. *)
+let allowances =
+  [
+    ( "ox-stdlib-lock",
+      "lib/sql/sqlite.ml",
+      "Guards SQLite C calls contended by system threads." );
+    ( "ox-stdlib-lock",
+      "lib/ipc/listener.ml",
+      "Guards a Hashtbl synchronously, without yielding." );
+    ( "ox-public-exception",
+      "lib/sql/ox_sql.mli",
+      "Existing public SQL exception API is used by inn; migration requires a \
+       consumer-coordinated row." );
+    ( "ox-public-exception",
+      "lib/sql/types.mli",
+      "Existing SQL Types exception API must remain compatible with inn." );
+    ( "ox-public-exception",
+      "lib/sql/sqlite.mli",
+      "Existing SQLite exception API requires an inn-compatible consumer migration." );
+    ( "ox-public-exception",
+      "lib/sql_dsl/ox_sql_dsl_query.mli",
+      "Existing SQL query exception API requires an inn-compatible consumer migration." );
+    ( "ox-public-exception",
+      "lib/sql_dsl/ox_sql_dsl.mli",
+      "Existing SQL DSL exception API must remain compatible with inn." );
+    ( "ox-public-exception",
+      "lib/http/tls_flow.mli",
+      "Existing TLS exception API must remain compatible with consumers." );
+    ( "ox-obj-magic",
+      "lib/ox/once.ml",
+      "Reserved trusted ownership casts for row 61; the file does not yet exist." );
+  ]
+
+let applies ~root ~source rule =
+  let absolute path =
+    if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
+  in
+  let normalize path =
+    let rec loop acc = function
+      | [] -> "/" ^ String.concat "/" (List.rev acc)
+      | "" :: rest | "." :: rest -> loop acc rest
+      | ".." :: rest -> loop (match acc with [] -> [] | _ :: xs -> xs) rest
+      | x :: rest -> loop (x :: acc) rest
+    in
+    loop [] (String.split_on_char '/' (absolute path))
+  in
+  rule.id <> "ox-raw-concurrency"
+  && (rule.id <> "ox-public-exception" || Filename.check_suffix source ".mli")
+  && not
+       (List.exists
+          (fun (id, path, _) ->
+            id = rule.id && normalize source = normalize (Filename.concat root path))
+          allowances)
 
 let select ids =
   List.iter

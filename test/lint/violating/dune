@@ -1,0 +1,14 @@
+; ^nlintc-kdcl: build actual annotations, never scratch OCaml under docs.
+
+(library
+ (name concurrency_violating)
+ (modules
+  catch_all
+  suspending_finalizer
+  stdlib_lock
+  raw_concurrency
+  obj_magic
+  race_deadline
+  public_exception)
+ (modules_without_implementation public_exception)
+ (libraries eio ox unix threads))

@@ -212,7 +212,8 @@ let close t =
   if not t.closed then (
     t.closed <- true;
     Fun.protect
-      ~finally:(fun () -> Eio.Flow.close t.raw)
+    (* ^nlintc-g6k3: raw providers may suspend while closing; protect only that cleanup. *)
+      ~finally:(fun () -> Eio.Cancel.protect (fun () -> Eio.Flow.close t.raw))
       (fun () ->
         with_lock t.write_mu (fun () ->
             let result = with_lock t.ssl_mu (fun () -> Ssl.shutdown t.ssl) in

@@ -5,6 +5,34 @@
  (modules test_engine)
  (libraries lint_engine))
 
+; ^nlintc-kdcl: direct decider tests include the dormant raw rule.
+
+(executable
+ (name test_concurrency)
+ (modules test_concurrency)
+ (libraries lint_engine))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree ../../docs/rules)
+  (source_tree clean)
+  (source_tree violating)
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Catch_all.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Suspending_finalizer.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Stdlib_lock.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_concurrency.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Obj_magic.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Race_deadline.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Catch_all.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Suspending_finalizer.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Stdlib_lock.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_concurrency.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Obj_magic.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Race_deadline.cmt)
+ (action
+  (run ./test_concurrency.exe)))
+
 (rule
  (alias runtest)
  (deps
@@ -175,6 +203,10 @@
   ../../lib/ox/.ox.objs/byte/ox__Supervisor.cmti
   ../../lib/ox/.ox.objs/byte/ox__Timeout.cmt
   ../../lib/ox/.ox.objs/byte/ox__Timeout.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmti
   ../../lib/ox_lint/.main.eobjs/byte/dune__exe__Main.cmt

@@ -76,12 +76,22 @@ printf '\nlet newer = 1\n' >> "$scratch/dependency/dependency.ml"
 expect 2 "$scratch/dependency/use.ml"
 grep -q 'stale typed annotation: imported CMI fingerprint changed for Dependency' "$scratch/err"
 expect 0 --self-check
+# ^nlintc-kdcl: exercise CLI resolution as well as direct typed deciders.
+for name in catch-all suspending-finalizer stdlib-lock obj-magic race-deadline; do
+  fixture="${name//-/_}"
+  expect 1 --rules "ox-$name" "violating/$fixture.ml"
+  expect 0 --rules "ox-$name" "clean/$fixture.ml"
+done
+expect 1 --rules ox-public-exception violating/public_exception.mli
+expect 0 --rules ox-public-exception clean/public_exception.mli
+# Dormant even when explicitly selected; direct tests above exercise the decider.
+expect 0 --rules ox-raw-concurrency violating/raw_concurrency.ml
 # Installed resource discovery must not borrow missing evidence from this checkout.
 mkdir -p "$scratch/installed/docs/rules" "$scratch/installed/test/lint/clean" "$scratch/installed/test/lint/violating"
 cp "$lint" "$scratch/installed/ox-lint"
-cp ../../docs/rules/ox-discarded-result.md "$scratch/installed/docs/rules/"
-cp clean/discard.ml "$scratch/installed/test/lint/clean/"
-cp violating/discard.ml "$scratch/installed/test/lint/violating/"
+cp ../../docs/rules/ox-*.md "$scratch/installed/docs/rules/"
+cp clean/*.ml clean/*.mli "$scratch/installed/test/lint/clean/"
+cp violating/*.ml violating/*.mli "$scratch/installed/test/lint/violating/"
 original_lint="$lint"
 lint="$scratch/installed/ox-lint"
 expect 0 --self-check
@@ -112,6 +122,7 @@ while read -r source annotation; do
   [[ -z "$source" || "$source" = "#"* ]] && continue
   args+=("../../$source")
 done < modules.txt
-expect 0 --require-typed --rules ox-discarded-result "${args[@]}"
+# ^nlintc-kdcl ^nlintc-ayjk: run every applied row-88 rule; caps stays independent.
+expect 0 --require-typed "${args[@]}"
 [[ ! -s "$scratch/out" && ! -s "$scratch/err" ]]
 printf 'compiled boundaries, evidence failures, and %s declared sources: pass\n' "${#args[@]}"

@@ -187,9 +187,15 @@ let note t signal = function
   | Ok () -> ()
   | Error error -> (
       if t.first_failure = None then t.first_failure <- Some error;
-      (try t.on_error error with _ -> ());
+      (* ^nlintc-du4v: callback defects remain best effort; interruption does not. *)
+      (try t.on_error error with
+      | Eio.Cancel.Cancelled _ as exn -> raise exn
+      | _ -> ());
       (* ^notel-na2w: a legacy callback defect must not hide the signal hook. *)
-      try t.on_signal_error signal error with _ -> ())
+      (* ^nlintc-du4v: keep the signal hook best effort without swallowing interruption. *)
+      try t.on_signal_error signal error with
+      | Eio.Cancel.Cancelled _ as exn -> raise exn
+      | _ -> ())
 
 let settled t =
   let result = match t.first_failure with None -> Ok () | Some error -> Error error in

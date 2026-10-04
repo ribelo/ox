@@ -720,7 +720,11 @@ module Testing = struct
           (fun () ->
             match f db with
             | result -> result
+            (* ^nlintc-du4v: cancellation unwinds both database cleanup paths. *)
+            | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
             | exception exn -> Result.Error (Printexc.to_string exn))
+    (* ^nlintc-du4v: opening failures remain strings, but interruption propagates. *)
+    | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
     | exception Error err -> Result.Error (Error.to_string err)
     | exception exn -> Result.Error (Printexc.to_string exn)
 end

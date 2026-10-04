@@ -117,7 +117,9 @@ let use ?timeout runner f =
                             (* ^nlint-hxar: close the unusable handle without replacing run's outcome. *)
                             let _close_result = Connection.close c in
                             ());
-                        guard s (fun () -> s.active <- s.active - 1);
+                        (* ^nlintc-g6k3: [guard] protects the update, not its lock wait. *)
+                        Eio.Cancel.protect (fun () ->
+                            guard s (fun () -> s.active <- s.active - 1));
                         Eio.Condition.broadcast s.changed)
                       (fun () -> run s c)))
             with Types.Error err -> Error (`Ox_sql err))

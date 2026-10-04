@@ -41,6 +41,8 @@ let create ~caps ?timeout_ms config =
           in_transaction = false;
           now;
         }
+  (* ^nlintc-du4v: keep interruption distinct from connection-open failures. *)
+  | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
   | exception Sqlite.Error err -> Result.Error (Types.Sqlite err)
   | exception exn ->
       Result.Error

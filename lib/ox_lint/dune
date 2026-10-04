@@ -3,7 +3,7 @@
 (library
  (name lint_engine)
  (wrapped false)
- (modules syntax artifact rules)
+ (modules syntax artifact paths concurrency rules)
  (libraries ocaml-compiler-libs.common unix))
 
 (executable
@@ -28,4 +28,53 @@
    as
    docs/rules/ox-discarded-result.md)
   (../../test/lint/violating/discard.ml as test/lint/violating/discard.ml)
-  (../../test/lint/clean/discard.ml as test/lint/clean/discard.ml)))
+  (../../test/lint/clean/discard.ml as test/lint/clean/discard.ml)
+  (../../docs/rules/ox-catch-all.md as docs/rules/ox-catch-all.md)
+  (../../test/lint/violating/catch_all.ml
+   as
+   test/lint/violating/catch_all.ml)
+  (../../test/lint/clean/catch_all.ml as test/lint/clean/catch_all.ml)
+  (../../docs/rules/ox-suspending-finalizer.md
+   as
+   docs/rules/ox-suspending-finalizer.md)
+  (../../test/lint/violating/suspending_finalizer.ml
+   as
+   test/lint/violating/suspending_finalizer.ml)
+  (../../test/lint/clean/suspending_finalizer.ml
+   as
+   test/lint/clean/suspending_finalizer.ml)
+  (../../docs/rules/ox-stdlib-lock.md as docs/rules/ox-stdlib-lock.md)
+  (../../test/lint/violating/stdlib_lock.ml
+   as
+   test/lint/violating/stdlib_lock.ml)
+  (../../test/lint/clean/stdlib_lock.ml as test/lint/clean/stdlib_lock.ml)
+  (../../docs/rules/ox-raw-concurrency.md
+   as
+   docs/rules/ox-raw-concurrency.md)
+  (../../test/lint/violating/raw_concurrency.ml
+   as
+   test/lint/violating/raw_concurrency.ml)
+  (../../test/lint/clean/raw_concurrency.ml
+   as
+   test/lint/clean/raw_concurrency.ml)
+  (../../docs/rules/ox-public-exception.md
+   as
+   docs/rules/ox-public-exception.md)
+  (../../test/lint/violating/public_exception.mli
+   as
+   test/lint/violating/public_exception.mli)
+  (../../test/lint/clean/public_exception.mli
+   as
+   test/lint/clean/public_exception.mli)
+  (../../docs/rules/ox-obj-magic.md as docs/rules/ox-obj-magic.md)
+  (../../test/lint/violating/obj_magic.ml
+   as
+   test/lint/violating/obj_magic.ml)
+  (../../test/lint/clean/obj_magic.ml as test/lint/clean/obj_magic.ml)
+  (../../docs/rules/ox-race-deadline.md as docs/rules/ox-race-deadline.md)
+  (../../test/lint/violating/race_deadline.ml
+   as
+   test/lint/violating/race_deadline.ml)
+  (../../test/lint/clean/race_deadline.ml
+   as
+   test/lint/clean/race_deadline.ml)))
