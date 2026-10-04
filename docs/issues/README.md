@@ -92,6 +92,9 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 81 | [cron-schedule/01-cron-schedule.md](cron-schedule/01-cron-schedule.md) | `ox` (Schedule) | — | parsed cron expressions as schedules | [ ] |
 | 82 | [kafka/01-kafka.md](kafka/01-kafka.md) | `ox_kafka` (new) | 76 | Kafka as Flow sources, sinks and commit stages; binding ADR first | [ ] |
 | 83 | [ox-sync/01-ox-sync.md](ox-sync/01-ox-sync.md) | `ox` | 61, 62, 65 | Promise, Semaphore, Channel ends, Condition, Barrier, Latch at least as safe as `await`'s | [ ] |
+| 84 | [typed-boundaries/01-typed-boundaries.md](typed-boundaries/01-typed-boundaries.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_sql`, `ox_blocking` | 73, 83 | the part of `await` ADR-0011 adopted: an Ox-owned boundary returns a value, a foreign interruption stays an exception | [ ] |
+| 85 | [simulation/01-simulation.md](simulation/01-simulation.md) | `ox_test`, `ox`, `ox_http`, `ox_ipc`, `ox_rpc` | 60 | seeded deterministic world; cancellation and fault sweeps; the five historical bug classes as cases | [ ] |
+| 86 | [usage-rules/01-usage-rules.md](usage-rules/01-usage-rules.md) | docs, `scripts/ox-check`, gate | 66, 85 | one page per rule with its check, a machine-readable index, one command an agent runs; the 2026-10-04 research folded in | [ ] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism is the compute pool, row 80.
@@ -103,6 +106,8 @@ Rows 22–28 are delivered. Rows 29–32 are the consumer migrations in the orde
 Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the one trusted cast). P1–P9 are the proposals accepted on 2026-10-03; 69, 71, 72 and 73 came out of the same night's check of what OxCaml and Jane Street's `await`/`capsule` already solve. Order: 61, then 62–65 in parallel, then 66 (it needs their replacements), 67 after 63; 68 and 72 are independent; 69 unblocks 70 and 71. All of rows 61–73 are accepted (2026-10-04); 71's consumer migration waits for row 75's measurement.
 
 Rows 76–82 are Scala Ox floor items this map once recorded as rejected "for want of a consumer"; ADR-0003 as amended reopens them (Ox is its own consumer). Row 83 replaces Eio's synchronization primitives where `await`'s or a `unique`-typed version refuses more at compile time.
+
+Rows 84–86 answer what ADR-0011 left open. 84 builds the option it chose instead of a cancellation token. 85 moves the only mechanism that catches timing bugs — seeded deterministic simulation — from an opt-in alias to the default shape of a concurrency test. 86 exists because ox is written only by agents: a rule they cannot verify mechanically is not a rule, so every rule gets its check and one command runs them.
 
 Rows 45–48 implement ADR-0009 (Ox is the floor). Order: 45 first (it changes `Concurrent` that the others build on), then **49 (the ox rename) before anything else**, so that 46–48 are written and built under the ox name in the ox repository. Consumers (Pie, nema, Leash) are updated in the same rows where a story says so; they are internal tools and may change.
 
