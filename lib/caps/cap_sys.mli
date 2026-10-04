@@ -1,7 +1,13 @@
 (** The dangerous [Sys] calls, each requiring its capability (^ncaps-4btv). Same contract
     as {!Cap_unix}: the raw call and nothing else, the capability only looked at, and
-    every call blocks the domain without observing cancellation — keep them out of
-    [Ox.Actor] handlers and [Ox.Agent] closures. *)
+    calls may block the domain; the wrappers add no Eio check. Keep blocking calls out of
+    [Ox.Actor] handlers and [Ox.Agent] closures. ^nlintd-a7oq *)
+
+(** Cancellation and finalizers: Suspension: never suspends in Eio; these direct calls may
+    block the domain. Cancellation: not a cancellation point; the wrapper performs no Eio
+    cancellation check. Finalizers: no Eio switch finalizer is registered; returned open
+    handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
+    runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
 
 val command : caps:< Cap.exec ; .. > -> string -> int
 val chdir : caps:< Cap.chdir ; .. > -> string -> unit
@@ -24,6 +30,9 @@ val remove : caps:< Cap.fs_write ; .. > -> string -> unit
 val rename : caps:< Cap.fs_write ; .. > -> string -> string -> unit
 val mkdir : caps:< Cap.fs_write ; .. > -> string -> int -> unit
 val rmdir : caps:< Cap.fs_write ; .. > -> string -> unit
+
+(** Finalizers: Stdlib.In_channel.with_open_bin closes the private /dev/urandom channel on
+    return or exception; no switch hook is registered. ^nlintd-a7oq *)
 
 val urandom : caps:< Cap.random ; .. > -> int -> string
 (** [urandom ~caps n] reads [n] bytes from [/dev/urandom]: unpredictable bytes for a

@@ -1,0 +1,4 @@
+; ^nlint-hxar ^nlint-2nwm: ancestor object directories, not source path shape.
+(include_subdirs qualified)
+(library
+ (name deployment_qualified))

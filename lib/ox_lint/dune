@@ -3,7 +3,15 @@
 (library
  (name lint_engine)
  (wrapped false)
- (modules syntax artifact paths concurrency caps caps_policy rules)
+ (modules
+  syntax
+  artifact
+  paths
+  concurrency
+  caps
+  caps_policy
+  interface_docs
+  rules)
  (libraries ocaml-compiler-libs.common unix))
 
 (executable
@@ -178,6 +186,29 @@
    as
    test/caps/rules/violating/forge.ml)
   (../../test/caps/rules/clean/forge.ml as test/caps/rules/clean/forge.ml)
+  (../../docs/rules/interface-documentation.md
+   as
+   docs/rules/interface-documentation.md)
+  (../../docs/rules/ox-val-behaviour.md as docs/rules/ox-val-behaviour.md)
+  (../../docs/rules/ox-cancel-safety.md as docs/rules/ox-cancel-safety.md)
+  (../../docs/issues/ox-lint-docs/triage.md
+   as
+   docs/issues/ox-lint-docs/triage.md)
+  (../../test/lint/violating/val_behaviour.mli
+   as
+   test/lint/violating/val_behaviour.mli)
+  (../../test/lint/clean/val_behaviour.mli
+   as
+   test/lint/clean/val_behaviour.mli)
+  (../../test/lint/violating/cancel_safety.mli
+   as
+   test/lint/violating/cancel_safety.mli)
+  (../../test/lint/clean/cancel_safety.mli
+   as
+   test/lint/clean/cancel_safety.mli)
+  (../../test/lint/test_interface_docs.ml
+   as
+   test/lint/test_interface_docs.ml)
   (../../docs/rules/ox-caps-signature.md as docs/rules/ox-caps-signature.md)
   (../../test/caps/rules/violating/signature.ml
    as

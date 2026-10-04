@@ -21,6 +21,7 @@ These instructions, the ADRs and the specs were written by agents and bind agent
 - Stdlib-first; dependencies per ADR-0005; OxCaml features wherever they earn a guarantee or speed.
 - Every package: `lib/<name>/`, a `.mli` per module, tests under `test/<name>/` citing the story IDs they cover.
 - Dangerous calls go through `Ox_caps.Cap_*` and require a capability in the signature (`docs/caps.md`); `scripts/caps-gate` refuses the raw ones.
+- When adding or changing resource-bearing interface vals, follow the [documentation contract](docs/rules/interface-documentation.md); `ox-val-behaviour`/`ox-cancel-safety` check shape, never truth. ^nlintd-7r1a
 
 ## Gates (before any commit)
 

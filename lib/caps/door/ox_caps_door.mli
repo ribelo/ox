@@ -16,6 +16,10 @@ type fs_write
 type tmp
 type network
 
+(** Cancellation and finalizers: Suspension: never suspends; this constructor builds an
+    object of tokens. Cancellation: not a cancellation point; no Eio operation is called.
+    Finalizers: none are registered. Locking: no lock is acquired. ^nlintd-a7oq *)
+
 val powerbox :
   unit ->
   < fork : fork

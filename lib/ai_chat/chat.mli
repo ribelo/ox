@@ -38,7 +38,14 @@ val create :
     {!Ox_observability.Redact.t}: only {!Ox_ai.Bearer.header} reveals it, on the request
     path. [timeout] (10 s by default) caps one attempt's read and [max_request_bytes] (4
     MiB by default) bounds the serialized request. Pure and synchronous: it takes no
-    switch, opens no socket and registers no finalizer. *)
+    switch, opens no socket and registers no finalizer.
+
+    Suspension: never suspends; this call only constructs or reads OCaml values and
+    captures dependencies without invoking them. Cancellation: not a cancellation point;
+    this call performs no Eio cancellation check. Finalizers: this call registers no
+    switch hook and leaves captured resources with their existing owner. Locking: this
+    call acquires no lock; construction of synchronization objects does not acquire them.
+    ^nlintd-a7oq *)
 
 val complete :
   t ->

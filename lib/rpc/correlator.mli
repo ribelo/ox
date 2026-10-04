@@ -44,7 +44,11 @@ val notifications : 'msg t -> 'msg notification Eio.Stream.t
     [Eio.Stream.take], which observes cancellation. A slow consumer loses oldest messages,
     counted in [stats]. [Closed reason] is delivered exactly once, last, for EOF, read
     failure, explicit close or switch teardown; consumers stop at [Closed]. No finalizer.
-*)
+
+    Suspension: never suspends; this call only reads or constructs OCaml values.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Finalizers: none are registered by this call; existing resource ownership is
+    unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
 val stats : 'msg t -> stats
 (** Snapshot of counters; does not suspend or install finalizers. *)

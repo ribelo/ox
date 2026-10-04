@@ -5,6 +5,23 @@
  (modules test_caps)
  (libraries lint_engine))
 
+; ^ncapslint-8jcy: payload projections retain parameter provenance.
+
+(executable
+ (name test_signature_payloads)
+ (modules test_signature_payloads)
+ (libraries lint_engine))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree clean)
+  (source_tree violating)
+  clean/caps_clean.cma
+  violating/caps_violating.cma)
+ (action
+  (run ./test_signature_payloads.exe)))
+
 (rule
  (alias runtest)
  (deps

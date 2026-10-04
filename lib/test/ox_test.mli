@@ -61,7 +61,14 @@ val powerbox : unit -> Ox_caps.Cap.all_caps
 (** The test entry's powerbox (^ncaps-0mvw): what a test hands a function whose signature
     requires capabilities, the way the Door hands [Ox_app.Env.caps] to a program. Tests
     are outside the capability gate; library code that calls this is refused by the
-    [ox-caps-mint] rule. Pure; no resource. *)
+    [ox-caps-mint] rule. Pure; no resource.
+
+    Suspension: never suspends; this call only constructs or reads OCaml values and
+    captures dependencies without invoking them. Cancellation: not a cancellation point;
+    this call performs no Eio cancellation check. Finalizers: this call registers no
+    switch hook and leaves captured resources with their existing owner. Locking: this
+    call acquires no lock; construction of synchronization objects does not acquire them.
+    ^nlintd-a7oq *)
 
 val flow_pair : ?label:string -> string list -> Eio_mock.Flow.t * Eio_mock.Flow.t
 (** A scripted readable flow (one read per chunk, then EOF) and writable sink. Neither
@@ -96,7 +103,14 @@ module Process : sig
 
   val make : ?clock:_ Eio.Time.clock -> script list -> t
   (** Each spawn consumes one script. Exhaustion is a test defect, as is a chunk delayed
-      without [clock]; the clock is the mock one [advance] moves. *)
+      without [clock]; the clock is the mock one [advance] moves.
+
+      Suspension: never suspends; this call only constructs or reads OCaml values and
+      captures dependencies without invoking them. Cancellation: not a cancellation point;
+      this call performs no Eio cancellation check. Finalizers: this call registers no
+      switch hook and leaves captured resources with their existing owner. Locking: this
+      call acquires no lock; construction of synchronization objects does not acquire
+      them. ^nlintd-a7oq *)
 
   val mgr : t -> Eio_unix.Process.mgr_ty Eio.Resource.t
   (** Real Eio process-manager resource supporting both [spawn] and [spawn_unix]. Pipes
@@ -110,10 +124,24 @@ module Process : sig
       when the child is signalled or retired, and its last act is to close the write ends,
       so a reader sees the bytes written so far followed by EOF. A chunk whose delay had
       not elapsed when the child was signalled is not written. The fake still records
-      argv, env, cwd and fds. *)
+      argv, env, cwd and fds.
+
+      Suspension: never suspends; this call only constructs or reads OCaml values and
+      captures dependencies without invoking them. Cancellation: not a cancellation point;
+      this call performs no Eio cancellation check. Finalizers: this call registers no
+      switch hook and leaves captured resources with their existing owner. Locking: this
+      call acquires no lock; construction of synchronization objects does not acquire
+      them. ^nlintd-a7oq *)
 
   val spawns : t -> spawn list
-  (** Spawns in call order; descriptors are retained as opaque references. *)
+  (** Spawns in call order; descriptors are retained as opaque references.
+
+      Suspension: never suspends; this call only constructs or reads OCaml values and
+      captures dependencies without invoking them. Cancellation: not a cancellation point;
+      this call performs no Eio cancellation check. Finalizers: this call registers no
+      switch hook and leaves captured resources with their existing owner. Locking: this
+      call acquires no lock; construction of synchronization objects does not acquire
+      them. ^nlintd-a7oq *)
 
   val signals : t -> int list
   (** Signals received in call order, including cleanup SIGKILL when pending. *)

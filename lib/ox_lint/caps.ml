@@ -394,28 +394,84 @@ let rec has_cap name en ty =
       loop fields
   | _ -> false
 
-(* A closed deps record is an argument, not ambient authority. Follow record
-   fields, bounded by type-path identity so recursive records terminate. *)
-let rec argument_has name en seen ty =
-  has_cap name en ty
-  ||
-  match Types.get_desc (Ctype.expand_head en ty) with
-  | Tpoly (ty, _) -> argument_has name en seen ty
-  | Tconstr (path, _, _) when not (List.exists (Path.same path) seen) -> (
-      match (Env.find_type path en).type_kind with
-      | Type_record (fields, _, _) ->
-          List.exists
-            (fun (field : Types.label_declaration) ->
-              argument_has name en (path :: seen) field.ld_type)
-            fields
-      | _ -> false)
-  | _ -> false
+(* Payloads carry argument authority. Only visit actual fields/constructor
+   arguments: a phantom type parameter does not carry its apparent token.
+   Entering a substituted parameter restores its caller's path guard, so finite
+   nesting such as [caps option option] is not mistaken for recursive expansion. *)
+let argument_has name en ty =
+  (* The projection is a graph: compiler AST variants share the same payloads.
+     A path-local cycle guard alone unfolds that DAG exponentially. Keep actual
+     type arguments in the key so [caps option] and [int option] remain distinct. *)
+  let visited = Hashtbl.create 64 in
+  let rec loop ((paths, nodes) as seen) substitutions ty =
+    let state =
+      ( Types.get_id ty,
+        List.map
+          (fun (parameter, (argument, _)) ->
+            (Types.get_id parameter, Types.get_id argument))
+          substitutions )
+    in
+    match
+      List.find_opt (fun (parameter, _) -> Types.eq_type parameter ty) substitutions
+    with
+    | Some (_, (argument, seen)) -> loop seen [] argument
+    | None when List.mem (Types.get_id ty) nodes || Hashtbl.mem visited state -> false
+    | None -> (
+        Hashtbl.add visited state ();
+        let next = (paths, Types.get_id ty :: nodes) in
+        let instantiate ty =
+          match substitutions with
+          | [] -> ty
+          | _ ->
+              let parameters, arguments =
+                List.split
+                  (List.map
+                     (fun (parameter, (argument, _)) -> (parameter, argument))
+                     substitutions)
+              in
+              Ctype.apply en parameters ty arguments
+        in
+        has_cap name en (instantiate ty)
+        ||
+        match Types.get_desc ty with
+        | Tpoly (ty, _) -> loop next substitutions ty
+        | Ttuple fields | Tunboxed_tuple fields ->
+            List.exists (fun (_, ty) -> loop next substitutions ty) fields
+        | Tvariant row ->
+            List.exists
+              (fun (_, field) ->
+                match Types.row_field_repr field with
+                | Rpresent (Some ty) -> loop next substitutions ty
+                | Reither (_, types, _) -> List.exists (loop next substitutions) types
+                | Rpresent None | Rabsent -> false)
+              (Types.row_fields row)
+        | Tconstr (path, arguments, _) when not (List.exists (Path.same path) paths) -> (
+            let declaration = Env.find_type path en in
+            let substitutions =
+              List.map2
+                (fun parameter argument -> (parameter, (instantiate argument, seen)))
+                declaration.type_params arguments
+            in
+            let payload_has = loop (path :: paths, snd next) substitutions in
+            match declaration.type_kind with
+            | Type_record (fields, _, _) ->
+                List.exists
+                  (fun (field : Types.label_declaration) -> payload_has field.ld_type)
+                  fields
+            | Type_variant (constructors, _, _) ->
+                List.exists
+                  (fun (constructor : Types.constructor_declaration) ->
+                    List.exists payload_has (Types.tys_of_constr_args constructor.cd_args))
+                  constructors
+            | _ -> Option.fold ~none:false ~some:payload_has declaration.type_manifest)
+        | _ -> false)
+  in
+  try loop ([], []) [] ty with Not_found | Ctype.Cannot_apply -> false
 
 let rec signature_has name en ty =
   match Types.get_desc (Ctype.expand_head en ty) with
   | Tpoly (ty, _) -> signature_has name en ty
-  | Tarrow (_, arg, result, _) ->
-      argument_has name en [] arg || signature_has name en result
+  | Tarrow (_, arg, result, _) -> argument_has name en arg || signature_has name en result
   | _ -> false
 
 let signature emit =
@@ -430,28 +486,86 @@ let signature emit =
     Paths.modules
       [ [ "Ox_caps"; "Cap_unix" ]; [ "Ox_caps"; "Cap_sys" ]; [ "Ox_caps"; "Cap_stdlib" ] ]
   in
+  let tuple_projections = Paths.values [ [ "Stdlib"; "fst" ]; [ "Stdlib"; "snd" ] ] in
+  let result_binds =
+    Paths.values [ [ "Result"; "bind" ]; [ "Stdlib"; "Result"; "bind" ] ]
+  in
   let base = Tast_iterator.default_iterator in
-  let arguments_in_scope = ref [] and functions = ref [] in
+  let arguments_in_scope = ref [] and functions = ref [] and bind_aliases = ref [] in
   let scoped f =
-    let saved = (!arguments_in_scope, !functions) in
+    let saved = (!arguments_in_scope, !functions, !bind_aliases) in
     Fun.protect
       ~finally:(fun () ->
-        let args, fns = saved in
+        let args, fns, binds = saved in
         arguments_in_scope := args;
-        functions := fns)
+        functions := fns;
+        bind_aliases := binds)
       f
+  in
+  let is_result_bind path en =
+    let path = Env.normalize_value_path None en path in
+    List.exists (Path.same path) result_binds
+    ||
+    match path with
+    | Path.Pident id -> List.exists (Ident.same id) !bind_aliases
+    | _ -> false
+  in
+  let payloads e =
+    match e.exp_desc with
+    | Texp_construct (_, _, _, args, _) -> Some (List.map snd args)
+    | Texp_tuple (args, _) -> Some (List.map snd args)
+    | Texp_variant (_, payload) -> Some (Option.to_list (Option.map fst payload))
+    | _ -> None
+  in
+  let rec carries_authority e =
+    match payloads e with
+    | Some payloads -> List.exists carries_authority payloads
+    | None ->
+        List.exists
+          (fun (name, _) -> argument_has name (Paths.env e.exp_env) e.exp_type)
+          raw_targets
   in
   let rec from_argument e =
     match e.exp_desc with
     | Texp_ident { path = Path.Pident id; _ } ->
         List.exists (Ident.same id) !arguments_in_scope
     | Texp_field { record; _ } -> from_argument record
-    | _ -> false
+    | Texp_apply (projection, [ (Nolabel, Arg (pair, _)) ], _, _, _)
+      when Paths.is_value tuple_projections projection ->
+        from_argument pair
+    | Texp_match (source, _, cases, _, _) when from_argument source ->
+        (* Empty/Error branches carry no authority; every branch that does must
+           preserve the parameter root. Exception patterns are never rooted. *)
+        List.exists (fun case -> carries_authority case.c_rhs) cases
+        && List.for_all
+             (fun case ->
+               (not (carries_authority case.c_rhs))
+               || scoped (fun () ->
+                   (match Typedtree.split_pattern case.c_lhs with
+                   | Some pattern, None ->
+                       arguments_in_scope :=
+                         Typedtree.pat_bound_idents pattern @ !arguments_in_scope
+                   | _ -> ());
+                   from_argument case.c_rhs))
+             cases
+    | _ -> (
+        match payloads e with
+        | Some payloads ->
+            let authority = List.filter carries_authority payloads in
+            authority <> [] && List.for_all from_argument authority
+        | None -> false)
   in
-  let exposed name =
+  let exposed name en =
     List.exists
       (fun fn -> signature_has name (Paths.env fn.exp_env) fn.exp_type)
       !functions
+    || List.exists
+         (fun id ->
+           try
+             argument_has name en
+               (Subst.Lazy.force_type_expr (Env.find_value (Path.Pident id) en).val_type)
+           with Not_found -> false)
+         !arguments_in_scope
   in
   let report e =
     match !functions with fn :: _ -> emit fn.exp_loc | [] -> emit e.exp_loc
@@ -488,10 +602,30 @@ let signature emit =
             | Texp_let (_, bindings, _) ->
                 List.iter
                   (fun binding ->
+                    let ids = Typedtree.pat_bound_idents binding.vb_pat in
                     if from_argument binding.vb_expr then
-                      arguments_in_scope :=
-                        Typedtree.pat_bound_idents binding.vb_pat @ !arguments_in_scope)
+                      arguments_in_scope := ids @ !arguments_in_scope;
+                    match binding.vb_expr.exp_desc with
+                    | Texp_ident { path; _ }
+                      when is_result_bind path (Paths.env binding.vb_expr.exp_env) ->
+                        bind_aliases := ids @ !bind_aliases
+                    | _ -> ())
                   bindings
+            | Texp_letop { let_; ands = []; param; body; _ }
+              when is_result_bind let_.bop_op_path (Paths.env e.exp_env)
+                   && from_argument let_.bop_exp ->
+                arguments_in_scope :=
+                  (param :: Typedtree.pat_bound_idents body.c_lhs) @ !arguments_in_scope
+            | Texp_match (source, _, cases, _, _) when from_argument source ->
+                List.iter
+                  (fun case ->
+                    (* Exceptions/effects are not projections of the scrutinee. *)
+                    match Typedtree.split_pattern case.c_lhs with
+                    | Some pattern, None ->
+                        arguments_in_scope :=
+                          Typedtree.pat_bound_idents pattern @ !arguments_in_scope
+                    | _ -> ())
+                  cases
             | Texp_apply (callee, args, _, _, _) when not (door_exit e) ->
                 if Paths.in_module wrappers callee then begin
                   let en = Paths.env callee.exp_env in
@@ -517,7 +651,9 @@ let signature emit =
             | Texp_ident _ ->
                 List.iter
                   (fun (name, targets) ->
-                    if Paths.is_value targets e && not (exposed name) then report e)
+                    if
+                      Paths.is_value targets e && not (exposed name (Paths.env e.exp_env))
+                    then report e)
                   raw_targets
             | _ -> ());
             if door_exit e then

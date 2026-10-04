@@ -117,7 +117,10 @@ val child :
   'e child
 (** [child ~id start] describes a child. Defaults: [Permanent], [Timeout] of five seconds,
     not significant. Only [Temporary] and [Transient] children may be significant; that is
-    checked by {!start}. *)
+    checked by {!start}. Suspension: never suspends; this call only reads or constructs
+    OCaml values. Cancellation: not a cancellation point; this call performs no Eio
+    cancellation check. Finalizers: none are registered by this call; existing resource
+    ownership is unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
 type ('input, 'e) template
 
@@ -127,7 +130,11 @@ val template :
   ?shutdown:shutdown ->
   ('input -> 'e context -> (unit, 'e) result) ->
   ('input, 'e) template
-(** The one template of a {!start_simple} supervisor; instances get their [input]. *)
+(** The one template of a {!start_simple} supervisor; instances get their [input].
+    Suspension: never suspends; this call only reads or constructs OCaml values.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Finalizers: none are registered by this call; existing resource ownership is
+    unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
 type 'e event =
   | Child_started of { child_id : string; incarnation : int }

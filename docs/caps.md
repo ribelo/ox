@@ -1,6 +1,7 @@
 # Capabilities: a function's type says what it may touch
 
 Rows 48 and 54 (^ncaps-xzx5 ^ncaps-uiq6). Every line here is written by agents, so the interface is what a reviewer trusts. A function that forks, execs, reads the environment, writes a file outside Eio's `fs`, prints, exits or seeds randomness from the system says so in its type, and the compiler-backed `ox-lint` capability gate refuses the raw call everywhere else (row 90, ^ncapslint-nf4t).
+Resource-bearing interface vals follow the [documentation contract](rules/interface-documentation.md); `ox-val-behaviour` and `ox-cancel-safety` check presence and shape, never truth. ^nlintd-7r1a.
 
 ## The shape
 

@@ -84,6 +84,12 @@ for name in catch-all suspending-finalizer stdlib-lock obj-magic race-deadline; 
 done
 expect 1 --rules ox-public-exception violating/public_exception.mli
 expect 0 --rules ox-public-exception clean/public_exception.mli
+# ^nlintd-z5p5 ^nlintd-vneh: interface rules run through the deployed CLI too.
+for name in val-behaviour cancel-safety; do
+  fixture="${name//-/_}"
+  expect 1 --require-typed --rules "ox-$name" "violating/$fixture.mli"
+  expect 0 --require-typed --rules "ox-$name" "clean/$fixture.mli"
+done
 # Dormant even when explicitly selected; direct tests above exercise the decider.
 expect 0 --rules ox-raw-concurrency violating/raw_concurrency.ml
 # Installed resource discovery must not borrow missing evidence from this checkout.

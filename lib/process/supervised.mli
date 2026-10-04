@@ -31,7 +31,11 @@ val events : 'e t -> 'e event Eio.Stream.t
 (** Bounded to 32 events. Overflow drops the oldest event, never blocks the process
     worker, and increments [dropped]. Taking an empty stream suspends and observes
     cancellation; taking an event runs no finalizer. [Stopped] is delivered exactly once,
-    last, after either [stop] or [Gave_up]; stop reading at [Stopped]. *)
+    last, after either [stop] or [Gave_up]; stop reading at [Stopped]. Suspension: never
+    suspends; this call only reads or constructs OCaml values. Cancellation: not a
+    cancellation point; this call performs no Eio cancellation check. Finalizers: none are
+    registered by this call; existing resource ownership is unchanged. Locking: no lock is
+    acquired by this call. ^nlintd-a7oq *)
 
 val dropped : 'e t -> int
 

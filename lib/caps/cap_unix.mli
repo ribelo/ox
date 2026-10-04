@@ -6,11 +6,19 @@
     an ordinary closure, and a [@ local] closure — the thunk of [Ox.Rate_limiter.run], the
     acquire of [Ox.Resource.use_in_scope] — can capture a capability and call these.
 
-    These calls block the domain; none of them is an Eio suspension point and none
-    observes cancellation. Do not call them from an [Ox.Actor] handler or an [Ox.Agent]
-    closure, which run cancel-protected in the owner fiber and must not block for long;
-    spawn children through Eio's [process_mgr] ([Ox_process.Child.spawn]) instead of
-    [fork]/[exec], and run a blocking call through [Ox_blocking]. *)
+    The synchronous wrapper adds no Eio operation or cancellation check; its direct calls
+    may block the domain. Code you hand it remains yours: [establish_server] calls an
+    arbitrary callback that can suspend and observe cancellation. ^nlintd-a7oq Do not make
+    blocking calls from an [Ox.Actor] handler or an [Ox.Agent] closure, which run
+    cancel-protected in the owner fiber and must not block for long; spawn children
+    through Eio's [process_mgr] ([Ox_process.Child.spawn]) instead of [fork]/[exec], and
+    run a blocking call through [Ox_blocking]. *)
+
+(** Cancellation and finalizers: Suspension: never suspends in Eio; these direct calls may
+    block the domain. Cancellation: not a cancellation point; the wrapper performs no Eio
+    cancellation check. Finalizers: no Eio switch finalizer is registered; returned open
+    handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
+    runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
 
 (** {1 fork, exec} *)
 
@@ -132,4 +140,10 @@ val establish_server :
   (in_channel -> out_channel -> unit) ->
   Unix.sockaddr ->
   unit
-(** Forks a child per connection, hence [fork] as well. *)
+(** Forks a child per connection, hence [fork] as well.
+
+    Suspension: may suspend in the supplied server callback; Unix socket operations may
+    block the domain. Cancellation: depends on the callback; the wrapper adds no Eio
+    protection. Finalizers: server process and socket cleanup are delegated to
+    Unix.establish_server, not an Eio switch. Locking: socket and process locking are
+    delegated to Unix. ^nlintd-a7oq *)

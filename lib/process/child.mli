@@ -40,11 +40,19 @@ val pid : t -> int
     diagnostics. Signal it through {!signal}, not with the raw id. ^daily-c4cl *)
 
 val stdout : t -> Eio.Flow.source_ty Eio.Resource.t option
+(** Suspension: never suspends; this call only reads or constructs OCaml values.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Finalizers: none are registered by this call; existing resource ownership is
+    unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
 val stderr : t -> Eio.Flow.source_ty Eio.Resource.t option
 (** Parent read ends belong to [spawn]'s owner switch and remain readable after retirement
     until that switch closes. At retirement the child and write ends close, so readers see
-    buffered bytes then EOF; unread output cannot block retirement. *)
+    buffered bytes then EOF; unread output cannot block retirement. Suspension: never
+    suspends; this call only reads or constructs OCaml values. Cancellation: not a
+    cancellation point; this call performs no Eio cancellation check. Finalizers: none are
+    registered by this call; existing resource ownership is unchanged. Locking: no lock is
+    acquired by this call. ^nlintd-a7oq *)
 
 val await : t -> exit
 (** Wait for exit, repeatably; waiter cancellation does not terminate the child. No

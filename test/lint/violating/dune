@@ -9,6 +9,11 @@
   raw_concurrency
   obj_magic
   race_deadline
-  public_exception)
- (modules_without_implementation public_exception)
- (libraries eio ox unix threads))
+  public_exception
+  val_behaviour
+  cancel_safety)
+ (modules_without_implementation
+  public_exception
+  val_behaviour
+  cancel_safety)
+ (libraries eio ox ox_caps unix threads))

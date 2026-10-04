@@ -55,10 +55,18 @@ val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) -> unit
 
 val await : ('a, 'e) fork -> ('a, 'e) result
 (** The fork's [result]. If the scope ends before the fork settles (its own failure, a
-    sibling's, or cancellation) the awaiting fiber is cancelled like any other. *)
+    sibling's, or cancellation) the awaiting fiber is cancelled like any other.
+    Suspension: may suspend until the promise resolves. Cancellation: propagates from
+    Eio.Promise.await. Cancellation safety: safe to re-run; waiting does not consume the
+    promise result. Finalizers: none are registered by this call. Locking: no lock is held
+    by this wrapper; promise synchronisation is delegated to Eio. ^nlintd-a7oq *)
 
 val switch : 'e t -> Eio.Switch.t
-(** The scope's Eio switch, for [Eio.Switch.on_release] and other Eio APIs. *)
+(** The scope's Eio switch, for [Eio.Switch.on_release] and other Eio APIs. Suspension:
+    never suspends; this call only reads or constructs OCaml values. Cancellation: not a
+    cancellation point; this call performs no Eio cancellation check. Finalizers: none are
+    registered by this call; existing resource ownership is unchanged. Locking: no lock is
+    acquired by this call. ^nlintd-a7oq *)
 
 val exit_on_error : (('e -> exn) -> 'a) -> ('a, 'e) result
 (** Building block for {!Concurrent}; prefer {!supervised_error}. [exit_on_error f] runs

@@ -112,6 +112,15 @@ let capability_rule name typed =
     typed = Some typed;
   }
 
+(* ^nlintd-z5p5 ^nlintd-vneh: interfaces use the same fixture/page registry. *)
+let interface_rule name message typed =
+  let rule = concurrency_rule name message typed in
+  {
+    rule with
+    violating = Filename.remove_extension rule.violating ^ ".mli";
+    clean = Filename.remove_extension rule.clean ^ ".mli";
+  }
+
 let all =
   List.map
     (fun (op : Caps.operation) -> capability_rule op.name (Caps.raw op.name))
@@ -163,6 +172,15 @@ let all =
         "race against sleep is not a deadline (race selects first success); use \
          Ox.Timeout.timeout"
         Concurrency.race_deadline;
+      interface_rule "val-behaviour"
+        "resource-bearing val needs Suspension, Cancellation, Finalizers and Locking \
+         sentences (docs/rules/interface-documentation.md)"
+        Interface_docs.behaviour;
+      interface_rule "cancel-safety"
+        "cancellable val needs Cancellation safety: safe to re-run / unsafe because data \
+         is lost / unsafe because progress is lost \
+         (docs/rules/interface-documentation.md)"
+        Interface_docs.cancel_safety;
     ]
 
 (* ^nlintc-j03j ^nlintc-7be1: narrowly authorised existing boundaries, never suffix matches. *)
@@ -212,7 +230,10 @@ let applies ~root ~source rule =
     loop [] (String.split_on_char '/' (absolute path))
   in
   rule.id <> "ox-raw-concurrency"
-  && (rule.id <> "ox-public-exception" || Filename.check_suffix source ".mli")
+  && ((not
+         (List.mem rule.id
+            [ "ox-public-exception"; "ox-val-behaviour"; "ox-cancel-safety" ]))
+     || Filename.check_suffix source ".mli")
   && not
        (List.exists
           (fun (id, path, _) ->

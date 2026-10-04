@@ -5,6 +5,30 @@
  (modules test_engine)
  (libraries lint_engine))
 
+; ^nlintd-a7oq: use the same typed selector for the triage ledger.
+
+(executable
+ (name doc_inventory)
+ (modules doc_inventory)
+ (libraries lint_engine))
+
+; ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0: typed interface regressions.
+
+(executable
+ (name test_interface_docs)
+ (modules test_interface_docs)
+ (libraries lint_engine))
+
+(rule
+ (alias runtest)
+ (deps
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Val_behaviour.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_safety.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Val_behaviour.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_safety.cmti)
+ (action
+  (run ./test_interface_docs.exe)))
+
 ; ^nlintc-kdcl: direct decider tests include the dormant raw rule.
 
 (executable
@@ -215,6 +239,8 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/interface_docs.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/interface_docs.cmti
   ../../lib/ox_lint/.main.eobjs/byte/dune__exe__Main.cmt
   ../../lib/ox_lint/.main.eobjs/byte/dune__exe__Main.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/rules.cmt
@@ -258,7 +284,11 @@
   ../../lib/sql_dsl/.ox_sql_dsl.objs/byte/ox_sql_dsl__Ox_sql_dsl_schema.cmt
   ../../lib/sql_dsl/.ox_sql_dsl.objs/byte/ox_sql_dsl__Ox_sql_dsl_schema.cmti
   ../../lib/test/.ox_test.objs/byte/ox_test.cmt
-  ../../lib/test/.ox_test.objs/byte/ox_test.cmti)
+  ../../lib/test/.ox_test.objs/byte/ox_test.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Val_behaviour.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_safety.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Val_behaviour.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_safety.cmti)
  (action
   (progn
    (run ./test_engine.exe)

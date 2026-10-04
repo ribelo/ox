@@ -1,0 +1,5 @@
+; ^nlint-2nwm: orphan interface excluded from an executable target.
+(executable
+ (name main)
+ (modules main)
+ (modes exe))

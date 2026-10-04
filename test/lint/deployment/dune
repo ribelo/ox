@@ -1,0 +1,18 @@
+; ^nlint-hxar ^nlint-2nwm: standalone consumers, with no nested Dune lock on ox.
+
+(rule
+ (alias runtest)
+ (deps
+  check.sh
+  (source_tree project)
+  (source_tree ../../../docs/rules)
+  ../../../docs/caps.md
+  (source_tree ../clean)
+  (source_tree ../violating)
+  (source_tree ../../caps/rules))
+ (action
+  (run
+   bash
+   %{dep:check.sh}
+   %{exe:../../../lib/ox_lint/main.exe}
+   %{workspace_root})))

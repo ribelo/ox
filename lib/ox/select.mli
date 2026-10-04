@@ -24,12 +24,20 @@ type 'r clause
 val receive_clause :
   ('a, 'e) Channel.t -> (('a, 'e Channel.closed) result -> 'r) -> 'r clause
 (** Ready when the channel has an element (the handler gets [Ok v], the element taken) or
-    is closed for receiving (the handler gets the closure). *)
+    is closed for receiving (the handler gets the closure). Suspension: never suspends;
+    this call only reads or constructs OCaml values. Cancellation: not a cancellation
+    point; this call performs no Eio cancellation check. Finalizers: none are registered
+    by this call; existing resource ownership is unchanged. Locking: no lock is acquired
+    by this call. ^nlintd-a7oq *)
 
 val send_clause :
   ('a, 'e) Channel.t -> 'a -> ((unit, 'e Channel.closed) result -> 'r) -> 'r clause
 (** Ready when the channel has room (the value is sent, the handler gets [Ok ()]) or is
-    closed for sending (the value is not sent, the handler gets the closure). *)
+    closed for sending (the value is not sent, the handler gets the closure). Suspension:
+    never suspends; this call only reads or constructs OCaml values. Cancellation: not a
+    cancellation point; this call performs no Eio cancellation check. Finalizers: none are
+    registered by this call; existing resource ownership is unchanged. Locking: no lock is
+    acquired by this call. ^nlintd-a7oq *)
 
 val default_clause : (unit -> 'r) -> 'r clause
 (** Fires at once when no channel clause is ready, without waiting. At most one per
@@ -38,7 +46,10 @@ val default_clause : (unit -> 'r) -> 'r clause
 val timeout_clause : clock:_ Eio.Time.clock -> Duration.t -> (unit -> 'r) -> 'r clause
 (** Fires when no channel clause has become ready [Duration.t] after the {!select} began,
     measured on [clock]; a ready channel clause always wins over an expired timeout. At
-    most one per {!select}. *)
+    most one per {!select}. Suspension: never suspends; this call only reads or constructs
+    OCaml values. Cancellation: not a cancellation point; this call performs no Eio
+    cancellation check. Finalizers: none are registered by this call; existing resource
+    ownership is unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
 val select : 'r clause list -> 'r
 (** [select clauses] blocks until a clause fires and returns its handler's result. A
@@ -51,4 +62,11 @@ val receive : ('a, 'e) Channel.t list -> ('a, 'e Channel.closed) result
 (** [receive channels] is {!select} over a {!receive_clause} on each channel with the
     handler [Fun.id]: the first element available from any of them, or the closure of one
     that is closed. Ox's [select(sourceA, sourceB)].
-    @raise Invalid_argument on an empty list. *)
+    @raise Invalid_argument
+      on an empty list. Suspension: may suspend waiting for a channel change; losing
+      waiters are cancelled and joined before probing again. Cancellation: propagates from
+      the condition waits and Eio.Fiber.any. Cancellation safety: safe to re-run; waiting
+      branches only observe queue changes, and the selected nonblocking receive does not
+      suspend after taking an item. Finalizers: the temporary Eio.Fiber.any scope joins
+      its waiters before return; no caller-switch hook is registered. Locking: channel
+      probes hold no mutex; the rotation cursor uses an atomic update. ^nlintd-a7oq *)

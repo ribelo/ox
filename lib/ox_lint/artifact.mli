@@ -4,9 +4,17 @@ type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
 
 val read : string -> t
 
+type target = Library | Executable
+type membership = Built of target | Not_built | Unknown
+
+val membership : string -> membership
+(** Query Dune's declared modules, cached per project. [Not_built] requires a successful
+    inventory; unavailable or failed inventories return [Unknown], never an exclusion. *)
+
 val find : string -> t
-(** Locate an expected source's annotation; never infer coverage from existing artifacts.
-    Missing or unreadable evidence raises a named failure; ^nlint-2nwm. *)
+(** Match the recorded source identity in local and enclosing build object directories,
+    including qualified subdirectories. Missing or unreadable evidence raises a named
+    failure; coverage is never inferred from existing annotations. ^nlint-2nwm. *)
 
 val setup : t -> unit
 (** Reset caches and initialize rebased visible and hidden include paths. *)

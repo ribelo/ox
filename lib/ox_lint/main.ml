@@ -2,8 +2,8 @@
 open Ocaml_common
 
 let usage =
-  "ox-lint [--rules RULE]... [--require-typed] [--self-check] PATH...\n\
-  \  Build first: dune build @install\n\
+  "ox-lint [--rules RULE]... [--require-typed] [--self-check] [--root DIR] PATH...\n\
+  \  Build first: dune build @install; dune build @check for executable modules\n\
   \  Example: ox-lint --require-typed --rules ox-discarded-result lib/\n\
   \  PATH is an .ml/.mli source, a directory, or a .cmt/.cmti annotation.\n\
   \  Exit 0: clean; 1: findings; 2: invalid arguments or incomplete evidence."
@@ -27,10 +27,40 @@ let rec data_root dir =
     let parent = Filename.dirname dir in
     if parent = dir then None else data_root parent
 
+let rec evidence_root dir =
+  (* Either marker claims this bundle: missing evidence must not trigger a checkout fallback. *)
+  if
+    Sys.file_exists (Filename.concat dir "docs/rules")
+    || Sys.file_exists (Filename.concat dir "test/lint/violating")
+  then Some dir
+  else
+    let parent = Filename.dirname dir in
+    if parent = dir then None else evidence_root parent
+
+let self_check_root override =
+  match override with
+  | Some root -> root
+  | None -> (
+      let executable =
+        if Filename.is_relative Sys.executable_name then
+          Filename.concat (Sys.getcwd ()) Sys.executable_name
+        else Sys.executable_name
+      in
+      let directory = Filename.dirname executable in
+      let installed = Filename.concat (Filename.dirname directory) "share/ox_lint" in
+      if Filename.basename directory = "bin" && Filename.basename executable = "ox-lint"
+      then installed
+      else if Sys.file_exists installed then installed
+      else
+        match evidence_root directory with
+        | Some root -> root
+        | None -> Option.value (evidence_root (Sys.getcwd ())) ~default:installed)
+
 let () =
   let ids, paths, self_check, require_typed = (ref [], ref [], ref false, ref false) in
   (* ^ncapslint-x3gi ^ncapslint-87ld: the gate selects typed rules, never a lexer. *)
   let caps_gate, allows = (ref false, ref []) in
+  let root_override = ref None in
   Arg.parse
     [
       ( "--caps-gate",
@@ -45,6 +75,9 @@ let () =
       ( "--require-typed",
         Arg.Set require_typed,
         " Require fresh typed evidence; optional only in --caps-gate mode" );
+      ( "--root",
+        Arg.String (fun root -> root_override := Some root),
+        "DIR  rule pages and self-check fixture root (overrides automatic lookup)" );
       ( "--self-check",
         Arg.Set self_check,
         " Check every rule's replacement, fixtures and documentation" );
@@ -81,17 +114,7 @@ let () =
            (not !caps_gate) || String.starts_with ~prefix:"ox-caps-" rule.Rules.id)
      in
      if !self_check then begin
-       let directory = Filename.dirname Sys.executable_name in
-       let root =
-         if Filename.basename Sys.executable_name = "ox-lint" then directory
-         else
-           match data_root directory with
-           | Some root -> root
-           | None ->
-               Option.value
-                 (data_root (Sys.getcwd ()))
-                 ~default:(Filename.dirname Sys.executable_name)
-       in
+       let root = self_check_root !root_override in
        let errors = Rules.self_check ~root Rules.all @ Caps_policy.self_check root in
        List.iter (fun message -> fail "ox-lint --self-check" (Failure message)) errors;
        if errors = [] then
@@ -126,53 +149,59 @@ let () =
            let source =
              match artifact with Some t -> Artifact.source t | None -> input
            in
-           (* ^nlintc-j03j ^nlintc-7be1: apply policy to the original source, not its annotation. *)
-           let root =
-             Option.value (data_root (Filename.dirname source)) ~default:(Sys.getcwd ())
-           in
-           let rules = List.filter (Rules.applies ~root ~source) rules in
-           let emit rule loc =
-             let key =
-               ( source,
-                 loc.Location.loc_start.pos_lnum,
-                 loc.loc_start.pos_cnum,
-                 rule.Rules.id )
+           if (not direct) && Artifact.membership source = Artifact.Not_built then
+             Printf.printf "%s:1: ox-lint: not built (not in any Dune target)\n" source
+           else begin
+             (* ^nlintc-j03j ^nlintc-7be1: apply policy to the original source, not its annotation. *)
+             let root =
+               Option.value (data_root (Filename.dirname source)) ~default:(Sys.getcwd ())
              in
-             if not (Hashtbl.mem sites key) then begin
-               Hashtbl.add sites key ();
-               incr findings;
-               Printf.printf "%s:%d: %s: %s\n" source loc.loc_start.pos_lnum rule.id
-                 rule.message
-             end
-           in
-           Syntax.walk source (fun context iterator ->
-               List.fold_left
-                 (fun iterator rule ->
-                   match rule.Rules.source with
-                   | Some make -> make (emit rule) context iterator
-                   | None -> iterator)
-                 iterator rules);
-           if
-             List.exists (fun rule -> Option.is_some rule.Rules.typed) rules
-             || !require_typed
-           then
-             begin try
-               let t = match artifact with Some t -> t | None -> Artifact.find source in
-               Artifact.check ~source t;
-               Artifact.setup t;
-               List.iter
-                 (fun rule ->
-                   match rule.Rules.typed with
-                   | None -> ()
-                   | Some make -> (
-                       let iterator = make (emit rule) in
-                       match t.info.cmt_annots with
-                       | Implementation tree -> iterator.structure iterator tree
-                       | Interface tree -> iterator.signature iterator tree
-                       | _ -> assert false))
-                 rules
-             with ex -> fail ~typed:true input ex
-             end
+             let rules = List.filter (Rules.applies ~root ~source) rules in
+             let emit rule loc =
+               let key =
+                 ( source,
+                   loc.Location.loc_start.pos_lnum,
+                   loc.loc_start.pos_cnum,
+                   rule.Rules.id )
+               in
+               if not (Hashtbl.mem sites key) then begin
+                 Hashtbl.add sites key ();
+                 incr findings;
+                 Printf.printf "%s:%d: %s: %s\n" source loc.loc_start.pos_lnum rule.id
+                   rule.message
+               end
+             in
+             Syntax.walk source (fun context iterator ->
+                 List.fold_left
+                   (fun iterator rule ->
+                     match rule.Rules.source with
+                     | Some make -> make (emit rule) context iterator
+                     | None -> iterator)
+                   iterator rules);
+             if
+               List.exists (fun rule -> Option.is_some rule.Rules.typed) rules
+               || !require_typed
+             then
+               begin try
+                 let t =
+                   match artifact with Some t -> t | None -> Artifact.find source
+                 in
+                 Artifact.check ~source t;
+                 Artifact.setup t;
+                 List.iter
+                   (fun rule ->
+                     match rule.Rules.typed with
+                     | None -> ()
+                     | Some make -> (
+                         let iterator = make (emit rule) in
+                         match t.info.cmt_annots with
+                         | Implementation tree -> iterator.structure iterator tree
+                         | Interface tree -> iterator.signature iterator tree
+                         | _ -> assert false))
+                   rules
+               with ex -> fail ~typed:true input ex
+               end
+           end
          with ex -> fail input ex)
        inputs;
      if !caps_gate then

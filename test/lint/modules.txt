@@ -165,6 +165,8 @@ lib/ox_lint/concurrency.ml lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
 lib/ox_lint/concurrency.mli lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
 lib/ox_lint/paths.ml lib/ox_lint/.lint_engine.objs/byte/paths.cmt
 lib/ox_lint/paths.mli lib/ox_lint/.lint_engine.objs/byte/paths.cmti
+lib/ox_lint/interface_docs.ml lib/ox_lint/.lint_engine.objs/byte/interface_docs.cmt
+lib/ox_lint/interface_docs.mli lib/ox_lint/.lint_engine.objs/byte/interface_docs.cmti
 lib/ox_lint/main.ml lib/ox_lint/.main.eobjs/byte/dune__exe__Main.cmt
 lib/ox_lint/main.mli lib/ox_lint/.main.eobjs/byte/dune__exe__Main.cmti
 lib/ox_lint/rules.ml lib/ox_lint/.lint_engine.objs/byte/rules.cmt

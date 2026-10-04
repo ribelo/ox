@@ -91,7 +91,13 @@ module Reporter : sig
   (** [journal sink] writes each record to [sink] as one compact JSON line, including its
       newline, and serializes concurrent writers with a mutex so two fibers cannot
       interleave halves of a line. The Door passes [Eio.Stdenv.stderr]; the sink is used
-      until the program ends and no finalizer is registered on it. *)
+      until the program ends and no finalizer is registered on it.
+
+    Suspension: never suspends; this call only constructs or reads OCaml values and captures dependencies without invoking them.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Finalizers: this call registers no switch hook and leaves captured resources with their existing owner.
+    Locking: this call acquires no lock; construction of synchronization objects does not acquire them.
+    ^nlintd-a7oq *)
 
   val records : (record -> unit) -> t
   (** [records consume] receives the typed record without serializing it; an exporter
@@ -169,7 +175,13 @@ val create :
     generates exactly 32 lowercase hexadecimal digits per call: a new trace takes
     32 digits, and each span takes the first 16 digits of a fresh ID. Nested spans inherit their trace_id and
     parent_span_id; absent [span_ids], existing behavior is unchanged.
-    ^nobs-xovg ^notel-6m2q *)
+    ^nobs-xovg ^notel-6m2q
+
+    Suspension: never suspends; this call only constructs or reads OCaml values and captures dependencies without invoking them.
+    Cancellation: not a cancellation point; this call performs no Eio cancellation check.
+    Finalizers: this call registers no switch hook and leaves captured resources with their existing owner.
+    Locking: this call acquires no lock; construction of synchronization objects does not acquire them.
+    ^nlintd-a7oq *)
 
 val enabled : t -> level -> bool
 (** [enabled logger level] is [true] when a record of that level would pass the logger's

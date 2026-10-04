@@ -25,10 +25,23 @@ module Pool : sig
       Only [max_threads] callbacks can physically run at once. [max_queued] bounds
       admitted waiting fibers; other [run] callers wait outside admission. The owner
       switch retains every worker fiber, including calls whose caller has timed out or
-      cancelled. Shut down before releasing that switch. *)
+      cancelled. Shut down before releasing that switch. Suspension: never suspends; this
+      call only reads or constructs OCaml values. Cancellation: not a cancellation point;
+      this call performs no Eio cancellation check. Finalizers: none are registered by
+      this call; existing resource ownership is unchanged. Locking: no lock is acquired by
+      this call. ^nlintd-a7oq *)
 
   val shutdown_policy : t -> shutdown_policy
+  (** Suspension: never suspends; this call only reads or constructs OCaml values.
+      Cancellation: not a cancellation point; this call performs no Eio cancellation
+      check. Finalizers: none are registered by this call; existing resource ownership is
+      unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
+
   val stats : t -> stats
+  (** Suspension: never suspends; this call only reads or constructs OCaml values.
+      Cancellation: not a cancellation point; this call performs no Eio cancellation
+      check. Finalizers: none are registered by this call; existing resource ownership is
+      unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
   val shutdown : t -> unit
   (** Closes admission. [Drain] waits for all reserved slots to become free, including

@@ -31,6 +31,13 @@
     [`Actor_stopped] and [`Timeout], which the actor adds and the handler never needs to
     return. *)
 
+(** Cancellation and finalizers: Suspension: never suspends for state reads, polling and
+    subscription bookkeeping. Cancellation: not a cancellation point for state reads,
+    polling and subscription bookkeeping. Finalizers: handle operations register no switch
+    hook; subscriptions must be closed by their owner. Locking: no lock is acquired by
+    this wrapper around caller code; Eio stream and promise locking is delegated.
+    ^nlintd-a7oq *)
+
 type ('state, 'msg, 'reply, 'e) t
 (** An actor folding messages of type ['msg] over a ['state], answering with ['reply] or
     the handler's typed failure ['e]. (^nactor-agcr: the spec names three parameters; the
@@ -63,7 +70,13 @@ val create :
 
     The actor lives exactly as long as [sw] (^nactor-e0l5).
 
-    @raise Invalid_argument if [capacity < 1] or [sw] is finished or cancelled. *)
+    Suspension: may suspend while the daemon starts. Cancellation: propagates
+    Eio.Cancel.Cancelled from the initial switch check for a cancelled context; a finished
+    switch raises Invalid_argument instead. Finalizers: the owning switch cancels and
+    joins the daemon before its release hooks; no on_release hook is installed here.
+    Locking: no lock is held by this wrapper around handler callbacks. ^nlintd-a7oq
+
+    @raise Invalid_argument if [capacity < 1] or [sw] is finished. *)
 
 val ask :
   ?timeout:'c Eio.Time.clock * Duration.t ->
@@ -80,13 +93,20 @@ val ask :
     [Error `Timeout] and the actor is undisturbed. The message stays queued and is still
     handled, its reply dropped — a timeout says nothing about whether the message took
     effect. A caller that is cancelled while waiting leaves its message queued the same
-    way, and the cancellation propagates. *)
+    way, and the cancellation propagates. Suspension: may suspend while the mailbox is
+    full and while awaiting a reply. Cancellation: propagates from the channel or promise
+    wait, including the timeout wrapper's caller cancellation. Cancellation safety: unsafe
+    because data is lost; an accepted message's eventual reply is inaccessible to a
+    cancelled caller and the message may still be handled. ^nlintd-a7oq *)
 
 val tell : ('state, 'msg, _, _) t -> 'msg -> unit
 (** [tell actor msg] enqueues [msg] and returns without waiting for it to be handled.
     ^nactor-jhl2 It blocks while the mailbox is full (^nactor-512k), cancellably. A
     handler's [Error] for a told message has nobody to report to and is dropped. Telling
-    an actor that has stopped drops the message. *)
+    an actor that has stopped drops the message. Suspension: may suspend while the mailbox
+    is full. Cancellation: propagates from the channel wait; admission itself does not
+    suspend. Cancellation safety: safe to re-run; interruption while waiting has not
+    admitted the message. ^nlintd-a7oq *)
 
 val try_tell : ('state, 'msg, _, _) t -> 'msg -> bool
 (** Like {!tell} but never blocks: [false] when the mailbox is full or the actor has
@@ -108,7 +128,10 @@ module Changes : sig
   val next : 'state t -> 'state option
   (** The oldest buffered state, waiting for one if there is none; [None] once the actor
       has stopped (or the subscription was closed) and the buffer is drained. Cancellable
-      while waiting. *)
+      while waiting. Suspension: may suspend until an update or end marker arrives.
+      Cancellation: propagates from Eio.Stream.take. Cancellation safety: safe to re-run;
+      a cancelled stream waiter has not taken an update. Locking: Eio.Stream.take releases
+      its internal mutex before waiting. ^nlintd-a7oq *)
 
   val dropped : 'state t -> int
   (** How many states were discarded because the observer fell more than [capacity]

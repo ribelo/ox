@@ -13,4 +13,9 @@ val source :
   Ast_iterator.iterator
 
 val raw : string -> (Location.t -> unit) -> Tast_iterator.iterator
+
 val signature : (Location.t -> unit) -> Tast_iterator.iterator
+(** Follow real capability tokens from function parameters through aliases, tuple
+    components, constructor/variant payloads and record fields. Global and locally minted
+    tokens are not parameter authority. Shared payload nodes are visited once per
+    substituted state rather than unfolded as a tree. ^ncapslint-8jcy *)
