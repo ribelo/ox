@@ -63,6 +63,17 @@ val open_process_args_in :
 val open_process_args_out :
   caps:< Cap.fork ; Cap.exec ; .. > -> string -> string array -> out_channel
 
+val open_process_args_full :
+  caps:< Cap.fork ; Cap.exec ; .. > ->
+  string ->
+  string array ->
+  string array ->
+  in_channel * out_channel * in_channel
+(** Spawn [prog] with [args] and the given environment, with its standard output, input
+    and error as three separate channels. Blocks the domain only for the spawn itself; the
+    channels are ordinary blocking channels afterwards, and the caller closes them with
+    {!close_process_full}. Adds no Eio operation and no cancellation check. *)
+
 val open_process_args :
   caps:< Cap.fork ; Cap.exec ; .. > -> string -> string array -> in_channel * out_channel
 

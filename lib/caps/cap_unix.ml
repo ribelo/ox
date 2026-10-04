@@ -28,6 +28,9 @@ let open_process_args_in ~caps:(_caps : < Cap.fork ; Cap.exec ; .. >) prog args 
 let open_process_args_out ~caps:(_caps : < Cap.fork ; Cap.exec ; .. >) prog args =
   Unix.open_process_args_out prog args
 
+let open_process_args_full ~caps:(_caps : < Cap.fork ; Cap.exec ; .. >) prog args env =
+  Unix.open_process_args_full prog args env
+
 let open_process_args ~caps:(_caps : < Cap.fork ; Cap.exec ; .. >) prog args =
   Unix.open_process_args prog args
 
