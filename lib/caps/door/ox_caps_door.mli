@@ -37,4 +37,6 @@ val powerbox :
   ; fs_write : fs_write
   ; tmp : tmp
   ; network : network >
-[@@alert mint "Only Ox_app and Ox_test mint a powerbox (docs/caps.md)."]
+(** Mint once per process at its entry and pass the powerbox down. The declaring library
+    or executable must depend explicitly on [ox_caps.door]; the capability gate enforces
+    that authority. *)

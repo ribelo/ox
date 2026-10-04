@@ -55,8 +55,6 @@ type error = {
   global_ message : string;
 }
 
-exception Error of error
-
 val pp_error : Format.formatter -> error -> unit
 val global_error : error @ local -> error @@ portable
 
@@ -88,6 +86,8 @@ val open_memory : unit -> db
 val default_config : string -> config
 val memory_config : unit -> config
 val open_with_config : config -> db
+val open_with_config_result : config -> (db, [ `Sqlite of error ]) result
+(** Open and configure a database, returning SQLite failures as values. *)
 val with_db : config -> (db -> 'a) -> 'a
 
 val close : db -> rc @@ portable
@@ -97,7 +97,7 @@ val prepare_result : db @ local -> string -> (stmt, error) result @ local @@ por
 val prepare : db @ local -> string -> stmt @ local @@ portable
 val prepare_owned_result : db -> string -> (stmt, error) result @@ portable
 val prepare_owned : db -> string -> stmt
-(** Prepare SQL or raise {!Error}. *)
+(** Prepare SQL. Use [prepare_owned_result] to handle preparation failures. *)
 
 val finalize : stmt @ local -> rc @@ portable
 val reset : stmt @ local -> rc
@@ -177,7 +177,7 @@ val check_exn : db @ local -> operation:string -> rc -> unit
 
 val exec_result : db @ local -> string -> (unit, error) result @@ portable
 val exec : db @ local -> string -> unit
-(** Execute a statement that returns no rows. [exec] raises {!Error}. *)
+(** Execute a statement that returns no rows. Use [exec_result] to handle failures. *)
 
 val exec_script_result : db @ local -> string -> (unit, error) result @@ portable
 val exec_script : db @ local -> string -> unit

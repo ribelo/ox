@@ -203,51 +203,20 @@ let resolved_calls calls =
       | _ -> []))
     calls
 
-let entry loc =
-  let parts = String.split_on_char '/' loc.Location.loc_start.Lexing.pos_fname in
-  List.mem "bin" parts && List.hd (List.rev parts) = "main.ml"
-
-let door_boundary loc =
-  let path = Caps_policy.policy_path loc.Location.loc_start.Lexing.pos_fname in
-  String.starts_with ~prefix:"lib/caps/" path
-  || List.mem path [ "lib/app/ox_app.ml"; "lib/test/ox_test.ml" ]
+let door_boundary ~caps loc =
+  Caps_policy.declares_door ~caps loc.Location.loc_start.Lexing.pos_fname
 
 let arguments args = List.filter_map (function _, Arg (e, _) -> Some e | _ -> None) args
-
-let door_exit e =
-  match e.exp_desc with
-  | Texp_apply (fn, args, _, _, _) -> (
-      Paths.is_value (Paths.values [ [ "Stdlib"; "exit" ] ]) fn
-      &&
-      match arguments args with
-      | [ { exp_desc = Texp_apply (door, _, _, _, _); _ } ] ->
-          Paths.in_module (Paths.modules [ [ "Ox_app" ] ]) door
-      | _ -> false)
-  | _ -> false
 
 (* ^ncapslint-nf4t ^ncapslint-87ld: mandatory compiler-parser source tier.
    The source symbol table resolves opens, module aliases and local binders;
    opaque external re-exports are a typed-tier responsibility. *)
-let source name emit context (base : Ast_iterator.iterator) =
+let source ~caps name emit context (base : Ast_iterator.iterator) =
+  let potential_authority = ref false in
   let op = List.find (fun op -> op.name = name) operations in
   let targets = List.map (String.concat ".") op.calls in
-  let origin e =
-    match e.Parsetree.pexp_desc with
-    | Pexp_ident id -> Syntax.value_origin context id.txt
-    | _ -> None
-  in
-  let door_exit e =
-    match e.Parsetree.pexp_desc with
-    | Pexp_apply (fn, [ (_, { pexp_desc = Pexp_apply (door, _); _ }) ]) -> (
-        origin fn = Some "Stdlib.exit"
-        &&
-        match origin door with
-        | Some path -> String.starts_with ~prefix:"Ox_app." path
-        | None -> false)
-    | _ -> false
-  in
   let door id loc =
-    if name = "mint" && not (door_boundary loc) then
+    if name = "mint" && not (door_boundary ~caps loc) then
       match Syntax.module_origin context id with
       | Some path
         when path = "Ox_caps_door" || String.starts_with ~prefix:"Ox_caps_door." path ->
@@ -272,38 +241,54 @@ let source name emit context (base : Ast_iterator.iterator) =
         base.typ self t);
     expr =
       (fun self e ->
-        if name = "exit" && door_exit e then
-          match e.Parsetree.pexp_desc with
-          | Pexp_apply (_, args) -> List.iter (fun (_, arg) -> self.expr self arg) args
-          | _ -> assert false
-        else begin
-          (match e.Parsetree.pexp_desc with
-          | Pexp_ident id -> door id.txt id.loc
-          | _ -> ());
-          (match origin e with
-          | Some path
-            when List.mem path targets
-                 && not
-                      (name = "mint" && path = "Ox_app.with_powerbox" && entry e.pexp_loc)
-            ->
-              emit e.pexp_loc
-          | _ -> ());
-          base.expr self e
-        end);
+        let saved = !potential_authority in
+        (match e.Parsetree.pexp_desc with
+        | Pexp_function (parameters, _, _) ->
+            if
+              List.exists
+                (fun p ->
+                  match p.Parsetree.pparam_desc with
+                  | Pparam_val (_, _, pattern) -> (
+                      match pattern.ppat_desc with
+                      | Ppat_any
+                      | Ppat_construct ({ txt = Longident.Lident "()"; _ }, None) ->
+                          false
+                      | _ -> true)
+                  | Pparam_newtype _ -> false)
+                parameters
+            then potential_authority := true
+        | _ -> ());
+        (match e.Parsetree.pexp_desc with
+        | Pexp_ident id -> (
+            (match Syntax.value_origin ~caps context id.txt with
+            | Some path when List.mem path targets ->
+                if name = "mint" then
+                  begin if not (door_boundary ~caps e.pexp_loc) then emit e.pexp_loc
+                  end
+                else if name = "forge" || not !potential_authority then emit e.pexp_loc
+            | _ -> ());
+            match id.txt with
+            | Longident.Ldot (parent, _) -> door parent.txt e.pexp_loc
+            | _ -> ())
+        | _ -> ());
+        base.expr self e;
+        potential_authority := saved);
   }
 
-let raw name emit =
+let boundary ~caps name emit =
   let operation = List.find (fun op -> op.name = name) operations in
-  let targets = Paths.values (resolved_calls operation.calls) in
-  let with_powerbox = Paths.values [ [ "Ox_app"; "with_powerbox" ] ] in
-  let doors = Paths.modules [ [ "Ox_caps_door" ] ] in
+  let targets = Paths.values ~caps (resolved_calls operation.calls) in
+  let doors = Paths.modules ~caps [ [ "Ox_caps_door" ] ] in
   let rec door_path en path =
     List.exists (Path.same (Env.normalize_module_path None en path)) doors
     || match path with Path.Pdot (parent, _) -> door_path en parent | _ -> false
   in
   let check path en loc =
-    if name = "mint" && (not (door_boundary loc)) && door_path (Paths.env en) path then
-      emit loc
+    if
+      name = "mint"
+      && (not (door_boundary ~caps loc))
+      && door_path (Paths.env ~caps en) path
+    then emit loc
   in
   let base = Tast_iterator.default_iterator in
   {
@@ -331,21 +316,15 @@ let raw name emit =
         base.typ self t);
     expr =
       (fun self e ->
-        if name = "exit" && door_exit e then
-          match e.exp_desc with
-          | Texp_apply (_, args, _, _, _) -> List.iter (self.expr self) (arguments args)
-          | _ -> assert false
-        else begin
-          (match e.exp_desc with
-          | Texp_ident { path = Path.Pdot (parent, _); _ } ->
-              check parent e.exp_env e.exp_loc
-          | _ -> ());
-          if
-            Paths.is_value targets e
-            && not (name = "mint" && entry e.exp_loc && Paths.is_value with_powerbox e)
-          then emit e.exp_loc;
-          base.expr self e
-        end);
+        (match e.exp_desc with
+        | Texp_ident { path = Path.Pdot (parent, _); _ } ->
+            check parent e.exp_env e.exp_loc
+        | _ -> ());
+        if
+          Paths.is_value ~caps targets e
+          && (name <> "mint" || not (door_boundary ~caps e.exp_loc))
+        then emit e.exp_loc;
+        base.expr self e);
   }
 
 (* ^ncapslint-8jcy: a direct-call closure, not a whole-program call graph.
@@ -474,21 +453,23 @@ let rec signature_has name en ty =
   | Tarrow (_, arg, result, _) -> argument_has name en arg || signature_has name en result
   | _ -> false
 
-let signature emit =
+let signature_for ~caps ?operation emit =
   let raw_targets =
     List.filter_map
       (fun op ->
         if op.name = "mint" || op.name = "forge" then None
-        else Some (op.name, Paths.values (resolved_calls op.calls)))
+        else Some (op.name, Paths.values ~caps (resolved_calls op.calls)))
       operations
   in
   let wrappers =
-    Paths.modules
+    Paths.modules ~caps
       [ [ "Ox_caps"; "Cap_unix" ]; [ "Ox_caps"; "Cap_sys" ]; [ "Ox_caps"; "Cap_stdlib" ] ]
   in
-  let tuple_projections = Paths.values [ [ "Stdlib"; "fst" ]; [ "Stdlib"; "snd" ] ] in
+  let tuple_projections =
+    Paths.values ~caps [ [ "Stdlib"; "fst" ]; [ "Stdlib"; "snd" ] ]
+  in
   let result_binds =
-    Paths.values [ [ "Result"; "bind" ]; [ "Stdlib"; "Result"; "bind" ] ]
+    Paths.values ~caps [ [ "Result"; "bind" ]; [ "Stdlib"; "Result"; "bind" ] ]
   in
   let base = Tast_iterator.default_iterator in
   let arguments_in_scope = ref [] and functions = ref [] and bind_aliases = ref [] in
@@ -522,7 +503,7 @@ let signature emit =
     | Some payloads -> List.exists carries_authority payloads
     | None ->
         List.exists
-          (fun (name, _) -> argument_has name (Paths.env e.exp_env) e.exp_type)
+          (fun (name, _) -> argument_has name (Paths.env ~caps e.exp_env) e.exp_type)
           raw_targets
   in
   let rec from_argument e =
@@ -531,7 +512,7 @@ let signature emit =
         List.exists (Ident.same id) !arguments_in_scope
     | Texp_field { record; _ } -> from_argument record
     | Texp_apply (projection, [ (Nolabel, Arg (pair, _)) ], _, _, _)
-      when Paths.is_value tuple_projections projection ->
+      when Paths.is_value ~caps tuple_projections projection ->
         from_argument pair
     | Texp_match (source, _, cases, _, _) when from_argument source ->
         (* Empty/Error branches carry no authority; every branch that does must
@@ -557,7 +538,7 @@ let signature emit =
   in
   let exposed name en =
     List.exists
-      (fun fn -> signature_has name (Paths.env fn.exp_env) fn.exp_type)
+      (fun fn -> signature_has name (Paths.env ~caps fn.exp_env) fn.exp_type)
       !functions
     || List.exists
          (fun id ->
@@ -607,12 +588,13 @@ let signature emit =
                       arguments_in_scope := ids @ !arguments_in_scope;
                     match binding.vb_expr.exp_desc with
                     | Texp_ident { path; _ }
-                      when is_result_bind path (Paths.env binding.vb_expr.exp_env) ->
+                      when is_result_bind path (Paths.env ~caps binding.vb_expr.exp_env)
+                      ->
                         bind_aliases := ids @ !bind_aliases
                     | _ -> ())
                   bindings
             | Texp_letop { let_; ands = []; param; body; _ }
-              when is_result_bind let_.bop_op_path (Paths.env e.exp_env)
+              when is_result_bind let_.bop_op_path (Paths.env ~caps e.exp_env)
                    && from_argument let_.bop_exp ->
                 arguments_in_scope :=
                   (param :: Typedtree.pat_bound_idents body.c_lhs) @ !arguments_in_scope
@@ -626,9 +608,9 @@ let signature emit =
                           Typedtree.pat_bound_idents pattern @ !arguments_in_scope
                     | _ -> ())
                   cases
-            | Texp_apply (callee, args, _, _, _) when not (door_exit e) ->
-                if Paths.in_module wrappers callee then begin
-                  let en = Paths.env callee.exp_env in
+            | Texp_apply (callee, args, _, _, _) ->
+                if Paths.in_module ~caps wrappers callee then begin
+                  let en = Paths.env ~caps callee.exp_env in
                   let cap =
                     List.find_map
                       (function Labelled "caps", Arg (cap, _) -> Some cap | _ -> None)
@@ -637,14 +619,17 @@ let signature emit =
                   List.iter
                     (fun (name, _) ->
                       if
-                        signature_has name en callee.exp_type
+                        (match operation with
+                          | None -> true
+                          | Some selected -> name = selected)
+                        && signature_has name en callee.exp_type
                         &&
                         match cap with
                         | None -> false
                         | Some cap ->
                             not
                               (from_argument cap
-                              && has_cap name (Paths.env cap.exp_env) cap.exp_type)
+                              && has_cap name (Paths.env ~caps cap.exp_env) cap.exp_type)
                       then report e)
                     raw_targets
                 end
@@ -652,14 +637,19 @@ let signature emit =
                 List.iter
                   (fun (name, targets) ->
                     if
-                      Paths.is_value targets e && not (exposed name (Paths.env e.exp_env))
+                      (match operation with
+                        | None -> true
+                        | Some selected -> name = selected)
+                      && Paths.is_value ~caps targets e
+                      && not (exposed name (Paths.env ~caps e.exp_env))
                     then report e)
                   raw_targets
             | _ -> ());
-            if door_exit e then
-              match e.exp_desc with
-              | Texp_apply (_, args, _, _, _) ->
-                  List.iter (self.expr self) (arguments args)
-              | _ -> assert false
-            else base.expr self e));
+            base.expr self e));
   }
+
+let signature ~caps emit = signature_for ~caps emit
+
+let raw ~caps name emit =
+  if name = "mint" || name = "forge" then boundary ~caps name emit
+  else signature_for ~caps ~operation:name emit

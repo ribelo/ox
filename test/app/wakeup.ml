@@ -29,7 +29,7 @@ let ticker backend interval_ms () =
           ()
       in
       Eio.Switch.run (fun sw ->
-          Ox_app.posix_wakeup ~sw ~interval_ms ~logger env;
+          Ox_app.posix_wakeup ~caps:(Ox_test.powerbox ()) ~sw ~interval_ms ~logger env;
           let enabled = backend = "posix" && interval_ms > 0 in
           check_bool "only posix with nonzero interval arms a timer" enabled
             (Eio_mock.Clock.try_advance clock);

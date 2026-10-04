@@ -64,41 +64,50 @@ let discarded_result emit =
   }
 
 (* ^nlintc-7be1: implementations may hide exceptions; signatures expose them. *)
-let public_exception emit _context (base : Ast_iterator.iterator) =
+let public_exception ~caps emit _context (base : Ast_iterator.iterator) =
+  let contract = ref false in
   {
     base with
-    Ast_iterator.signature_item =
+    module_type =
+      (fun self m ->
+        let saved = !contract in
+        base.module_type self m;
+        contract := saved);
+    signature_item =
       (fun self item ->
+        let saved = !contract in
         (match item.Parsetree.psig_desc with
-        | Psig_exception _ -> emit item.psig_loc
+        | Psig_modtype _ | Psig_modtypesubst _ -> contract := true
+        | Psig_exception _ when not !contract ->
+            if not (Caps_policy.private_module ~caps item.psig_loc.loc_start.pos_fname)
+            then emit item.psig_loc
         | _ -> ());
-        base.signature_item self item);
+        base.signature_item self item;
+        contract := saved);
   }
 
+(* ^ncapslint-nf4t ^ncapslint-snhg: one registry and one fixture/page triangle. *)
 let concurrency_rule name message typed =
+  let file = String.map (fun c -> if c = '-' then '_' else c) name in
   {
     id = "ox-" ^ name;
     message;
-    violating =
-      "test/lint/violating/"
-      ^ String.map (fun c -> if c = '-' then '_' else c) name
-      ^ ".ml";
-    clean =
-      "test/lint/clean/" ^ String.map (fun c -> if c = '-' then '_' else c) name ^ ".ml";
+    violating = "test/lint/violating/" ^ file ^ ".ml";
+    clean = "test/lint/clean/" ^ file ^ ".ml";
     documentation = "docs/rules/ox-" ^ name ^ ".md";
     source = None;
     typed = Some typed;
   }
 
-(* ^ncapslint-nf4t ^ncapslint-snhg: one registry and one fixture/page triangle. *)
-let capability_rule name typed =
+let capability_rule ~caps name typed =
   {
     id = "ox-caps-" ^ name;
     message =
       (if name = "signature" then
          "dangerous operation without its capability in the function signature"
        else
-         "raw " ^ name ^ " operation; take its capability and use Ox_caps (docs/caps.md)");
+         "dangerous " ^ name
+         ^ " operation without matching signature authority (docs/caps.md)");
     violating =
       "test/caps/rules/violating/"
       ^ String.map (fun c -> if c = '-' then '_' else c) name
@@ -108,7 +117,7 @@ let capability_rule name typed =
       ^ String.map (fun c -> if c = '-' then '_' else c) name
       ^ ".ml";
     documentation = "docs/rules/ox-caps-" ^ name ^ ".md";
-    source = (if name = "signature" then None else Some (Caps.source name));
+    source = (if name = "signature" then None else Some (Caps.source ~caps name));
     typed = Some typed;
   }
 
@@ -121,11 +130,11 @@ let interface_rule name message typed =
     clean = Filename.remove_extension rule.clean ^ ".mli";
   }
 
-let all =
+let all ~caps =
   List.map
-    (fun (op : Caps.operation) -> capability_rule op.name (Caps.raw op.name))
+    (fun (op : Caps.operation) -> capability_rule ~caps op.name (Caps.raw ~caps op.name))
     Caps.operations
-  @ [ capability_rule "signature" Caps.signature ]
+  @ [ capability_rule ~caps "signature" (Caps.signature ~caps) ]
   @ [
       {
         id = "ox-discarded-result";
@@ -141,19 +150,18 @@ let all =
       concurrency_rule "catch-all"
         "cancellation swallowed; re-raise Eio.Cancel.Cancelled or return the original \
          exception as data"
-        Concurrency.catch_all;
+        (Concurrency.catch_all ~caps);
       concurrency_rule "suspending-finalizer"
         "unprotected suspension in cleanup; wrap the suspension in Eio.Cancel.protect or \
          use Eio.Switch.on_release"
-        Concurrency.suspending_finalizer;
+        (Concurrency.suspending_finalizer ~caps);
       concurrency_rule "stdlib-lock"
-        "domain-blocking Stdlib lock; use a fiber-aware Eio.Mutex/Condition/Semaphore \
-         (Ox.Mutex when row 65 lands)"
-        Concurrency.stdlib_lock;
+        "Stdlib mutex held across suspension; release before yielding or use Eio.Mutex"
+        (Concurrency.stdlib_lock ~caps);
       concurrency_rule "raw-concurrency"
         "raw Eio concurrency; use Scope.fork @ once, Spawner.t or Ox.Mutex when rows \
          61/64/65 land"
-        Concurrency.raw_concurrency;
+        (Concurrency.raw_concurrency ~caps);
       {
         id = "ox-public-exception";
         message =
@@ -161,86 +169,53 @@ let all =
         violating = "test/lint/violating/public_exception.mli";
         clean = "test/lint/clean/public_exception.mli";
         documentation = "docs/rules/ox-public-exception.md";
-        source = Some public_exception;
+        source = Some (public_exception ~caps);
         typed = None;
       };
       concurrency_rule "obj-magic"
-        "unchecked Obj.magic* cast; use a typed representation or confine the trusted \
-         cast to lib/ox/once.ml"
-        Concurrency.obj_magic;
+        "unchecked Obj.magic* cast; use a typed representation (no shipped cast \
+         exceptions)"
+        (Concurrency.obj_magic ~caps);
       concurrency_rule "race-deadline"
         "race against sleep is not a deadline (race selects first success); use \
          Ox.Timeout.timeout"
-        Concurrency.race_deadline;
+        (Concurrency.race_deadline ~caps);
       interface_rule "val-behaviour"
         "resource-bearing val needs Suspension, Cancellation, Finalizers and Locking \
          sentences (docs/rules/interface-documentation.md)"
-        Interface_docs.behaviour;
+        (Interface_docs.behaviour ~caps);
       interface_rule "cancel-safety"
         "cancellable val needs Cancellation safety: safe to re-run / unsafe because data \
          is lost / unsafe because progress is lost \
          (docs/rules/interface-documentation.md)"
-        Interface_docs.cancel_safety;
+        (Interface_docs.cancel_safety ~caps);
     ]
 
-(* ^nlintc-j03j ^nlintc-7be1: narrowly authorised existing boundaries, never suffix matches. *)
-let allowances =
-  [
-    ( "ox-stdlib-lock",
-      "lib/sql/sqlite.ml",
-      "Guards SQLite C calls contended by system threads." );
-    ( "ox-stdlib-lock",
-      "lib/ipc/listener.ml",
-      "Guards a Hashtbl synchronously, without yielding." );
-    ( "ox-public-exception",
-      "lib/sql/ox_sql.mli",
-      "Existing public SQL exception API is used by inn; migration requires a \
-       consumer-coordinated row." );
-    ( "ox-public-exception",
-      "lib/sql/types.mli",
-      "Existing SQL Types exception API must remain compatible with inn." );
-    ( "ox-public-exception",
-      "lib/sql/sqlite.mli",
-      "Existing SQLite exception API requires an inn-compatible consumer migration." );
-    ( "ox-public-exception",
-      "lib/sql_dsl/ox_sql_dsl_query.mli",
-      "Existing SQL query exception API requires an inn-compatible consumer migration." );
-    ( "ox-public-exception",
-      "lib/sql_dsl/ox_sql_dsl.mli",
-      "Existing SQL DSL exception API must remain compatible with inn." );
-    ( "ox-public-exception",
-      "lib/http/tls_flow.mli",
-      "Existing TLS exception API must remain compatible with consumers." );
-    ( "ox-obj-magic",
-      "lib/ox/once.ml",
-      "Reserved trusted ownership casts for row 61; the file does not yet exist." );
-  ]
+(* No shipped exception paths; applicability is based on source kind only. *)
+let allowances = []
 
 let applies ~root ~source rule =
   let absolute path =
     if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
   in
-  let normalize path =
-    let rec loop acc = function
-      | [] -> "/" ^ String.concat "/" (List.rev acc)
-      | "" :: rest | "." :: rest -> loop acc rest
-      | ".." :: rest -> loop (match acc with [] -> [] | _ :: xs -> xs) rest
-      | x :: rest -> loop (x :: acc) rest
-    in
-    loop [] (String.split_on_char '/' (absolute path))
+  let relative =
+    let root = Caps_policy.policy_path (absolute root) in
+    let source = Caps_policy.policy_path (absolute source) in
+    if String.starts_with ~prefix:(root ^ "/") source then
+      String.sub source
+        (String.length root + 1)
+        (String.length source - String.length root - 1)
+    else source
   in
   rule.id <> "ox-raw-concurrency"
+  && (not (List.exists (fun (id, path, _) -> id = rule.id && path = relative) allowances))
   && ((not
          (List.mem rule.id
             [ "ox-public-exception"; "ox-val-behaviour"; "ox-cancel-safety" ]))
      || Filename.check_suffix source ".mli")
-  && not
-       (List.exists
-          (fun (id, path, _) ->
-            id = rule.id && normalize source = normalize (Filename.concat root path))
-          allowances)
 
-let select ids =
+let select ~caps ids =
+  let all = all ~caps in
   List.iter
     (fun id ->
       if not (List.exists (fun rule -> rule.id = id) all) then
@@ -248,7 +223,7 @@ let select ids =
     ids;
   List.filter (fun rule -> ids = [] || List.mem rule.id ids) all
 
-let self_check ~root rules =
+let self_check ~caps:_ ~root rules =
   List.concat_map
     (fun rule ->
       let missing field path =

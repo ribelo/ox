@@ -45,7 +45,4 @@
  (action
   (chdir
    gate
-   (run
-    bash
-    check.sh
-    %{workspace_root}/../install/default/share/ox_caps/caps-gate))))
+   (run bash check.sh %{workspace_root}/../install/default/bin/caps-gate))))

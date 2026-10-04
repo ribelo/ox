@@ -121,6 +121,26 @@ and attrs_any_json fields : yj =
          `Assoc [ ("key", `String name); ("value", any_value_json value) ])
        fields)
 
+(* ^notel-p11y: correlation IDs steer native trace/span/parent IDs and are never
+   ordinary attributes, whichever side of the record carries them. *)
+let trace_control name = name = "trace_id" || name = "span_id" || name = "parent_span_id"
+
+(* ^notel-nbvl ^notel-uydw ^notel-dzpj: inherited context first, explicit fields after it;
+   an entry survives only when no later entry has its key, so an explicit field replaces
+   an inherited one and every key appears once. *)
+let record_attributes (r : Ox_observability.Logger.record) =
+  let merged =
+    List.map (fun (name, value) -> (name, Ox_observability.Logger.String value)) r.context
+    @ r.fields
+  in
+  let rec keep = function
+    | [] -> []
+    | ((name, _) as entry) :: rest ->
+        if trace_control name || List.mem_assoc name rest then keep rest
+        else entry :: keep rest
+  in
+  keep merged
+
 let log_json (r : Ox_observability.Logger.record) : yj =
   let trace_fields =
     List.filter_map
@@ -131,13 +151,7 @@ let log_json (r : Ox_observability.Logger.record) : yj =
   let attrs =
     List.map
       (fun (name, value) -> (name, Ox_observability.Logger.value_to_json value))
-      r.fields
-    @ List.map
-        (fun (name, value) -> (name, `String value))
-        (List.filter
-           (fun (name, _) ->
-             name <> "trace_id" && name <> "span_id" && name <> "parent_span_id")
-           r.context)
+      (record_attributes r)
   in
   `Assoc
     (("timeUnixNano", str_int (unix_ns r.ts))

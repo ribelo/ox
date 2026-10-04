@@ -1,16 +1,18 @@
+(data_only_dirs boundaries)
+
 ; ^ncapslint-w2tq ^ncapslint-8jcy: source and typed deciders cannot mask each other.
 
 (executable
  (name test_caps)
  (modules test_caps)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 ; ^ncapslint-8jcy: payload projections retain parameter provenance.
 
 (executable
  (name test_signature_payloads)
  (modules test_signature_payloads)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 (rule
  (alias runtest)
@@ -28,6 +30,8 @@
   (source_tree clean)
   (source_tree violating)
   source_identity.ml
+  ../../../scripts/caps-gate
+  (source_tree boundaries)
   (source_tree holes)
   clean/caps_clean.cma
   violating/caps_violating.cma

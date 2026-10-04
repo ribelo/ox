@@ -16,6 +16,16 @@ type span = {
 val unix_ns : float -> int64
 (** Saturating conversion from Unix seconds to OTLP nanoseconds. *)
 
+val record_attributes :
+  Ox_observability.Logger.record -> (string * Ox_observability.Logger.value) list
+(** [record_attributes record] is the business attributes an exported log or span carries:
+    the record's inherited context first, as strings, then its explicit fields, with
+    exactly one entry per key and the explicit field winning a duplicate. The trace
+    controls [trace_id], [span_id] and [parent_span_id] are never attributes, from either
+    side; they become native OTLP IDs instead. {!Ox_observability.Logger.Redacted} values
+    stay redacted: they are serialized as ["<redacted>"]. ^notel-nbvl ^notel-uydw
+    ^notel-p11y ^notel-dzpj *)
+
 val encode_traces_request :
   resource_attrs:(string * string) list -> scope_name:string -> span list -> string
 

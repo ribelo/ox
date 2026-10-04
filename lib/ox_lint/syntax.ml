@@ -1,5 +1,6 @@
 (* ^nlint-rv8u: census-style traversal with scoped opens and aliases. *)
 open Ocaml_common
+open Ox_caps
 open Parsetree
 
 (* ^ncapslint-nf4t: source identity tracks value binders and local module exports.
@@ -37,7 +38,8 @@ let exports items =
       | _ -> [])
     items
 
-let known_export module_ value =
+let known_export ~(caps : < Cap.fs_read ; .. >) module_ value =
+  ignore caps#fs_read;
   try
     ignore
       (Env.lookup_value ~use:false ~loc:Location.none
@@ -79,7 +81,7 @@ let module_origin context lid =
   let text = expand context (name lid) in
   if String.starts_with ~prefix:"@local." text then None else Some text
 
-let value_origin context lid =
+let value_origin ~(caps : < Cap.fs_read ; .. >) context lid =
   let text = expand context (name lid) in
   if String.contains text '.' then
     if String.starts_with ~prefix:"@local." text then None
@@ -99,7 +101,7 @@ let value_origin context lid =
           | Some names when List.mem text names -> None
           | Some _ -> lookup rest
           | None ->
-              if known_export module_ text then Some (module_ ^ "." ^ text)
+              if known_export ~caps module_ text then Some (module_ ^ "." ^ text)
               else lookup rest)
     in
     lookup context.opens
@@ -116,7 +118,7 @@ let scoped context f =
       context.locals <- locals)
     f
 
-let walk path make =
+let walk ~(caps : < Cap.fs_read ; .. >) path make =
   (* ^ncapslint-nf4t: source resolution needs only the compiler standard interfaces,
      never a consumer build artifact or the last annotation's load path. *)
   Envaux.reset_cache ~preserve_persistent_env:false;
@@ -230,7 +232,7 @@ let walk path make =
   Lexer.handle_docstrings := true;
   Docstrings.init ();
   Lexer.init ();
-  let channel = open_in path in
+  let channel = Cap_stdlib.open_in ~caps path in
   Fun.protect
     ~finally:(fun () -> close_in_noerr channel)
     (fun () ->

@@ -1,16 +1,16 @@
 # ox-caps-signature
 
-A function that performs a dangerous operation receives the real capability as an argument, or captures an enclosing function's argument. As [the capability model](<../caps.md>) says, "A capability is an ordinary global argument": it need not be a bare labelled `~caps` parameter. Tuple components, constructor and polymorphic-variant payloads (including `option`), and record fields can carry it at any depth. Pattern projections, resolved `Stdlib.fst` / `snd`, and direct aliases preserve a parameter's identity. `Result.bind` binding operators and their direct aliases preserve proven parameter-rooted payloads; arbitrary operators do not gain that trust. The capability method must return the genuine `Ox_caps.Cap.Token` type; a same-named method returning an unrelated type, or a phantom type parameter, does not count.
+^ncapslint-nf4t ^ncapslint-8jcy ^ncapslint-x3gi
 
-The root matters, not the container shape. Module-level/global values, including a `door_slot = ref None` whose contents later hold a capability, remain ambient authority. Locally minted capabilities remain ambient too. A real but unrelated capability parameter does not excuse passing an ambient token to a wrapper.
+## Definition
 
-## Measured corrections (^ncapslint-8jcy)
+Every dangerous raw reference must have the matching genuine abstract-token capability in an enclosing function argument. Wrapper calls additionally require their capability payload to come from an argument, rather than an ambient or locally minted value. Raw operations and wrappers share this decision.
 
-1. The first correction removed the **ten** measured false positives recorded in [the spec](<../issues/caps-on-ox-lint/01-caps-on-ox-lint.md#classified-extras-and-signature-provenance>): enclosing arguments captured by local functions/closures, record-field arguments, and direct aliases. The earlier count of twelve had no supporting output.
-2. The second correction follows parameter authority through payloads. Leash's [read_script_file:796](</home/ribelo/projects/ribelo/leash/packages/leash/playbook.ml#L796-L829>) (`read_script_file ~dir`) and [read_sidecar:874](</home/ribelo/projects/ribelo/leash/packages/leash/playbook.ml#L874-L895>) (`read_sidecar ~dir name`) receive `(caps, directory) option`, destructure `Some (caps, dir)` / `Some (caps, root)`, then pass `~caps` to `Cap_stdlib.In_channel.with_open_bin` at lines 828 and 891. The first reader passes the extracted pair through `Result.bind`. Leash documents that authority travels with the directory. Those two findings were false positives, not missing bare capability parameters. The compiled regression fixtures reproduce both shapes and a record inside a variant.
+The shipped allow-list is empty. Explicit --allow remains supported, but no wrapper, Door, library, tool or pathname receives a default exception.
 
-## Protection limits
+## What this does not cover
 
-The typed decider checks direct raw references and calls to resolved `Ox_caps.Cap_*` wrappers, not a whole-program call graph. It tracks parameter identities and projections, rather than proving runtime token flow. Accepted false negatives remain: a raw operation can be excused by a genuine incoming capability that is never used; mutations can replace a parameter-rooted record field with ambient authority without changing its tracked root; opaque re-exports and general higher-order propagation can conceal dangerous operations. Unsafe casts and the implementation of a capability object's methods are not proved here. Named recursive type expansion is bounded; projected binders are checked at their instantiated types. Build first; source-only runs name every module missing fresh typed evidence as undecided.
+The source tier reports naked or argumentless references. Non-wildcard/non-unit parameters may carry authority, so such references defer to typed evidence; source-only success is not proof of genuine token identity. The typed tier follows normalized paths, token identities and argument provenance, not arbitrary opaque higher-order forwarding, dynamic loading or foreign-code behaviour. Missing/stale typed evidence is undecided; --require-typed fails it.
 
-Compiled evidence: [clean arguments and payloads](<../../test/caps/rules/clean/signature.ml>), [ambient/impostor/mint](<../../test/caps/rules/violating/signature.ml>), [ambient payloads and global slot](<../../test/caps/rules/violating/signature_payloads.ml>), and [pinned provenance regressions](<../../test/caps/rules/test_signature_payloads.ml>).
+[Violating fixture](<../../test/caps/rules/violating/signature.ml>) and
+[clean fixture](<../../test/caps/rules/clean/signature.ml>) form the rule/fixture/page triangle, checked by --self-check.

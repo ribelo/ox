@@ -105,7 +105,12 @@ val reporter : t -> Ox_observability.Logger.Reporter.t
 (** Accepts Logger records without JSON round-tripping. [span] start records are internal;
     their completed end records become OTLP spans when they carry IDs. The emitter never
     blocks on collector I/O; a full queue drops the newest item. ^notel-6m2q ^notel-p4xe
-*)
+
+    Logs and spans carry {!Otlp_json.record_attributes}: the fiber's inherited context and
+    the record's explicit fields, one attribute per key, explicit fields winning; the
+    trace controls become native IDs only. A span omits the kernel's [event], [outcome],
+    [elapsed_ms] and [error], which become its status and timing. ^notel-nbvl ^notel-uydw
+    ^notel-p11y ^notel-jda9 ^notel-dzpj *)
 
 val span_ids : t -> unit -> string
 (** A 32-digit hexadecimal correlation ID generator, suitable for

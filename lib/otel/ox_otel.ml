@@ -84,12 +84,14 @@ let span_of_end (record : Logger.record) =
     when valid_hex 32 trace_id && valid_hex 16 span_id ->
       let end_unix_ns = Json.unix_ns record.ts in
       let elapsed_ns = Int64.mul (Int64.of_int (max 0 elapsed_ms)) 1_000_000L in
+      (* ^notel-nbvl ^notel-uydw ^notel-dzpj: inherited business context and explicit
+         fields, one per key; the kernel's lifecycle fields are the span's own shape. *)
       let attrs =
         List.filter_map
           (fun (key, value) ->
             if List.mem key [ "event"; "outcome"; "elapsed_ms"; "error" ] then None
             else Some (key, Format.asprintf "%a" Logger.pp_value value))
-          record.fields
+          (List.filter (fun (k, _) -> not (List.mem_assoc k record.context) || true) record.fields)
       in
       let outcome =
         match field "outcome" with Some (Logger.String value) -> value | _ -> ""

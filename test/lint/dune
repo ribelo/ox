@@ -3,21 +3,21 @@
 (executable
  (name test_engine)
  (modules test_engine)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 ; ^nlintd-a7oq: use the same typed selector for the triage ledger.
 
 (executable
  (name doc_inventory)
  (modules doc_inventory)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 ; ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0: typed interface regressions.
 
 (executable
  (name test_interface_docs)
  (modules test_interface_docs)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 (rule
  (alias runtest)
@@ -34,7 +34,7 @@
 (executable
  (name test_concurrency)
  (modules test_concurrency)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 (rule
  (alias runtest)
@@ -269,6 +269,8 @@
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Pool.cmti
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Row.cmt
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Row.cmti
+  ../../lib/sql/.ox_sql.objs/byte/ox_sql__Sql_failure.cmt
+  ../../lib/sql/.ox_sql.objs/byte/ox_sql__Sql_failure.cmti
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Sqlite.cmt
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Sqlite.cmti
   ../../lib/sql/.ox_sql.objs/byte/ox_sql__Types.cmt

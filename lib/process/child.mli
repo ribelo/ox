@@ -11,7 +11,7 @@ type output = Pipe | Discard
 type t
 
 val spawn :
-  caps:< Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; .. > ->
+  caps:< Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. > ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
   mgr:_ Eio_unix.Process.mgr ->
@@ -31,9 +31,9 @@ val spawn :
     cancellation and finalization; both retire.
 
     [caps] is what spawning a child may touch (^ncaps-x7z8): it forks and execs another
-    program. Eio's [mgr] does the work; the capability is what makes the signature say so,
-    so a service that launches a program shows [< Cap.fork; Cap.exec; .. >] in its own
-    type. It is only looked at, never kept. *)
+    program and opens [/dev/null] for writing when output is discarded. Eio's [mgr] spawns
+    the process; [fs_write] authorizes opening the null device. A service that launches a
+    program shows [< Cap.fork; Cap.exec; Cap.fs_write; .. >] in its own type. *)
 
 val pid : t -> int
 (** [pid t] is the child's operating-system process id, for status reports and

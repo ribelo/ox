@@ -2,4 +2,4 @@
 
 (library
  (name caps_clean)
- (libraries unix ox_caps ox_app))
+ (libraries unix ox_caps ox_caps.door ox_app))

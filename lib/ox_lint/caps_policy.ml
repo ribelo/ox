@@ -1,29 +1,14 @@
-(* ^ncapslint-x3gi ^ncapslint-snhg: exclusions are policy data, with reasons. *)
-let allowances =
-  [
-    ("lib/caps", "The Cap_* wrappers and token identity boundary contain the raw calls.");
-    ( "lib/app/ox_app.ml",
-      "The Door mints the powerbox, reads the environment and installs process signal \
-       handlers." );
-    ( "lib/ppx_yojson_minimal/main.ml",
-      "Build-time preprocessor: reads source, writes stdout and exits; not a Door \
-       program." );
-    ( "lib/ox_lint",
-      "Compiler build tool: reads sources and typed evidence, writes CLI output and \
-       status; not a Door program." );
-  ]
+(* ^ncapslint-x3gi ^ncapslint-snhg: the shipped allow-list is empty. *)
+let allowances = []
 
-let read path =
-  let ch = open_in_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_in_noerr ch)
-    (fun () -> really_input_string ch (in_channel_length ch))
+let read ~caps path =
+  Ox_caps.Cap_stdlib.In_channel.with_open_bin ~caps path In_channel.input_all
 
-let self_check root =
+let self_check ~caps root =
   let path = Filename.concat root "docs/caps.md" in
   if not (Sys.file_exists path) then [ "caps allow-list: missing docs/caps.md" ]
   else
-    let text = read path in
+    let text = read ~caps path in
     let expected =
       List.map
         (fun (glob, reason) ->
@@ -129,88 +114,142 @@ let policy_path path =
 let excluded allows path =
   let path = policy_path path in
   let parts = String.split_on_char '/' path in
-  List.exists (fun p -> p = "test" || p = "tests") parts
-  || List.exists
-       (fun pattern ->
-         let pattern =
-           if String.starts_with ~prefix:"/" pattern then
-             String.sub pattern 1 (String.length pattern - 1)
-           else pattern
-         in
-         let pattern =
-           if String.ends_with ~suffix:"/" pattern then
-             String.sub pattern 0 (String.length pattern - 1)
-           else pattern
-         in
-         let prefixes =
-           let rec go prefix = function
-             | [] -> []
-             | x :: xs ->
-                 let prefix = if prefix = "" then x else prefix ^ "/" ^ x in
-                 prefix :: go prefix xs
-           in
-           go "" parts
-         in
-         List.exists (glob pattern) prefixes
-         || ((not (String.contains pattern '/')) && List.exists (glob pattern) parts))
-       allows
+  List.exists
+    (fun pattern ->
+      let pattern =
+        if String.starts_with ~prefix:"/" pattern then
+          String.sub pattern 1 (String.length pattern - 1)
+        else pattern
+      in
+      let pattern =
+        if String.ends_with ~suffix:"/" pattern then
+          String.sub pattern 0 (String.length pattern - 1)
+        else pattern
+      in
+      let prefixes =
+        let rec go prefix = function
+          | [] -> []
+          | x :: xs ->
+              let prefix = if prefix = "" then x else prefix ^ "/" ^ x in
+              prefix :: go prefix xs
+        in
+        go "" parts
+      in
+      List.exists (glob pattern) prefixes
+      || ((not (String.contains pattern '/')) && List.exists (glob pattern) parts))
+    allows
 
-(* ^ncapslint-nf4t: Dune's libraries boundary is independent of OCaml references.
-   Read S-expressions, respecting quoted atoms, comments and nesting. *)
-let dependencies path emit =
-  let text = read path in
+(* A direct library dependency grants minting to that stanza's modules. *)
+type sexp = Atom of string | List of sexp list
+
+let sexps text =
   let n = String.length text in
-  let rec scan i line stack =
-    if i < n then
+  let rec space i =
+    if i >= n then i
+    else
       match text.[i] with
-      | '\n' -> scan (i + 1) (line + 1) stack
-      | ' ' | '\t' | '\r' -> scan (i + 1) line stack
-      | ';' ->
-          let stop = Option.value (String.index_from_opt text i '\n') ~default:n in
-          scan stop line stack
-      | '(' -> scan (i + 1) line (None :: stack)
-      | ')' -> (
-          match stack with
-          | [] -> failwith ("malformed Dune file " ^ path)
-          | _ :: rest -> scan (i + 1) line rest)
-      | _ ->
-          let quoted = text.[i] = '"' in
-          let start = i + if quoted then 1 else 0 in
-          let rec stop j =
-            if j >= n then j
-            else if quoted then
-              if text.[j] = '\\' then stop (j + 2)
-              else if text.[j] = '"' then j
-              else stop (j + 1)
-            else if List.mem text.[j] [ ' '; '\n'; '\t'; '\r'; '('; ')'; ';' ] then j
-            else stop (j + 1)
-          in
-          let last = stop start in
-          if quoted && last >= n then failwith ("unterminated Dune string " ^ path);
-          let atom = String.sub text start (last - start) in
-          if atom = "ox_caps.door" && List.mem (Some "libraries") stack then emit line;
-          let stack = match stack with None :: rest -> Some atom :: rest | _ -> stack in
-          scan (last + if quoted then 1 else 0) line stack
+      | ' ' | '\n' | '\r' | '\t' -> space (i + 1)
+      | ';' -> space (Option.value (String.index_from_opt text i '\n') ~default:n)
+      | _ -> i
   in
-  scan 0 1 []
+  let rec items closing i acc =
+    let i = space i in
+    if i = n then
+      if closing then failwith "unterminated Dune stanza" else (List.rev acc, i)
+    else if text.[i] = ')' then
+      if closing then (List.rev acc, i + 1) else failwith "unexpected Dune close"
+    else if text.[i] = '(' then
+      let nested, next = items true (i + 1) [] in
+      items closing next (List nested :: acc)
+    else
+      let quoted = text.[i] = '"' in
+      let start = i + if quoted then 1 else 0 in
+      let buf = Buffer.create 16 in
+      let rec atom j =
+        if j >= n then if quoted then failwith "unterminated Dune string" else j
+        else if quoted && text.[j] = '"' then j + 1
+        else if quoted && text.[j] = '\\' then begin
+          if j + 1 >= n then failwith "unterminated Dune escape";
+          Buffer.add_char buf text.[j + 1];
+          atom (j + 2)
+        end
+        else if (not quoted) && List.mem text.[j] [ ' '; '\n'; '\r'; '\t'; '('; ')'; ';' ]
+        then j
+        else (
+          Buffer.add_char buf text.[j];
+          atom (j + 1))
+      in
+      let next = atom start in
+      items closing next (Atom (Buffer.contents buf) :: acc)
+  in
+  fst (items false 0 [])
 
-let rec dune_files path =
-  if Sys.is_directory path then
-    Array.to_list (Sys.readdir path)
-    |> List.sort String.compare
-    |> List.concat_map (fun name ->
-        if List.mem name [ "_build"; ".git"; "node_modules"; "_opam"; "test"; "tests" ]
-        then []
-        else dune_files (Filename.concat path name))
-  else if Filename.basename path = "dune" then [ path ]
-  else []
+let field name fields =
+  List.find_map
+    (function List (Atom key :: values) when key = name -> Some values | _ -> None)
+    fields
 
-let check_dune paths emit =
-  List.concat_map dune_files paths
-  |> List.sort_uniq String.compare
-  |> List.iter (fun path ->
-      if
-        not
-          (List.mem (policy_path path)
-             [ "lib/caps/dune"; "lib/app/dune"; "lib/test/dune" ])
-      then dependencies path (fun line -> emit path line))
+let owns module_ fields =
+  match field "modules" fields with
+  | None -> true
+  | Some values ->
+      let rec atoms = function
+        | Atom value -> [ String.lowercase_ascii value ]
+        | List values -> List.concat_map atoms values
+      in
+      let names = List.concat_map atoms values in
+      let rec split before = function
+        | "\\" :: rest -> (List.rev before, rest)
+        | name :: rest -> split (name :: before) rest
+        | [] -> (List.rev before, [])
+      in
+      let included, excluded = split [] names in
+      (List.mem ":standard" included || List.mem module_ included)
+      && not (List.mem module_ excluded)
+
+let declared_boundary ~caps source grants =
+  let directory = Filename.dirname source in
+  let module_ =
+    String.lowercase_ascii (Filename.remove_extension (Filename.basename source))
+  in
+  let rec locate dir =
+    let dune = Filename.concat dir "dune" in
+    if Sys.file_exists dune && not (Sys.is_directory dune) then begin
+      let stanzas = sexps (read ~caps dune) in
+      let subdirs =
+        List.exists
+          (function
+            | List [ Atom "include_subdirs"; Atom ("qualified" | "unqualified") ] -> true
+            | _ -> false)
+          stanzas
+      in
+      (dir = directory || subdirs)
+      && List.exists
+           (function
+             | List
+                 (Atom ("library" | "executable" | "executables" | "test" | "tests")
+                 :: fields) ->
+                 owns module_ fields && grants module_ fields
+             | _ -> false)
+           stanzas
+    end
+    else if Sys.file_exists (Filename.concat dir "dune-project") then false
+    else
+      let parent = Filename.dirname dir in
+      parent <> dir && locate parent
+  in
+  locate directory
+
+let declares_door ~caps source =
+  declared_boundary ~caps source (fun _ fields ->
+      match field "libraries" fields with
+      | Some libraries -> List.mem (Atom "ox_caps.door") libraries
+      | None -> false)
+
+let private_module ~caps source =
+  declared_boundary ~caps source (fun module_ fields ->
+      match field "private_modules" fields with
+      | Some modules -> owns module_ [ List (Atom "modules" :: modules) ]
+      | None -> false)
+
+let check_dune ~caps:_ _paths _emit = ()

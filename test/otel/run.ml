@@ -923,6 +923,208 @@ let metrics_failure_reaches_flush () =
       | _ -> Alcotest.fail "a refused metrics window must reach flush");
       exporter_ok (O.shutdown exporter))
 
+(* Every completed span the collector received, in arrival order. *)
+let exported_spans received =
+  List.concat_map
+    (fun request ->
+      if contains request.target "/v1/traces" then
+        request.body |> first "resourceSpans" |> first "scopeSpans" |> member "spans"
+        |> list
+      else [])
+    received
+
+let named name rows =
+  match List.find_opt (fun row -> row |> member "name" |> string = name) rows with
+  | Some row -> row
+  | None -> Alcotest.failf "no span named %s on the wire" name
+
+let with_body body rows =
+  match
+    List.find_opt
+      (fun row -> row |> member "body" |> member "stringValue" |> string = body)
+      rows
+  with
+  | Some row -> row
+  | None -> Alcotest.failf "no log %S on the wire" body
+
+let attribute_keys row =
+  row |> member "attributes" |> list
+  |> List.map (fun attr -> attr |> member "key" |> string)
+
+(* ^notel-dzpj ^notel-p11y: one attribute per key, and no trace control among them. *)
+let check_attribute_keys label row =
+  let keys = attribute_keys row in
+  check_int
+    (label ^ ": one attribute per key")
+    (List.length (List.sort_uniq String.compare keys))
+    (List.length keys);
+  List.iter
+    (fun control ->
+      Alcotest.(check bool)
+        (label ^ ": " ^ control ^ " is not an attribute")
+        false (List.mem control keys))
+    [ "trace_id"; "span_id"; "parent_span_id" ]
+
+let attrs_of row = row |> member "attributes" |> list
+
+(* ^notel-nbvl ^notel-uydw ^notel-p11y ^notel-jda9 ^notel-dzpj: inherited business context
+   reaches every exported span and its correlated logs through the public exporter; an
+   explicit field replaces a duplicate inherited key, once; trace controls stay native IDs;
+   forked siblings keep their own context and local fields; a secret stays redacted. *)
+let inherited_context_on_spans_and_logs () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
+        |> exporter_ok
+      in
+      let logger =
+        L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
+      in
+      let secret = "s3cret-token" in
+      let leg provider =
+        Ox_observability.Context.with_fields
+          [ ("provider", provider) ]
+          (fun () ->
+            L.span logger ("leg." ^ provider)
+              ~fields:[ ("leg.local", String provider) ]
+              (fun () ->
+                L.info logger ("in leg " ^ provider);
+                Ok ()))
+      in
+      Ox_observability.Context.with_fields
+        [
+          ("provider", "binance");
+          ("endpoint", "/inherited");
+          ("db", "ladybug");
+          ("symbol", "BTCUSDT");
+        ]
+        (fun () ->
+          ignore
+            (L.span logger "outer"
+               ~fields:
+                 [
+                   ("endpoint", String "/explicit");
+                   ("outer.local", Bool true);
+                   ("token", Redacted (Ox_observability.Redact.make secret));
+                 ]
+               (fun () ->
+                 L.info logger "correlated"
+                   ~fields:[ ("db", String "explicit-db"); ("trace_id", String "bogus") ];
+                 ignore (L.span logger "inner" (fun () -> Ok ()) : (unit, string) result);
+                 let a, b =
+                   Eio.Fiber.pair (fun () -> leg "kraken") (fun () -> leg "okx")
+                 in
+                 ignore (a : (unit, string) result);
+                 ignore (b : (unit, string) result);
+                 Ok ())
+              : (unit, string) result));
+      exporter_ok (O.flush exporter);
+      let spans = exported_spans !received and logs = log_records !received in
+      List.iter
+        (fun row -> check_attribute_keys (row |> member "name" |> string) row)
+        spans;
+      List.iter
+        (fun row ->
+          check_attribute_keys
+            (row |> member "body" |> member "stringValue" |> string)
+            row)
+        logs;
+      let outer = named "outer" spans and inner = named "inner" spans in
+      let outer_attrs = attrs_of outer and inner_attrs = attrs_of inner in
+      (* ^notel-nbvl: inherited provider, endpoint, symbol and db on parent and child. *)
+      List.iter
+        (fun (label, attrs) ->
+          check_string (label ^ " provider") "binance" (string_attr attrs "provider");
+          check_string (label ^ " symbol") "BTCUSDT" (string_attr attrs "symbol");
+          check_string (label ^ " db") "ladybug" (string_attr attrs "db"))
+        [ ("outer", outer_attrs); ("inner", inner_attrs) ];
+      (* ^notel-uydw: the explicit span field wins its duplicate inherited key. *)
+      check_string "explicit endpoint wins" "/explicit"
+        (string_attr outer_attrs "endpoint");
+      check_string "the child inherits the context, not the parent's field" "/inherited"
+        (string_attr inner_attrs "endpoint");
+      check_string "the parent's local field stays on the parent" "<absent>"
+        (string_attr inner_attrs "outer.local");
+      check_string "a redacted field stays redacted" "<redacted>"
+        (string_attr outer_attrs "token");
+      (* ^notel-p11y: parentage still comes from the trace controls. *)
+      check_string "nested trace"
+        (outer |> member "traceId" |> string)
+        (inner |> member "traceId" |> string);
+      check_string "nested parent"
+        (outer |> member "spanId" |> string)
+        (inner |> member "parentSpanId" |> string);
+      (* ^notel-dzpj: the correlated log has the same context, explicit fields winning. *)
+      let correlated = attrs_of (with_body "correlated" logs) in
+      check_string "log provider" "binance" (string_attr correlated "provider");
+      check_string "log endpoint is the context's" "/inherited"
+        (string_attr correlated "endpoint");
+      check_string "explicit log field wins" "explicit-db" (string_attr correlated "db");
+      check_string "log trace stays native"
+        (outer |> member "traceId" |> string)
+        (with_body "correlated" logs |> member "traceId" |> string);
+      (* ^notel-jda9: forked siblings keep their own context and local fields. *)
+      List.iter
+        (fun provider ->
+          let span = named ("leg." ^ provider) spans in
+          let attrs = attrs_of span in
+          check_string (provider ^ " leg provider") provider
+            (string_attr attrs "provider");
+          check_string (provider ^ " leg inherits db") "ladybug" (string_attr attrs "db");
+          check_string (provider ^ " leg local") provider (string_attr attrs "leg.local");
+          check_string (provider ^ " leg parent")
+            (outer |> member "spanId" |> string)
+            (span |> member "parentSpanId" |> string);
+          let log = attrs_of (with_body ("in leg " ^ provider) logs) in
+          check_string
+            (provider ^ " leg log provider")
+            provider (string_attr log "provider");
+          check_string
+            (provider ^ " leg log has no local span field")
+            "<absent>" (string_attr log "leg.local"))
+        [ "kraken"; "okx" ];
+      check_string "the caller keeps its own provider" "binance"
+        (string_attr outer_attrs "provider");
+      check_string "no sibling field leaks to the caller" "<absent>"
+        (string_attr outer_attrs "leg.local");
+      List.iter
+        (fun request ->
+          Alcotest.(check bool)
+            "the secret never reaches the collector" false
+            (contains (Yojson.Safe.to_string request.body) secret))
+        !received;
+      exporter_ok (O.shutdown exporter))
+
+(* ^notel-nbvl ^notel-dzpj: a completion field is an ordinary end-record field, so it is a
+   span attribute too, winning a duplicate span field once. *)
+let completion_fields_on_spans () =
+  with_collector (fun env sw client endpoint received ->
+      let exporter =
+        O.create ~caps:(Ox_test.powerbox ()) ~sw ~clock:env#clock ~http_client:client
+          ~endpoint ~service_name:"nema" ()
+        |> exporter_ok
+      in
+      let logger =
+        L.create ~service:"nema" ~clock:env#clock ~mono_clock:env#mono_clock
+          ~span_ids:(O.span_ids exporter) ~reporter:(O.reporter exporter) ()
+      in
+      ignore
+        (L.span logger "request"
+           ~fields:[ ("http.status", Int 0) ]
+           ~complete:(fun result ->
+             match result with
+             | Ok status -> [ ("http.status", L.Int status) ]
+             | Error _ -> [])
+           (fun () -> Ok 204)
+          : (int, string) result);
+      exporter_ok (O.shutdown exporter);
+      let span = named "request" (exported_spans !received) in
+      check_attribute_keys "request" span;
+      check_string "the completion field is a span attribute" "204"
+        (string_attr (attrs_of span) "http.status"))
+
 let () =
   Alcotest.run "ox_otel"
     [
@@ -979,5 +1181,15 @@ let () =
             header_values_never_rendered;
           Alcotest.test_case "flush failure and closed state (^notel-p4xe ^notel-t8br)"
             `Quick flush_failure_and_closed;
+        ] );
+      ( "context",
+        [
+          Alcotest.test_case
+            "inherited context on spans and logs (^notel-nbvl ^notel-uydw ^notel-p11y \
+             ^notel-jda9 ^notel-dzpj)"
+            `Quick inherited_context_on_spans_and_logs;
+          Alcotest.test_case
+            "completion fields are span attributes (^notel-nbvl ^notel-dzpj)" `Quick
+            completion_fields_on_spans;
         ] );
     ]

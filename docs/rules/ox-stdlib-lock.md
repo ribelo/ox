@@ -1,30 +1,15 @@
 # ox-stdlib-lock
 
-Story: ^nlintc-j03j; evidence: ^nlintc-kdcl.
+^nlintc-kdcl
 
-Refuses values originating in Stdlib/system-thread `Mutex`, `Condition` and
-`Semaphore`, including nested semaphore modules. A domain-blocking lock is not
-an Eio fiber lock. Use fiber-aware `Eio.Mutex`, `Eio.Condition` or `Eio.Semaphore`;
-`Ox.Mutex` becomes the replacement when row 65 lands. Never hold a domain-blocking
-lock across a fiber suspension. References as well as direct calls are checked.
+## Definition
 
-**Exact project-root-relative allowances, each with a reason:**
+Stdlib mutex/semaphore creation and synchronous critical sections are legal. Report a known scheduler suspension while a Stdlib mutex or semaphore remains held. Track resolved acquire/release operations, aliases, immediate Fun.protect bodies and local helper calls. Creating a returned closure does not execute it under its creator's lock.
 
-- [sqlite.ml](<../../lib/sql/sqlite.ml>): guards SQLite C calls contended by system threads.
-- [listener.ml](<../../lib/ipc/listener.ml>): guards a Hashtbl synchronously, without yielding.
+Release the lock before yielding, awaiting or performing known Eio IO, or use a fiber-aware lock for a genuinely suspending critical section. SQLite's C-state protection and IPC's synchronous table operations are correct without path exemptions.
 
-These guards are correct today and are not migrated. The rule stops the next
-unauthorised use. There is no prefix/directory allowance.
+## What this does not cover
 
-**Accepted false negatives.** Typed module/value origin resolution follows opens
-and module aliases, not value aliases or user wrappers. Custom blocking locks and
-C implementations are outside the set. Lock duration is not analysed; the two
-allowances rest on the reviewed call sites, not a inferred no-yield guarantee.
+This is local typed control-flow analysis, not a whole-program lock proof. Branch states are joined conservatively; correlated branches may need a clearer release boundary. Opaque imported callbacks, foreign primitives and unlisted suspension APIs are not inferred. An unknown callback is not proof of suspension. Eio locks and shadowing local modules are not Stdlib locks.
 
-## Evidence
-
-[Violating fixture](<../../test/lint/violating/stdlib_lock.ml>) and
-[clean fixture](<../../test/lint/clean/stdlib_lock.ml>) are compiled/parsed by
-[the exact-site tests](<../../test/lint/test_concurrency.ml>). The rule table
-registers the replacement, both fixtures and this page for `--self-check`.
-Compiler artifacts inherit the engine's strict freshness and CMI checks.
+[Violating fixture](<../../test/lint/violating/stdlib_lock.ml>) and [clean fixture](<../../test/lint/clean/stdlib_lock.ml>) pin unsafe suspensions and safe synchronous scopes.

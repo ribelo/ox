@@ -54,7 +54,7 @@ let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
                   Eio.Mutex.use_rw ~protect:true mutex (fun () ->
                       handles := c :: !handles);
                   c
-              | Error err -> raise (Types.Error err))
+              | Error err -> raise (Sql_failure.Error err))
         in
         let resources =
           Eio.Pool.create
@@ -122,7 +122,7 @@ let use ?timeout runner f =
                             guard s (fun () -> s.active <- s.active - 1));
                         Eio.Condition.broadcast s.changed)
                       (fun () -> run s c)))
-            with Types.Error err -> Error (`Ox_sql err))
+            with Sql_failure.Error err -> Error (`Ox_sql err))
 
 module Typed = struct
   let select ?timeout r q = use ?timeout r (fun c -> Connection.Typed.select c q)

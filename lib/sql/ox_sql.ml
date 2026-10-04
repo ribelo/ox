@@ -11,9 +11,6 @@ let pp_error = Types.pp_error
 let show_error = Types.show_error
 
 type sql_error = Types.sql_error
-
-exception Error = Types.Error
-
 type 'a typ = 'a Types.typ
 
 let int = Types.int

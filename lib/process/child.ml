@@ -39,8 +39,9 @@ let validate fds =
   in
   go [] fds
 
-let spawn ~caps:_ ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard)
-    ~grace ~fds () =
+let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)
+    ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr = Discard) ~grace ~fds ()
+    =
   match validate fds with
   | Error _ as error -> error
   | Ok () -> (
@@ -65,7 +66,7 @@ let spawn ~caps:_ ~sw ~clock ~mgr ~argv ?env ?cwd ?(stdout = Discard) ?(stderr =
                              fd write,
                              Some write )
                        | Discard ->
-                           let raw = Ox_caps.Cap_unix.open_dev_null () in
+                           let raw = Ox_caps.Cap_unix.open_dev_null ~caps () in
                            let null =
                              Eio_unix.Fd.of_unix ~sw:private_sw ~close_unix:true raw
                            in

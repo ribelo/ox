@@ -12,7 +12,8 @@
  (public_name ppx-yojson-minimal)
  ; ^nlint-2nwm: retain byte CMT evidence even for the installed native tool.
  (modes byte exe)
- (libraries ppx_yojson_minimal))
+ ; Capabilities belong to the driver only, never the deriver library or its output.
+ (libraries ppx_yojson_minimal ox_caps ox_caps.door))
 
 (alias
  (name install)

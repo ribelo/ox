@@ -12,13 +12,13 @@
   caps_policy
   interface_docs
   rules)
- (libraries ocaml-compiler-libs.common unix))
+ (libraries ocaml-compiler-libs.common unix ox_caps))
 
 (executable
  (name main)
  (modules main)
  (modes byte exe)
- (libraries lint_engine))
+ (libraries lint_engine ox_caps.door))
 
 ; ^nlint-2nwm: private native-only targets otherwise have no retained CMT.
 
@@ -34,7 +34,8 @@
  (package ox_lint)
  (section bin)
  (files
-  (main.exe as ox-lint)))
+  (main.exe as ox-lint)
+  (../caps/caps-gate as caps-gate)))
 
 (install
  (package ox_lint)

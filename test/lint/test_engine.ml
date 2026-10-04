@@ -1,8 +1,11 @@
 open Ocaml_common
+open Ox_caps
 
-let () =
+let run ~(caps : < Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
+  assert (Rules.allowances = []);
+  assert (Caps_policy.allowances = []);
   let names = ref [] in
-  Syntax.walk "syntax_fixture.ml" (fun context base ->
+  Syntax.walk ~caps "syntax_fixture.ml" (fun context base ->
       {
         base with
         expr =
@@ -24,12 +27,12 @@ let () =
   in
   if List.rev !names <> expected then begin
     List.iter
-      (fun names -> Printf.eprintf "[%s]\n" (String.concat ";" names))
+      (fun names -> Cap_stdlib.eprintf ~caps "[%s]\n" (String.concat ";" names))
       (List.rev !names);
     failwith "scoped source resolution mismatch"
   end;
   let docs = ref 0 in
-  Syntax.walk "syntax_fixture.mli" (fun _ base ->
+  Syntax.walk ~caps "syntax_fixture.mli" (fun _ base ->
       {
         base with
         value_description =
@@ -40,8 +43,8 @@ let () =
             base.value_description self value);
       });
   assert (!docs = 1);
-  let rule = List.hd (Rules.select [ "ox-discarded-result" ]) in
-  assert (Rules.self_check ~root:"../.." [ rule ] = []);
+  let rule = List.hd (Rules.select ~caps [ "ox-discarded-result" ]) in
+  assert (Rules.self_check ~caps ~root:"../.." [ rule ] = []);
   let mutations =
     [
       { rule with message = "" };
@@ -50,5 +53,10 @@ let () =
       { rule with documentation = "absent" };
     ]
   in
-  List.iter (fun rule -> assert (Rules.self_check ~root:"../.." [ rule ] <> [])) mutations;
-  print_endline "syntax scopes, attached docs and all four evidence fields: pass"
+  List.iter
+    (fun rule -> assert (Rules.self_check ~caps ~root:"../.." [ rule ] <> []))
+    mutations;
+  Cap_stdlib.print_endline ~caps
+    "syntax scopes, attached docs and all four evidence fields: pass"
+
+let () = run ~caps:(Ox_caps_door.powerbox ())

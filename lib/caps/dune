@@ -1,15 +1,8 @@
 ; ^ncaps-4btv ^ncaps-n6r0: the capability types, the wrappers of the dangerous
-; standard-library calls, and the compiler-gate launcher installed under share/ox_caps.
-; ^ncapslint-x3gi: the matching ox_lint build tool carries rule/fixture/page evidence;
-; consumers keep the shell-readable installed launcher (^ncaps-w6n2).
+; standard-library calls. The ox_lint build tool installs the compiler-gate launcher
+; and its rule/fixture/page evidence (^ncapslint-x3gi ^ncaps-w6n2).
 
 (library
  (name ox_caps)
  (public_name ox_caps)
  (libraries unix ox_caps.door))
-
-(install
- (package ox_caps)
- (section share)
- (files
-  (caps-gate as caps-gate)))

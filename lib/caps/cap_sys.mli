@@ -9,7 +9,7 @@
     handles are caller-owned. Locking: the wrapper acquires no lock of its own; delegated
     runtime locking is unchanged. ^nlintd-von6 ^nlintd-a7oq *)
 
-val command : caps:< Cap.exec ; .. > -> string -> int
+val command : caps:< Cap.fork ; Cap.exec ; .. > -> string -> int
 val chdir : caps:< Cap.chdir ; .. > -> string -> unit
 val getenv : caps:< Cap.env ; .. > -> string -> string
 val getenv_opt : caps:< Cap.env ; .. > -> string -> string option
@@ -34,7 +34,9 @@ val rmdir : caps:< Cap.fs_write ; .. > -> string -> unit
 (** Finalizers: Stdlib.In_channel.with_open_bin closes the private /dev/urandom channel on
     return or exception; no switch hook is registered. ^nlintd-a7oq *)
 
-val urandom : caps:< Cap.random ; .. > -> int -> string
+val urandom : caps:< Cap.random ; Cap.fs_read ; .. > -> int -> string
 (** [urandom ~caps n] reads [n] bytes from [/dev/urandom]: unpredictable bytes for a
     handle or a token. Raises [Sys_error] when the device cannot be read and [End_of_file]
-    if it returns fewer bytes. *)
+    if it returns fewer bytes. Requires [Cap.fs_read] as well as [Cap.random] because the
+    implementation reads the device through a channel. A [getrandom(2)] binding would
+    remove the filesystem-read requirement. *)

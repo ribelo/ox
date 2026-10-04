@@ -26,8 +26,9 @@ let create ~caps ?timeout_ms config =
     | Some timeout_ms ->
         { config with busy_timeout_ms = Some (min busy_timeout_ms (max 0 timeout_ms)) }
   in
-  match Sqlite.open_with_config opening_config with
-  | db ->
+  match Sqlite.open_with_config_result opening_config with
+  | Error (`Sqlite err) -> Result.Error (Types.Sqlite err)
+  | Ok db ->
       ignore (Sqlite.busy_timeout db busy_timeout_ms);
       let created_at = now () in
       Ok
@@ -43,7 +44,6 @@ let create ~caps ?timeout_ms config =
         }
   (* ^nlintc-du4v: keep interruption distinct from connection-open failures. *)
   | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
-  | exception Sqlite.Error err -> Result.Error (Types.Sqlite err)
   | exception exn ->
       Result.Error
         (Types.Invalid_query ("open connection failed: " ^ Printexc.to_string exn))

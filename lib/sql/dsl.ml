@@ -3,7 +3,7 @@ module Backend = struct
   type row = Sqlite.stmt
   type nonrec error = Types.error
 
-  exception Error = Types.Error
+  exception Error = Sql_failure.Error
 
   type nonrec 'a typ = 'a Types.typ = {
     value : ('a -> value);

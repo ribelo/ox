@@ -1,19 +1,16 @@
 # ox-caps-forge
 
-Story: ^ncapslint-nf4t; evidence: ^ncapslint-w2tq.
+^ncapslint-nf4t ^ncapslint-8jcy ^ncapslint-x3gi
 
-Reject references to the raw forge operations in the capability table, not
-only applications: taking a dangerous function as a value is access too.
-Use the matching Ox_caps wrapper and capability (see [doctrine](<../caps.md>)).
+## Definition
 
-The mandatory source tier uses the compiler parser, resolves lexical opens and
-module aliases, and distinguishes local value binders and local modules from
-standard-library origins. The typed tier compares normalized compiler paths and
-resolves foreign re-exports. Opaque external modules, functor outputs and includes
-are accepted source-tier limitations; source rules do not infer their exports or
-perform interprocedural analysis. Missing/stale typed evidence is named, never
-used as proof of absence. --require-typed makes it a failure.
+Obj.magic is rejected in every checked implementation: an unchecked cast cannot create genuine capability authority. The shipped per-rule allow-list is empty, including the former reserved trusted-cast path.
+
+The shipped allow-list is empty. Explicit --allow remains supported, but no wrapper, Door, library, tool or pathname receives a default exception.
+
+## What this does not cover
+
+This rule resolves Obj.magic references, including aliases. It does not establish the safety of foreign primitives, arbitrary external casts or code absent from the typed tree. Source-only identity has no whole-program view.
 
 [Violating fixture](<../../test/caps/rules/violating/forge.ml>) and
-[clean fixture](<../../test/caps/rules/clean/forge.ml>) form the registry triangle
-with this page, checked by --self-check.
+[clean fixture](<../../test/caps/rules/clean/forge.ml>) form the rule/fixture/page triangle, checked by --self-check.

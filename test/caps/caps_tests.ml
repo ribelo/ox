@@ -97,7 +97,7 @@ let wrappers_are_the_raw_calls () =
   check_bool "system runs a program" true (Cap_unix.system ~caps "true" = Unix.WEXITED 0);
   check_bool "getenv_opt agrees with the environment" true
     (Cap_sys.getenv_opt ~caps "PATH" = Sys.getenv_opt "PATH");
-  let null = Cap_unix.open_dev_null () in
+  let null = Cap_unix.open_dev_null ~caps () in
   check_int "dev_null takes writes" 3 (Unix.write_substring null "abc" 0 3);
   Unix.close null;
   let (_ : Random.State.t) = Cap_stdlib.Random.make_self_init ~caps () in
@@ -127,10 +127,10 @@ let local_closures_compose () =
 
 (* ^ncaps-x7z8 ^ncaps-jkku: ox_process says in its interface that spawning a child forks
    and execs; Eio's process manager stays the value that does the work, so the call
-   takes both. A service narrowed to exactly < fork; exec > can spawn. *)
-let spawn_needs_fork_and_exec () =
+   takes both. Discarded output opens /dev/null, which also requires fs_write. *)
+let spawn_needs_fork_exec_and_fs_write () =
   Ox_test.run (fun env sw ->
-      let caps = (Ox_test.powerbox () :> Cap.process) in
+      let caps = (Ox_test.powerbox () :> < Cap.fork ; Cap.exec ; Cap.fs_write >) in
       match
         Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
           ~argv:[ "true" ] ~grace:(Ox.Duration.ms 100) ~fds:[] ()
@@ -152,7 +152,8 @@ let () =
             wrappers_are_the_raw_calls;
           Alcotest.test_case "ncaps-4btv capabilities in local closures" `Quick
             local_closures_compose;
-          Alcotest.test_case "ncaps-x7z8 ncaps-jkku spawn takes fork, exec and Eio's mgr"
-            `Quick spawn_needs_fork_and_exec;
+          Alcotest.test_case
+            "ncaps-x7z8 ncaps-jkku spawn takes fork, exec, fs_write and mgr" `Quick
+            spawn_needs_fork_exec_and_fs_write;
         ] );
     ]

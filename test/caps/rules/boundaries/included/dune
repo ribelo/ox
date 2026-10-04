@@ -1,0 +1,2 @@
+(include_subdirs unqualified)
+(library (name included) (libraries ox_caps.door))

@@ -1,3 +1,8 @@
+module Cap = Ox_caps.Cap
+
+let entry_caps = (Ox_caps_door.powerbox [@alert "-mint"]) ()
+let powerbox () = entry_caps
+
 type env =
   < clock : Eio_mock.Clock.t
   ; mono_clock : Eio_mock.Clock.Mono.t
@@ -30,41 +35,48 @@ let callbacks =
    working directory in effect when the ring is created, and the census owns that moment:
    it creates the ring inside a private temporary directory by switching there for [start]
    and for the cursor that maps the ring by name, then switching straight back. *)
-let ring_dir =
-  match Sys.getenv_opt "OCAML_RUNTIME_EVENTS_DIR" with
+let make_ring_dir ~(caps : < Cap.env ; Cap.tmp ; .. >) () =
+  match Ox_caps.Cap_sys.getenv_opt ~caps "OCAML_RUNTIME_EVENTS_DIR" with
   | Some _ -> None
   | None -> (
-      try Some (Filename.temp_dir "ox-test-events-" "") with Sys_error _ -> None)
+      try Some (Ox_caps.Cap_stdlib.Filename.temp_dir ~caps "ox-test-events-" "")
+      with Sys_error _ -> None)
 
-let start_census () =
+let ring_dir = make_ring_dir ~caps:entry_caps ()
+
+let start_census ~(caps : < Cap.chdir ; .. >) () =
   match ring_dir with
   | None ->
       Runtime_events.start ();
       Runtime_events.create_cursor None
   | Some dir ->
       let cwd = Sys.getcwd () in
-      Sys.chdir dir;
+      Ox_caps.Cap_sys.chdir ~caps dir;
       Fun.protect
-        ~finally:(fun () -> Sys.chdir cwd)
+        ~finally:(fun () -> Ox_caps.Cap_sys.chdir ~caps cwd)
         (fun () ->
           Runtime_events.start ();
           Runtime_events.create_cursor None)
 
-let cursor = start_census ()
+let cursor = start_census ~caps:entry_caps ()
 
 (* The runtime's own exit-time unlink resolves that relative fallback path against the
    working directory restored above, so it cannot take this ring with it; the census
    removes the directory it created instead. *)
-let remove_ring_dir dir =
+let remove_ring_dir ~(caps : < Cap.fs_read ; Cap.fs_write ; .. >) dir =
   (try
      Array.iter
-       (fun name -> try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
-       (Sys.readdir dir)
+       (fun name ->
+         try Ox_caps.Cap_sys.remove ~caps (Filename.concat dir name)
+         with Sys_error _ -> ())
+       (Ox_caps.Cap_sys.readdir ~caps dir)
    with Sys_error _ -> ());
-  try Sys.rmdir dir with Sys_error _ -> ()
+  try Ox_caps.Cap_sys.rmdir ~caps dir with Sys_error _ -> ()
 
 let () =
-  match ring_dir with None -> () | Some dir -> at_exit (fun () -> remove_ring_dir dir)
+  match ring_dir with
+  | None -> ()
+  | Some dir -> at_exit (fun () -> remove_ring_dir ~caps:entry_caps dir)
 
 let poll () =
   while Runtime_events.read_poll cursor callbacks None > 0 do
@@ -161,8 +173,6 @@ let exit value error =
       | Ox.Exit.Failure a, Ox.Exit.Failure b -> cause_equal (Alcotest.equal error) a b
       | _ -> false)
 
-let powerbox () = (Ox_caps_door.powerbox [@alert "-mint"]) ()
-
 let flow_pair ?(label = "scripted") chunks =
   let source = Eio_mock.Flow.make (label ^ ":source") in
   Eio_mock.Flow.on_read source
@@ -196,6 +206,7 @@ module Process = struct
     mutable signal_log : int list;
     mutable next_pid : int;
     timer : timer option;
+    caps : Cap.env;
   }
 
   let rec delayed = function
@@ -216,7 +227,14 @@ module Process = struct
           })
         clock
     in
-    { scripts; spawn_log = []; signal_log = []; next_pid = 1000; timer }
+    {
+      scripts;
+      spawn_log = [];
+      signal_log = [];
+      next_pid = 1000;
+      timer;
+      caps = (entry_caps :> Cap.env);
+    }
 
   let spawns t = List.rev t.spawn_log
   let signals t = List.rev t.signal_log
@@ -384,11 +402,13 @@ module Process = struct
     | chunks, terminal -> start_output t ~sw child fds chunks terminal);
     Eio.Resource.T (child, Eio.Process.Pi.process (module Child))
 
+  let environment ~(caps : < Cap.env ; .. >) () = Ox_caps.Cap_unix.environment ~caps ()
+
   module Mgr = struct
     type nonrec t = t
     type tag = [ `Generic | `Unix ]
 
-    let environment _ = Eio.Process.Env.of_array (Unix.environment ())
+    let environment t = Eio.Process.Env.of_array (environment ~caps:t.caps ())
     let getenv_opt t name = Eio.Process.Env.get_opt name (environment t)
 
     let pipe _ ~sw =
@@ -405,7 +425,9 @@ module Process = struct
         | None, exe :: _ -> exe
         | None, [] -> invalid_arg "Ox_test.Process: missing executable and argv"
       in
-      let env = Option.value env ~default:(Unix.environment ()) in
+      let env =
+        Option.value env ~default:(Ox_caps.Cap_unix.environment ~caps:t.caps ())
+      in
       let fd_or default = function
         | None -> default
         | Some flow -> (

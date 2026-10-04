@@ -502,6 +502,11 @@ let open_with_config config =
       ignore (close db);
       raise exn
 
+let open_with_config_result config =
+  match open_with_config config with
+  | db -> Ok db
+  | exception Error error -> Result.Error (`Sqlite error)
+
 let with_db config f =
   let db = open_with_config config in
   Fun.protect ~finally:(fun () -> ignore (close db)) (fun () -> f db)

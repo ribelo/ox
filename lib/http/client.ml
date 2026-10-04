@@ -253,7 +253,8 @@ let request (T (_sw, net, clock, tls)) ~method_ ~url ?(headers = []) ?body ?dead
               |> fun response -> Ok response
             with
             | Http_failure error -> Error error
-            | Tls_flow.Tls_failure why -> Error (`Tls why)
+            | exn when Option.is_some (Tls_flow.failure_message exn) ->
+                Error (`Tls (Option.get (Tls_flow.failure_message exn)))
             | Failure why when !phase = `Tls -> Error (`Tls why)
             | Eio.Io _ as e -> (
                 match !phase with

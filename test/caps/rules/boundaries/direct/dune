@@ -1,0 +1,1 @@
+(executable (name entry) (libraries ox_caps.door))

@@ -400,6 +400,7 @@ val run :
     (^nwake-27rc, ^nwake-y4cx). *)
 
 val posix_wakeup :
+  caps:< Ox_caps.Cap.env ; .. > ->
   sw:Eio.Switch.t ->
   ?interval_ms:int ->
   ?logger:Ox_observability.Logger.t ->
@@ -409,16 +410,25 @@ val posix_wakeup :
   ; stderr : _ Eio.Flow.sink
   ; .. > ->
   unit
-(** Start a switch-owned daemon only when {!Eio.Stdenv.backend_id} is ["posix"].
-    [interval_ms] overrides [OX_POSIX_WAKEUP_MS]; the default is 50 ms and zero disables
-    the daemon. Negative or malformed intervals raise [Invalid_argument]. When [logger] is
-    supplied, log the actual backend and effective interval once through it, subject to
-    its filters; other backends log an interval of zero. Without [logger], start silently
-    and leave stderr untouched.
+(** Start a switch-owned daemon only when {!Eio.Stdenv.backend_id} is ["posix"]. Requires
+    [caps] to read [OX_POSIX_WAKEUP_MS] when [interval_ms] is absent. [interval_ms]
+    overrides [OX_POSIX_WAKEUP_MS]; the default is 50 ms and zero disables the daemon.
+    Negative or malformed intervals raise [Invalid_argument]. When [logger] is supplied,
+    log the actual backend and effective interval once through it, subject to its filters;
+    other backends log an interval of zero. Without [logger], start silently and leave
+    stderr untouched.
 
     The Door uses this on its outer switch. Callers with their own Eio runtime must
     likewise start it before the inner program/cancellation scope and close its switch
-    only after that scope's protected cleanups return. ^nwake-27rc ^nwake-y4cx *)
+    only after that scope's protected cleanups return.
+
+    Suspension: may suspend in the supplied logger's reporter; the daemon sleeps on
+    [env#clock] independently. Cancellation: propagates from reporter calls and switch
+    checks. Finalizers: [sw] owns the daemon and cancels it when the switch finishes.
+    Locking: this function acquires no lock around caller code; reporter locking depends
+    on the supplied logger. Cancellation safety: unsafe because progress is lost if
+    cancellation interrupts reporter output; a startup record may be partially emitted.
+    ^nwake-27rc ^nwake-y4cx *)
 
 val with_powerbox : (Ox_caps.Cap.all_caps -> 'a) -> 'a
 (** Mint this process's powerbox and pass it to [f]. For an entry that already owns its

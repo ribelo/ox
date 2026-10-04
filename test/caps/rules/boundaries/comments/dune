@@ -1,0 +1,2 @@
+; (libraries ox_caps.door) is a comment, not a grant
+(library (name ordinary) (libraries unix))

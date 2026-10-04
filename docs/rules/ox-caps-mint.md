@@ -1,23 +1,16 @@
 # ox-caps-mint
 
-Story: ^ncapslint-nf4t; evidence: ^ncapslint-w2tq.
+^ncapslint-nf4t ^ncapslint-8jcy ^ncapslint-x3gi
 
-Reject references to the raw mint operations in the capability table, not
-only applications: taking a dangerous function as a value is access too.
-Use the matching Ox_caps wrapper and capability (see [doctrine](<../caps.md>)).
+## Definition
 
-The mandatory source tier uses the compiler parser, resolves lexical opens and
-module aliases, and distinguishes local value binders and local modules from
-standard-library origins. The typed tier compares normalized compiler paths and
-resolves foreign re-exports. Opaque external modules, functor outputs and includes
-are accepted source-tier limitations; source rules do not infer their exports or
-perform interprocedural analysis. Missing/stale typed evidence is named, never
-used as proof of absence. --require-typed makes it a failure.
+Minting or naming Ox_caps_door is legal only when the owning Dune stanza directly declares ox_caps.door. Module selectors and include_subdirs establish ownership; transitive dependencies, sibling stanzas and comments grant nothing. Pathnames never grant permission.
 
-with_powerbox is allowed only in bin/**/main.ml or an explicitly excluded path.
-The Dune dependency and direct Door-module boundaries are checked independently;
-the existing nonfatal mint compiler alert is unchanged.
+The shipped allow-list is empty. Explicit --allow remains supported, but no wrapper, Door, library, tool or pathname receives a default exception.
+
+## What this does not cover
+
+Only literal Dune library/executable/test stanzas, modules selectors and include_subdirs are interpreted. Included/generated Dune forms, variables and conditional dependency expressions are not evaluated and do not grant minting. Source identity can miss opaque re-exports; typed evidence resolves compiler paths.
 
 [Violating fixture](<../../test/caps/rules/violating/mint.ml>) and
-[clean fixture](<../../test/caps/rules/clean/mint.ml>) form the registry triangle
-with this page, checked by --self-check.
+[clean fixture](<../../test/caps/rules/clean/mint.ml>) form the rule/fixture/page triangle, checked by --self-check.

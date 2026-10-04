@@ -1,5 +1,6 @@
 (* ^nlintd-z5p5 ^nlintd-vneh ^nlintd-4ja0: typed selection, lexical defaults and shape only. *)
 open Ocaml_common
+open Ox_caps
 open Typedtree
 
 type value = {
@@ -63,7 +64,8 @@ let targets =
           ] );
     ]
 
-let origins () =
+let origins ~(caps : < Cap.fs_read ; .. >) () =
+  ignore caps#fs_read;
   let initial = Lazy.force Env.initial in
   List.concat_map
     (fun (family, names) ->
@@ -83,7 +85,8 @@ let origins () =
         names)
     targets
 
-let selected origins en ty =
+let selected ~(caps : < Cap.fs_read ; .. >) origins en ty =
+  ignore caps#fs_read;
   let seen = Hashtbl.create 32 in
   let declarations = ref [] in
   let families = ref [] in
@@ -249,8 +252,8 @@ let checks fields =
   in
   (behaviour, cancel_safety)
 
-let iterator inspect =
-  let origins = origins () in
+let iterator ~(caps : < Cap.fs_read ; .. >) inspect =
+  let origins = origins ~caps () in
   let defaults = ref [] in
   let modules = ref [] in
   let base = Tast_iterator.default_iterator in
@@ -304,10 +307,8 @@ let iterator inspect =
       (fun self item ->
         (match item.sig_desc with
         | Tsig_value value ->
-            let en =
-              Envaux.env_of_only_summary ~allow_missing_modules:false item.sig_env
-            in
-            let families = selected origins en value.val_desc.ctyp_type in
+            let en = Paths.env ~caps item.sig_env in
+            let families = selected ~caps origins en value.val_desc.ctyp_type in
             let behaviour, cancel_safety =
               checks (merge !defaults (fields (texts value.val_attributes)))
             in
@@ -323,10 +324,10 @@ let iterator inspect =
         base.signature_item self item);
   }
 
-let behaviour emit =
-  iterator (fun value ->
+let behaviour ~(caps : < Cap.fs_read ; .. >) emit =
+  iterator ~caps (fun value ->
       if value.families <> [] && not value.behaviour then emit value.loc)
 
-let cancel_safety emit =
-  iterator (fun value ->
+let cancel_safety ~(caps : < Cap.fs_read ; .. >) emit =
+  iterator ~caps (fun value ->
       if value.families <> [] && not value.cancel_safety then emit value.loc)

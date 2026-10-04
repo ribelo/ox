@@ -7,10 +7,9 @@ including OxCaml's `Obj.magic_portable`. Module aliases/opens are resolved;
 a user module merely named Obj is not the unsafe Stdlib module. Replace casts
 with a typed representation.
 
-The sole exact allowance is `lib/ox/once.ml`, reserved for the trusted ownership
-casts of row 61. **That file does not yet exist**. No other file or directory is
-allowed. Violating fixtures deliberately contain unsafe calls; fixture deciders
-are tested directly, not excused by a production allowance.
+The shipped allowance registry is empty. There is no reserved future cast path:
+any future ownership implementation faces the active rule. Violating fixtures
+are checked directly, not excused by a production allowance.
 
 **Accepted false negatives.** Value aliases and user wrappers around Obj casts
 are not followed. This rule is not a proof of memory or mode safety: other Obj

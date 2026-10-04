@@ -43,7 +43,9 @@ let with_server ?(tls = false) serve test =
                       else (raw :> Eio.Flow.two_way_ty Eio.Resource.t)
                     in
                     serve env flow
-                  with Eio.Io _ | End_of_file | H.Tls_flow.Tls_failure _ -> ()));
+                  with
+                  | Eio.Io _ | End_of_file -> ()
+                  | exn when Option.is_some (H.Tls_flow.failure_message exn) -> ()));
           let client =
             H.Client.create ~sw ~net:env#net ~clock:env#clock
               ~tls:(H.Client.tls ~ca_file:"localhost.crt" ())

@@ -29,7 +29,7 @@ val execvp : caps:< Cap.exec ; .. > -> string -> string array -> 'a
 val execvpe : caps:< Cap.exec ; .. > -> string -> string array -> string array -> 'a
 
 val create_process :
-  caps:< Cap.exec ; .. > ->
+  caps:< Cap.fork ; Cap.exec ; .. > ->
   string ->
   string array ->
   Unix.file_descr ->
@@ -38,7 +38,7 @@ val create_process :
   int
 
 val create_process_env :
-  caps:< Cap.exec ; .. > ->
+  caps:< Cap.fork ; Cap.exec ; .. > ->
   string ->
   string array ->
   string array ->
@@ -47,25 +47,26 @@ val create_process_env :
   Unix.file_descr ->
   int
 
-val open_process_in : caps:< Cap.exec ; .. > -> string -> in_channel
-val open_process_out : caps:< Cap.exec ; .. > -> string -> out_channel
-val open_process : caps:< Cap.exec ; .. > -> string -> in_channel * out_channel
+val open_process_in : caps:< Cap.fork ; Cap.exec ; .. > -> string -> in_channel
+val open_process_out : caps:< Cap.fork ; Cap.exec ; .. > -> string -> out_channel
+val open_process : caps:< Cap.fork ; Cap.exec ; .. > -> string -> in_channel * out_channel
 
 val open_process_full :
-  caps:< Cap.exec ; .. > ->
+  caps:< Cap.fork ; Cap.exec ; .. > ->
   string ->
   string array ->
   in_channel * out_channel * in_channel
 
-val open_process_args_in : caps:< Cap.exec ; .. > -> string -> string array -> in_channel
+val open_process_args_in :
+  caps:< Cap.fork ; Cap.exec ; .. > -> string -> string array -> in_channel
 
 val open_process_args_out :
-  caps:< Cap.exec ; .. > -> string -> string array -> out_channel
+  caps:< Cap.fork ; Cap.exec ; .. > -> string -> string array -> out_channel
 
 val open_process_args :
-  caps:< Cap.exec ; .. > -> string -> string array -> in_channel * out_channel
+  caps:< Cap.fork ; Cap.exec ; .. > -> string -> string array -> in_channel * out_channel
 
-val system : caps:< Cap.exec ; .. > -> string -> Unix.process_status
+val system : caps:< Cap.fork ; Cap.exec ; .. > -> string -> Unix.process_status
 
 (** {1 exit, chdir, environment, signals, time} *)
 
@@ -107,10 +108,10 @@ val openfile_write :
     supplies [O_WRONLY]. A lockfile used only for [lockf] and [fstat] needs no read
     access. *)
 
-val open_dev_null : unit -> Unix.file_descr
-(** A write-only, close-on-exec descriptor on [/dev/null]. No capability: the null device
-    neither reads nor keeps anything, and discarding a child's output is part of spawning
-    it. *)
+val open_dev_null : caps:< Cap.fs_write ; .. > -> unit -> Unix.file_descr
+(** A write-only, close-on-exec descriptor on [/dev/null]. Requires [Cap.fs_write] because
+    opening a device for writing touches the filesystem, even when used only to discard a
+    child's output. The returned descriptor is caller-owned. *)
 
 val opendir : caps:< Cap.fs_read ; .. > -> string -> Unix.dir_handle
 val unlink : caps:< Cap.fs_write ; .. > -> string -> unit

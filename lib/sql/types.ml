@@ -1,4 +1,4 @@
-type error =
+type error = Sql_failure.error =
   | Sqlite of Sqlite.error
   | Pool_error of string
   | Invalid_query of string
@@ -18,9 +18,7 @@ let show_error err = Format.asprintf "%a" pp_error err
 
 type sql_error = error
 
-exception Error of error
-
-let raise_error err = raise (Error err)
+let raise_error err = raise (Sql_failure.Error err)
 
 type 'a typ = {
   value : ('a -> Value.t);
@@ -142,8 +140,9 @@ let bind_dynamic_values @ portable = fun (db @ local) (stmt @ local) values ->
   loop db stmt 1 values
 
 let with_dynamic_statement @ portable = fun (db @ local) sql params (f @ local) ->
-  match Sqlite.prepare db sql with
-  | stmt -> (
+  match Sqlite.prepare_result db sql with
+  | Result.Error err -> Result.Error (Sqlite (Sqlite.global_error err))
+  | Ok stmt -> (
       match bind_dynamic_values db stmt params with
       | Result.Error err ->
           ignore (Sqlite.finalize stmt);
@@ -163,7 +162,6 @@ let with_dynamic_statement @ portable = fun (db @ local) sql params (f @ local) 
                      { operation = "execute"; message = Printexc.to_string exn })
           in
           (finalize_result db stmt result [@nontail]))
-  | exception Sqlite.Error err -> Result.Error (Sqlite err)
 
 let read_dynamic_value @ portable = fun (stmt @ local) index ->
   match Sqlite.column_type_code stmt index with

@@ -12,14 +12,15 @@ default selection nor explicit `--rules ox-raw-concurrency` applies it to any
 source. Row 66's “outside lib/ox” boundary is wrong: ox_http, ox_ipc, ox_rpc and
 ox_process legitimately form the layer over Eio. Rows 61, 64 and 65 have not yet
 landed the replacements (once-taking Scope.fork, Spawner.t, Ox.Mutex). The row
-that delivers those replacements enables the rule with a justified path policy.
+that delivers those replacements enables the whole rule; file exemptions are not
+an activation strategy.
 There are no allow-list entries: the rule is dormant, not broadly allow-listed.
 Fixtures call the decider directly so its behavior is tested without enabling it.
 
 **Accepted false negatives.** Value aliases, user wrappers and functor-dependent
 paths are not followed. Other concurrency APIs are outside the listed set.
 While dormant, **every production use is intentionally unreported**; this is
-not a claim that current raw Eio calls violate a available Ox API.
+not a claim that current raw Eio calls violate an available Ox API.
 
 ## Evidence
 

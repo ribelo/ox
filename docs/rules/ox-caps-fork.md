@@ -1,19 +1,16 @@
 # ox-caps-fork
 
-Story: ^ncapslint-nf4t; evidence: ^ncapslint-w2tq.
+^ncapslint-nf4t ^ncapslint-8jcy ^ncapslint-x3gi
 
-Reject references to the raw fork operations in the capability table, not
-only applications: taking a dangerous function as a value is access too.
-Use the matching Ox_caps wrapper and capability (see [doctrine](<../caps.md>)).
+## Definition
 
-The mandatory source tier uses the compiler parser, resolves lexical opens and
-module aliases, and distinguishes local value binders and local modules from
-standard-library origins. The typed tier compares normalized compiler paths and
-resolves foreign re-exports. Opaque external modules, functor outputs and includes
-are accepted source-tier limitations; source rules do not infer their exports or
-perform interprocedural analysis. Missing/stale typed evidence is named, never
-used as proof of absence. --require-typed makes it a failure.
+A resolved raw fork reference is legal exactly when an enclosing function argument supplies genuine Cap.fork authority. Argument authority may be captured by a nested callback or carried in a record, tuple, option, variant or payload. Wrappers obey the same definition; wrapper paths are not exempted.
+
+The shipped allow-list is empty. Explicit --allow remains supported, but no wrapper, Door, library, tool or pathname receives a default exception.
+
+## What this does not cover
+
+The source tier reports naked or argumentless references. Non-wildcard/non-unit parameters may carry authority, so such references defer to typed evidence; source-only success is not proof of genuine token identity. The typed tier follows normalized paths, token identities and argument provenance, not arbitrary opaque higher-order forwarding, dynamic loading or foreign-code behaviour. Missing/stale typed evidence is undecided; --require-typed fails it.
 
 [Violating fixture](<../../test/caps/rules/violating/fork.ml>) and
-[clean fixture](<../../test/caps/rules/clean/fork.ml>) form the registry triangle
-with this page, checked by --self-check.
+[clean fixture](<../../test/caps/rules/clean/fork.ml>) form the rule/fixture/page triangle, checked by --self-check.

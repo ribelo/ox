@@ -1,6 +1,7 @@
 (library
  (name ox_sql)
  (public_name ox_sql)
+ (private_modules sql_failure)
  (synopsis "Direct-style SQLite client with typed SQL DSL")
  (foreign_stubs
   (language c)

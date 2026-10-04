@@ -2,6 +2,12 @@ module Ssl = Ox_http_tls_openssl
 
 exception Tls_failure of string
 
+let failure_message = function Tls_failure message -> Some message | _ -> None
+
+module Testing = struct
+  let failure message = Tls_failure message
+end
+
 type ty = [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ]
 
 (* wsduplex-j4rn: one receiver and concurrent senders share this flow.

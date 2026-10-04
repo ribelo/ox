@@ -2,37 +2,16 @@
 
 Story: ^nlintc-7be1; evidence: ^nlintc-kdcl.
 
-The Parsetree tier refuses public `exception` declarations, including nested
-signatures and exception rebindings, in interfaces. Hide implementation exceptions
-and expose `('a, 'error) result` edges; do not remove a public exception without
-a consumer migration.
+## Definition
 
-**Exact project-root-relative allowances:**
+An exception declared inside a module-type contract is legal: a functor requires that constructor from its backend, rather than publishing a package-owned exception API. An exception in the interface of a module listed in its owning Dune stanza's `private_modules` is also legal: that build-declared module is not part of the published package API. Package-published exception declarations, including constructors inside ordinary nested module signatures and exception rebindings, are rejected in interfaces. Prefer result-returning boundaries; keep implementation defects private.
 
-- [ox_sql.mli](<../../lib/sql/ox_sql.mli>): existing public SQL exception API is used by inn; migration requires a consumer-coordinated row.
-- [types.mli](<../../lib/sql/types.mli>): existing SQL Types exception API must remain compatible with inn.
-- [ox_sql_dsl.mli](<../../lib/sql_dsl/ox_sql_dsl.mli>): existing SQL DSL exception API must remain compatible with inn.
-- [tls_flow.mli](<../../lib/http/tls_flow.mli>): existing TLS exception API must remain compatible with consumers.
-- [sqlite.mli](<../../lib/sql/sqlite.mli>): existing SQLite exception API requires an inn-compatible consumer migration.
-- [ox_sql_dsl_query.mli](<../../lib/sql_dsl/ox_sql_dsl_query.mli>): existing SQL query exception API requires an inn-compatible consumer migration.
+The shipped allowance registry is empty. No interface pathname receives special treatment. Module-type contracts and build-declared private modules are accepted structurally, not through allowances. The rule applies to .mli source interfaces, not private declarations in implementations.
 
-The policy applies only to `.mli`: an exception inside a module type written in
-a `.ml` is not a published interface and is not reported.
+## Accepted false negatives
 
-**Follow-up row.** Inventory consumers' catches/raises (especially inn), design
-result-returning SQL/DSL/TLS boundaries and error variants, migrate callers and
-implementation edges together, then remove the exceptions and these allowances.
-Row 88 changes no public API and touches no consumer repository.
-
-**Accepted false negatives.** Exception exposure through `include` or an alias
-to a separately declared module type is not expanded by this syntax-only rule.
-Implementation exports without an explicit interface are not inferred. No
-cross-unit API analysis; allow-listed interfaces intentionally remain unchecked.
+This syntax-only tier does not expand includes or aliased module types to discover constructors they expose. It does not infer implementation exports without explicit interfaces and performs no cross-unit API analysis. An accepted module-type constructor does not prove its runtime exception use is correct; it proves the declaration is a required contract rather than a published package-owned constructor.
 
 ## Evidence
 
-[Violating fixture](<../../test/lint/violating/public_exception.mli>) and
-[clean fixture](<../../test/lint/clean/public_exception.mli>) are compiled/parsed by
-[the exact-site tests](<../../test/lint/test_concurrency.ml>). The rule table
-registers the replacement, both fixtures and this page for `--self-check`.
-Compiler artifacts inherit the engine's strict freshness and CMI checks.
+[Violating fixture](<../../test/lint/violating/public_exception.mli>) and [clean fixture](<../../test/lint/clean/public_exception.mli>) are checked by [exact-site tests](<../../test/lint/test_concurrency.ml>). The registry keeps the rule/fixture/page triangle.

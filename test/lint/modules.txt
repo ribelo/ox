@@ -195,6 +195,8 @@ lib/sql/pool.ml lib/sql/.ox_sql.objs/byte/ox_sql__Pool.cmt
 lib/sql/pool.mli lib/sql/.ox_sql.objs/byte/ox_sql__Pool.cmti
 lib/sql/row.ml lib/sql/.ox_sql.objs/byte/ox_sql__Row.cmt
 lib/sql/row.mli lib/sql/.ox_sql.objs/byte/ox_sql__Row.cmti
+lib/sql/sql_failure.ml lib/sql/.ox_sql.objs/byte/ox_sql__Sql_failure.cmt
+lib/sql/sql_failure.mli lib/sql/.ox_sql.objs/byte/ox_sql__Sql_failure.cmti
 lib/sql/sqlite.ml lib/sql/.ox_sql.objs/byte/ox_sql__Sqlite.cmt
 lib/sql/sqlite.mli lib/sql/.ox_sql.objs/byte/ox_sql__Sqlite.cmti
 lib/sql/types.ml lib/sql/.ox_sql.objs/byte/ox_sql__Types.cmt

@@ -10,7 +10,6 @@ depends: [
   "dune" {>= "3.21"}
   "ocaml" {>= "5.4.0"}
   "conf-ox-oxcaml" {= version}
-  "ox_lint" {build & = version}
   "base-unix"
   "odoc" {with-doc}
 ]

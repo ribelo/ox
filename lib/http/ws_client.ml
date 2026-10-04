@@ -211,8 +211,9 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
           (* nhttp-rs5p: the TLS flow owns graceful shutdown, not the raw socket. *)
           (cleanup :=
              fun () ->
-               try Eio.Flow.close flow
-               with Eio.Io _ | End_of_file | Tls_flow.Tls_failure _ -> ());
+               try Eio.Flow.close flow with
+               | Eio.Io _ | End_of_file -> ()
+               | exn when Option.is_some (Tls_flow.failure_message exn) -> ());
           stage := `Upgrade;
           let key = C.key_of_nonce (Ssl.random_bytes 16) in
           let buf = Buffer.create 512 in
@@ -271,7 +272,8 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
             }
         with
         | Failure error -> Error error
-        | Tls_flow.Tls_failure detail -> Error (`Tls detail)
+        | exn when Option.is_some (Tls_flow.failure_message exn) ->
+            Error (`Tls (Option.get (Tls_flow.failure_message exn)))
         | Stdlib.Failure detail when !stage = `Tls -> Error (`Tls detail)
         | Eio.Io _ as exn ->
             Error
@@ -297,7 +299,8 @@ let writing t fn =
     Eio.Mutex.use_ro t.lock (fun () ->
         match t.terminal with Some error -> Error error | None -> fn ())
   with
-  | Tls_flow.Tls_failure s -> finish t (`Tls s)
+  | exn when Option.is_some (Tls_flow.failure_message exn) ->
+      finish t (`Tls (Option.get (Tls_flow.failure_message exn)))
   | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "write failed"))
 
 let send_frame t frame =
@@ -337,8 +340,10 @@ let close ?(code = 1000) ?(reason = "") t =
                       { C.fin = true; opcode = Close; payload }))
                 t.flow;
               Ok ()
-            with Eio.Io _ | End_of_file | Tls_flow.Tls_failure _ ->
-              Error (`Closed (1006, "close failed"))
+            with
+            | Eio.Io _ | End_of_file -> Error (`Closed (1006, "close failed"))
+            | exn when Option.is_some (Tls_flow.failure_message exn) ->
+                Error (`Closed (1006, "close failed"))
           in
           t.shutdown ();
           result)
@@ -450,5 +455,6 @@ let receive t =
     loop None
   with
   | Failure error -> finish t error
-  | Tls_flow.Tls_failure s -> finish t (`Tls s)
+  | exn when Option.is_some (Tls_flow.failure_message exn) ->
+      finish t (`Tls (Option.get (Tls_flow.failure_message exn)))
   | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "read failed"))

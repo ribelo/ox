@@ -112,7 +112,7 @@ printf '\n<!-- caps-allowances -->\n| `unexpected/path` | undeclared |\n<!-- /ca
 expect 2 --self-check
 grep -q 'unexpected documented entry' "$scratch/err"
 cp ../../docs/caps.md "$scratch/installed/docs/caps.md"
-printf '\n<!-- caps-allowances -->\n| `lib/caps` | The Cap_* wrappers and token identity boundary contain the raw calls. |\n<!-- /caps-allowances -->\n' >> "$scratch/installed/docs/caps.md"
+printf '\n<!-- caps-allowances -->\n| `unexpected/path` | undeclared |\n| `unexpected/path` | undeclared |\n<!-- /caps-allowances -->\n' >> "$scratch/installed/docs/caps.md"
 expect 2 --self-check
 grep -q 'duplicate documented entry' "$scratch/err"
 cp ../../docs/caps.md "$scratch/installed/docs/caps.md"

@@ -1,4 +1,4 @@
-type error =
+type error = Sql_failure.error =
   | Sqlite of Sqlite.error
   | Pool_error of string
   | Invalid_query of string
@@ -11,10 +11,6 @@ val pp_error : Format.formatter -> error -> unit
 val show_error : error -> string
 
 type sql_error = error
-
-exception Error of error
-
-val raise_error : error -> 'a
 
 type 'a typ = {
   value : ('a -> Value.t);

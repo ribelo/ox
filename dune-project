@@ -15,6 +15,8 @@
   (conf-ox-oxcaml
    (= :version))
   ocaml-compiler-libs
+  (ox_caps
+   (= :version))
   base-unix))
 
 (authors "Rafal Krzywaznia")
@@ -64,10 +66,6 @@
    (>= 5.4.0))
   (conf-ox-oxcaml
    (= :version))
-  (ox_lint
-   (and
-    :build
-    (= :version)))
   base-unix))
 
 (package
@@ -258,6 +256,8 @@
   (conf-ox-oxcaml
    (= :version))
   ocaml-compiler-libs
+  (ox_caps
+   (= :version))
   (yojson :with-test)
   (alcotest :with-test)))
 

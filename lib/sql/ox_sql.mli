@@ -22,9 +22,6 @@ val pp_error : Format.formatter -> error -> unit
 val show_error : error -> string
 
 type sql_error = error
-
-exception Error of error
-
 type 'a typ = 'a Dsl.typ
 
 val int : int typ

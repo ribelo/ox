@@ -177,7 +177,7 @@ let test_primary_failure () =
     ~on_close:(fun () ->
       Eio.Promise.resolve signal ();
       Eio.Promise.await release)
-    (fun _ -> raise (H.Tls_flow.Tls_failure "primary bad record mac"))
+    (fun _ -> raise (H.Tls_flow.Testing.failure "primary bad record mac"))
     (fun _ -> incr sent)
     (fun _ sw ws ->
       let received, resolve = Eio.Promise.create () in
@@ -199,7 +199,7 @@ let test_fail_fast_primary () =
     ~on_close:(fun () ->
       Eio.Promise.resolve signal ();
       Eio.Fiber.await_cancel ())
-    (fun _ -> raise (H.Tls_flow.Tls_failure "primary bad record mac"))
+    (fun _ -> raise (H.Tls_flow.Testing.failure "primary bad record mac"))
     (fun _ -> Alcotest.fail "sender wrote after transport failure")
     (fun _ sw ws ->
       check_tls

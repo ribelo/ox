@@ -43,7 +43,8 @@ let expect_eof flow =
 let expect_failure flow =
   match Eio.Flow.single_read flow (Cstruct.create 32) with
   | _ -> Alcotest.fail "damaged TLS record accepted"
-  | exception H.Tls_flow.Tls_failure detail ->
+  | exception exn when Option.is_some (H.Tls_flow.failure_message exn) ->
+      let detail = Option.get (H.Tls_flow.failure_message exn) in
       Alcotest.(check bool) "failure carries a diagnostic" true (detail <> "")
 
 let read_message flow expected =

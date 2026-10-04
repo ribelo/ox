@@ -1,22 +1,8 @@
 #!/usr/bin/env bash
-# ox's capability gate (^ncaps-w6n2): the fourth gate beside build, test and fmt.
+# ox's capability gate (^ncaps-w6n2): no shipped --allow entries.
 #   nix develop -c scripts/caps-gate
-# Runs lib/caps/caps-gate over lib/ (and bin/ when it exists). The allow-list below is
-# the whole of it; each entry says why the file may make raw calls (docs/caps.md).
 set -euo pipefail
 cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
-allow=(
-  # The wrappers themselves: the one place the raw calls live (^ncaps-4btv).
-  --allow lib/caps
-  # The Door: it mints the powerbox, reads the environment and installs the SIGINT /
-  # SIGTERM handlers of the process it owns (^ncaps-0mvw).
-  --allow lib/app/ox_app.ml
-  # A build-time preprocessor executable, not a Door program: it reads its input file,
-  # prints to stdout and exits with its status.
-  --allow lib/ppx_yojson_minimal/main.ml
-  --allow lib/ox_lint # ^nlint-r01u ^nlint-4sct: compiler build tool, not a Door program; reads sources/evidence and writes CLI output/status.
-)
-
-# ^ncapslint-87ld: source tier is mandatory; ox also requires fresh typed evidence.
-exec _build/default/lib/ox_lint/main.exe --caps-gate --require-typed "${allow[@]}" "$@"
+# Fresh typed evidence is required in this checkout.
+exec _build/default/lib/ox_lint/main.exe --caps-gate --require-typed "$@"

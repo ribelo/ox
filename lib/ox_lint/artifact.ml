@@ -1,27 +1,33 @@
 (* ^nlint-2nwm ^nlint-hxar: source-driven coverage and the spike's load-path plumbing. *)
 open Ocaml_common
+open Ox_caps
 
 type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
 
-let absolute path =
+let absolute ~(caps : < Cap.fs_read ; .. >) path =
+  ignore caps#fs_read;
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
 
-let canonical path = try Unix.realpath path with Unix.Unix_error _ -> absolute path
+let canonical ~(caps : < Cap.fs_read ; .. >) path =
+  ignore caps#fs_read;
+  try Unix.realpath path with Unix.Unix_error _ -> absolute ~caps path
 
-let rec project dir =
+let rec project ~(caps : < Cap.fs_read ; .. >) dir =
+  ignore caps#fs_read;
   if Sys.file_exists (Filename.concat dir "dune-project") then Some dir
   else
     let parent = Filename.dirname dir in
-    if parent = dir then None else project parent
+    if parent = dir then None else project ~caps parent
 
-let read path =
+let read ~(caps : < Cap.fs_read ; .. >) path =
+  ignore caps#fs_read;
   let info = Cmt_format.read_cmt path in
   let builddir =
     if
       info.cmt_builddir = "/workspace_root"
       || String.starts_with ~prefix:"/workspace_root/" info.cmt_builddir
     then
-      match project (Filename.dirname (absolute path)) with
+      match project ~caps (Filename.dirname (absolute ~caps path)) with
       | Some root ->
           let base = Filename.concat root "_build/default" in
           if info.cmt_builddir = "/workspace_root" then base
@@ -47,23 +53,25 @@ let original path =
 
 let cache = Hashtbl.create 32
 
-let rec annotations dir =
+let rec annotations ~(caps : < Cap.fs_read ; .. >) dir =
   if not (Sys.file_exists dir) then []
   else
-    Array.to_list (Sys.readdir dir)
+    Array.to_list (Cap_sys.readdir ~caps dir)
     |> List.sort String.compare
     |> List.concat_map (fun name ->
         let path = Filename.concat dir name in
-        if Sys.is_directory path then annotations path
+        if Sys.is_directory path then annotations ~caps path
         else if Filename.check_suffix path ".cmt" || Filename.check_suffix path ".cmti"
         then [ path ]
         else [])
 
-let candidates dir =
+let candidates ~(caps : < Cap.fs_read ; .. >) dir =
   match Hashtbl.find_opt cache dir with
   | Some xs -> xs
   | None ->
-      let xs = List.map (fun path -> (path, lazy (read path))) (annotations dir) in
+      let xs =
+        List.map (fun path -> (path, lazy (read ~caps path))) (annotations ~caps dir)
+      in
       Hashtbl.add cache dir xs;
       xs
 
@@ -124,7 +132,7 @@ let field name = function
 
 let inventory_cache = Hashtbl.create 8
 
-let inventory root =
+let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
   match Hashtbl.find_opt inventory_cache root with
   | Some value -> value
   | None ->
@@ -134,7 +142,7 @@ let inventory root =
             "dune describe workspace --root " ^ Filename.quote root
             ^ " --format csexp --lang 0.1 2>/dev/null"
           in
-          let channel = Unix.open_process_in command in
+          let channel = Cap_unix.open_process_in ~caps command in
           let buffer = Buffer.create 4096 in
           (try
              try
@@ -149,7 +157,7 @@ let inventory root =
           if status <> Unix.WEXITED 0 then None
           else
             let resolve path =
-              canonical
+              canonical ~caps
                 (if Filename.is_relative path then Filename.concat root path else path)
             in
             let modules kind fields =
@@ -170,7 +178,7 @@ let inventory root =
             in
             let description = parse_inventory (Buffer.contents buffer) in
             (match field "root" description with
-            | Some (Atom described) when canonical described = root -> ()
+            | Some (Atom described) when canonical ~caps described = root -> ()
             | _ -> failwith "Dune inventory has an invalid root");
             (match field "build_context" description with
             | Some (Atom "_build/default") -> ()
@@ -190,28 +198,28 @@ let inventory root =
       Hashtbl.add inventory_cache root value;
       value
 
-let membership input =
-  let input = canonical input in
-  match project (Filename.dirname input) with
+let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
+  let input = canonical ~caps input in
+  match project ~caps (Filename.dirname input) with
   | None -> Unknown
   | Some root -> (
-      match inventory root with
+      match inventory ~caps root with
       | None -> Unknown
       | Some modules -> (
           let build = Filename.concat root "_build/default" in
           let expected =
             if String.starts_with ~prefix:(build ^ "/") input then input
-            else canonical (Filename.concat build (relative ~root input))
+            else canonical ~caps (Filename.concat build (relative ~root input))
           in
           match List.assoc_opt expected modules with
           | Some kind -> Built kind
           | None -> Not_built))
 
-let rec object_directories ~root dir =
+let rec object_directories ~(caps : < Cap.fs_read ; .. >) ~root dir =
   let here =
     if not (Sys.file_exists dir) then []
     else
-      Array.to_list (Sys.readdir dir)
+      Array.to_list (Cap_sys.readdir ~caps dir)
       |> List.sort String.compare
       |> List.filter_map (fun name ->
           let path = Filename.concat dir name in
@@ -224,13 +232,15 @@ let rec object_directories ~root dir =
   if dir = root then here
   else
     let parent = Filename.dirname dir in
-    if parent = dir then here else here @ object_directories ~root parent
+    if parent = dir then here else here @ object_directories ~caps ~root parent
 
-let find input =
-  let input = canonical input in
+let find ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
+  let input = canonical ~caps input in
   let suffix = if Filename.check_suffix input ".mli" then ".cmti" else ".cmt" in
   let sibling = Filename.remove_extension input ^ suffix in
-  let same_source expected t = canonical (original (source t)) = canonical expected in
+  let same_source expected t =
+    canonical ~caps (original (source t)) = canonical ~caps expected
+  in
   let search expected dirs =
     List.find_map
       (fun dir ->
@@ -240,11 +250,11 @@ let find input =
               let t = Lazy.force value in
               if same_source expected t then Some t else None
             else None)
-          (candidates dir))
+          (candidates ~caps dir))
       dirs
   in
   if Sys.file_exists sibling then begin
-    let t = read sibling in
+    let t = read ~caps sibling in
     if not (same_source input t) then failwith "annotation belongs to another source";
     t
   end
@@ -253,7 +263,7 @@ let find input =
     | Some t -> t
     | None -> (
         let dirs, expected =
-          match project (Filename.dirname input) with
+          match project ~caps (Filename.dirname input) with
           | Some root ->
               let build = Filename.concat root "_build/default" in
               let expected =
@@ -261,14 +271,14 @@ let find input =
                 else Filename.concat build (relative ~root input)
               in
               let dir = Filename.dirname expected in
-              (dir :: object_directories ~root:build dir, expected)
+              (dir :: object_directories ~caps ~root:build dir, expected)
           | None -> ([ Filename.dirname input ], input)
         in
         match search expected dirs with
         | Some t -> t
         | None ->
             let hint =
-              match membership input with
+              match membership ~caps input with
               | Built Executable ->
                   "dune build @check (produces annotations for executable modules)"
               | _ ->
@@ -277,15 +287,20 @@ let find input =
             in
             failwith ("missing typed annotation; run " ^ hint))
 
-let check ~source:input t =
+let digest ~(caps : < Cap.fs_read ; .. >) path =
+  Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
+      Digest.channel channel (-1))
+
+let check ~(caps : < Cap.fs_read ; .. >) ~source:input t =
   let annotated = source t in
   (match t.info.cmt_source_digest with
-  | Some digest when Sys.file_exists annotated && Digest.file annotated = digest -> ()
+  | Some expected when Sys.file_exists annotated && digest ~caps annotated = expected ->
+      ()
   | Some _ -> failwith ("stale typed annotation: digest mismatch for " ^ annotated)
   | None -> failwith "typed annotation has no source digest");
-  if canonical input <> canonical annotated then begin
+  if canonical ~caps input <> canonical ~caps annotated then begin
     let built = original annotated in
-    if (not (Sys.file_exists built)) || Digest.file input <> Digest.file built then
+    if (not (Sys.file_exists built)) || digest ~caps input <> digest ~caps built then
       failwith ("stale typed annotation: original source differs from build copy " ^ input);
     if (Unix.stat input).st_mtime > (Unix.stat t.path).st_mtime then
       failwith ("stale typed annotation: source is newer than annotation " ^ input)
@@ -297,7 +312,8 @@ let check ~source:input t =
       failwith
         "annotation is not a complete implementation/interface of the requested source"
 
-let setup t =
+let setup ~(caps : < Cap.fs_read ; .. >) t =
+  ignore caps#fs_read;
   Envaux.reset_cache ~preserve_persistent_env:false;
   let rebase p =
     if Filename.is_relative p then Filename.concat t.builddir p

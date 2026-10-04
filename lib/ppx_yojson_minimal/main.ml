@@ -2,28 +2,36 @@
     preprocessed source on stdout, exit 2 with the reason on stderr when derivation was
     requested but is not supported. *)
 
-let read_file path =
-  let channel = open_in_bin path in
-  let length = in_channel_length channel in
-  let source = really_input_string channel length in
-  close_in channel;
-  source
+open Ox_caps
+
+let read_file ~(caps : < Cap.fs_read ; .. >) path =
+  Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
+      let length = in_channel_length channel in
+      really_input_string channel length)
+
+let run ~(caps : < Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) argv =
+  match argv with
+  | [| _; path |] -> (
+      match read_file ~caps path with
+      | exception Sys_error message ->
+          Cap_stdlib.eprintf ~caps "ppx-yojson-minimal: %s\n" message;
+          2
+      | source -> (
+          match Ppx_yojson_minimal.Derive.process ~filename:path ~source with
+          | Ok output ->
+              Cap_stdlib.print_string ~caps output;
+              0
+          | Error message ->
+              Cap_stdlib.eprintf ~caps "ppx-yojson-minimal: %s\n" message;
+              2))
+  | _ ->
+      Cap_stdlib.eprintf ~caps "usage: ppx-yojson-minimal <file.ml|file.mli>\n";
+      2
+
+let main ~(caps : < Cap.exit ; Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) argv =
+  Cap_stdlib.exit ~caps
+    (run ~caps:(caps :> < Cap.fs_read ; Cap.stdout ; Cap.stderr >) argv)
 
 let () =
-  match Sys.argv with
-  | [| _; path |] -> (
-      let source =
-        match read_file path with
-        | text -> text
-        | exception Sys_error message ->
-            Printf.eprintf "ppx-yojson-minimal: %s\n" message;
-            exit 2
-      in
-      match Ppx_yojson_minimal.Derive.process ~filename:path ~source with
-      | Ok output -> print_string output
-      | Error message ->
-          Printf.eprintf "ppx-yojson-minimal: %s\n" message;
-          exit 2)
-  | _ ->
-      Printf.eprintf "usage: ppx-yojson-minimal <file.ml|file.mli>\n";
-      exit 2
+  let caps = Ox_caps_door.powerbox () in
+  main ~caps:(caps :> < Cap.exit ; Cap.fs_read ; Cap.stdout ; Cap.stderr >) Sys.argv

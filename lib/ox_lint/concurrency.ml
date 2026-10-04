@@ -7,10 +7,10 @@ let base = Tast_iterator.default_iterator
 let arguments args =
   List.filter_map (function label, Arg (e, _) -> Some (label, e) | _ -> None) args
 
-let catch_all emit =
+let catch_all ~caps emit =
   let rebindings = Path.Tbl.create 8 in
   let raises =
-    Paths.values
+    Paths.values ~caps
       [
         [ "Stdlib"; "raise" ];
         [ "Stdlib"; "raise_notrace" ];
@@ -36,7 +36,7 @@ let catch_all emit =
     else
       match Path.Tbl.find_opt rebindings path with
       | Some target -> origin en (path :: seen) target
-      | None -> Env.normalize_value_path None (Paths.env en) path
+      | None -> Env.normalize_value_path None (Paths.env ~caps en) path
   in
   let rec is_cancelled (p : pattern) =
     match p.pat_desc with
@@ -54,7 +54,7 @@ let catch_all emit =
   in
   let raises_binding id e =
     match e.exp_desc with
-    | Texp_apply (fn, args, _, _, _) when Paths.is_value raises fn -> (
+    | Texp_apply (fn, args, _, _, _) when Paths.is_value ~caps raises fn -> (
         match arguments args with
         | (_, { exp_desc = Texp_ident { path = Path.Pident actual; _ }; _ }) :: _ ->
             Ident.same actual id
@@ -160,45 +160,33 @@ let identifiers predicate emit =
         base.expr self e);
   }
 
-let stdlib_lock emit =
-  let modules =
-    Paths.modules
-      [
-        [ "Stdlib"; "Mutex" ];
-        [ "Stdlib"; "Condition" ];
-        [ "Stdlib"; "Semaphore" ];
-        [ "Mutex" ];
-        [ "Condition" ];
-        [ "Semaphore" ];
-      ]
-  in
-  identifiers (Paths.in_module modules) emit
-
-let obj_magic emit =
-  let modules = Paths.modules [ [ "Stdlib"; "Obj" ] ] in
+let obj_magic ~caps emit =
+  let modules = Paths.modules ~caps [ [ "Stdlib"; "Obj" ] ] in
   identifiers
     (fun e ->
       match e.exp_desc with
       | Texp_ident { path; _ } ->
-          String.starts_with ~prefix:"magic" (Path.last path) && Paths.in_module modules e
+          String.starts_with ~prefix:"magic" (Path.last path)
+          && Paths.in_module ~caps modules e
       | _ -> false)
     emit
 
-let raw_concurrency emit =
-  let fiber = Paths.modules [ [ "Eio"; "Fiber" ] ] in
-  let fiber_list = Paths.modules [ [ "Eio"; "Fiber"; "List" ] ] in
-  let switch = Paths.modules [ [ "Eio"; "Switch" ] ] in
-  let mutex = Paths.modules [ [ "Eio"; "Mutex" ] ] in
+let raw_concurrency ~caps emit =
+  let fiber = Paths.modules ~caps [ [ "Eio"; "Fiber" ] ] in
+  let fiber_list = Paths.modules ~caps [ [ "Eio"; "Fiber"; "List" ] ] in
+  let switch = Paths.modules ~caps [ [ "Eio"; "Switch" ] ] in
+  let mutex = Paths.modules ~caps [ [ "Eio"; "Mutex" ] ] in
   identifiers
     (fun e ->
       match e.exp_desc with
       | Texp_ident { path; _ } ->
           let name = Path.last path in
-          Paths.in_module mutex e || Paths.in_module fiber_list e
-          || Paths.in_module fiber e
+          Paths.in_module ~caps mutex e
+          || Paths.in_module ~caps fiber_list e
+          || Paths.in_module ~caps fiber e
              && (String.starts_with ~prefix:"fork" name
                 || List.mem name [ "both"; "pair"; "all"; "any"; "first" ])
-          || Paths.in_module switch e
+          || Paths.in_module ~caps switch e
              && (name = "run" || String.starts_with ~prefix:"on_release" name)
       | _ -> false)
     emit
@@ -253,12 +241,195 @@ let suspending_names =
       [ "Ox"; "Scope"; "run" ];
     ]
 
-let suspending_finalizer emit =
-  let suspend = Paths.values suspending_names in
-  let finally = Paths.values [ [ "Stdlib"; "Fun"; "protect" ] ] in
-  let protect = Paths.values [ [ "Eio"; "Cancel"; "protect" ] ] in
+(* A lock is dangerous only while a scheduler suspension can happen. *)
+let stdlib_lock ~caps emit =
+  let acquire =
+    Paths.values ~caps
+      [
+        [ "Mutex"; "lock" ];
+        [ "Stdlib"; "Mutex"; "lock" ];
+        [ "Semaphore"; "Counting"; "acquire" ];
+        [ "Semaphore"; "Binary"; "acquire" ];
+      ]
+  in
+  let release =
+    Paths.values ~caps
+      [
+        [ "Mutex"; "unlock" ];
+        [ "Stdlib"; "Mutex"; "unlock" ];
+        [ "Semaphore"; "Counting"; "release" ];
+        [ "Semaphore"; "Binary"; "release" ];
+      ]
+  in
+  let suspend = Paths.values ~caps suspending_names in
+  let protect =
+    Paths.values ~caps [ [ "Fun"; "protect" ]; [ "Stdlib"; "Fun"; "protect" ] ]
+  in
+  let immediate = Paths.values ~caps [ [ "Eio"; "Cancel"; "protect" ] ] in
+  let held = ref [] and aliases = ref [] and closures = ref [] and active = ref [] in
+  let reported = Hashtbl.create 8 in
+  let report loc =
+    let key = (loc.Location.loc_start.Lexing.pos_fname, loc.loc_start.pos_cnum) in
+    if not (Hashtbl.mem reported key) then (
+      Hashtbl.add reported key ();
+      emit loc)
+  in
+  let rec key e =
+    match e.exp_desc with
+    | Texp_ident { path = Path.Pident id; _ } ->
+        Some
+          (Option.value
+             (List.find_map
+                (fun (other, name) -> if Ident.same id other then Some name else None)
+                !aliases)
+             ~default:(Ident.unique_name id))
+    | Texp_ident { path; _ } -> Some (Path.name path)
+    | Texp_field { record; label; _ } ->
+        Option.map (fun name -> name ^ "." ^ label.lbl_name) (key record)
+    | _ -> None
+  in
+  let remember binding =
+    match binding.vb_pat.pat_desc with
+    | Tpat_var { id; _ } -> (
+        (match key binding.vb_expr with
+        | Some name -> aliases := (id, name) :: !aliases
+        | None -> ());
+        match binding.vb_expr.exp_desc with
+        | Texp_function _ -> closures := (id, binding.vb_expr) :: !closures
+        | _ -> ())
+    | _ -> ()
+  in
+  let union a b = List.sort_uniq String.compare (a @ b) in
+  let invoke (self : Tast_iterator.iterator) fn args =
+    let closure =
+      match fn.exp_desc with
+      | Texp_function _ -> Some fn
+      | Texp_ident { path = Path.Pident id; _ } ->
+          List.find_map
+            (fun (other, body) -> if Ident.same id other then Some body else None)
+            !closures
+      | _ -> None
+    in
+    match closure with
+    | Some closure when not (List.exists (( == ) closure) !active) ->
+        let saved_aliases = !aliases and saved_active = !active in
+        active := closure :: !active;
+        (match closure.exp_desc with
+        | Texp_function { params; body; _ } -> (
+            List.iter
+              (fun param ->
+                match List.assoc_opt param.fp_arg_label args with
+                | Some arg -> (
+                    match key arg with
+                    | Some name ->
+                        let pattern =
+                          match param.fp_kind with
+                          | Tparam_pat p | Tparam_optional_default (p, _, _) -> p
+                        in
+                        List.iter
+                          (fun id -> aliases := (id, name) :: !aliases)
+                          (param.fp_param :: Typedtree.pat_bound_idents pattern)
+                    | None -> ())
+                | None -> ())
+              params;
+            match body with
+            | Tfunction_body body -> self.expr self body
+            | Tfunction_cases cases ->
+                let incoming = !held in
+                let outgoing =
+                  List.fold_left
+                    (fun acc case ->
+                      held := incoming;
+                      Option.iter (self.expr self) case.c_guard;
+                      self.expr self case.c_rhs;
+                      union acc !held)
+                    [] cases.fc_cases
+                in
+                held := outgoing)
+        | _ -> ());
+        aliases := saved_aliases;
+        active := saved_active
+    | _ -> ()
+  in
+  {
+    base with
+    value_binding =
+      (fun self binding ->
+        remember binding;
+        base.value_binding self binding);
+    expr =
+      (fun self e ->
+        match e.exp_desc with
+        | Texp_function _ ->
+            (* Creating a closure does not execute it under its creator's locks. *)
+            let saved_held = !held and saved_aliases = !aliases in
+            held := [];
+            base.expr self e;
+            held := saved_held;
+            aliases := saved_aliases
+        | Texp_let (_, bindings, _) ->
+            let saved = !aliases in
+            List.iter remember bindings;
+            base.expr self e;
+            aliases := saved
+        | Texp_ifthenelse (test, yes, no) ->
+            self.expr self test;
+            let incoming = !held in
+            self.expr self yes;
+            let after_yes = !held in
+            held := incoming;
+            Option.iter (self.expr self) no;
+            held := union after_yes !held
+        | Texp_match (source, _, cases, _, _) ->
+            self.expr self source;
+            let incoming = !held in
+            held :=
+              List.fold_left
+                (fun acc case ->
+                  held := incoming;
+                  Option.iter (self.expr self) case.c_guard;
+                  self.expr self case.c_rhs;
+                  union acc !held)
+                [] cases
+        | Texp_apply (fn, raw_args, _, _, _) ->
+            let args = arguments raw_args in
+            List.iter
+              (fun (_, arg) ->
+                match arg.exp_desc with Texp_function _ -> () | _ -> self.expr self arg)
+              args;
+            if Paths.is_value ~caps protect fn then begin
+              List.iter
+                (fun (label, arg) -> if label = Nolabel then invoke self arg [])
+                args;
+              List.iter
+                (fun (label, arg) ->
+                  if label = Labelled "finally" then invoke self arg [])
+                args
+            end
+            else if Paths.is_value ~caps immediate fn then
+              List.iter
+                (fun (label, arg) -> if label = Nolabel then invoke self arg [])
+                args
+            else begin
+              if Paths.is_value ~caps suspend fn && !held <> [] then report e.exp_loc;
+              let lock_key = match args with (_, arg) :: _ -> key arg | [] -> None in
+              (match lock_key with
+              | Some name when Paths.is_value ~caps acquire fn ->
+                  held := union [ name ] !held
+              | Some name when Paths.is_value ~caps release fn ->
+                  held := List.filter (( <> ) name) !held
+              | _ -> ());
+              invoke self fn args
+            end
+        | _ -> base.expr self e);
+  }
+
+let suspending_finalizer ~caps emit =
+  let suspend = Paths.values ~caps suspending_names in
+  let finally = Paths.values ~caps [ [ "Stdlib"; "Fun"; "protect" ] ] in
+  let protect = Paths.values ~caps [ [ "Eio"; "Cancel"; "protect" ] ] in
   let releases =
-    Paths.values
+    Paths.values ~caps
       [ [ "Eio"; "Switch"; "on_release" ]; [ "Eio"; "Switch"; "on_release_cancellable" ] ]
   in
   let cleanup = ref false and protected = ref false in
@@ -279,10 +450,12 @@ let suspending_finalizer emit =
       (fun self e ->
         match e.exp_desc with
         | Texp_apply (fn, args, _, _, _) ->
-            if !cleanup && (not !protected) && Paths.is_value suspend fn then
+            if !cleanup && (not !protected) && Paths.is_value ~caps suspend fn then
               emit e.exp_loc;
-            let is_finally = Paths.is_value finally fn in
-            let is_protect = Paths.is_value protect fn || Paths.is_value releases fn in
+            let is_finally = Paths.is_value ~caps finally fn in
+            let is_protect =
+              Paths.is_value ~caps protect fn || Paths.is_value ~caps releases fn
+            in
             if is_finally || is_protect then begin
               self.expr self fn;
               List.iter
@@ -300,16 +473,16 @@ let suspending_finalizer emit =
         | _ -> base.expr self e);
   }
 
-let race_deadline emit =
+let race_deadline ~caps emit =
   let races =
-    Paths.values
+    Paths.values ~caps
       [
         [ "Ox"; "Concurrent"; "race" ];
         [ "Ox"; "Concurrent"; "race_first" ];
         [ "Eio"; "Fiber"; "any" ];
       ]
   in
-  let sleeps = Paths.values sleep_names in
+  let sleeps = Paths.values ~caps sleep_names in
   let contains_sleep e =
     let found = ref false in
     let iterator =
@@ -318,7 +491,8 @@ let race_deadline emit =
         expr =
           (fun self e ->
             (match e.exp_desc with
-            | Texp_apply (fn, _, _, _, _) when Paths.is_value sleeps fn -> found := true
+            | Texp_apply (fn, _, _, _, _) when Paths.is_value ~caps sleeps fn ->
+                found := true
             | _ -> ());
             base.expr self e);
       }
@@ -332,7 +506,7 @@ let race_deadline emit =
       (fun self e ->
         (match e.exp_desc with
         | Texp_apply (fn, args, _, _, _)
-          when Paths.is_value races fn
+          when Paths.is_value ~caps races fn
                && List.exists (fun (_, arg) -> contains_sleep arg) (arguments args) ->
             emit e.exp_loc
         | _ -> ());

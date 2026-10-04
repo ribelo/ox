@@ -8,7 +8,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # script's prefix, then one on PATH. The share tree is data only: opam installs share
 # files 0644, so the executable cannot live there (^ncapslint-x3gi).
 engine=""
-for candidate in "${OX_LINT:-}" "$here/../../bin/ox-lint" "$(command -v ox-lint 2>/dev/null || true)"; do
+for candidate in "${OX_LINT:-}" "$here/ox-lint" "$(command -v ox-lint 2>/dev/null || true)"; do
   if [[ -n "$candidate" && -x "$candidate" ]]; then
     engine="$candidate"
     break
