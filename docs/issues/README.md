@@ -95,6 +95,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 84 | [typed-boundaries/01-typed-boundaries.md](typed-boundaries/01-typed-boundaries.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_sql`, `ox_blocking` | 73, 83 | the part of `await` ADR-0011 adopted: an Ox-owned boundary returns a value, a foreign interruption stays an exception | [ ] |
 | 85 | [simulation/01-simulation.md](simulation/01-simulation.md) | `ox_test`, `ox`, `ox_http`, `ox_ipc`, `ox_rpc` | 60 | seeded deterministic world; cancellation and fault sweeps; the five historical bug classes as cases | [ ] |
 | 86 | [usage-rules/01-usage-rules.md](usage-rules/01-usage-rules.md) | docs, `scripts/ox-check`, gate | 66, 85 | one page per rule with its check, a machine-readable index, one command an agent runs; the 2026-10-04 research folded in | [ ] |
+| 87 | [ox-lint/01-ox-lint.md](ox-lint/01-ox-lint.md) | `ox_lint` (new, build-time) | 66, 86 | our own rule decider on the pinned compiler's `compiler-libs`: Parsetree now, Typedtree from `.cmt` where types are needed; ast-grep has no OCaml, Semgrep's is Experimental | [ ] |
 | — | taumel, p-doom | stay on `v1` | — | dormant since August; crux/signal/jsoo move to taumel if it wakes | — |
 
 Rows 3 and 0 have no dependency on core and can start at once; 6, 7, 8 are independent of each other once 1 and 2 exist. Third wave: 15 then 16, before Leash L1's Config and protocol types are written (ADR-0008: types are the schema); row 14 (door-validate) is the agent's own and stays. Second wave: 9 and 10 first (Leash's dev loop and the shapes it needs), then 11, 12, 13 in parallel; 12 is last to land because it touches every signature, and 13's ported cases must pass after 12. Specs for HTTP, AI (OpenRouter), SQL and blocking are listed above. Row 27 records why the measured stream operations need no package; domain parallelism is the compute pool, row 80.
@@ -108,6 +109,8 @@ Rows 61–73 implement ADR-0010 (modes type ownership and lifetime; Ox is the on
 Rows 76–82 are Scala Ox floor items this map once recorded as rejected "for want of a consumer"; ADR-0003 as amended reopens them (Ox is its own consumer). Row 83 replaces Eio's synchronization primitives where `await`'s or a `unique`-typed version refuses more at compile time.
 
 The five research passes of 2026-10-04 (Eio community practice, OxCaml mode patterns, deterministic simulation, machine-checkable rules, the neighbouring ecosystems) are kept in [usage-rules/research/](usage-rules/research/) and were folded into rows 65, 66, 71, 84, 85, 86 and ADR-0010; what they rejected stays in their own section 3.
+
+Row 87 is the decider rows 66 and 86 need: the proof that it is cheap is `docs/issues/suspend-token-cost/evidence/census.ml`, 57 lines of `compiler-libs` that walked all of ox.
 
 Rows 84–86 answer what ADR-0011 left open. 84 builds the option it chose instead of a cancellation token. 85 moves the only mechanism that catches timing bugs — seeded deterministic simulation — from an opt-in alias to the default shape of a concurrency test. 86 exists because ox is written only by agents: a rule they cannot verify mechanically is not a rule, so every rule gets its check and one command runs them.
 
