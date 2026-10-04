@@ -575,9 +575,6 @@ let test_unsupported_shapes_are_loud () =
         "cannot allow extra fields",
         "type t = unit [@@deriving yojson] [@@yojson.empty_record] \
          [@@yojson.allow_extra_fields]\n" );
-      ( "nested module",
-        "below the top level",
-        "module M = struct\n  type t = int [@@deriving yojson]\nend\n" );
       ("value attribute", "type declarations", "let x = 1 [@@deriving yojson]\n");
       ( "nested value attribute",
         "type declarations",

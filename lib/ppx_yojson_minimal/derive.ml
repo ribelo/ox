@@ -44,7 +44,8 @@ let escape_filename filename =
 
 (* ---------- Attribute analysis ---------- *)
 
-type deriving = Yojson | Other of string | Complex
+type mode = Bidirectional | Encoder_only
+type deriving = Yojson of mode | Other of string | Complex
 
 let classify_deriving_payload (payload : Parsetree.payload) : deriving =
   match payload with
@@ -61,8 +62,11 @@ let classify_deriving_payload (payload : Parsetree.payload) : deriving =
                 _ );
           _;
         };
-      ] ->
-      if name = "yojson" then Yojson else Other name
+      ] -> (
+      match name with
+      | "yojson" -> Yojson Bidirectional
+      | "yojson_of" -> Yojson Encoder_only
+      | _ -> Other name)
   | _ -> Complex
 
 let is_deriving (attr : Parsetree.attribute) =
@@ -601,28 +605,34 @@ let is_empty_record (decl : Parsetree.type_declaration) =
             decl.Parsetree.ptype_name.txt)
   | _ -> failf "type %s: duplicate [@@yojson.empty_record]" decl.Parsetree.ptype_name.txt
 
-(** One declaration contributes its encoder and private path-threading decoder to the
-    group chain, plus a standalone public wrapper [let] afterwards: simultaneous
-    non-recursive bindings cannot see each other, so the wrapper (which calls the private
-    decoder) must follow the chain. *)
-let gen_structure_decl env (decl : Parsetree.type_declaration) : string list * string =
+(** Encoder-only generation never evaluates a decoder generator, even for validation:
+    constituent types need only their encoder. Bidirectional wrappers follow the group
+    chain because simultaneous non-recursive bindings cannot see each other. *)
+let gen_structure_decl env mode (decl : Parsetree.type_declaration) :
+    string list * string list =
   let name = check_decl decl in
   let empty_record = is_empty_record decl in
-  if empty_record && allows_extra_fields decl then
+  let allow_extra_fields = allows_extra_fields decl in
+  if empty_record && allow_extra_fields then
     failf "type %s: [@@yojson.empty_record] cannot allow extra fields" name;
+  let decoder generate =
+    match mode with Encoder_only -> None | Bidirectional -> Some (generate ())
+  in
   let encoded, decoded =
     if empty_record then
       ( "(`Assoc [])",
-        Printf.sprintf
-          "(match _ppx_yojson_json with `Assoc _ppx_yojson_fields -> %s | _ -> Error %s)"
-          (reject_unknown_fields [] "(Ok ())")
-          (error_at ~path:"_ppx_yojson_path" "object" "_ppx_yojson_json") )
+        decoder (fun () ->
+            Printf.sprintf
+              "(match _ppx_yojson_json with `Assoc _ppx_yojson_fields -> %s | _ -> Error \
+               %s)"
+              (reject_unknown_fields [] "(Ok ())")
+              (error_at ~path:"_ppx_yojson_path" "object" "_ppx_yojson_json")) )
     else
       match decl.Parsetree.ptype_kind with
       | Parsetree.Ptype_record labels ->
           let fields = List.map (field_of_label env) labels in
           ( encode_record env fields "_ppx_yojson_v",
-            decode_record env ~allow_extra_fields:(allows_extra_fields decl) fields )
+            decoder (fun () -> decode_record env ~allow_extra_fields fields) )
       | Parsetree.Ptype_variant ctors ->
           (match ctors with
           | [] -> failf "type %s: empty variants are not supported" name
@@ -636,52 +646,72 @@ let gen_structure_decl env (decl : Parsetree.type_declaration) : string list * s
                 failf "type %s: duplicate variant wire name %S" name wire;
               Hashtbl.add seen wire ())
             names;
-          let tags = String.concat " | " (List.map (Printf.sprintf "%S") names) in
           let enc_cases =
             String.concat " | " (List.map (encode_constructor env name) ctors)
           in
-          let dec_cases =
-            String.concat " "
-              (List.map (decode_constructor env name "_ppx_yojson_path") ctors)
-          in
           ( Printf.sprintf "(match _ppx_yojson_v with %s)" enc_cases,
-            Printf.sprintf "(match _ppx_yojson_json with %s | _ -> Error %s)" dec_cases
-              (error_at ~path:"_ppx_yojson_path" tags "_ppx_yojson_json") )
+            decoder (fun () ->
+                let tags = String.concat " | " (List.map (Printf.sprintf "%S") names) in
+                let cases =
+                  String.concat " "
+                    (List.map (decode_constructor env name "_ppx_yojson_path") ctors)
+                in
+                Printf.sprintf "(match _ppx_yojson_json with %s | _ -> Error %s)" cases
+                  (error_at ~path:"_ppx_yojson_path" tags "_ppx_yojson_json")) )
       | Parsetree.Ptype_abstract -> (
           match decl.Parsetree.ptype_manifest with
           | Some core ->
               ( encode env core "_ppx_yojson_v",
-                decode env core ~path:"_ppx_yojson_path" "_ppx_yojson_json" )
-          | None -> failf "type %s: abstract types cannot derive yojson" name)
+                decoder (fun () ->
+                    decode env core ~path:"_ppx_yojson_path" "_ppx_yojson_json") )
+          | None -> failf "type %s: abstract implementation types cannot derive JSON" name
+          )
       | Parsetree.Ptype_open ->
           failf "type %s: extensible variant types are not supported" name
       | Parsetree.Ptype_record_unboxed_product _ ->
           failf "type %s: unboxed record products are not supported" name
   in
-  ( [
-      Printf.sprintf "yojson_of_%s (_ppx_yojson_v : %s) : Yojson.Safe.t = %s" name name
-        encoded;
-      Printf.sprintf
-        "ppx_yojson_decode_%s (_ppx_yojson_path : string) (_ppx_yojson_json : \
-         Yojson.Safe.t) : (%s, string) result = %s"
-        name name decoded;
-    ],
-    Printf.sprintf
-      "let %s_of_yojson (_ppx_yojson_json : Yojson.Safe.t) : (%s, string) result = \
-       ppx_yojson_decode_%s %S _ppx_yojson_json"
-      name name name name )
+  let encoder =
+    Printf.sprintf "yojson_of_%s (_ppx_yojson_v : %s) : Yojson.Safe.t = %s" name name
+      encoded
+  in
+  match decoded with
+  | None -> ([ encoder ], [])
+  | Some decoded ->
+      ( [
+          encoder;
+          Printf.sprintf
+            "ppx_yojson_decode_%s (_ppx_yojson_path : string) (_ppx_yojson_json : \
+             Yojson.Safe.t) : (%s, string) result = %s"
+            name name decoded;
+        ],
+        [
+          Printf.sprintf
+            "let %s_of_yojson (_ppx_yojson_json : Yojson.Safe.t) : (%s, string) result = \
+             ppx_yojson_decode_%s %S _ppx_yojson_json"
+            name name name name;
+        ] )
 
-let gen_signature_decl (decl : Parsetree.type_declaration) : string list =
+let gen_signature_decl env mode (decl : Parsetree.type_declaration) : string list =
   let name = check_decl decl in
-  ignore (is_empty_record decl);
-  (match decl.Parsetree.ptype_kind with
-  | Parsetree.Ptype_abstract when decl.Parsetree.ptype_manifest = None ->
-      failf "type %s: abstract types cannot derive yojson" name
-  | _ -> ());
-  [
-    Printf.sprintf "val yojson_of_%s : %s -> Yojson.Safe.t" name name;
-    Printf.sprintf "val %s_of_yojson : Yojson.Safe.t -> (%s, string) result" name name;
-  ]
+  (match (decl.Parsetree.ptype_kind, decl.Parsetree.ptype_manifest) with
+  | Parsetree.Ptype_abstract, None -> (
+      ignore (is_empty_record decl);
+      match mode with
+      | Encoder_only -> ()
+      | Bidirectional -> failf "type %s: abstract types cannot derive yojson" name)
+  | _ ->
+      (* Signatures reject the same unsupported concrete shapes and attributes as
+         implementations; emitting vals alone must not partially accept them. *)
+      ignore (gen_structure_decl env mode decl));
+  let encoder = Printf.sprintf "val yojson_of_%s : %s -> Yojson.Safe.t" name name in
+  match mode with
+  | Encoder_only -> [ encoder ]
+  | Bidirectional ->
+      [
+        encoder;
+        Printf.sprintf "val %s_of_yojson : Yojson.Safe.t -> (%s, string) result" name name;
+      ]
 
 let prelude =
   "let ppx_yojson_minimal__truncate (_ppx_yojson_json : Yojson.Safe.t) : string =\n"
@@ -695,25 +725,31 @@ let prelude =
 
 (* ---------- Collecting work ---------- *)
 
+type group_kind = Structure | Signature
+
 type group = {
   decls : Parsetree.type_declaration list;
+  mode : mode;
+  kind : group_kind;
+  recursive : bool;
+  prelude : bool;
   line : int;
   blanks : (int * int) list;
   insert_at : int;
   insert_line : int;
 }
 
-(** The attributes on one declaration that the compiler must not see again: blank spans
-    for [yojson] and for [[@@yojson.allow_extra_fields]], loud failures for anything else
-    a top-level type should not carry. *)
 let blanks_of_decl ~source (decl : Parsetree.type_declaration) : (int * int) list =
   List.filter_map
     (fun attr ->
       if is_deriving attr then
         match classify_deriving_payload attr.Parsetree.attr_payload with
-        | Yojson -> Some (attribute_span ~source attr)
+        | Yojson _ -> Some (attribute_span ~source attr)
         | Other name ->
-            failf "[@@deriving %s] is not supported: only [@@deriving yojson] is" name
+            failf
+              "[@@deriving %s] is not supported: only [@@deriving yojson] or [@@deriving \
+               yojson_of] is"
+              name
         | Complex ->
             failf "unsupported [@@deriving] payload: write one deriver per attribute"
       else if
@@ -721,106 +757,6 @@ let blanks_of_decl ~source (decl : Parsetree.type_declaration) : (int * int) lis
       then Some (attribute_span ~source attr)
       else None)
     decl.Parsetree.ptype_attributes
-
-(** Any [@@deriving yojson] below the top level is a loud failure: the generator only
-    appends top-level converters, so anything else would silently do nothing. Other
-    derivers below the top level are left alone. *)
-let check_nested_decls context (decls : Parsetree.type_declaration list) =
-  List.iter
-    (fun decl ->
-      List.iter
-        (fun attr ->
-          if is_deriving attr then
-            match classify_deriving_payload attr.Parsetree.attr_payload with
-            | Yojson ->
-                failf "%s: [@@deriving yojson] below the top level is not supported"
-                  context
-            | Other _ | Complex -> ())
-        decl.Parsetree.ptype_attributes)
-    decls
-
-(** A top-level [@@deriving yojson] anywhere but on a type declaration is a loud failure
-    for the same reason. *)
-let check_top_attributes context (attrs : Parsetree.attributes) =
-  List.iter
-    (fun attr ->
-      if is_deriving attr then
-        match classify_deriving_payload attr.Parsetree.attr_payload with
-        | Yojson ->
-            failf "%s: [@@deriving yojson] is only supported on type declarations" context
-        | Other _ | Complex -> ())
-    attrs
-
-let rec scan_module_expr expr =
-  match expr.Parsetree.pmod_desc with
-  | Parsetree.Pmod_structure items -> List.iter scan_structure_item items
-  | Parsetree.Pmod_functor (_, body) -> scan_module_expr body
-  | Parsetree.Pmod_apply (f, x) ->
-      scan_module_expr f;
-      scan_module_expr x
-  | Parsetree.Pmod_apply_unit m -> scan_module_expr m
-  | Parsetree.Pmod_constraint (m, ty, _) -> (
-      scan_module_expr m;
-      match ty with Some t -> scan_module_type t | None -> ())
-  | Parsetree.Pmod_unpack _ | Parsetree.Pmod_extension _ | Parsetree.Pmod_ident _
-  | Parsetree.Pmod_instance _ ->
-      ()
-
-and scan_module_type mty =
-  match mty.Parsetree.pmty_desc with
-  | Parsetree.Pmty_signature items ->
-      List.iter scan_signature_item items.Parsetree.psg_items
-  | Parsetree.Pmty_functor (_, body, _) -> scan_module_type body
-  | Parsetree.Pmty_with (t, _) -> scan_module_type t
-  | Parsetree.Pmty_typeof m -> scan_module_expr m
-  | Parsetree.Pmty_extension _ | Parsetree.Pmty_ident _ | Parsetree.Pmty_alias _
-  | Parsetree.Pmty_strengthen _ ->
-      ()
-
-and scan_structure_item (item : Parsetree.structure_item) =
-  match item.Parsetree.pstr_desc with
-  | Parsetree.Pstr_type (_, decls) -> check_nested_decls "a module" decls
-  | Parsetree.Pstr_module binding ->
-      check_top_attributes "a module" binding.Parsetree.pmb_attributes;
-      scan_module_expr binding.Parsetree.pmb_expr
-  | Parsetree.Pstr_recmodule bindings ->
-      List.iter
-        (fun b ->
-          check_top_attributes "a module" b.Parsetree.pmb_attributes;
-          scan_module_expr b.Parsetree.pmb_expr)
-        bindings
-  | Parsetree.Pstr_include incl -> scan_module_expr incl.Parsetree.pincl_mod
-  | Parsetree.Pstr_value (_, bindings) ->
-      List.iter
-        (fun b -> check_top_attributes "a value" b.Parsetree.pvb_attributes)
-        bindings
-  | Parsetree.Pstr_primitive desc ->
-      check_top_attributes "an external" desc.Parsetree.pval_attributes
-  | Parsetree.Pstr_exception exn ->
-      check_top_attributes "an exception" exn.Parsetree.ptyexn_attributes
-  | Parsetree.Pstr_open desc ->
-      check_top_attributes "an open" desc.Parsetree.popen_attributes
-  | _ -> ()
-
-and scan_signature_item (item : Parsetree.signature_item) =
-  match item.Parsetree.psig_desc with
-  | Parsetree.Psig_type (_, decls) -> check_nested_decls "a module type" decls
-  | Parsetree.Psig_typesubst decls -> check_nested_decls "a module type" decls
-  | Parsetree.Psig_module md -> scan_module_type md.Parsetree.pmd_type
-  | Parsetree.Psig_recmodule mds ->
-      List.iter (fun md -> scan_module_type md.Parsetree.pmd_type) mds
-  | Parsetree.Psig_include (incl, _) -> scan_module_type incl.Parsetree.pincl_mod
-  | Parsetree.Psig_modtype mtd -> (
-      match mtd.Parsetree.pmtd_type with Some ty -> scan_module_type ty | None -> ())
-  | Parsetree.Psig_value desc ->
-      check_top_attributes "a value" desc.Parsetree.pval_attributes
-  | Parsetree.Psig_exception exn ->
-      check_top_attributes "an exception" exn.Parsetree.ptyexn_attributes
-  | Parsetree.Psig_open desc ->
-      check_top_attributes "an open" desc.Parsetree.popen_attributes
-  | _ -> ()
-
-(* ---------- Top-level collection ---------- *)
 
 let line_of_decl (decl : Parsetree.type_declaration) =
   decl.Parsetree.ptype_loc.Location.loc_start.pos_lnum
@@ -832,140 +768,163 @@ let line_at_offset source offset =
   done;
   !line
 
-(** Top-level [type ... and ...]: a group job when any declaration carries a [@@deriving]
-    attribute, in which case every declaration is derived. The converters are inserted
-    right after the declaration (OCaml needs definition before use); a [#]-line directive
-    after the insert restores the original numbering for everything that follows. A group
-    with no [@@deriving] is left alone, even when it carries
-    [[@@yojson.allow_extra_fields]]: there is nothing to derive and so nothing to allow.
-*)
-let group_of_decls ~source ~insert_at (decls : Parsetree.type_declaration list) :
-    group option =
-  let derives =
-    List.exists
-      (fun decl -> List.exists is_deriving decl.Parsetree.ptype_attributes)
+(** A type group inherits its one requested mode, including unannotated members.
+    Conflicting modes in the same recursive group are rejected, not partly derived. *)
+let group_of_decls ~source ~kind ~recursive ~insert_at decls =
+  let modes =
+    List.concat_map
+      (fun decl ->
+        List.filter_map
+          (fun attr ->
+            if is_deriving attr then
+              match classify_deriving_payload attr.Parsetree.attr_payload with
+              | Yojson mode -> Some mode
+              | Other name -> failf "[@@deriving %s] is not supported" name
+              | Complex ->
+                  failf
+                    "unsupported [@@deriving] payload: write one deriver per attribute"
+            else None)
+          decl.Parsetree.ptype_attributes)
       decls
   in
-  if not derives then None
-  else
-    let blanks = List.concat_map (blanks_of_decl ~source) decls in
-    match blanks with
-    | [] -> None
-    | _ ->
-        let line = line_of_decl (List.hd decls) in
-        let insert_line = line_at_offset source insert_at in
-        Some { decls; line; blanks; insert_at; insert_line }
+  match modes with
+  | [] -> None
+  | mode :: rest ->
+      if List.exists (( <> ) mode) rest then
+        failf "a type group cannot mix [@@deriving yojson] and [@@deriving yojson_of]";
+      Some
+        {
+          decls;
+          mode;
+          kind;
+          recursive;
+          prelude = false;
+          line = line_of_decl (List.hd decls);
+          blanks = List.concat_map (blanks_of_decl ~source) decls;
+          insert_at;
+          insert_line = line_at_offset source insert_at;
+        }
 
-let collect_structure ~source (items : Parsetree.structure) : group list =
-  List.filter_map
-    (fun item ->
-      match item.Parsetree.pstr_desc with
-      | Parsetree.Pstr_type (_, decls) ->
-          group_of_decls ~source
-            ~insert_at:item.Parsetree.pstr_loc.Location.loc_end.pos_cnum decls
-      | Parsetree.Pstr_value (_, bindings) ->
-          List.iter
-            (fun b -> check_top_attributes "a value" b.Parsetree.pvb_attributes)
-            bindings;
-          None
-      | Parsetree.Pstr_primitive desc ->
-          check_top_attributes "an external" desc.Parsetree.pval_attributes;
-          None
-      | Parsetree.Pstr_exception exn ->
-          check_top_attributes "an exception" exn.Parsetree.ptyexn_attributes;
-          None
-      | Parsetree.Pstr_module binding ->
-          check_top_attributes "a module" binding.Parsetree.pmb_attributes;
-          scan_module_expr binding.Parsetree.pmb_expr;
-          None
-      | Parsetree.Pstr_recmodule bindings ->
-          List.iter
-            (fun b ->
-              check_top_attributes "a module" b.Parsetree.pmb_attributes;
-              scan_module_expr b.Parsetree.pmb_expr)
-            bindings;
-          None
-      | Parsetree.Pstr_include incl ->
-          scan_module_expr incl.Parsetree.pincl_mod;
-          None
-      | Parsetree.Pstr_modtype mtd ->
-          check_top_attributes "a module type" mtd.Parsetree.pmtd_attributes;
-          (match mtd.Parsetree.pmtd_type with
-          | Some ty -> scan_module_type ty
-          | None -> ());
-          None
-      | Parsetree.Pstr_open desc ->
-          check_top_attributes "an open" desc.Parsetree.popen_attributes;
-          None
-      | Parsetree.Pstr_class cls ->
-          List.iter
-            (fun c -> check_top_attributes "a class" c.Parsetree.pci_attributes)
-            cls;
-          None
-      | Parsetree.Pstr_typext ext ->
-          check_top_attributes "a type extension" ext.Parsetree.ptyext_attributes;
-          None
-      | Parsetree.Pstr_eval _ | Parsetree.Pstr_class_type _ | Parsetree.Pstr_attribute _
-      | Parsetree.Pstr_extension _ | Parsetree.Pstr_jkind _ ->
-          None)
-    items
-
-let collect_signature ~source (signature : Parsetree.signature) : group list =
-  List.filter_map
-    (fun item ->
-      match item.Parsetree.psig_desc with
-      | Parsetree.Psig_type (_, decls) ->
-          group_of_decls ~source
-            ~insert_at:item.Parsetree.psig_loc.Location.loc_end.pos_cnum decls
-      | Parsetree.Psig_typesubst decls ->
-          check_nested_decls "a type substitution" decls;
-          None
-      | Parsetree.Psig_value desc ->
-          check_top_attributes "a value" desc.Parsetree.pval_attributes;
-          None
-      | Parsetree.Psig_typext ext ->
-          check_top_attributes "a type extension" ext.Parsetree.ptyext_attributes;
-          None
-      | Parsetree.Psig_exception exn ->
-          check_top_attributes "an exception" exn.Parsetree.ptyexn_attributes;
-          None
-      | Parsetree.Psig_open desc ->
-          check_top_attributes "an open" desc.Parsetree.popen_attributes;
-          None
-      | Parsetree.Psig_include (incl, _) ->
-          scan_module_type incl.Parsetree.pincl_mod;
-          None
-      | Parsetree.Psig_module md ->
-          check_top_attributes "a module" md.Parsetree.pmd_attributes;
-          scan_module_type md.Parsetree.pmd_type;
-          None
-      | Parsetree.Psig_recmodule mds ->
-          List.iter
-            (fun md ->
-              check_top_attributes "a module" md.Parsetree.pmd_attributes;
-              scan_module_type md.Parsetree.pmd_type)
-            mds;
-          None
-      | Parsetree.Psig_modtype mtd ->
-          check_top_attributes "a module type" mtd.Parsetree.pmtd_attributes;
-          (match mtd.Parsetree.pmtd_type with
-          | Some ty -> scan_module_type ty
-          | None -> ());
-          None
-      | Parsetree.Psig_class cls ->
-          List.iter
-            (fun c -> check_top_attributes "a class" c.Parsetree.pci_attributes)
-            cls;
-          None
-      | Parsetree.Psig_class_type cls ->
-          List.iter
-            (fun c -> check_top_attributes "a class type" c.Parsetree.pci_attributes)
-            cls;
-          None
-      | Parsetree.Psig_modsubst _ | Parsetree.Psig_modtypesubst _ | Parsetree.Psig_jkind _
-      | Parsetree.Psig_attribute _ | Parsetree.Psig_extension _ ->
-          None)
-    signature.Parsetree.psg_items
+(** The compiler iterator reaches modules in expressions as well as declarations. Ordinary
+    structures/signatures are collected at their own source offsets. Unsupported module
+    forms carry a rejection context through their entire subtree, so a functor argument or
+    a packed/local module cannot be partially generated or silently missed. *)
+let collect ~source tree =
+  let groups = ref [] in
+  let blocked = ref None in
+  let needs_prelude = ref true in
+  let allowed_attrs = Hashtbl.create 16 in
+  let default = Ast_iterator.default_iterator in
+  let within reason visit =
+    let previous = !blocked in
+    if Option.is_none previous then blocked := Some reason;
+    Fun.protect ~finally:(fun () -> blocked := previous) visit
+  in
+  let add kind rec_flag loc decls =
+    match !blocked with
+    | Some _ -> () (* The attribute visitor reports the unsupported context. *)
+    | None -> (
+        match
+          group_of_decls ~source ~kind
+            ~recursive:(rec_flag = Asttypes.Recursive)
+            ~insert_at:loc.Location.loc_end.pos_cnum decls
+        with
+        | None -> ()
+        | Some group ->
+            let prelude =
+              group.kind = Structure && group.mode = Bidirectional && !needs_prelude
+            in
+            if prelude then needs_prelude := false;
+            groups := { group with prelude } :: !groups;
+            List.iter
+              (fun decl ->
+                List.iter
+                  (fun attr ->
+                    if is_deriving attr then
+                      Hashtbl.replace allowed_attrs
+                        attr.Parsetree.attr_loc.Location.loc_start.pos_cnum ())
+                  decl.Parsetree.ptype_attributes)
+              decls)
+  in
+  let iterator =
+    {
+      default with
+      structure =
+        (fun self items ->
+          let previous = !needs_prelude in
+          needs_prelude := true;
+          Fun.protect
+            ~finally:(fun () -> needs_prelude := previous)
+            (fun () -> default.structure self items));
+      structure_item =
+        (fun self item ->
+          match item.Parsetree.pstr_desc with
+          | Parsetree.Pstr_type (rec_flag, decls) ->
+              add Structure rec_flag item.Parsetree.pstr_loc decls;
+              default.structure_item self item
+          | Parsetree.Pstr_recmodule _ ->
+              within "recursive modules" (fun () -> default.structure_item self item)
+          | _ -> default.structure_item self item);
+      signature_item =
+        (fun self item ->
+          match item.Parsetree.psig_desc with
+          | Parsetree.Psig_type (rec_flag, decls) ->
+              add Signature rec_flag item.Parsetree.psig_loc decls;
+              default.signature_item self item
+          | Parsetree.Psig_recmodule _ ->
+              within "recursive modules" (fun () -> default.signature_item self item)
+          | Parsetree.Psig_typesubst _ ->
+              within "type substitutions" (fun () -> default.signature_item self item)
+          | _ -> default.signature_item self item);
+      module_expr =
+        (fun self expr ->
+          let visit () = default.module_expr self expr in
+          match expr.Parsetree.pmod_desc with
+          | Parsetree.Pmod_functor _ -> within "functors" visit
+          | Parsetree.Pmod_apply _ | Parsetree.Pmod_apply_unit _ ->
+              within "module applications" visit
+          | Parsetree.Pmod_unpack _ -> within "first-class modules" visit
+          | Parsetree.Pmod_extension _ -> within "module extensions" visit
+          | _ -> visit ());
+      module_type =
+        (fun self ty ->
+          let visit () = default.module_type self ty in
+          match ty.Parsetree.pmty_desc with
+          | Parsetree.Pmty_functor _ -> within "functors" visit
+          | Parsetree.Pmty_with _ | Parsetree.Pmty_typeof _ | Parsetree.Pmty_strengthen _
+            ->
+              within "non-ordinary module types" visit
+          | Parsetree.Pmty_extension _ -> within "module extensions" visit
+          | _ -> visit ());
+      expr =
+        (fun self expr ->
+          let visit () = default.expr self expr in
+          match expr.Parsetree.pexp_desc with
+          | Parsetree.Pexp_pack _ -> within "first-class modules" visit
+          | Parsetree.Pexp_letmodule _ -> within "local modules" visit
+          | _ -> visit ());
+      attribute =
+        (fun self attr ->
+          (if is_deriving attr then
+             match classify_deriving_payload attr.Parsetree.attr_payload with
+             | Yojson _ -> (
+                 match !blocked with
+                 | Some context ->
+                     failf "JSON derivation inside %s is not supported" context
+                 | None ->
+                     if
+                       not
+                         (Hashtbl.mem allowed_attrs
+                            attr.Parsetree.attr_loc.Location.loc_start.pos_cnum)
+                     then failf "JSON derivation is only supported on type declarations")
+             | Other _ | Complex -> ());
+          default.attribute self attr);
+    }
+  in
+  (match tree with
+  | `Structure items -> iterator.structure iterator items
+  | `Signature items -> iterator.signature iterator items);
+  List.sort (fun a b -> Int.compare a.insert_at b.insert_at) !groups
 
 (* ---------- Assembly and entry point ---------- *)
 
@@ -973,32 +932,26 @@ let collect_signature ~source (signature : Parsetree.signature) : group list =
     requested them, blanking the attribute spans. A [#]-line directive after each insert
     restores the original numbering, so errors in the surrounding code still point at the
     right lines. *)
-let assemble ~source ~filename ~prelude blanks groups codes =
+let assemble ~source ~filename blanks groups codes =
   let bytes = Bytes.of_string source in
   List.iter
-    (fun (start, stop) -> Bytes.fill bytes start (stop - start) (Char.chr 32))
+    (fun (start, stop) ->
+      for i = start to stop - 1 do
+        if Bytes.get bytes i <> '\n' && Bytes.get bytes i <> '\r' then
+          Bytes.set bytes i ' '
+      done)
     blanks;
   let base = Bytes.to_string bytes in
   let out = Buffer.create (String.length source + 4096) in
   let pos = ref 0 in
-  let first = ref true in
   List.iter
     (fun (group, code) ->
       Buffer.add_substring out base !pos (group.insert_at - !pos);
       pos := group.insert_at;
       Buffer.add_char out (Char.chr 10);
-      if !first then (
-        first := false;
-        Buffer.add_string out "(* Generated by ppx-yojson-minimal. Do not edit. *)";
-        Buffer.add_char out (Char.chr 10);
-        Buffer.add_string out "[@@@warning ";
-        Buffer.add_char out (Char.chr 34);
-        Buffer.add_string out "-32";
-        Buffer.add_char out (Char.chr 34);
-        Buffer.add_string out "]";
-        Buffer.add_char out (Char.chr 10);
-        (match prelude with None -> () | Some text -> Buffer.add_string out text);
-        Buffer.add_char out (Char.chr 10));
+      Buffer.add_string out "(* Generated by ppx-yojson-minimal. Do not edit. *)\n";
+      Buffer.add_string out "[@@@warning \"-32\"]\n";
+      if group.prelude then Buffer.add_string out prelude;
       Buffer.add_string out
         (Printf.sprintf "# %d %S" group.line (escape_filename filename));
       Buffer.add_char out (Char.chr 10);
@@ -1054,29 +1007,42 @@ let binding_of_group (names : string list) (decls : Parsetree.type_declaration l
   then "let rec "
   else "let "
 
-let generate_structure ~source ~filename groups =
+let generate ~source ~filename groups =
   let blanks = List.concat_map (fun g -> g.blanks) groups in
   let codes =
     List.map
       (fun group ->
         let names = List.map (fun d -> d.Parsetree.ptype_name.txt) group.decls in
-        let env = { source; group = names } in
-        let mains, wraps = List.split (List.map (gen_structure_decl env) group.decls) in
-        binding_of_group names group.decls
-        ^ String.concat "\nand " (List.concat mains)
-        ^ "\n" ^ String.concat "\n" wraps)
+        (* A [type nonrec t = t] alias refers to its lexical parent codec, not itself. *)
+        let env = { source; group = (if group.recursive then names else []) } in
+        let located decl code =
+          Printf.sprintf "# %d %S\n%s" (line_of_decl decl) filename code
+        in
+        match group.kind with
+        | Signature ->
+            String.concat "\n"
+              (List.concat_map
+                 (fun decl ->
+                   List.map (located decl) (gen_signature_decl env group.mode decl))
+                 group.decls)
+        | Structure ->
+            let mains, wraps =
+              List.split
+                (List.map
+                   (fun decl ->
+                     let mains, wraps = gen_structure_decl env group.mode decl in
+                     (List.map (located decl) mains, List.map (located decl) wraps))
+                   group.decls)
+            in
+            (if group.recursive then binding_of_group names group.decls else "let ")
+            (* A directive must begin on its own line, even after [let] or [and]. *)
+            ^ "\n"
+            ^ String.concat "\nand\n" (List.concat mains)
+            ^ "\n"
+            ^ String.concat "\n" (List.concat wraps))
       groups
   in
-  assemble ~source ~filename ~prelude:(Some prelude) blanks groups codes
-
-let generate_signature ~source ~filename groups =
-  let blanks = List.concat_map (fun g -> g.blanks) groups in
-  let codes =
-    List.map
-      (fun group -> String.concat "\n" (List.concat_map gen_signature_decl group.decls))
-      groups
-  in
-  assemble ~source ~filename ~prelude:None blanks groups codes
+  assemble ~source ~filename blanks groups codes
 
 let process ~filename ~source =
   if not (has_substring "deriving" source) then Ok source
@@ -1094,21 +1060,11 @@ let process ~filename ~source =
     in
     match parsed with
     | None -> Ok source
-    | Some (`Structure items) -> (
+    | Some tree -> (
         match
-          match collect_structure ~source items with
-          | [] -> None
-          | groups -> Some (generate_structure ~source ~filename groups)
+          match collect ~source tree with
+          | [] -> source
+          | groups -> generate ~source ~filename groups
         with
-        | None -> Ok source
-        | Some output -> Ok output
-        | exception Fail message -> Error (filename ^ ": " ^ message))
-    | Some (`Signature items) -> (
-        match
-          match collect_signature ~source items with
-          | [] -> None
-          | groups -> Some (generate_signature ~source ~filename groups)
-        with
-        | None -> Ok source
-        | Some output -> Ok output
+        | output -> Ok output
         | exception Fail message -> Error (filename ^ ": " ^ message))

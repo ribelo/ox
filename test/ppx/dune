@@ -6,6 +6,14 @@
   (action
    (run %{bin:ppx-yojson-minimal} %{input-file}))))
 
+(test
+ (name extensions)
+ (modules extensions manual_encoder native_encoders module_codecs)
+ (libraries yojson alcotest ppx_yojson_minimal)
+ (preprocess
+  (action
+   (run %{bin:ppx-yojson-minimal} %{input-file}))))
+
 ; lindec-4t98: run the preprocessor binary on the fixture and keep the output.
 
 (rule
@@ -23,3 +31,23 @@
  (deps wide_defaults.pp.ml)
  (action
   (run ./size_bound.exe %{dep:wide_defaults.pp.ml})))
+
+; ^nderive-s2lt ^nderive-9atb ^nderive-sfta ^nderive-cd80 ^nderive-p4tq
+; ^nderive-ufnu ^nderive-e5va: positive and negative real compiler fixtures.
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree compile)
+  manual_encoder.mli
+  native_encoders.mli
+  module_codecs.mli)
+ (action
+  (chdir
+   compile
+   (run
+    bash
+    check.sh
+    %{ocamlc}
+    %{bin:ppx-yojson-minimal}
+    %{lib:yojson:yojson.cmi}))))
