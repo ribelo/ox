@@ -43,13 +43,26 @@ expect 1 "$engine" --caps-gate --rules ox-caps-mint "$scratch/mint/sibling.ml"
 contains "$scratch/out" 'ox-caps-mint:'
 cp -R "$fixture" "$scratch/project"
 chmod -R u+w "$scratch/project"
-for path in dune-project qualified/dune bin/dune private/dune consumer/dune test/dune; do
+for path in dune-project qualified/dune bin/dune private/dune consumer/dune test/dune tests/dune; do
   inside_scratch "$scratch/project/$path.in"
   inside_scratch "$scratch/project/$path"
   mv "$scratch/project/$path.in" "$scratch/project/$path"
 done
 project="$scratch/project"
 dune build --root "$project" @install @check
+# Empty inventories are counted; typos and in-scope broken links remain errors.
+expect 0 "$engine" --caps-gate --require-typed "$project/tests"
+contains "$scratch/err" '1 paths with no OCaml sources; 0 ignored paths skipped'
+expect 0 "$engine" --caps-gate --require-typed "$project/private"
+contains "$scratch/err" '0 paths with no OCaml sources; 0 ignored paths skipped'
+expect 0 "$engine" "$project/tests"
+contains "$scratch/err" '1 paths with no OCaml sources'
+expect 2 "$engine" --caps-gate "$project/nonexistent"
+contains "$scratch/err" 'nonexistent'
+mkdir "$scratch/broken"
+ln -s missing-target "$scratch/broken/dangling.mli"
+expect 2 "$engine" --caps-gate "$scratch/broken"
+contains "$scratch/err" 'dangling.mli'
 # A test executable and its helper/interface are decided, not silently skipped.
 expect 1 "$engine" --require-typed --rules ox-discarded-result "$project/test/entry.ml"
 contains "$scratch/out" 'entry.ml:2: ox-discarded-result:'
@@ -61,8 +74,12 @@ contains "$scratch/out" 'not built (not in any Dune target)'
 contains "$scratch/err" '0 modules with typed rules undecided'
 # Default inventory distinguishes declared data, marked compiled fixtures and orphans.
 (cd "$project"; expect 0 "$engine" --caps-gate --require-typed)
-contains "$scratch/err" ' data-only files out of scope; 1 fixture files skipped'
-[[ $(<"$scratch/err") != *'; 0 data-only files out of scope;'* ]]
+contains "$scratch/err" ' data-only files out of scope; 1 fixture files skipped; 1 paths with no OCaml sources; 0 ignored paths skipped'
+# Formatting artifacts may add data under source_tree; all three controls must
+# disappear as data, not become "not built" notes or typed-undecided errors.
+[[ $(<"$scratch/out") != *test/identity_surface_* ]]
+contains "$scratch/err" '0 modules with typed rules undecided'
+awk -F'; ' '/^caps-gate:/ { split($3, count, " "); exit count[1] < 5 }' "$scratch/err"
 contains "$scratch/out" 'orphan.ml:1: ox-lint: not built'
 expect 1 "$engine" --caps-gate --require-typed "$project/test/marked.ml"
 contains "$scratch/out" 'ox-caps-fork:'
@@ -246,4 +263,31 @@ inside_scratch "$adjacent/docs"; inside_scratch "$adjacent/docs.missing"
 mv "$adjacent/docs" "$adjacent/docs.missing"
 expect 2 "$adjacent/ox-lint" --self-check
 contains "$scratch/err" 'missing documentation'
+# The project-wide Dune data inventory also prunes ignored mirrors.
+git init -q "$project"
+printf '_dev/\n' > "$project/.gitignore"
+mkdir -p "$project/_dev/eta-source"
+ln -s missing-target "$project/_dev/eta-source/broken.mli"
+expect 0 "$engine" --caps-gate --rules ox-caps-fork "$project/test/orphan.ml"
+contains "$scratch/out" 'not built (not in any Dune target)'
+# Git is the ignore authority; prune a mirror before following broken links.
+mkdir -p "$scratch/ignored/tests/_dev/eta-source" "$scratch/ignored/tests/nested"
+git init -q "$scratch/ignored"
+printf '_dev/\n*.cache.ml\n!keep.cache.ml\n' > "$scratch/ignored/tests/.gitignore"
+ln -s missing-target "$scratch/ignored/tests/_dev/eta-source/broken.mli"
+printf 'let fork () = Unix.fork ()\n' > "$scratch/ignored/tests/ignored.cache.ml"
+printf 'let fork () = Unix.fork ()\n' > "$scratch/ignored/tests/nested/keep.cache.ml"
+expect 1 "$engine" --caps-gate --rules ox-caps-fork "$scratch/ignored/tests"
+contains "$scratch/out" 'keep.cache.ml:1: ox-caps-fork:'
+contains "$scratch/err" '2 ignored paths skipped'
+expect 0 "$engine" --caps-gate "$scratch/ignored/tests/_dev"
+contains "$scratch/err" '0 paths with no OCaml sources; 1 ignored paths skipped'
+expect 2 "$engine" --caps-gate "$scratch/ignored/tests/missing.cache.ml"
+contains "$scratch/err" 'missing.cache.ml'
+# Without repository information, even a matching .gitignore excludes nothing.
+mkdir -p "$scratch/no-git/tests/_dev"
+printf '_dev/\n' > "$scratch/no-git/tests/.gitignore"
+ln -s missing-target "$scratch/no-git/tests/_dev/broken.mli"
+expect 2 "$engine" --caps-gate "$scratch/no-git/tests"
+contains "$scratch/err" 'broken.mli'
 printf 'deployment: qualified identity, membership, freshness, prefix and root override: pass\n'

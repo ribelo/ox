@@ -36,6 +36,8 @@ The shipped allow-list is empty. Both registries and the checkout launcher's abs
 
 ## Fixture scope
 
+Explicit source or annotation arguments override Git ignores, fixture skipping and data-only classification; directory discovery (including the data-dependency inventory) honors Git ignores, and missing named paths remain errors even if ignored.
+
 The default gate inventories compilation targets, including tests. A source consumed by a declared data dependency but compiled by no target is counted as data-only and is out of default scope; an orphan remains reported as not built. Compilation takes precedence over data dependencies. Literal file, `source_tree` and `glob_files` dependencies (including named dependencies and included Dune stanzas) are recognized; variable dependencies are not treated as proof of data-only scope.
 
 Compiled negative fixtures declare a file-level attribute such as `[@@@ox_lint.fixture "ox-caps-fork: raw fork without authority"]`. This removes a file only from the default scan, whose summary reports the fixture count; explicit file or directory paths still report its findings. When the declared rule is selected, an explicit scan that produces none of its findings fails as a dead fixture. Markers are not an allowance and carry no authority.

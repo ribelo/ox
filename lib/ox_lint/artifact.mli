@@ -9,6 +9,17 @@ open Ox_caps
 
 type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
 
+val ignored :
+  caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > ->
+  directory:string ->
+  string list ->
+  string list
+(** Return entries ignored by Git in [directory], without following their symlinks.
+    Missing Git/repository information excludes nothing. Explicit source or annotation
+    arguments override Git ignores, fixture skipping and data-only classification;
+    directory discovery (including the data-dependency inventory) honors Git ignores, and
+    missing named paths remain errors even if ignored. *)
+
 val read : caps:< Cap.fs_read ; .. > -> string -> t
 
 val fixture : caps:< Cap.fs_read ; .. > -> string -> string option

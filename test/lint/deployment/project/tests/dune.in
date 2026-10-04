@@ -1,0 +1,5 @@
+; ^nlint-2nwm: non-OCaml suites are valid default gate roots.
+(rule
+ (alias runtest)
+ (deps suite.py suite.sh)
+ (action (run sh suite.sh)))

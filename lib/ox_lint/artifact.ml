@@ -8,6 +8,34 @@ let absolute ~(caps : < Cap.fs_read ; .. >) path =
   ignore caps#fs_read;
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
 
+let ignored ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~directory names =
+  let rec query = function
+    | [] -> []
+    | names ->
+        let batch, rest = (List.take 128 names, List.drop 128 names) in
+        let command =
+          "printf '%s\\0' "
+          ^ String.concat " " (List.map Filename.quote batch)
+          ^ " | git -C " ^ Filename.quote directory
+          ^ " check-ignore --stdin -z 2>/dev/null"
+        in
+        let channel = Cap_unix.open_process_in ~caps command in
+        let output =
+          try In_channel.input_all channel
+          with ex ->
+            ignore (Unix.close_process_in channel);
+            raise ex
+        in
+        let ignored =
+          match Unix.close_process_in channel with
+          | Unix.WEXITED 0 ->
+              String.split_on_char '\000' output |> List.filter (( <> ) "")
+          | _ -> []
+        in
+        ignored @ query rest
+  in
+  query names
+
 let canonical ~(caps : < Cap.fs_read ; .. >) path =
   ignore caps#fs_read;
   try Unix.realpath path with Unix.Unix_error _ -> absolute ~caps path
@@ -391,10 +419,12 @@ let data_dependencies ~caps root =
             | stanza -> [ stanza ])
       in
       let rec directories dir =
-        Array.to_list (Cap_sys.readdir ~caps dir)
+        let names = Array.to_list (Cap_sys.readdir ~caps dir) in
+        let ignored = ignored ~caps ~directory:dir names in
+        names
         |> List.concat_map (fun name ->
             let path = Filename.concat dir name in
-            if name = "_build" || name = ".git" then []
+            if name = "_build" || name = ".git" || List.mem name ignored then []
             else if Sys.is_directory path then directories path
             else if name <> "dune" then []
             else

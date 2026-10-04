@@ -9,13 +9,19 @@ let usage =
   \  PATH is an .ml/.mli source, a directory, or a .cmt/.cmti annotation.\n\
   \  Exit 0: clean; 1: findings; 2: invalid arguments or incomplete evidence."
 
-let rec files ~(caps : < Cap.fs_read ; .. >) path =
+let rec files ~caps ~ignored_paths path =
   if Sys.is_directory path then
-    Array.to_list (Cap_sys.readdir ~caps path)
-    |> List.sort String.compare
-    |> List.concat_map (fun name ->
-        if name = "_build" || name = ".git" then []
-        else files ~caps (Filename.concat path name))
+    let names = Array.to_list (Cap_sys.readdir ~caps path) |> List.sort String.compare in
+    let ignored = Artifact.ignored ~caps ~directory:path names in
+    List.concat_map
+      (fun name ->
+        if List.mem name ignored then begin
+          incr ignored_paths;
+          []
+        end
+        else if name = "_build" || name = ".git" then []
+        else files ~caps ~ignored_paths (Filename.concat path name))
+      names
   else if List.exists (Filename.check_suffix path) [ ".ml"; ".mli"; ".cmt"; ".cmti" ] then
     [ path ]
   else []
@@ -105,7 +111,9 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
   | Ok () ->
       let findings, failures = (ref 0, ref 0) in
       let undecided = ref 0 in
-      let data_only, fixtures = (ref 0, ref 0) in
+      let data_only, fixtures, empty_paths, ignored_paths =
+        (ref 0, ref 0, ref 0, ref 0)
+      in
       let default_scan = !caps_gate && !paths = [] in
       let sites = Hashtbl.create 64 in
       let fail ?(typed = false) path ex =
@@ -152,9 +160,21 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
          let inputs =
            List.concat_map
              (fun path ->
-               let xs = files ~caps path in
-               if xs = [] then invalid_arg ("no OCaml sources at " ^ path);
-               xs)
+               let entry = Unix.lstat path in
+               if
+                 entry.Unix.st_kind = Unix.S_DIR
+                 && Artifact.ignored ~caps ~directory:(Filename.dirname path)
+                      [ Filename.basename path ]
+                    <> []
+               then begin
+                 incr ignored_paths;
+                 []
+               end
+               else begin
+                 let xs = files ~caps ~ignored_paths path in
+                 if xs = [] then incr empty_paths;
+                 xs
+               end)
              (List.rev !paths)
            |> List.sort_uniq String.compare
            |> List.filter (fun path ->
@@ -262,10 +282,15 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
          if !caps_gate then
            Cap_stdlib.eprintf ~caps
              "caps-gate: %d findings; %d modules with typed rules undecided; %d \
-              data-only files out of scope; %d fixture files skipped%s\n"
-             !findings !undecided !data_only !fixtures
+              data-only files out of scope; %d fixture files skipped; %d paths with no \
+              OCaml sources; %d ignored paths skipped%s\n"
+             !findings !undecided !data_only !fixtures !empty_paths !ignored_paths
              (if !require_typed then " (typed evidence required)"
               else " (build first for typed coverage)")
+         else if !empty_paths > 0 || !ignored_paths > 0 then
+           Cap_stdlib.eprintf ~caps
+             "ox-lint: %d paths with no OCaml sources; %d ignored paths skipped\n"
+             !empty_paths !ignored_paths
        with ex -> fail "ox-lint" ex);
       if !failures > 0 then 2 else if !findings > 0 then 1 else 0
 

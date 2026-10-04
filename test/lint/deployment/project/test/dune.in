@@ -1,9 +1,16 @@
 ; ^nlint-2nwm: test entry, helper and excluded orphan.
 (test
  (name entry)
- (modules (:standard \ orphan))
+ (modules entry helper marked)
  (modes exe)
  (libraries unix)
  (deps (source_tree data) (glob_files inputs/*.ml) entry.ml))
 
 (data_only_dirs data)
+
+; ^nlint-2nwm: typing controls are rule data, not executable modules.
+(rule
+ (alias runtest)
+ (deps identity_surface_positive.ml identity_surface_negative_node.ml
+       identity_surface_negative_rel.ml)
+ (action (echo "typing fixture data")))
