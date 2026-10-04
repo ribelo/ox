@@ -80,3 +80,6 @@ An ambient telemetry interpreter, SDK replacement, synchronous QuickJS host brid
 - Settled ending policy: one explicit configured total budget and one immutable terminal result. The caller chooses its duration; no invented universal default is required. This deliberately removes ambiguous eventual-success versus caller-deadline behavior instead of carrying both contracts.
 - No credential leak has been verified. Privacy additions are regression hardening of an existing promise. Closed metrics admission already rejects new points; worker retirement is an ownership repair, not evidence of a post-shutdown metrics leak.
 - Result-derived fields are owned by the [observability extension](<../observability/01-observability.md>); context export and ending can land independently, then the Door integration covers their composition. Existing metrics support is in the [metrics capability](<../otel-metrics/01-otel-metrics.md>).
+
+Verified 2026-10-04 (context slice):
+[`inherited_context_on_spans_and_logs`](<../../../test/otel/run.ml#L974>) covers ^notel-nbvl, ^notel-uydw, ^notel-p11y, ^notel-jda9 and ^notel-dzpj; [`completion_fields_on_spans`](<../../../test/otel/run.ml#L1242>) covers ^notel-nbvl and ^notel-dzpj through the public exporter and local collector.
