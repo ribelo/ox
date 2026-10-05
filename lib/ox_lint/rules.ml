@@ -148,8 +148,8 @@ let all ~caps =
         typed = Some discarded_result;
       };
       concurrency_rule "catch-all"
-        "cancellation swallowed; re-raise Eio.Cancel.Cancelled or return the original \
-         exception as data"
+        "cancellation propagation unproven; re-raise or reify the original exception; \
+         unresolved helpers and stores without a visible use remain findings"
         (Concurrency.catch_all ~caps);
       concurrency_rule "suspending-finalizer"
         "unprotected suspension in cleanup; wrap the suspension in Eio.Cancel.protect or \
@@ -177,8 +177,10 @@ let all ~caps =
          exceptions)"
         (Concurrency.obj_magic ~caps);
       concurrency_rule "race-deadline"
-        "race against sleep is not a deadline (race selects first success); use \
-         Ox.Timeout.timeout"
+        (* ^nmono-m4tg *)
+        "use Ox.Timeout.timeout (wall clock) or Ox.Timeout.timeout_mono (monotonic \
+         clock) for deadlines; race selects first success, race_first/Fiber.any select \
+         first settlement (success or failure)"
         (Concurrency.race_deadline ~caps);
       interface_rule "val-behaviour"
         "resource-bearing val needs Suspension, Cancellation, Finalizers and Locking \

@@ -3,6 +3,7 @@
 (library
  (name concurrency_clean)
  (modules
+  catch_helper
   catch_all
   suspending_finalizer
   stdlib_lock
@@ -13,6 +14,22 @@
   val_behaviour
   cancel_safety
   docs_dependency
-  docs_truth)
+  docs_truth
+  docs_generated
+  docs_generated_dependency)
  (modules_without_implementation public_exception)
  (libraries eio ox ox_caps unix threads))
+
+; ^nlintd-truth ^nlintcov-q6n2: no checked-in implementation sibling exists.
+
+(rule
+ (target docs_generated_dependency.ml)
+ (action
+  (write-file %{target} "let noop (_ : Eio.Switch.t) = ()\n")))
+
+(rule
+ (target docs_generated.ml)
+ (action
+  (write-file
+   %{target}
+   "let forward sw = Docs_generated_dependency.noop sw\n")))

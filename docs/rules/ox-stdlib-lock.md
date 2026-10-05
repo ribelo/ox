@@ -8,6 +8,13 @@ Stdlib mutex/semaphore creation and synchronous critical sections are legal. Rep
 
 Release the lock before yielding, awaiting or performing known Eio IO, or use a fiber-aware lock for a genuinely suspending critical section. SQLite's C-state protection and IPC's synchronous table operations are correct without path exemptions.
 
+Local helper traversal is memoized by the physical closure, incoming held-lock set
+and canonical visible substitutions, and replays the outgoing lock state on a cache
+hit. Different lock arguments therefore remain distinct. Helpers are not expanded
+when no lock is held; repeated no-lock call diamonds do not create exponential work.
+Compiled regressions cover distinct substitutions and cached release transfer.
+^nlintc-j03j ^nlintc-kdcl
+
 ## What this does not cover
 
 This is local typed control-flow analysis, not a whole-program lock proof. Branch states are joined conservatively; correlated branches may need a clearer release boundary. Opaque imported callbacks, foreign primitives and unlisted suspension APIs are not inferred. An unknown callback is not proof of suspension. Eio locks and shadowing local modules are not Stdlib locks.

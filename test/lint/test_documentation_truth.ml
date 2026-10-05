@@ -140,7 +140,21 @@ let check_strict_claims ~caps =
       ("overridden safety reappeared from lexical defaults: "
       ^ String.concat "\n" (List.map snd findings @ unknown))
 
+(* ^nlintd-truth ^nlintcov-q6n2: fresh generated bodies are decided, not skipped. *)
+let check_generated ~caps =
+  let findings, unknown = check ~caps ~name:"docs_generated" "clean" in
+  if findings <> [] || unknown <> [] then
+    failwith ("generated truth evidence failed: " ^ String.concat "\n" unknown);
+  let rewrite =
+    only_document "forward" "Suspension: may suspend. @raise Failure always."
+  in
+  let findings, unknown = check ~caps ~name:"docs_generated" ~rewrite "clean" in
+  if unknown <> [] then failwith "generated truth evidence became opaque";
+  if not (List.exists (fun (_, message) -> contains message "@raise failure") findings)
+  then failwith "generated implementation was not analysed"
+
 let run ~caps =
+  check_generated ~caps;
   check_unclaimed ~caps;
   check_strict_claims ~caps;
   (* Direct Eio leaf aliases must not become opaque compilation-unit edges. ^nlintd-truth *)
@@ -165,6 +179,9 @@ let run ~caps =
           ("missing truth mutation witness: " ^ name ^ " / " ^ witness ^ "\n"
           ^ String.concat "\n" (List.map snd bad @ unknown)))
     [
+      ("fiber_spawn", "never suspends");
+      ("fiber_spawn", "no cancellation point");
+      ("domain_join", "never suspends");
       ("forward", "never suspends");
       ("forward", "no cancellation point");
       ("no_check", "no cancellation point");

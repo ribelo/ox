@@ -1,4 +1,7 @@
 (* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup *)
+(* ^nlintd-truth: fibers and synchronous domain joins are not detached native spawning. *)
+let fiber_spawn sw clock = Eio.Fiber.fork ~sw (fun () -> Eio.Time.sleep clock 1.)
+let domain_join manager clock = Eio.Domain_manager.run manager (fun () -> Eio.Time.sleep clock 1.)
 let alias = Docs_dependency.noop
 let forward sw = alias sw
 let no_check sw = Eio.Switch.check sw

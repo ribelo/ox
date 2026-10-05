@@ -28,12 +28,46 @@ let count ~caps (rule : Rules.t) dir =
     rule.typed;
   List.sort Int.compare !sites
 
+(* ^nlintc-du4v ^nlintc-kdcl: actual named entries, not a library wearing an executable name. *)
+let check_entries ~caps =
+  List.iter
+    (fun (name, annotation, expected) ->
+      let source = "entry/" ^ name ^ ".ml" in
+      let artifact = Artifact.read ~caps ("entry/" ^ annotation) in
+      Artifact.check ~caps ~source artifact;
+      Artifact.setup ~caps artifact;
+      let sites = ref [] in
+      let iterator =
+        Concurrency.catch_all ~caps (fun loc ->
+            sites := loc.Location.loc_start.Lexing.pos_lnum :: !sites)
+      in
+      (match artifact.info.cmt_annots with
+      | Implementation tree -> iterator.structure iterator tree
+      | _ -> failwith "expected entry implementation");
+      let actual = List.sort Int.compare !sites in
+      if actual <> expected then
+        failwith
+          (Printf.sprintf "%s entry: expected [%s], got [%s]" name
+             (String.concat ";" (List.map string_of_int expected))
+             (String.concat ";" (List.map string_of_int actual))))
+    [
+      ( "exit_entry",
+        ".exit_entry.eobjs/byte/dune__exe__Exit_entry.cmt",
+        [ 54; 64; 75; 84; 96; 104; 107; 112; 124 ] );
+      ( "app_entry",
+        ".exit_entry.eobjs/byte/dune__exe__App_entry.cmt",
+        [ 17; 22; 28; 35; 40 ] );
+      ("exit_utility", ".exit_entry.eobjs/byte/dune__exe__Exit_utility.cmt", [ 7 ]);
+      ("entry_library", ".entry_library.objs/byte/entry_library.cmt", [ 7 ]);
+    ]
+
 let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let expectations =
     [
-      ("ox-catch-all", [ 6; 14; 15; 16; 17; 18; 21; 25; 31 ]);
+      ( "ox-catch-all",
+        [ 6; 14; 15; 16; 17; 18; 21; 25; 31; 37; 38; 40; 44; 48; 53; 59; 66 ] );
       ("ox-suspending-finalizer", [ 4; 5; 10; 14; 20 ]);
-      ("ox-stdlib-lock", [ 6; 11; 18; 21; 29; 34 ]);
+      ("ox-stdlib-lock", [ 6; 11; 18; 21; 29; 34; 41 ]);
       ("ox-raw-concurrency", [ 4; 5; 6; 7; 8; 9; 10; 14 ]);
       ("ox-public-exception", [ 3; 6 ]);
       ("ox-obj-magic", [ 4; 8; 12; 14 ]);
@@ -55,6 +89,7 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
           (Printf.sprintf "%s clean fixture: [%s]" id
              (String.concat ";" (List.map string_of_int clean))))
     expectations;
+  check_entries ~caps;
   let root = Sys.getcwd () in
   assert (Rules.allowances = []);
   let raw = List.hd (Rules.select ~caps [ "ox-raw-concurrency" ]) in

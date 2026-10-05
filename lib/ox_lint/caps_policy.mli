@@ -21,6 +21,10 @@ val policy_path : string -> string
 val excluded : string list -> string -> bool
 (** Only explicit caller-supplied --allow patterns exclude a source. *)
 
+val executable_entry : caps:< Ox_caps.Cap.fs_read ; .. > -> string -> bool
+(** The source is the named entry of its owning executable stanza, not a library, test, or
+    utility module. ^nlintc-du4v *)
+
 val declares_door : caps:< Ox_caps.Cap.fs_read ; .. > -> string -> bool
 (** The owning Dune stanza must directly declare [ox_caps.door]. Module ownership and
     include_subdirs are respected; comments and unrelated stanzas grant nothing. *)

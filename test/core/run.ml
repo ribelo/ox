@@ -615,6 +615,7 @@ let () =
   Alcotest.run "ox core"
     (Pure.tests @ V1_port.tests @ V1_more.tests @ V1_completion.tests @ Supervised.tests
    @ Actor_tests.tests @ Agent_tests.tests @ Supervisor_tests.tests @ Floor_tests.tests
+   @ Timeout_tests.tests
     @ [
         ( "Core causes ncore-e8jg ncore-k6az ncore-4hth ncore-5dj2 ncore-30fk nobs-xovg \
            ncore-p30f",

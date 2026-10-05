@@ -207,7 +207,8 @@ let owns module_ fields =
       (List.mem ":standard" included || List.mem module_ included)
       && not (List.mem module_ excluded)
 
-let declared_boundary ~caps source grants =
+let declared_boundary ~caps
+    ?(kinds = [ "library"; "executable"; "executables"; "test"; "tests" ]) source grants =
   let directory = Filename.dirname source in
   let module_ =
     String.lowercase_ascii (Filename.remove_extension (Filename.basename source))
@@ -227,9 +228,10 @@ let declared_boundary ~caps source grants =
       && List.exists
            (function
              | List
-                 (Atom ("library" | "executable" | "executables" | "test" | "tests")
+                 (Atom
+                    (("library" | "executable" | "executables" | "test" | "tests") as kind)
                  :: fields) ->
-                 owns module_ fields && grants module_ fields
+                 List.mem kind kinds && owns module_ fields && grants module_ fields
              | _ -> false)
            stanzas
     end
@@ -239,6 +241,21 @@ let declared_boundary ~caps source grants =
       parent <> dir && locate parent
   in
   locate directory
+
+(* ^nlintc-du4v: an executable's utility modules are not process entries. *)
+let executable_entry ~caps source =
+  declared_boundary ~caps ~kinds:[ "executable"; "executables" ] source
+    (fun module_ fields ->
+      List.exists
+        (fun name ->
+          match field name fields with
+          | Some names ->
+              List.exists
+                (function
+                  | Atom name -> String.lowercase_ascii name = module_ | _ -> false)
+                names
+          | None -> false)
+        [ "name"; "names" ])
 
 let declares_door ~caps source =
   declared_boundary ~caps source (fun _ fields ->

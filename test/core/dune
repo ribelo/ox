@@ -11,7 +11,8 @@
   actor_tests
   agent_tests
   supervisor_tests
-  floor_tests)
+  floor_tests
+  timeout_tests)
  (deps
   ../../lib/ox/dune
   ../../docs/why-ox.md

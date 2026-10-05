@@ -70,6 +70,16 @@ val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
     including qualified subdirectories. Missing or unreadable evidence raises a named
     failure; coverage is never inferred from existing annotations. ^nlint-2nwm. *)
 
+val authored_source : caps:< Cap.fs_read ; .. > -> t -> string
+(** Resolve a checked-in input or a declared generated input with producer provenance
+    using its actual evidence workspace. Missing input/inventory/provenance raises a named
+    failure, never a silent pass. ^nlintd-truth ^nlintcov-q6n2 *)
+
+val current : unit -> t option
+(** The annotation whose checked compiler environment is currently configured;
+    same-package helper resolution must not search unrelated build outputs. ^nlintc-du4v
+*)
+
 val setup : caps:< Cap.fs_read ; .. > -> t -> unit
 (** Reset caches and initialize rebased visible and hidden include paths, including Dune
     private CMIs in installed [.private] and build-tree [byte] directories. Recorded paths

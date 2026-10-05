@@ -33,3 +33,15 @@ let branch mutex choose =
   if choose then Mutex.lock mutex;
   Eio.Fiber.yield ();
   if choose then Mutex.unlock mutex
+
+(* ^nlintc-j03j ^nlintc-kdcl: identical closure, distinct lock substitutions. *)
+let different_instantiations mutex other =
+  let release_then_yield target =
+    Mutex.unlock target;
+    Eio.Fiber.yield ()
+  in
+  Mutex.lock mutex;
+  release_then_yield mutex;
+  Mutex.lock mutex;
+  release_then_yield other;
+  Mutex.unlock mutex

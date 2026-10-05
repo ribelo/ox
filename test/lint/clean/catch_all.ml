@@ -70,3 +70,35 @@ let record f =
 
 let result f = try f () with exn -> Error exn
 let cancellation_data f = try f () with Eio.Cancel.Cancelled _ as exn -> Error exn
+
+(* ^nlintc-du4v ^nlintc-kdcl: delegation follows the actual exception argument. *)
+let decision exn =
+  match exn with
+  | Eio.Cancel.Cancelled _ -> raise exn
+  | Invalid_argument _ -> 0
+  | _ -> raise exn
+
+let delegated f = try f () with exn -> decision exn
+
+let aliased_helper f =
+  let classify = decision in
+  try f () with exn -> classify exn
+
+let sibling_helper f = try f () with exn -> Catch_helper.propagate exn
+
+let stored_ref f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  assert (!raised <> None)
+
+let returned_ref f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  !raised
+
+type exception_cell = { mutable raised : exn option }
+
+let stored_field f =
+  let cell = { raised = None } in
+  (try f () with exn -> cell.raised <- Some exn);
+  match cell.raised with Some _ -> true | None -> false

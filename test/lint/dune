@@ -45,6 +45,12 @@
   (source_tree clean)
   (source_tree violating)
   clean/.concurrency_clean.objs/byte/concurrency_clean__Catch_all.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Catch_helper.cmt
+  (source_tree entry)
+  entry/.exit_entry.eobjs/byte/dune__exe__Exit_entry.cmt
+  entry/.exit_entry.eobjs/byte/dune__exe__App_entry.cmt
+  entry/.exit_entry.eobjs/byte/dune__exe__Exit_utility.cmt
+  entry/.entry_library.objs/byte/entry_library.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Suspending_finalizer.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Stdlib_lock.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_concurrency.cmt
@@ -313,6 +319,11 @@
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmti
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_dependency.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_generated.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_generated.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_generated_dependency.cmt
+  clean/docs_generated.ml
+  clean/docs_generated_dependency.ml
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmti
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmt
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_dependency.cmt)

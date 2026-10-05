@@ -31,3 +31,36 @@ let different_exception f =
   with exn ->
     ignore exn;
     raise Exit
+
+(* ^nlintc-du4v ^nlintc-kdcl: logging, opaque/deferred calls and unobserved stores. *)
+let logs exn = ignore exn
+let logging_helper f = try f () with exn -> logs exn
+let opaque_helper classify f = try f () with exn -> classify exn
+let defer exn = fun () -> raise exn
+let deferred_helper f = try f () with exn -> defer exn
+
+let unobserved_ref f =
+  let raised = ref None in
+  try f () with exn -> raised := Some exn
+
+let deferred_reader f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  fun () -> !raised
+
+let overwritten_ref f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  raised := None;
+  !raised
+
+let discarded_read f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  ignore !raised;
+  ()
+
+type exception_cell = { mutable raised : exn option }
+let unobserved_field f =
+  let cell = { raised = None } in
+  try f () with exn -> cell.raised <- Some exn

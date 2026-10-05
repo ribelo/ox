@@ -50,6 +50,13 @@ val finalizer_raises : Eio.Switch.t -> unit
 
 (* ^nlintd-truth: known primitive identities and disclosed readiness are not opaque. *)
 val primitives : Eio.Switch.t -> int -> int
+val thread_spawn : _ Eio.Time.clock -> unit
+val domain_spawn : _ Eio.Time.clock -> unit
+val named_thread_spawn : _ Eio.Time.clock -> unit
+
+val background : _ Eio.Time.clock -> unit
+(** Suspension: may suspend while sleeping. Cancellation: propagates Eio.Cancel.Cancelled.
+    Cancellation safety: safe to re-run. Finalizers: none. Locking: none. *)
 
 val buffered_publish : unit Eio.Stream.t -> unit
 (** Suspension: never suspends because Eio.Stream.add uses a free slot guaranteed by the

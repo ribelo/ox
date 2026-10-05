@@ -520,88 +520,88 @@ type generated = { path : string; producer : string option }
 
 (* ^nlintcov-q6n2: compilation declarations, not an annotation glob, are the second
    discovery channel. Missing outputs still reach main and fail typed evidence. *)
-let generated_sources ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~root =
-  let root = canonical ~caps root in
-  let build = Filename.concat root "_build/default" in
+let generated_producer ~caps ~root source =
   let read_stanzas path =
     Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
         parse_rules (In_channel.input_all channel))
   in
-  let producer source =
-    let target = Filename.basename source in
-    let rec stanzas seen file =
-      if List.mem file seen then None
-      else
-        read_stanzas file
-        |> List.find_map (function
-          | List [ Atom "include"; Atom included ] ->
-              stanzas (file :: seen) (Filename.concat (Filename.dirname file) included)
-          | List (Atom "rule" :: fields) ->
-              let targets =
-                List.concat_map
-                  (function
-                    | List (Atom ("target" | "targets") :: targets) ->
-                        List.filter_map
-                          (function Atom name -> Some name | _ -> None)
-                          targets
-                    | _ -> [])
-                  fields
-              in
-              if List.mem target targets then
-                Some ("rule (target " ^ target ^ ") in " ^ relative ~root file)
-              else None
-          | List (Atom ("copy_files" | "copy_files#") :: values) ->
-              if
-                List.exists
-                  (function
-                    | Atom pattern when not (String.contains pattern '%') ->
-                        Caps_policy.excluded [ Filename.basename pattern ] target
-                    | _ -> false)
-                  values
-              then Some ("copy_files stanza in " ^ relative ~root file ^ " for " ^ target)
-              else None
-          | _ -> None)
-    in
-    let inferred_interface file =
-      if not (Filename.check_suffix source ".mli") then None
-      else
-        let name = Filename.remove_extension target in
-        read_stanzas file
-        |> List.find_map (function
-          | List
-              (Atom (("test" | "tests" | "executable" | "executables") as kind) :: fields)
-            ->
-              let names =
-                List.concat_map
-                  (function
-                    | List (Atom ("name" | "names") :: names) ->
-                        List.filter_map
-                          (function Atom name -> Some name | _ -> None)
-                          names
-                    | _ -> [])
-                  fields
-              in
-              if List.mem name names then
-                Some
-                  ("Dune empty interface from " ^ kind ^ " (name " ^ name ^ ") in "
-                 ^ relative ~root file)
-              else None
-          | _ -> None)
-    in
-    let rec locate directory =
-      let file = Filename.concat directory "dune" in
-      if Sys.file_exists file then
-        match stanzas [] file with
-        | Some _ as found -> found
-        | None -> inferred_interface file
-      else if directory = root then None
-      else
-        let parent = Filename.dirname directory in
-        if parent = directory then None else locate parent
-    in
-    try locate (Filename.dirname source)
-    with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
+  let target = Filename.basename source in
+  let rec stanzas seen file =
+    if List.mem file seen then None
+    else
+      read_stanzas file
+      |> List.find_map (function
+        | List [ Atom "include"; Atom included ] ->
+            stanzas (file :: seen) (Filename.concat (Filename.dirname file) included)
+        | List (Atom "rule" :: fields) ->
+            let targets =
+              List.concat_map
+                (function
+                  | List (Atom ("target" | "targets") :: targets) ->
+                      List.filter_map
+                        (function Atom name -> Some name | _ -> None)
+                        targets
+                  | _ -> [])
+                fields
+            in
+            if List.mem target targets then
+              Some ("rule (target " ^ target ^ ") in " ^ relative ~root file)
+            else None
+        | List (Atom ("copy_files" | "copy_files#") :: values) ->
+            if
+              List.exists
+                (function
+                  | Atom pattern when not (String.contains pattern '%') ->
+                      Caps_policy.excluded [ Filename.basename pattern ] target
+                  | _ -> false)
+                values
+            then Some ("copy_files stanza in " ^ relative ~root file ^ " for " ^ target)
+            else None
+        | _ -> None)
   in
+  let inferred_interface file =
+    if not (Filename.check_suffix source ".mli") then None
+    else
+      let name = Filename.remove_extension target in
+      read_stanzas file
+      |> List.find_map (function
+        | List (Atom (("test" | "tests" | "executable" | "executables") as kind) :: fields)
+          ->
+            let names =
+              List.concat_map
+                (function
+                  | List (Atom ("name" | "names") :: names) ->
+                      List.filter_map
+                        (function Atom name -> Some name | _ -> None)
+                        names
+                  | _ -> [])
+                fields
+            in
+            if List.mem name names then
+              Some
+                ("Dune empty interface from " ^ kind ^ " (name " ^ name ^ ") in "
+               ^ relative ~root file)
+            else None
+        | _ -> None)
+  in
+  let rec locate directory =
+    let file = Filename.concat directory "dune" in
+    if Sys.file_exists file then
+      match stanzas [] file with
+      | Some _ as found -> found
+      | None -> inferred_interface file
+    else if directory = root then None
+    else
+      let parent = Filename.dirname directory in
+      if parent = directory then None else locate parent
+  in
+  try locate (Filename.dirname source)
+  with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
+
+let generated_sources ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~root =
+  let root = canonical ~caps root in
+  let build = Filename.concat root "_build/default" in
+  let producer = generated_producer ~caps ~root in
   match (inventory ~caps root, rule_inventory ~caps root) with
   | _, None -> Error "Dune generated-source inventory unavailable: describe rules @check"
   | None, _ -> Error "Dune generated-source inventory unavailable: describe workspace"
@@ -705,6 +705,26 @@ let find ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
             in
             failwith ("missing typed annotation; run " ^ hint))
 
+(* ^nlintd-truth ^nlintcov-q6n2: truth follows authored inputs, including declared
+   generated inputs; a build copy alone is not producer evidence. *)
+let authored_source ~caps t =
+  let built = original (source t) in
+  match workspace ~caps built with
+  | Some root when String.starts_with ~prefix:(root ^ "/_build/default/") built ->
+      let checked_in =
+        Filename.concat root (relative ~root:(root ^ "/_build/default") built)
+      in
+      if Sys.file_exists checked_in then checked_in
+      else
+        (* The annotation proves compilation. Reuse discovery's producer lookup
+           without re-running volatile Dune inventories while checking evidence. *)
+        begin match generated_producer ~caps ~root checked_in with
+        | Some _ when Sys.file_exists built -> built
+        | None -> failwith ("generated truth source producer unresolved: " ^ built)
+        | _ -> failwith ("authored truth source unavailable: " ^ checked_in)
+        end
+  | _ -> built
+
 let digest ~(caps : < Cap.fs_read ; .. >) path =
   Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
       Digest.channel channel (-1))
@@ -729,6 +749,10 @@ let check ~(caps : < Cap.fs_read ; .. >) ~source:input t =
   | _ ->
       failwith
         "annotation is not a complete implementation/interface of the requested source"
+
+(* ^nlintc-du4v: helper resolution shares the compiler evidence context. *)
+let configured = ref None
+let current () = !configured
 
 let setup ~(caps : < Cap.fs_read ; .. >) t =
   ignore caps#fs_read;
@@ -788,4 +812,5 @@ let setup ~(caps : < Cap.fs_read ; .. >) t =
           | _ ->
               failwith
                 ("stale typed annotation: imported CMI fingerprint changed for " ^ name)))
-    t.info.cmt_imports
+    t.info.cmt_imports;
+  configured := Some t

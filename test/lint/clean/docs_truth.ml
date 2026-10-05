@@ -36,3 +36,9 @@ let primitives _ n =
   Atomic.get cell - 1
 
 let buffered_publish stream = Eio.Stream.add stream ()
+
+(* ^nlintd-truth: background native execution is not caller suspension. *)
+let thread_spawn clock = ignore (Thread.create (fun () -> Eio.Time.sleep clock 1.) ())
+let domain_spawn clock = ignore (Domain.spawn (fun () -> Eio.Time.sleep clock 1.))
+let background clock = Eio.Time.sleep clock 1.
+let named_thread_spawn clock = ignore (Thread.create background clock)

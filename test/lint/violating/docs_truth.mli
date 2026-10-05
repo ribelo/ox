@@ -1,6 +1,8 @@
 (* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup *)
 (** Cancellation and finalizers: Suspension: never suspends; effects of Stdlib operations depend on Ox_caps.Cap_stdlib and Stdlib and are not checked. Cancellation: not a cancellation point. Finalizers: none. Locking: delegated to Stdlib. *)
 
+val fiber_spawn : Eio.Switch.t -> _ Eio.Time.clock -> unit
+val domain_join : _ Eio.Domain_manager.t -> _ Eio.Time.clock -> unit
 val forward : Eio.Switch.t -> unit
 val no_check : Eio.Switch.t -> unit
 val wrong_raise : Eio.Switch.t -> unit

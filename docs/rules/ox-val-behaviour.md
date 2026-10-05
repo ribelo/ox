@@ -6,4 +6,18 @@ The rule checks the sentence shape **and implementation evidence**. A finite typ
 
 Only claims that depend on unresolved evidence produce **undecided** diagnostics; a value with no suspension/raising/cleanup claim does not become undecided merely because it calls opaque code. Known non-suspending primitives use a small explicit compiler-primitive table, not a Stdlib-wide exemption. Transparent generated aliases, empty structures and constant bindings are traversed. Direct Eio aliases retain their leaf semantics and known callback bodies are traversed. Source-verified allocation leaves are a small explicit Eio table. External opaque calls, callback parameters and unsupported functor evidence produce named **undecided** diagnostics unless a relevant sentence explicitly bounds that dependency. Dynamic re-raise and stored-exception identities are uncertain only for exception assertions. Abstract module-type declarations have shape contracts, not nonexistent implementation bindings. A locking-only delegation cannot qualify an unconditional suspension/cancellation claim. Missing or stale implementation evidence is undecided and fatal under `--require-typed`. Tests are still required for behaviour beyond the finite evidence model.
 
+Generated sibling implementations are resolved through their actual evidence workspace
+and declared Dune producer, not an assumed source-tree sibling; missing provenance or
+fresh evidence stays named **undecided**. Adding the missing contract shape activates
+truth analysis, so improving documentation can expose previously unexamined undecided
+claims rather than regress an already-checked claim. ^nlintd-truth ^nlintcov-q6n2
+
+Origin-resolved `Thread.create` and `Domain.spawn` are narrow native-execution
+boundaries: their callbacks keep independent summaries and contracts, but child
+suspension and cancellation do not become caller effects. Synchronous spawn failures
+remain uncertain raise evidence. `Eio.Domain_manager.run` is not exempt: its caller
+waits for the domain's result. `Eio.Fiber.fork`, unknown callback APIs and stored
+closures retain their existing analysis; a native spawn is not a generic callback
+escape hatch. ^nlintd-truth
+
 Typed evidence: [violating](../../test/lint/violating/val_behaviour.mli), [clean](../../test/lint/clean/val_behaviour.mli), [regression assertions](../../test/lint/test_interface_docs.ml). Truth mutations: [clean implementation](../../test/lint/clean/docs_truth.ml), [violating implementation](../../test/lint/violating/docs_truth.ml), [direct assertions](../../test/lint/test_documentation_truth.ml). Build implementations and interfaces first; missing fresh compiler evidence is undecided, not exempt.

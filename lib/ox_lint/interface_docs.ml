@@ -521,6 +521,8 @@ let special_names =
     "Eio.Cancel.protect";
     "Eio.Switch.on_release";
     "Eio.Switch.on_release_cancellable";
+    "Thread.create";
+    "Domain.spawn";
   ]
 
 let leaf_origins ~caps =
@@ -535,8 +537,9 @@ let special_origins ~caps =
   List.filter_map
     (fun name ->
       let explicit =
-        if List.mem name [ "Fun.protect"; "Printexc.raise_with_backtrace" ] then
-          "Stdlib." ^ name
+        if
+          List.mem name [ "Fun.protect"; "Printexc.raise_with_backtrace"; "Domain.spawn" ]
+        then "Stdlib." ^ name
         else name
       in
       Option.map
@@ -783,6 +786,11 @@ let add_unit ~caps evidence artifact =
               | [] -> unknown "raise without exception evidence")
           | Some "Stdlib.invalid_arg" -> thrown "Invalid_argument"
           | Some "Stdlib.failwith" -> thrown "Failure"
+          (* ^nlintd-truth: native thread/domain creation does not invoke its
+             callback in the caller. Definitions retain their own summaries;
+             creation can fail synchronously, but cannot suspend the Eio fiber.
+             Domain_manager.run is deliberately not a spawning exemption. *)
+          | Some (("Thread.create" | "Domain.spawn") as name) -> unknown_raise name
           | Some "Eio.Cancel.protect" ->
               joins (List.map (fun (_, e) -> under Names.empty true (invokes e)) args)
           | Some "Fun.protect" ->
@@ -983,7 +991,6 @@ let package_evidence ~caps (implementation : Artifact.t) =
           let artifact = Artifact.read ~caps (Filename.concat directory name) in
           (* Use the original source, not merely the annotation's build copy. *)
           let build_source = Artifact.source artifact in
-          let marker = "/_build/default/" in
           if Filename.check_suffix build_source ".ml-gen" then begin
             (* ^nlintd-truth: deprecated empty modules and constant aliases in
                generated wrappers execute no calls, just like module aliases. *)
@@ -1015,20 +1022,9 @@ let package_evidence ~caps (implementation : Artifact.t) =
                paths resolve their exports to the actual compilation unit. *)
           end
           else begin
-            let source =
-              match index build_source marker 0 with
-              | Some i ->
-                  Filename.concat (String.sub build_source 0 i)
-                    (String.sub build_source
-                       (i + String.length marker)
-                       (String.length build_source - i - String.length marker))
-              | None -> build_source
-            in
-            let source =
-              if Filename.check_suffix source ".pp.ml" then
-                Filename.chop_suffix source ".pp.ml" ^ ".ml"
-              else source
-            in
+            (* ^nlintd-truth ^nlintcov-q6n2: generated siblings have no source-tree
+               counterpart; Artifact verifies their declared producer instead. *)
+            let source = Artifact.authored_source ~caps artifact in
             Artifact.check ~caps ~source artifact;
             add_unit ~caps evidence artifact
           end);
@@ -1437,7 +1433,9 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
         try
           let implementation_source = Filename.chop_suffix source ".mli" ^ ".ml" in
           let implementation = Artifact.find ~caps implementation_source in
-          Artifact.check ~caps ~source:implementation_source implementation;
+          Artifact.check ~caps
+            ~source:(Artifact.authored_source ~caps implementation)
+            implementation;
           let evidence = package_evidence ~caps implementation in
           Artifact.setup ~caps implementation;
           List.iter

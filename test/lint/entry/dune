@@ -1,0 +1,11 @@
+; ^nlintc-du4v ^nlintc-kdcl: compile, never run, actual process entries.
+
+(executables
+ (names exit_entry app_entry)
+ (modules exit_entry app_entry exit_utility)
+ (libraries ox_app ox_caps.door eio))
+
+(library
+ (name entry_library)
+ (modules entry_library)
+ (libraries eio))

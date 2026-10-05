@@ -61,9 +61,117 @@ let catch_all ~caps emit =
         | _ -> false)
     | _ -> false
   in
-  (* ^nlintc-du4v: cleanup before propagation is legitimate. Prove only the
-     presence of an original-value re-raise, not propagation on every path. *)
-  let raises_in id e =
+  (* ^nlintc-du4v: local stamps are unit-relative; exports resolve through the
+     compiler environment. Only checked sibling implementations provide evidence. *)
+  let definitions = Hashtbl.create 64 and exports = Hashtbl.create 64 in
+  let unit_name = ref "" and nesting = ref 0 in
+  let local unit id = unit ^ "#" ^ Ident.unique_name id in
+  let rec named unit = function
+    | Path.Pident id when not (Ident.is_global_or_predef id) -> local unit id
+    | Path.Pdot (parent, name) -> named unit parent ^ "." ^ name
+    | path -> Path.name path
+  in
+  let key unit e path =
+    named unit (Env.normalize_value_path None (Paths.env ~caps e.exp_env) path)
+  in
+  let collect unit tree =
+    let modules = ref [] and module_identity = ref None in
+    let declare ~export vb =
+      List.iter
+        (fun id ->
+          let name = local unit id in
+          Hashtbl.replace definitions name (unit, vb.vb_expr);
+          if export then begin
+            Hashtbl.replace exports
+              (String.concat "." ((unit :: !modules) @ [ Ident.name id ]))
+              name;
+            Option.iter
+              (fun parent -> Hashtbl.replace exports (parent ^ "." ^ Ident.name id) name)
+              !module_identity
+          end)
+        (Typedtree.pat_bound_idents vb.vb_pat)
+    in
+    let iterator =
+      {
+        base with
+        module_binding =
+          (fun self binding ->
+            let saved, saved_identity = (!modules, !module_identity) in
+            let name = Option.value binding.mb_name.txt ~default:"_" in
+            modules := !modules @ [ name ];
+            module_identity :=
+              Some
+                (match (!module_identity, binding.mb_id) with
+                | None, Some id -> local unit id
+                | Some parent, _ -> parent ^ "." ^ name
+                | _ -> unit ^ "." ^ name);
+            base.module_binding self binding;
+            modules := saved;
+            module_identity := saved_identity);
+        structure_item =
+          (fun self item ->
+            (match item.str_desc with
+            | Tstr_value (_, bindings) -> List.iter (declare ~export:true) bindings
+            | _ -> ());
+            base.structure_item self item);
+        value_binding =
+          (fun self vb ->
+            declare ~export:false vb;
+            base.value_binding self vb);
+      }
+    in
+    iterator.structure iterator tree
+  in
+  let load tree =
+    Hashtbl.clear definitions;
+    Hashtbl.clear exports;
+    match Artifact.current () with
+    | None -> collect !unit_name tree
+    | Some artifact ->
+        unit_name := Compilation_unit.name_as_string artifact.info.cmt_modname;
+        let directory = Filename.dirname artifact.path in
+        Array.iter
+          (fun name ->
+            if Filename.check_suffix name ".cmt" then
+              try
+                let sibling = Artifact.read ~caps (Filename.concat directory name) in
+                if Filename.check_suffix (Artifact.source sibling) ".ml" then begin
+                  Artifact.check ~caps
+                    ~source:(Artifact.authored_source ~caps sibling)
+                    sibling;
+                  Artifact.setup ~caps sibling;
+                  match sibling.info.cmt_annots with
+                  | Implementation tree ->
+                      collect
+                        (Compilation_unit.name_as_string sibling.info.cmt_modname)
+                        tree
+                  | _ -> ()
+                end
+              with Failure _ | Sys_error _ | Unix.Unix_error _ | Env.Error _ -> ())
+          (Sys.readdir directory);
+        Artifact.setup ~caps artifact;
+        collect !unit_name tree
+  in
+  let rec helper seen unit fn =
+    match fn.exp_desc with
+    | Texp_function _ -> Some (unit, fn)
+    | Texp_ident { path; _ } ->
+        let name = key unit fn path in
+        let name = Option.value (Hashtbl.find_opt exports name) ~default:name in
+        if List.mem name seen then None
+        else
+          Option.bind (Hashtbl.find_opt definitions name) (fun (unit, body) ->
+              helper (name :: seen) unit body)
+    | _ -> None
+  in
+  let same id e =
+    match e.exp_desc with
+    | Texp_ident { path = Path.Pident actual; _ } -> Ident.same actual id
+    | _ -> false
+  in
+  (* Cleanup and helper delegation are legitimate. As with the direct rule,
+     prove a reachable re-raise of the original value, not every possible path. *)
+  let rec raises_in active unit id e =
     let found = ref false in
     let iterator =
       {
@@ -71,7 +179,79 @@ let catch_all ~caps emit =
         expr =
           (fun self e ->
             if raises_binding id e then found := true;
-            base.expr self e);
+            match e.exp_desc with
+            | Texp_function _ -> ()
+            | Texp_apply (fn, args, _, _, _) ->
+                let actuals =
+                  List.map (function _, Arg (e, _) -> Some e | _ -> None) args
+                in
+                (match helper [] unit fn with
+                | Some
+                    ( callee_unit,
+                      ({ exp_desc = Texp_function { params; body; _ }; _ } as closure) )
+                  when not (List.exists (( == ) closure) active) -> (
+                    let active = closure :: active in
+                    List.iteri
+                      (fun i param ->
+                        match List.nth_opt actuals i with
+                        | Some (Some arg) when same id arg ->
+                            let pattern =
+                              match param.fp_kind with
+                              | Tparam_pat p | Tparam_optional_default (p, _, _) -> p
+                            in
+                            let ids =
+                              param.fp_param :: Option.to_list (binding pattern)
+                            in
+                            let bodies =
+                              match body with
+                              | Tfunction_body e -> [ e ]
+                              | Tfunction_cases cases ->
+                                  List.map (fun c -> c.c_rhs) cases.fc_cases
+                            in
+                            if
+                              List.exists
+                                (fun id ->
+                                  List.exists (raises_in active callee_unit id) bodies)
+                                ids
+                            then found := true
+                        | _ -> ())
+                      params;
+                    match (body, List.nth_opt actuals (List.length params)) with
+                    | Tfunction_cases cases, Some (Some arg) when same id arg ->
+                        List.iter
+                          (fun case ->
+                            let ids =
+                              cases.fc_param :: Option.to_list (binding case.c_lhs)
+                            in
+                            if
+                              List.exists
+                                (fun id -> raises_in active callee_unit id case.c_rhs)
+                                ids
+                            then found := true)
+                          cases.fc_cases
+                    | _ -> ())
+                | _ -> ());
+                base.expr self e
+            | Texp_let (_, bindings, body) ->
+                List.iter
+                  (fun vb ->
+                    if same id vb.vb_expr then
+                      Option.iter
+                        (fun alias ->
+                          if raises_in active unit alias body then found := true)
+                        (binding vb.vb_pat))
+                  bindings;
+                base.expr self e
+            | Texp_match (scrutinee, _, cases, _, _) when same id scrutinee ->
+                List.iter
+                  (fun case ->
+                    Option.iter
+                      (fun alias ->
+                        if raises_in active unit alias case.c_rhs then found := true)
+                      (Option.bind (fst (Typedtree.split_pattern case.c_lhs)) binding))
+                  cases;
+                base.expr self e
+            | _ -> base.expr self e);
       }
     in
     iterator.expr iterator e;
@@ -102,7 +282,177 @@ let catch_all ~caps emit =
         carries id body || List.exists (fun case -> carries id case.c_rhs) cases
     | _ -> false
   in
-  let propagates id e = raises_in id e || carries id e in
+  (* ^nlintc-du4v: a store is reification only when a visible continuation
+     returns or scrutinises that cell. Deferred readers and overwritten cells
+     do not establish that the exception leaves this handler. *)
+  let following = ref [] in
+  let assign = Paths.values ~caps [ [ "Stdlib"; ":=" ] ] in
+  let dereference = Paths.values ~caps [ [ "Stdlib"; "!" ] ] in
+  let cell e =
+    match e.exp_desc with
+    | Texp_ident { path; _ } -> Some (key !unit_name e path)
+    | _ -> None
+  in
+  let write e =
+    match e.exp_desc with
+    | Texp_apply (fn, args, _, _, _) when Paths.is_value ~caps assign fn -> (
+        match arguments args with
+        | [ (_, target); (_, value) ] ->
+            Option.map (fun target -> ((target, ""), value)) (cell target)
+        | _ -> None)
+    | Texp_setfield { record; label; newval; _ } ->
+        Option.map (fun target -> ((target, label.lbl_name), newval)) (cell record)
+    | _ -> None
+  in
+  let read target e =
+    match e.exp_desc with
+    | Texp_apply (fn, args, _, _, _) when Paths.is_value ~caps dereference fn -> (
+        match arguments args with
+        | [ (_, record) ] ->
+            Option.map (fun cell -> (cell, "")) (cell record) = Some target
+        | _ -> false)
+    | Texp_field { record; label; _ } ->
+        Option.map (fun cell -> (cell, label.lbl_name)) (cell record) = Some target
+    | _ -> false
+  in
+  let rec tail_reads target e =
+    if read target e then true
+    else
+      match e.exp_desc with
+      | Texp_tuple (fields, _) -> List.exists (fun (_, e) -> tail_reads target e) fields
+      | Texp_construct (_, _, _, fields, _) ->
+          List.exists (fun (_, e) -> tail_reads target e) fields
+      | Texp_variant (_, Some (e, _)) -> tail_reads target e
+      | Texp_sequence (_, _, last) | Texp_let (_, _, last) -> tail_reads target last
+      | Texp_ifthenelse (_, yes, Some no) -> tail_reads target yes || tail_reads target no
+      | Texp_match (_, _, cases, _, _) ->
+          List.exists (fun c -> tail_reads target c.c_rhs) cases
+      | _ -> false
+  in
+  let uses target expressions =
+    let overwritten = ref false
+    and observed = ref (List.exists (tail_reads target) expressions) in
+    let contains_read e =
+      let found = ref false in
+      let iterator =
+        {
+          base with
+          expr =
+            (fun self e ->
+              if read target e then found := true;
+              match e.exp_desc with Texp_function _ -> () | _ -> base.expr self e);
+        }
+      in
+      iterator.expr iterator e;
+      !found
+    in
+    let iterator =
+      {
+        base with
+        expr =
+          (fun self e ->
+            (match write e with
+            | Some (cell, _) when cell = target -> overwritten := true
+            | _ -> ());
+            (match e.exp_desc with
+            | Texp_assert (condition, _) ->
+                if contains_read condition then observed := true
+            | Texp_match (scrutinee, _, cases, _, _)
+              when List.exists
+                     (fun c ->
+                       match fst (Typedtree.split_pattern c.c_lhs) with
+                       | Some { pat_desc = Tpat_any; _ } | None -> false
+                       | _ -> true)
+                     cases ->
+                if contains_read scrutinee then observed := true
+            | _ -> ());
+            match e.exp_desc with Texp_function _ -> () | _ -> base.expr self e);
+      }
+    in
+    List.iter (iterator.expr iterator) expressions;
+    !observed && not !overwritten
+  in
+  let stored id e =
+    let found = ref false in
+    let iterator =
+      {
+        base with
+        expr =
+          (fun self e ->
+            (match write e with
+            | Some (target, value) when carries id value && uses target !following ->
+                found := true
+            | _ -> ());
+            match e.exp_desc with Texp_function _ -> () | _ -> base.expr self e);
+      }
+    in
+    iterator.expr iterator e;
+    !found
+  in
+  let propagates id e = raises_in [] !unit_name id e || carries id e || stored id e in
+  (* ^nlintc-du4v: terminal conversion is a structural fact at the actual entry,
+     not a privilege attached to an entire executable or an arbitrary callback. *)
+  let module Nodes = Hashtbl.Make (struct
+    type t = expression
+
+    let equal = ( == )
+    let hash e = Hashtbl.hash e.exp_loc
+  end) in
+  let terminal = Nodes.create 16 in
+  let exits =
+    Paths.values ~caps [ [ "Stdlib"; "exit" ]; [ "Ox_caps"; "Cap_stdlib"; "exit" ] ]
+  in
+  let doors =
+    Paths.values ~caps
+      [ [ "Ox_app"; "run_and_exit" ]; [ "Ox_app"; "run_and_exit_with_args" ] ]
+  in
+  let rec tails descend e =
+    match e.exp_desc with
+    | Texp_sequence (_, _, last) | Texp_let (_, _, last) -> descend last
+    | Texp_ifthenelse (_, yes, no) ->
+        descend yes;
+        Option.iter descend no
+    | Texp_match (_, _, cases, _, _) -> List.iter (fun c -> descend c.c_rhs) cases
+    | Texp_try (body, cases, _) ->
+        descend body;
+        List.iter (fun c -> descend c.c_rhs) cases
+    | _ -> ()
+  and status e =
+    Nodes.replace terminal e ();
+    tails status e
+  in
+  let rec entry e =
+    (match e.exp_desc with
+    | Texp_apply (fn, args, _, _, _) when Paths.is_value ~caps exits fn ->
+        List.iter (fun (label, e) -> if label = Nolabel then status e) (arguments args)
+    | Texp_apply (fn, args, _, _, _) when Paths.is_value ~caps doors fn -> (
+        match List.rev (arguments args) with
+        | (Nolabel, { exp_desc = Texp_function { body; _ }; _ }) :: _ -> (
+            match body with
+            | Tfunction_body e -> status e
+            | Tfunction_cases cases -> List.iter (fun c -> status c.c_rhs) cases.fc_cases)
+        | _ -> ())
+    | _ -> ());
+    tails entry e
+  in
+  let mark_entry tree =
+    Nodes.clear terminal;
+    match Artifact.current () with
+    | Some artifact
+      when Caps_policy.executable_entry ~caps (Artifact.authored_source ~caps artifact) ->
+        List.iter
+          (fun item ->
+            match item.str_desc with
+            | Tstr_eval (e, _, _) -> entry e
+            | Tstr_value (_, bindings) ->
+                List.iter
+                  (fun vb ->
+                    if Typedtree.pat_bound_idents vb.vb_pat = [] then entry vb.vb_expr)
+                  bindings
+            | _ -> ())
+          tree.str_items
+    | _ -> ()
+  in
   let check cases =
     let cancellation_passes = ref false in
     List.iter
@@ -126,6 +476,14 @@ let catch_all ~caps emit =
   in
   {
     base with
+    structure =
+      (fun self tree ->
+        if !nesting = 0 then (
+          load tree;
+          mark_entry tree);
+        incr nesting;
+        base.structure self tree;
+        decr nesting);
     extension_constructor =
       (fun self ext ->
         (match ext.ext_kind with
@@ -136,7 +494,7 @@ let catch_all ~caps emit =
     expr =
       (fun self e ->
         (match e.exp_desc with
-        | Texp_try (_, cases, _) -> check cases
+        | Texp_try (_, cases, _) -> if not (Nodes.mem terminal e) then check cases
         | Texp_match (_, _, cases, _, _) ->
             let exceptions =
               List.filter_map
@@ -146,9 +504,27 @@ let catch_all ~caps emit =
                   | _ -> None)
                 cases
             in
-            check exceptions
+            if not (Nodes.mem terminal e) then check exceptions
         | _ -> ());
-        base.expr self e);
+        match e.exp_desc with
+        | Texp_sequence (first, _, last) ->
+            let saved = !following in
+            following := last :: saved;
+            self.expr self first;
+            following := saved;
+            self.expr self last
+        | Texp_let (_, bindings, body) ->
+            let saved = !following in
+            following := body :: saved;
+            List.iter (self.value_binding self) bindings;
+            following := saved;
+            self.expr self body
+        | Texp_function _ ->
+            let saved = !following in
+            following := [];
+            base.expr self e;
+            following := saved
+        | _ -> base.expr self e);
   }
 
 let identifiers predicate emit =
@@ -266,7 +642,25 @@ let stdlib_lock ~caps emit =
     Paths.values ~caps [ [ "Fun"; "protect" ]; [ "Stdlib"; "Fun"; "protect" ] ]
   in
   let immediate = Paths.values ~caps [ [ "Eio"; "Cancel"; "protect" ] ] in
-  let held = ref [] and aliases = ref [] and closures = ref [] and active = ref [] in
+  (* ^nlintc-j03j: memoise execution states, not just closure identities. The
+     outgoing lock set is a transfer result and must be replayed on a cache hit. *)
+  let module Nodes = Hashtbl.Make (struct
+    type t = expression
+
+    let equal = ( == )
+    let hash e = Hashtbl.hash e.exp_loc
+  end) in
+  let nodes = Nodes.create 64 and next_node = ref 0 in
+  let node e =
+    match Nodes.find_opt nodes e with
+    | Some id -> id
+    | None ->
+        incr next_node;
+        Nodes.add nodes e !next_node;
+        !next_node
+  in
+  let held = ref [] and aliases = ref [] and active = ref [] in
+  let closures = Path.Tbl.create 64 and visited = Hashtbl.create 64 in
   let reported = Hashtbl.create 8 in
   let report loc =
     let key = (loc.Location.loc_start.Lexing.pos_fname, loc.loc_start.pos_cnum) in
@@ -295,20 +689,22 @@ let stdlib_lock ~caps emit =
         | Some name -> aliases := (id, name) :: !aliases
         | None -> ());
         match binding.vb_expr.exp_desc with
-        | Texp_function _ -> closures := (id, binding.vb_expr) :: !closures
+        | Texp_function _ -> Path.Tbl.replace closures (Path.Pident id) binding.vb_expr
         | _ -> ())
     | _ -> ()
   in
   let union a b = List.sort_uniq String.compare (a @ b) in
   let invoke (self : Tast_iterator.iterator) fn args =
+    (* Definitions are checked once in their own context. An invocation without
+       incoming locks adds no lock-holding evidence and must not expand its call tree. *)
     let closure =
-      match fn.exp_desc with
-      | Texp_function _ -> Some fn
-      | Texp_ident { path = Path.Pident id; _ } ->
-          List.find_map
-            (fun (other, body) -> if Ident.same id other then Some body else None)
-            !closures
-      | _ -> None
+      if !held = [] then None
+      else
+        match fn.exp_desc with
+        | Texp_function _ -> Some fn
+        | Texp_ident { path = Path.Pident _ as path; _ } ->
+            Path.Tbl.find_opt closures path
+        | _ -> None
     in
     match closure with
     | Some closure when not (List.exists (( == ) closure) !active) ->
@@ -332,20 +728,36 @@ let stdlib_lock ~caps emit =
                     | None -> ())
                 | None -> ())
               params;
-            match body with
-            | Tfunction_body body -> self.expr self body
-            | Tfunction_cases cases ->
-                let incoming = !held in
-                let outgoing =
-                  List.fold_left
-                    (fun acc case ->
-                      held := incoming;
-                      Option.iter (self.expr self) case.c_guard;
-                      self.expr self case.c_rhs;
-                      union acc !held)
-                    [] cases.fc_cases
-                in
-                held := outgoing)
+            let substitutions = Hashtbl.create 16 in
+            List.iter
+              (fun (id, name) ->
+                let id = Ident.unique_name id in
+                if not (Hashtbl.mem substitutions id) then
+                  Hashtbl.add substitutions id name)
+              !aliases;
+            let substitutions =
+              Hashtbl.fold (fun id name acc -> (id, name) :: acc) substitutions []
+              |> List.sort compare
+            in
+            let state = (node closure, !held, substitutions) in
+            match Hashtbl.find_opt visited state with
+            | Some outgoing -> held := outgoing
+            | None ->
+                (match body with
+                | Tfunction_body body -> self.expr self body
+                | Tfunction_cases cases ->
+                    let incoming = !held in
+                    let outgoing =
+                      List.fold_left
+                        (fun acc case ->
+                          held := incoming;
+                          Option.iter (self.expr self) case.c_guard;
+                          self.expr self case.c_rhs;
+                          union acc !held)
+                        [] cases.fc_cases
+                    in
+                    held := outgoing);
+                Hashtbl.add visited state !held)
         | _ -> ());
         aliases := saved_aliases;
         active := saved_active
