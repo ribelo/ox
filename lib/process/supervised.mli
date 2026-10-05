@@ -15,7 +15,7 @@ type 'e t
 
 val start :
   sw:Eio.Switch.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   schedule:(Child.exit, 'output) Ox.Schedule.t ->
   spawn:(sw:Eio.Switch.t -> (Child.t, 'e) result) ->
   'e t
@@ -25,12 +25,18 @@ val start :
     [Gave_up (Die ...)]. A jittered [schedule] is not seeded here: stepping one raises
     [Invalid_argument]. Pass a schedule that does not draw.
 
+    [clock] explicitly supplies monotonic time for restart backoff and Schedule steps.
+    Schedule [now_ms] is whole elapsed milliseconds since this [start], obtained by native
+    timestamp subtraction before truncation, not a wall or absolute timestamp. Schedule
+    elapsed metadata retains its own first-step origin.
+
     Suspension: may suspend while starting the daemon and in the spawn or schedule
-    callbacks; daemon waits use Child.await and Eio.Time.sleep; delegated callback
-    dispatch and Eio.Process, Eio.Stream, Eio.Time, Eio, Ox.Duration, Ox.Schedule,
-    Stdlib.Printexc operations retain their own behaviour. Cancellation: propagates
-    Eio.Cancel.Cancelled from Eio fork startup; daemon cancellation awaits its child
-    scope; delegated callback dispatch and Eio.Process, Eio.Stream, Eio.Time, Eio,
+    callbacks; daemon waits use Child.await and Eio.Time.Mono.sleep; delegated callback
+    dispatch and Eio.Process, Eio.Stream, Eio.Time, Eio.Time.Mono, Eio, Mtime, Mtime.Span,
+    Stdlib.Int64, Ox.Duration, Ox.Schedule, Stdlib.Printexc operations retain their own
+    behaviour. Cancellation: propagates Eio.Cancel.Cancelled from Eio fork startup; daemon
+    cancellation awaits its child scope; delegated callback dispatch and Eio.Process,
+    Eio.Stream, Eio.Time, Eio.Time.Mono, Eio, Mtime, Mtime.Span, Stdlib.Int64,
     Ox.Duration, Ox.Schedule, Stdlib.Printexc operations retain their own behaviour.
     Finalizers: Child's scope retires the current process protected before the worker
     ends. Locking: no lock spans the spawn callback. Cancellation safety: unsafe because

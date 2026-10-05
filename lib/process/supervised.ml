@@ -33,13 +33,12 @@ let stop t =
           Eio.Cancel.cancel (Eio.Promise.await t.context) Exit);
       Eio.Promise.await_exn t.finished)
 
-let now_ms clock =
-  let ms = Eio.Time.now clock *. 1000. in
-  if ms >= float_of_int max_int then max_int
-  else if ms <= float_of_int min_int then min_int
-  else int_of_float ms
-
 let start ~sw ~clock ~schedule ~spawn =
+  let origin = Eio.Time.Mono.now clock in
+  let now_ms () =
+    Mtime.span origin (Eio.Time.Mono.now clock) |> Mtime.Span.to_uint64_ns |> fun ns ->
+    Int64.to_int (Int64.unsigned_div ns 1_000_000L)
+  in
   let context, context_u = Eio.Promise.create () in
   let finished, finished_u = Eio.Promise.create () in
   let t =
@@ -73,13 +72,14 @@ let start ~sw ~clock ~schedule ~spawn =
                 | Ok (n, exit) -> (
                     emit t (Exited (n, exit));
                     let decision, next =
-                      Ox.Schedule.step ~now_ms:(now_ms clock) ~input:exit driver
+                      Ox.Schedule.step ~now_ms:(now_ms ()) ~input:exit driver
                     in
                     match decision with
                     | Ox.Schedule.Done _ ->
                         emit t (Gave_up (Ox.Cause.Fail (`Schedule_exhausted exit)))
                     | Ox.Schedule.Continue metadata ->
-                        Eio.Time.sleep clock (Ox.Duration.to_seconds_float metadata.delay);
+                        Eio.Time.Mono.sleep clock
+                          (Ox.Duration.to_seconds_float metadata.delay);
                         loop next)
             in
             loop (Ox.Schedule.start schedule))

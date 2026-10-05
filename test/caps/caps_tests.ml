@@ -140,7 +140,7 @@ let spawn_needs_fork_exec_and_fs_write
     ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_write ; .. >) () =
   Ox_test.run (fun env sw ->
       match
-        Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+        Ox_process.Child.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
           ~argv:[ "true" ] ~grace:(Ox.Duration.ms 100) ~fds:[] ()
       with
       | Error _ -> Alcotest.fail "spawn refused"

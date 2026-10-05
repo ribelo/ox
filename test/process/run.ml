@@ -38,7 +38,7 @@ let test_invalid
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [] in
       let spawn fds =
-        C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+        C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Ox_test.Process.mgr fake)
           ~argv:[ "/bin/never" ] ~grace:Ox.Duration.zero ~fds ()
       in
       Alcotest.(check bool)
@@ -65,7 +65,7 @@ let test_fake_retirement
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let child =
         ok
-          (C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+          (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Ox_test.Process.mgr fake)
              ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       check_exit (C.Signaled Sys.sigterm) (C.stop child);
@@ -89,8 +89,8 @@ let test_supervision
           (Ox.Schedule.recurs 1)
       in
       let supervisor =
-        S.start ~sw ~clock:env#clock ~schedule ~spawn:(fun ~sw ->
-            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+        S.start ~sw ~clock:env#mono_clock ~schedule ~spawn:(fun ~sw ->
+            C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Ox_test.Process.mgr fake)
               ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       let events = S.events supervisor in
@@ -103,7 +103,8 @@ let test_supervision
       Alcotest.(check int)
         "not restarted before delay" 1
         (List.length (Ox_test.Process.spawns fake));
-      Ox_test.advance env#clock (Ox.Duration.seconds 10);
+      Eio_mock.Clock.Mono.set_time env#mono_clock (Mtime.of_uint64_ns 10_000_000_000L);
+      Eio.Fiber.yield ();
       (match Eio.Stream.take events with
       | S.Started 2 -> ()
       | _ -> Alcotest.fail "start 2");
@@ -131,8 +132,8 @@ let test_stop
   Ox_test.run (fun env sw ->
       let fake = Ox_test.Process.make [ Ox_test.Process.Block_until_signal ] in
       let s =
-        S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever ~spawn:(fun ~sw ->
-            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+        S.start ~sw ~clock:env#mono_clock ~schedule:Ox.Schedule.forever ~spawn:(fun ~sw ->
+            C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Ox_test.Process.mgr fake)
               ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       (match Eio.Stream.take (S.events s) with
@@ -158,8 +159,8 @@ let test_spawn_failure () =
   (* nproc-pnnm nproc-msz4 *)
   Ox_test.run (fun env sw ->
       let s =
-        S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever ~spawn:(fun ~sw:_ ->
-            Error `Unavailable)
+        S.start ~sw ~clock:env#mono_clock ~schedule:Ox.Schedule.forever
+          ~spawn:(fun ~sw:_ -> Error `Unavailable)
       in
       (match Eio.Stream.take (S.events s) with
       | S.Gave_up (Ox.Cause.Fail (`Spawn `Unavailable)) -> ()
@@ -178,8 +179,9 @@ let test_overflow
         Ox_test.Process.make (List.init 33 (fun _ -> Ox_test.Process.Exit (`Exited 0)))
       in
       let s =
-        S.start ~sw ~clock:env#clock ~schedule:(Ox.Schedule.recurs 32) ~spawn:(fun ~sw ->
-            C.spawn ~caps ~sw ~clock:env#clock ~mgr:(Ox_test.Process.mgr fake)
+        S.start ~sw ~clock:env#mono_clock ~schedule:(Ox.Schedule.recurs 32)
+          ~spawn:(fun ~sw ->
+            C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Ox_test.Process.mgr fake)
               ~argv:[ "/bin/sh" ] ~grace:Ox.Duration.zero ~fds:[] ())
       in
       let rec settle attempts =
@@ -210,7 +212,7 @@ let test_fd_and_output
               let read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                      ~argv:[ script ] ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe
                      ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
@@ -253,7 +255,7 @@ let test_mapped_fds_blocking
               let _read4, write4 = Eio_unix.pipe sw in
               let child =
                 ok
-                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                      ~argv:[ script ] ~grace:(Ox.Duration.ms 40) ~stdout:C.Pipe
                      ~stderr:C.Pipe
                      ~fds:[ (3, fd read3); (4, fd write4) ]
@@ -285,7 +287,7 @@ let test_retired_output_eof
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                      ~argv:[ script ] ~grace:(Ox.Duration.ms 30) ~stdout:C.Pipe
                      ~stderr:C.Pipe ~fds:[] ())
               in
@@ -300,9 +302,9 @@ let test_retired_output_eof
 
 let wait_ready clock marker =
   match
-    Eio.Time.with_timeout clock 1. (fun () ->
+    Ox.Timeout.timeout_mono ~clock (Ox.Duration.seconds 1) (fun () ->
         while not (Sys.file_exists marker) do
-          Eio.Time.sleep clock 0.001
+          Eio.Time.Mono.sleep clock 0.001
         done;
         Ok ())
   with
@@ -322,11 +324,11 @@ let test_escalation
           Eio.Switch.run (fun sw ->
               let child =
                 ok
-                  (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                  (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                      ~argv:[ script; script ^ ".ready" ]
                      ~grace ~fds:[] ())
               in
-              wait_ready env#clock (script ^ ".ready");
+              wait_ready env#mono_clock (script ^ ".ready");
               check_exit (C.Signaled Sys.sigkill) (C.stop child);
               check_exit (C.Signaled Sys.sigkill) (C.await child))))
 
@@ -343,10 +345,10 @@ let test_supervisor_real_stop
           Eio.Switch.run (fun sw ->
               let spawned = ref None in
               let supervisor =
-                S.start ~sw ~clock:env#clock ~schedule:Ox.Schedule.forever
+                S.start ~sw ~clock:env#mono_clock ~schedule:Ox.Schedule.forever
                   ~spawn:(fun ~sw ->
                     let result =
-                      C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                      C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                         ~argv:[ script; script ^ ".ready" ]
                         ~grace:(Ox.Duration.ms 20) ~fds:[] ()
                     in
@@ -358,7 +360,7 @@ let test_supervisor_real_stop
               (match Eio.Stream.take (S.events supervisor) with
               | S.Started 1 -> ()
               | _ -> Alcotest.fail "supervisor did not start");
-              wait_ready env#clock (script ^ ".ready");
+              wait_ready env#mono_clock (script ^ ".ready");
               S.stop supervisor;
               check_exit (C.Signaled Sys.sigkill) (C.await (some !spawned));
               Alcotest.(check int)
@@ -383,11 +385,11 @@ let test_cancel
                     Ox.Scope.run (fun sw ->
                         let child =
                           ok
-                            (C.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+                            (C.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                                ~argv:[ script; script ^ ".ready" ]
                                ~grace:(Ox.Duration.ms 40) ~fds:[] ())
                         in
-                        wait_ready env#clock (script ^ ".ready");
+                        wait_ready env#mono_clock (script ^ ".ready");
                         Eio.Promise.resolve ready_u (sw, child);
                         let never, _ = Eio.Promise.create () in
                         Eio.Promise.await never;

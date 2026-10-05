@@ -97,7 +97,7 @@ let fixture
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                 ~argv:
                   ([ "timeout"; "--kill-after=1"; "5"; path ]
                   @ if owned then [ "owned" ] else [])
