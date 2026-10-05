@@ -328,6 +328,8 @@
  (deps
   (source_tree clean)
   (source_tree violating)
+  (alias clean/check)
+  (alias violating/check)
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmti
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_dependency.cmt

@@ -200,6 +200,32 @@ let field name = function
         fields
   | Atom _ -> None
 
+(* ^safe-y047 ^nlintcov-q6n2: Dune additionally escapes literal interpolation
+   openers as [\%{]. Consume escape pairs so an escaped backslash cannot turn
+   the following percent into an escape. Keep Scanf's validation for all other
+   escapes, including malformed decimal and unknown escapes. *)
+let dune_unescaped text =
+  let length = String.length text in
+  let buffer = Buffer.create length in
+  let rec copy pos =
+    if pos < length then
+      if text.[pos] = '\\' && pos + 1 < length then begin
+        if text.[pos + 1] = '%' && pos + 2 < length && text.[pos + 2] = '{' then
+          Buffer.add_char buffer '%'
+        else begin
+          Buffer.add_char buffer text.[pos];
+          Buffer.add_char buffer text.[pos + 1]
+        end;
+        copy (pos + 2)
+      end
+      else begin
+        Buffer.add_char buffer text.[pos];
+        copy (pos + 1)
+      end
+  in
+  copy 0;
+  Scanf.unescaped (Buffer.contents buffer)
+
 (* [describe rules] uses ordinary, quoted S-expressions rather than csexp. *)
 let parse_rules text =
   let length = String.length text in
@@ -227,7 +253,7 @@ let parse_rules text =
             else stop (i + 1)
           in
           let last = stop (pos + 1) in
-          let value = Scanf.unescaped (String.sub text (pos + 1) (last - pos - 1)) in
+          let value = dune_unescaped (String.sub text (pos + 1) (last - pos - 1)) in
           items nested (last + 1) (Atom value :: acc)
       | _ ->
           let rec stop i = if i = length || delimiter text.[i] then i else stop (i + 1) in

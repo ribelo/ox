@@ -1,0 +1,12 @@
+; ^safe-y047 ^nlintcov-q6n2: real discovery with both wire fixtures and recursive Dune.
+
+(executable
+ (name test_inventory)
+ (modules test_inventory)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps check.sh quoted.sexp)
+ (action
+  (run bash check.sh %{exe:test_inventory.exe})))
