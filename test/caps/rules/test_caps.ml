@@ -38,7 +38,10 @@ let typed_sites ~caps (rule : Rules.t) source =
         rule.typed)
     source
 
-let rule ~caps name = List.hd (Rules.select ~caps [ "ox-caps-" ^ name ])
+let rule ~caps name =
+  match Rules.select ~caps [ "ox-caps-" ^ name ] with
+  | rule :: _ -> rule
+  | [] -> Alcotest.fail ("capability rule was not selected: ox-caps-" ^ name)
 
 let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let names =
@@ -119,7 +122,11 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       ("boundaries/direct/sub/entry.ml", false);
       ("boundaries/included/sub/entry.ml", true);
     ];
-  let public = List.hd (Rules.select ~caps [ "ox-public-exception" ]) in
+  let public =
+    match Rules.select ~caps [ "ox-public-exception" ] with
+    | rule :: _ -> rule
+    | [] -> Alcotest.fail "ox-public-exception rule was not selected"
+  in
   if source_sites ~caps public "boundaries/private/holder.mli" <> [] then
     failwith "private holder exposes an exception";
   if source_sites ~caps public "boundaries/private/public.mli" <> [ 2 ] then

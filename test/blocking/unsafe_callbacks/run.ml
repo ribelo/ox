@@ -101,7 +101,13 @@ let retained_hook_defect () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       Eio.Semaphore.acquire started;
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None ->
+            Alcotest.fail "unsafe callback caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "caller gave up");
       Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
       let d1 = drain ~sw p in
       let d2 = drain ~sw p in
@@ -152,7 +158,13 @@ let detach_keeps_policy () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       Eio.Semaphore.acquire started;
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None ->
+            Alcotest.fail "unsafe callback caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "caller gave up");
       Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
       Pool.shutdown p;
       Alcotest.(check int) "started call detached" 1 (Pool.stats p).detached;

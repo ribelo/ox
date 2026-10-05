@@ -387,7 +387,11 @@ let stops_with_switch () =
             "on_stop ran once, with the final state" [ 1 ] !stopped_with;
           Alcotest.(check (list string))
             "on_stop before the switch's own releases" [ "release"; "on_stop" ] !released;
-          let answer i = List.assoc i !answers in
+          let answer i =
+            match List.assoc_opt i !answers with
+            | Some reply -> reply
+            | None -> Alcotest.fail "stopped actor reply was not recorded"
+          in
           check_bool "in flight finished" true (answer 1 = Ok 1);
           check_bool "pending are Actor_stopped" true
             (answer 2 = Error `Actor_stopped && answer 3 = Error `Actor_stopped);

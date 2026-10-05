@@ -429,7 +429,13 @@ let external_cancellation () =
                                     ]);
                                Eio.Fiber.await_cancel ())))));
           quiesce ();
-          Eio.Cancel.cancel (Option.get !cc) (Interrupt_id.stop id);
+          let cancel_context =
+            match !cc with
+            | Some context -> context
+            | None ->
+                Alcotest.fail "supervisor scope cancellation context was not captured"
+          in
+          Eio.Cancel.cancel cancel_context (Interrupt_id.stop id);
           quiesce ());
       (match !exit with
       | Some (Exit.Failure (Cause.Interrupt (Some seen))) ->

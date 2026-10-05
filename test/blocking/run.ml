@@ -124,7 +124,12 @@ let queued_cancellation () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       wait_until env#clock (fun () -> (Pool.stats p).queued = 1 && !cancel <> None);
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "test cancellation");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None -> Alcotest.fail "blocking caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "test cancellation");
       Alcotest.(check bool) "queued caller released" true (Eio.Promise.await_exn second);
       Alcotest.(check int) "queue removed" 0 (Pool.stats p).queued;
       release permit;
@@ -167,7 +172,12 @@ let running_cancellation () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       Eio.Semaphore.acquire started;
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "stop caller");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None -> Alcotest.fail "blocking caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "stop caller");
       Alcotest.(check bool)
         "caller returned before worker" true
         (Eio.Promise.await_exn caller);
@@ -222,7 +232,12 @@ let settled_after_completion () =
          in
          ()
        with Exit -> ());
-      Alcotest.(check bool) "exception settles" true (List.hd !seen = `Exn);
+      let first_outcome =
+        match !seen with
+        | outcome :: _ -> outcome
+        | [] -> Alcotest.fail "exception settlement was not recorded"
+      in
+      Alcotest.(check bool) "exception settles" true (first_outcome = `Exn);
       Pool.shutdown p)
 
 (* nblk-2h3g: a caller that gave up is released at once; the lease is released only when
@@ -261,7 +276,12 @@ let settled_after_cancellation () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       Eio.Semaphore.acquire started;
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "caller gave up");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None -> Alcotest.fail "blocking caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "caller gave up");
       Alcotest.(check bool) "caller released" true (Eio.Promise.await_exn caller);
       Alcotest.(check int) "not settled while running" 0 (Atomic.get settled);
       release permit;
@@ -309,7 +329,12 @@ let settled_after_timeout_not_before_claim () =
                 with Eio.Cancel.Cancelled _ -> ()))
       in
       wait_until env#clock (fun () -> (Pool.stats p).queued = 1 && !cancel <> None);
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "pre-claim");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None -> Alcotest.fail "blocking caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "pre-claim");
       Eio.Promise.await_exn queued;
       Alcotest.(check int) "timed-out call not settled yet" 0 (List.length !settled);
       release permit;
@@ -423,7 +448,12 @@ let cancelled_drainer_leaves_drain () =
       in
       release permit_a;
       Eio.Semaphore.acquire hook;
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "drainer gave up");
+      let cancel_context =
+        match !cancel with
+        | Some context -> context
+        | None -> Alcotest.fail "blocking caller cancellation context was not captured"
+      in
+      Eio.Cancel.cancel cancel_context (Failure "drainer gave up");
       Alcotest.(check bool)
         "cancelled drainer released" true
         (Eio.Promise.await_exn gave_up);

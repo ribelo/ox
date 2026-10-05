@@ -246,7 +246,13 @@ let caller_cancelled () =
                       cc_before := Some cc;
                       Agent.cast agent ~fn:(fun n -> n + 100))));
           yields 3;
-          Eio.Cancel.cancel (Option.get !cc_before) (Failure "caller gone");
+          let cancel_context =
+            match !cc_before with
+            | Some context -> context
+            | None ->
+                Alcotest.fail "pre-admission caller cancellation context was not captured"
+          in
+          Eio.Cancel.cancel cancel_context (Failure "caller gone");
           yields 3;
           Alcotest.(check string)
             "cancelled before admission stays a cancellation" "cancelled" !before;
@@ -299,10 +305,20 @@ let owner_ends_releases_waiters () =
                  yields 10;
                  Ok ()));
           yields 10;
+          let crash_reply =
+            match List.assoc_opt "crash" !answers with
+            | Some reply -> reply
+            | None -> Alcotest.fail "agent crash reply was not recorded"
+          in
           check_bool "the reply whose closure raised is released" true
-            (List.assoc "crash" !answers = Error `Agent_stopped);
+            (crash_reply = Error `Agent_stopped);
+          let queued_reply =
+            match List.assoc_opt "queued" !answers with
+            | Some reply -> reply
+            | None -> Alcotest.fail "agent queued reply was not recorded"
+          in
           check_bool "a queued reply is released" true
-            (List.assoc "queued" !answers = Error `Agent_stopped);
+            (queued_reply = Error `Agent_stopped);
           check_bool "a producer blocked on a full mailbox is released" true
             (!blocked_cast = Some (Error `Agent_stopped))))
 
@@ -348,14 +364,28 @@ let external_cancel_of_switch () =
               | () -> ()
               | exception Eio.Cancel.Cancelled _ -> ());
           yields 5;
-          Eio.Cancel.cancel (Option.get !cc) (Failure "stop the scope");
+          let cancel_context =
+            match !cc with
+            | Some context -> context
+            | None -> Alcotest.fail "agent scope cancellation context was not captured"
+          in
+          Eio.Cancel.cancel cancel_context (Failure "stop the scope");
           yields 3;
           Eio.Promise.resolve release ();
           yields 10;
-          check_bool "the closure in flight finished" true
-            (List.assoc "held" !answers = Ok ());
+          let held_reply =
+            match List.assoc_opt "held" !answers with
+            | Some reply -> reply
+            | None -> Alcotest.fail "agent held reply was not recorded"
+          in
+          check_bool "the closure in flight finished" true (held_reply = Ok ());
+          let queued_reply =
+            match List.assoc_opt "queued" !answers with
+            | Some reply -> reply
+            | None -> Alcotest.fail "agent queued reply was not recorded"
+          in
           check_bool "the queued reply is released, not left waiting" true
-            (List.assoc "queued" !answers = Error `Agent_stopped)))
+            (queued_reply = Error `Agent_stopped)))
 
 (* ---- defects: same exception, no leak, nothing swallowed --------------------------------- *)
 

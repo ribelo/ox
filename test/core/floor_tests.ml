@@ -143,9 +143,14 @@ let validation () =
       check_bool "zero period" true (bad (Sliding_window { n = 1; per = Duration.zero }));
       let finished = ref None in
       Eio.Switch.run (fun inner -> finished := Some inner);
+      let finished =
+        match !finished with
+        | Some switch -> switch
+        | None -> Alcotest.fail "completed switch was not captured"
+      in
       check_bool "sw is checked" true
         (match
-           Rate_limiter.create ~sw:(Option.get !finished) ~clock
+           Rate_limiter.create ~sw:finished ~clock
              (Fixed_window { n = 1; per = Duration.seconds 1 })
          with
         | exception Invalid_argument _ -> true

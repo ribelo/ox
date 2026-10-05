@@ -44,7 +44,11 @@ let run ~(caps : < Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
             base.value_description self value);
       });
   assert (!docs = 1);
-  let rule = List.hd (Rules.select ~caps [ "ox-discarded-result" ]) in
+  let rule =
+    match Rules.select ~caps [ "ox-discarded-result" ] with
+    | rule :: _ -> rule
+    | [] -> Stdlib.failwith "ox-discarded-result rule was not selected"
+  in
   if Rules.self_check ~caps ~root:"../.." [ rule ] <> [] then
     failwith "valid rule evidence rejected";
   let mutations =
