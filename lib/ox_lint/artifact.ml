@@ -2,7 +2,24 @@
 open Ocaml_common
 open Ox_caps
 
-type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
+type load_directory = Mapped_directory of string | Unavailable_original_cwd
+
+type origin =
+  | Build
+  | Installed of {
+      source_path : string;
+      own_objects : string;
+      directory : string;
+      manifest_root : string;
+      annotations : string list;
+    }
+
+type t = {
+  path : string;
+  info : Cmt_format.cmt_infos;
+  builddir : string;
+  origin : origin;
+}
 
 let absolute ~(caps : < Cap.fs_read ; .. >) path =
   ignore caps#fs_read;
@@ -89,32 +106,6 @@ let workspace ~(caps : < Cap.fs_read ; .. >) input =
       | Some _ as root -> root
       | None -> List.find_opt (fun _ -> true) roots)
 
-let read ~(caps : < Cap.fs_read ; .. >) path =
-  ignore caps#fs_read;
-  let info = Cmt_format.read_cmt path in
-  let builddir =
-    if
-      info.cmt_builddir = "/workspace_root"
-      || String.starts_with ~prefix:"/workspace_root/" info.cmt_builddir
-    then
-      match workspace ~caps path with
-      | Some root ->
-          let base = Filename.concat root "_build/default" in
-          if info.cmt_builddir = "/workspace_root" then base
-          else
-            Filename.concat base
-              (String.sub info.cmt_builddir 16 (String.length info.cmt_builddir - 16))
-      | None -> failwith "cannot rebase /workspace_root: no dune-project found"
-    else info.cmt_builddir
-  in
-  { path; info; builddir }
-
-let source t =
-  match t.info.cmt_sourcefile with
-  | Some path ->
-      if Filename.is_relative path then Filename.concat t.builddir path else path
-  | None -> failwith "annotation has no source filename"
-
 let original path =
   if Filename.check_suffix path ".pp.ml" then Filename.chop_suffix path ".pp.ml" ^ ".ml"
   else if Filename.check_suffix path ".pp.mli" then
@@ -122,28 +113,6 @@ let original path =
   else path
 
 let cache = Hashtbl.create 32
-
-let rec annotations ~(caps : < Cap.fs_read ; .. >) dir =
-  if not (Sys.file_exists dir) then []
-  else
-    Array.to_list (Cap_sys.readdir ~caps dir)
-    |> List.sort String.compare
-    |> List.concat_map (fun name ->
-        let path = Filename.concat dir name in
-        if Sys.is_directory path then annotations ~caps path
-        else if Filename.check_suffix path ".cmt" || Filename.check_suffix path ".cmti"
-        then [ path ]
-        else [])
-
-let candidates ~(caps : < Cap.fs_read ; .. >) dir =
-  match Hashtbl.find_opt cache dir with
-  | Some xs -> xs
-  | None ->
-      let xs =
-        List.map (fun path -> (path, lazy (read ~caps path))) (annotations ~caps dir)
-      in
-      Hashtbl.add cache dir xs;
-      xs
 
 let relative ~root path =
   if path = root then ""
@@ -262,6 +231,265 @@ let parse_rules text =
   in
   fst (items false 0 [])
 
+(* ^safe-y047 ^nlintcov-q6n2: installation is proved by the adjacent package
+   manifest, never by a checkout, a basename search or an installation prefix guess.
+   One parent permits Dune's public sublibraries (for example eio/core). *)
+let installed_origin ~(caps : < Cap.fs_read ; .. >) path info =
+  let require condition message =
+    if not condition then failwith ("installed artifact: " ^ message)
+  in
+  let directory = Filename.dirname (canonical ~caps path) in
+  let manifests =
+    [ directory; Filename.dirname directory ]
+    |> List.sort_uniq String.compare
+    |> List.map (fun dir -> Filename.concat dir "dune-package")
+    |> List.filter Sys.file_exists
+  in
+  match manifests with
+  | [] -> None
+  | [ manifest ] ->
+      require (canonical ~caps manifest = manifest) "symlink package manifest";
+      let root = Filename.dirname manifest in
+      let one key fields =
+        match
+          List.filter_map
+            (function
+              | List (Atom name :: values) when name = key -> Some values | _ -> None)
+            fields
+        with
+        | [ values ] -> values
+        | _ -> failwith ("installed artifact: missing/ambiguous " ^ key)
+      in
+      let atom key fields =
+        match one key fields with
+        | [ Atom value ] -> value
+        | _ -> failwith ("installed artifact: invalid " ^ key)
+      in
+      let safe_relative relative =
+        require
+          (Filename.is_relative relative
+          && List.for_all
+               (fun part -> part <> "" && part <> "." && part <> "..")
+               (String.split_on_char '/' relative))
+          ("escaping manifest path " ^ relative);
+        let full = Filename.concat root relative in
+        require
+          (String.starts_with ~prefix:(root ^ "/") (canonical ~caps full))
+          ("escaping installed file " ^ relative);
+        require (canonical ~caps full = full) ("symlink manifest claim " ^ relative);
+        full
+      in
+      let contents =
+        Cap_stdlib.In_channel.with_open_bin ~caps manifest In_channel.input_all
+        |> parse_rules
+      in
+      let files =
+        match one "lib" (one "files" contents) with
+        | [ List files ] ->
+            List.map
+              (function
+                | Atom path -> path | _ -> failwith "installed artifact: invalid files")
+              files
+        | _ -> failwith "installed artifact: invalid lib files"
+      in
+      let owned relative =
+        require
+          (List.length (List.filter (( = ) relative) files) = 1)
+          ("unlisted/ambiguous installed file " ^ relative);
+        safe_relative relative
+      in
+      let object_name = Filename.remove_extension (Filename.basename path) in
+      require
+        (Compilation_unit.name_as_string info.Cmt_format.cmt_modname
+        = String.capitalize_ascii object_name)
+        "annotation compilation unit differs from its object name";
+      let rec modules = function
+        | List (Atom ("module" | "alias" | "singleton") :: fields) ->
+            if atom "obj_name" fields = object_name then [ fields ] else []
+        | List values -> List.concat_map modules values
+        | Atom _ -> []
+      in
+      let candidates =
+        List.concat_map
+          (function
+            | List (Atom "library" :: fields) -> List.concat_map modules fields | _ -> [])
+          contents
+      in
+      let fields =
+        match candidates with
+        | [ fields ] -> fields
+        | _ -> failwith "installed artifact: missing/ambiguous owning module"
+      in
+      require (atom "visibility" fields = "public") "unsupported private module";
+      let kind = if Filename.check_suffix path ".cmti" then "intf" else "impl" in
+      require
+        (Filename.check_suffix path ".cmt" || Filename.check_suffix path ".cmti")
+        "unsupported annotation extension";
+      let declared = atom "path" (one kind (one "source" fields)) in
+      let recorded =
+        match info.cmt_sourcefile with
+        | Some path -> path
+        | None -> failwith "installed artifact: missing compiler source"
+      in
+      require
+        (Filename.basename recorded = Filename.basename declared)
+        "compiled input differs from installed source (preprocessing unsupported)";
+      require
+        (not
+           (Array.exists (fun arg -> String.starts_with ~prefix:"-pp" arg) info.cmt_args))
+        "preprocessed compiler input is not an installed plain source";
+      let source_name =
+        if Filename.check_suffix declared ".ml-gen" then begin
+          require (atom "kind" fields = "alias") "unsupported generated source";
+          Filename.chop_suffix declared "-gen"
+        end
+        else declared
+      in
+      let source_path = owned source_name in
+      let annotation =
+        Filename.concat (Filename.dirname source_name) (Filename.basename path)
+      in
+      let annotation =
+        if Filename.dirname source_name = "." then Filename.basename path else annotation
+      in
+      require
+        (canonical ~caps (owned annotation) = canonical ~caps path)
+        "annotation is outside its owning module directory";
+      ignore
+        (owned
+           (if Filename.dirname annotation = "." then object_name ^ ".cmi"
+            else Filename.concat (Filename.dirname annotation) (object_name ^ ".cmi")));
+      let rec outputs = function
+        | "-o" :: output :: rest -> output :: outputs rest
+        | _ :: rest -> outputs rest
+        | [] -> []
+      in
+      let output =
+        match outputs (Array.to_list info.cmt_args) with
+        | [ output ]
+          when Filename.remove_extension (Filename.basename output) = object_name ->
+            output
+        | _ -> failwith "installed artifact: missing/ambiguous own compiler output"
+      in
+      let own_objects = Filename.dirname output in
+      require
+        (List.exists
+           (fun (p : Clflags.visible_include) -> p.path = own_objects)
+           info.cmt_loadpath.visible
+        || List.mem own_objects info.cmt_loadpath.hidden)
+        "own compiler directory absent from load path";
+      let annotations =
+        List.filter (fun name -> Filename.check_suffix name ".cmt") files
+        |> List.map safe_relative
+      in
+      Some
+        (Installed
+           { source_path; own_objects; directory; manifest_root = root; annotations })
+  | _ -> failwith "installed artifact: ambiguous adjacent package manifests"
+
+(* A relative sibling directory is mapped only by that sibling's own compiled
+   output and manifest-owned source. No recursive environment setup is involved. *)
+let installed_sibling ~caps t requested =
+  match t.origin with
+  | Build -> None
+  | Installed { manifest_root; annotations; _ } -> (
+      let rec outputs = function
+        | "-o" :: output :: rest -> Filename.dirname output :: outputs rest
+        | _ :: rest -> outputs rest
+        | [] -> []
+      in
+      let directories =
+        List.filter_map
+          (fun path ->
+            let info = Cmt_format.read_cmt path in
+            if outputs (Array.to_list info.cmt_args) <> [ requested ] then None
+            else begin
+              if info.cmt_builddir <> t.info.cmt_builddir then
+                failwith "installed artifact: sibling build-directory conflict";
+              match installed_origin ~caps path info with
+              | Some (Installed sibling) when sibling.manifest_root = manifest_root ->
+                  let digest =
+                    Cap_stdlib.In_channel.with_open_bin ~caps sibling.source_path
+                      (fun channel -> Digest.channel channel (-1))
+                  in
+                  if info.cmt_source_digest <> Some digest then
+                    failwith
+                      ("installed artifact: stale sibling source " ^ sibling.source_path);
+                  Some sibling.directory
+              | _ -> failwith "installed artifact: sibling owner conflict"
+            end)
+          annotations
+        |> List.sort_uniq String.compare
+      in
+      match directories with
+      | [] -> None
+      | [ directory ] -> Some directory
+      | _ -> failwith "installed artifact: ambiguous sibling object directory")
+
+let read ~(caps : < Cap.fs_read ; .. >) path =
+  ignore caps#fs_read;
+  let info = Cmt_format.read_cmt path in
+  let origin = Option.value (installed_origin ~caps path info) ~default:Build in
+  let builddir =
+    match origin with
+    | Installed { directory; _ } -> directory
+    | Build ->
+        if
+          info.cmt_builddir = "/workspace_root"
+          || String.starts_with ~prefix:"/workspace_root/" info.cmt_builddir
+        then
+          match workspace ~caps path with
+          | Some root ->
+              let base = Filename.concat root "_build/default" in
+              if
+                not
+                  (String.starts_with
+                     ~prefix:(canonical ~caps base ^ "/")
+                     (canonical ~caps path))
+              then
+                failwith
+                  "annotation belongs to another source: no manifest ownership outside \
+                   the build tree";
+              if info.cmt_builddir = "/workspace_root" then base
+              else
+                Filename.concat base
+                  (String.sub info.cmt_builddir 16 (String.length info.cmt_builddir - 16))
+          | None -> failwith "cannot rebase /workspace_root: no dune-project found"
+        else info.cmt_builddir
+  in
+  { path; info; builddir; origin }
+
+let source t =
+  match t.origin with
+  | Installed { source_path; _ } -> source_path
+  | Build -> (
+      match t.info.cmt_sourcefile with
+      | Some path ->
+          if Filename.is_relative path then Filename.concat t.builddir path else path
+      | None -> failwith "annotation has no source filename")
+
+let rec annotations ~(caps : < Cap.fs_read ; .. >) dir =
+  if not (Sys.file_exists dir) then []
+  else
+    Array.to_list (Cap_sys.readdir ~caps dir)
+    |> List.sort String.compare
+    |> List.concat_map (fun name ->
+        let path = Filename.concat dir name in
+        if Sys.is_directory path then annotations ~caps path
+        else if Filename.check_suffix path ".cmt" || Filename.check_suffix path ".cmti"
+        then [ path ]
+        else [])
+
+let candidates ~(caps : < Cap.fs_read ; .. >) dir =
+  match Hashtbl.find_opt cache dir with
+  | Some xs -> xs
+  | None ->
+      let xs =
+        List.map (fun path -> (path, lazy (read ~caps path))) (annotations ~caps dir)
+      in
+      Hashtbl.add cache dir xs;
+      xs
+
 let describe ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root arguments =
   let command =
     "dune describe " ^ arguments ^ " --root " ^ Filename.quote root ^ " 2>/dev/null"
@@ -303,53 +531,251 @@ let rebuild_check ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
    compiler rules, not existing artifacts: missing CMTs must remain undecided.
    Recursive @check expands the lazy rules for all test modules, including helpers;
    Dune itself resolves ordered module sets, includes and preprocessing. *)
-let rule_modules ~caps root resolve =
-  describe ~caps root "rules --recursive @check"
-  |> parse_rules
-  |> List.concat_map (fun rule ->
-      if field "targets" rule = None || field "deps" rule = None then
-        failwith "Dune rule inventory has an invalid rule";
-      match field "context" rule with
-      | Some (Atom "default") -> (
-          let targets =
-            match Option.bind (field "targets" rule) (field "files") with
-            | Some (List targets) -> targets
-            | _ -> failwith "Dune rule inventory has invalid targets"
-          in
-          let annotation =
-            List.find_map
-              (function
-                | Atom path
-                  when Filename.check_suffix path ".cmt"
-                       || Filename.check_suffix path ".cmti" ->
-                    Some path
-                | _ -> None)
-              targets
-          in
-          match annotation with
-          | None -> []
-          | Some target -> (
-              let kind =
-                if
-                  List.exists
-                    (fun part -> Filename.check_suffix part ".eobjs")
-                    (String.split_on_char '/' target)
-                then Executable
-                else Library
+type empty_interface_proof = {
+  input : string;
+  annotation : string;
+  unit_name : string;
+  compiler_args : string array;
+  configuration : (string * string * Digest.t option) list;
+}
+
+let empty_interface_bytes = "(* Auto-generated by Dune *)"
+let empty_interfaces = Hashtbl.create 8
+
+let file_digest ~caps path =
+  if Sys.file_exists path then
+    Some
+      (Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
+           Digest.channel channel (-1)))
+  else None
+
+(* Snapshot only the owning directory and its ancestors, plus literal configuration
+   includes. Evidence callbacks compare this snapshot; they never execute Dune. *)
+let empty_interface_owner ~caps ~root ~directory ~module_name ~output =
+  if directory <> root && not (String.starts_with ~prefix:(root ^ "/") directory) then
+    failwith "generated-interface owner outside workspace";
+  let observed = ref [] in
+  let observe path =
+    let resolved = canonical ~caps path in
+    let digest = file_digest ~caps path in
+    observed := (path, resolved, digest) :: !observed;
+    digest
+  in
+  let read path =
+    match observe path with
+    | None -> []
+    | Some _ ->
+        Cap_stdlib.In_channel.with_open_bin ~caps path In_channel.input_all |> parse_rules
+  in
+  let rec stanzas seen path =
+    if List.mem path seen then failwith "cyclic generated-interface configuration";
+    let values = read path in
+    let include_path relative =
+      if (not (Filename.is_relative relative)) || String.contains relative '%' then
+        failwith "unresolved generated-interface configuration include";
+      let lexical = Filename.concat (Filename.dirname path) relative in
+      let included = canonical ~caps lexical in
+      ignore (observe lexical);
+      if not (String.starts_with ~prefix:(root ^ "/") included) then
+        failwith "escaping generated-interface configuration include";
+      included
+    in
+    let rec flags = function
+      | List [ Atom ":include"; Atom relative ] ->
+          ignore (stanzas (path :: seen) (include_path relative))
+      | List values -> List.iter flags values
+      | Atom _ -> ()
+    in
+    List.concat_map
+      (function
+        | List [ Atom "include"; Atom relative ] ->
+            stanzas (path :: seen) (include_path relative)
+        | value ->
+            flags value;
+            [ value ])
+      values
+  in
+  let leaf = stanzas [] (Filename.concat directory "dune") in
+  let rec ancestors dir =
+    if dir <> directory then ignore (stanzas [] (Filename.concat dir "dune"));
+    List.iter
+      (fun name -> ignore (stanzas [] (Filename.concat dir name)))
+      [ "dune-project"; "dune-workspace" ];
+    if dir <> root then ancestors (Filename.dirname dir)
+  in
+  ancestors directory;
+  let owners =
+    List.filter_map
+      (function
+        | List (Atom ("test" | "tests" | "executable" | "executables") :: fields) -> (
+            let names =
+              List.filter_map
+                (function
+                  | List (Atom ("name" | "names") :: values) -> Some values | _ -> None)
+                fields
+            in
+            match names with
+            | [ Atom first :: rest ] when List.mem (Atom module_name) (Atom first :: rest)
+              ->
+                let expected =
+                  Filename.concat directory
+                    ("." ^ first ^ ".eobjs/byte/dune__exe__"
+                    ^ String.capitalize_ascii module_name
+                    ^ ".cmi")
+                in
+                if output = expected then Some () else None
+            | _ -> None)
+        | _ -> None)
+      leaf
+  in
+  if owners <> [ () ] then failwith "missing/ambiguous generated-interface owner";
+  if observe (Filename.concat directory (module_name ^ ".ml")) = None then
+    failwith "generated-interface main implementation unavailable";
+  List.sort_uniq compare !observed
+
+let cache_empty_interfaces ~caps root rules =
+  let build = Filename.concat root "_build/default" in
+  let targets rule =
+    match Option.bind (field "targets" rule) (field "files") with
+    | Some (List paths) -> List.filter_map (function Atom p -> Some p | _ -> None) paths
+    | _ -> []
+  in
+  let option name args =
+    let rec collect = function
+      | key :: value :: rest when key = name -> value :: collect rest
+      | _ :: rest -> collect rest
+      | [] -> []
+    in
+    match collect args with [ value ] -> Some value | _ -> None
+  in
+  let proofs =
+    List.filter_map
+      (fun rule ->
+        try
+          match (field "context" rule, field "action" rule) with
+          | ( Some (Atom "default"),
+              Some
+                (List [ Atom "chdir"; Atom "_build/default"; List (Atom "run" :: args) ])
+            ) ->
+              let args = List.map (function Atom arg -> arg | _ -> raise Exit) args in
+              let input = Option.get (option "-intf" args) in
+              let output = Option.get (option "-o" args) in
+              if
+                not
+                  (Filename.check_suffix input ".pp.mli"
+                  && Filename.check_suffix output ".cmi")
+              then raise Exit;
+              if List.exists (String.starts_with ~prefix:"-pp") args then raise Exit;
+              let physical = canonical ~caps (Filename.concat build input) in
+              if not (String.starts_with ~prefix:(build ^ "/") physical) then raise Exit;
+              let producer_target = "_build/default/" ^ input in
+              let producers =
+                List.filter (fun rule -> List.mem producer_target (targets rule)) rules
               in
-              match field "deps" rule with
-              | Some (List deps) ->
-                  List.filter_map
-                    (function
-                      | List [ Atom "File"; List [ Atom "In_build_dir"; Atom path ] ]
-                        when Filename.check_suffix path ".ml"
-                             || Filename.check_suffix path ".mli" ->
-                          Some (resolve path, kind)
-                      | _ -> None)
-                    deps
-              | _ -> failwith "Dune rule inventory has invalid dependencies"))
-      | None | Some (Atom _) -> []
-      | Some (List _) -> failwith "Dune rule inventory has an invalid context")
+              (match producers with
+              | [ producer ]
+                when field "context" producer = Some (Atom "default")
+                     && field "deps" producer = Some (List [])
+                     && targets producer = [ producer_target ]
+                     && Option.bind (field "targets" producer) (field "directories")
+                        = Some (List [])
+                     && field "action" producer
+                        = Some
+                            (List
+                               [
+                                 Atom "chdir";
+                                 Atom "_build/default";
+                                 List
+                                   [
+                                     Atom "write-file";
+                                     Atom input;
+                                     Atom empty_interface_bytes;
+                                   ];
+                               ]) ->
+                  ()
+              | _ -> raise Exit);
+              let annotation = Filename.chop_suffix output ".cmi" ^ ".cmti" in
+              if not (List.mem ("_build/default/" ^ annotation) (targets rule)) then
+                raise Exit;
+              let module_name =
+                Filename.chop_suffix (Filename.basename input) ".pp.mli"
+              in
+              let source_directory =
+                canonical ~caps (Filename.concat root (Filename.dirname input))
+              in
+              let configuration =
+                empty_interface_owner ~caps ~root ~directory:source_directory ~module_name
+                  ~output:(canonical ~caps (Filename.concat root output))
+              in
+              Some
+                {
+                  input = physical;
+                  annotation = canonical ~caps (Filename.concat build annotation);
+                  unit_name = "Dune__exe__" ^ String.capitalize_ascii module_name;
+                  compiler_args = Array.of_list args;
+                  configuration;
+                }
+          | _ -> None
+        with
+        | Exit | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
+        | Unix.Unix_error _
+        ->
+          None)
+      rules
+  in
+  Hashtbl.replace empty_interfaces root proofs
+
+let rule_modules ~caps root resolve =
+  let rules = describe ~caps root "rules --recursive @check" |> parse_rules in
+  let modules =
+    rules
+    |> List.concat_map (fun rule ->
+        if field "targets" rule = None || field "deps" rule = None then
+          failwith "Dune rule inventory has an invalid rule";
+        match field "context" rule with
+        | Some (Atom "default") -> (
+            let targets =
+              match Option.bind (field "targets" rule) (field "files") with
+              | Some (List targets) -> targets
+              | _ -> failwith "Dune rule inventory has invalid targets"
+            in
+            let annotation =
+              List.find_map
+                (function
+                  | Atom path
+                    when Filename.check_suffix path ".cmt"
+                         || Filename.check_suffix path ".cmti" ->
+                      Some path
+                  | _ -> None)
+                targets
+            in
+            match annotation with
+            | None -> []
+            | Some target -> (
+                let kind =
+                  if
+                    List.exists
+                      (fun part -> Filename.check_suffix part ".eobjs")
+                      (String.split_on_char '/' target)
+                  then Executable
+                  else Library
+                in
+                match field "deps" rule with
+                | Some (List deps) ->
+                    List.filter_map
+                      (function
+                        | List [ Atom "File"; List [ Atom "In_build_dir"; Atom path ] ]
+                          when Filename.check_suffix path ".ml"
+                               || Filename.check_suffix path ".mli" ->
+                            Some (resolve path, kind)
+                        | _ -> None)
+                      deps
+                | _ -> failwith "Dune rule inventory has invalid dependencies"))
+        | None | Some (Atom _) -> []
+        | Some (List _) -> failwith "Dune rule inventory has an invalid context")
+  in
+  cache_empty_interfaces ~caps root rules;
+  modules
 
 let inventory_cache = Hashtbl.create 8
 let workspace_inputs = Hashtbl.create 8
@@ -733,24 +1159,6 @@ let find ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
 
 (* ^nlintd-truth ^nlintcov-q6n2: truth follows authored inputs, including declared
    generated inputs; a build copy alone is not producer evidence. *)
-let authored_source ~caps t =
-  let built = original (source t) in
-  match workspace ~caps built with
-  | Some root when String.starts_with ~prefix:(root ^ "/_build/default/") built ->
-      let checked_in =
-        Filename.concat root (relative ~root:(root ^ "/_build/default") built)
-      in
-      if Sys.file_exists checked_in then checked_in
-      else
-        (* The annotation proves compilation. Reuse discovery's producer lookup
-           without re-running volatile Dune inventories while checking evidence. *)
-        begin match generated_producer ~caps ~root checked_in with
-        | Some _ when Sys.file_exists built -> built
-        | None -> failwith ("generated truth source producer unresolved: " ^ built)
-        | _ -> failwith ("authored truth source unavailable: " ^ checked_in)
-        end
-  | _ -> built
-
 let digest ~(caps : < Cap.fs_read ; .. >) path =
   Cap_stdlib.In_channel.with_open_bin ~caps path (fun channel ->
       Digest.channel channel (-1))
@@ -783,11 +1191,38 @@ let current () = !configured
 let setup ~(caps : < Cap.fs_read ; .. >) t =
   ignore caps#fs_read;
   Envaux.reset_cache ~preserve_persistent_env:false;
+  let resolve p =
+    match t.origin with
+    | Installed _ when p = "" -> Unavailable_original_cwd
+    | Installed { own_objects; directory; _ } when p = own_objects ->
+        Mapped_directory directory
+    | Installed _
+      when Filename.is_relative p || String.starts_with ~prefix:"/workspace_root" p -> (
+        match installed_sibling ~caps t p with
+        | Some directory -> Mapped_directory directory
+        | None -> failwith ("installed artifact: unsupported relative dependency " ^ p))
+    | Installed _ -> Mapped_directory p
+    | Build ->
+        Mapped_directory
+          (if Filename.is_relative p then Filename.concat t.builddir p
+           else if String.starts_with ~prefix:"/workspace_root/" p then
+             Filename.concat t.builddir (String.sub p 16 (String.length p - 16))
+           else p)
+  in
   let rebase p =
-    if Filename.is_relative p then Filename.concat t.builddir p
-    else if String.starts_with ~prefix:"/workspace_root/" p then
-      Filename.concat t.builddir (String.sub p 16 (String.length p - 16))
-    else p
+    match resolve p with
+    | Mapped_directory directory -> directory
+    | Unavailable_original_cwd ->
+        (* Preserve the unavailable slot, never the invocation cwd. Load_path has
+           no empty-Dir constructor; a checked character device cannot contain CMIs.
+           This representation is not an evidence mapping. *)
+        let unavailable () =
+          failwith
+            "installed artifact: unavailable original cwd slot cannot be represented"
+        in
+        (try if (Unix.lstat "/dev/null").Unix.st_kind <> Unix.S_CHR then unavailable ()
+         with Unix.Unix_error _ -> unavailable ());
+        "/dev/null"
   in
   let visible =
     List.map
@@ -799,17 +1234,22 @@ let setup ~(caps : < Cap.fs_read ; .. >) t =
      build tree public_cmi omits them, while the sibling byte directory keeps
      all CMIs. Add these as hidden fallbacks, preserving recorded precedence. *)
   let private_dirs =
-    List.map (fun (p : Clflags.visible_include) -> p.path) visible @ hidden
-    |> List.concat_map (fun dir ->
-        let installed = Filename.concat dir ".private" in
-        let objects = Filename.dirname dir in
-        let build =
-          if Filename.basename dir = "public_cmi" && Filename.check_suffix objects ".objs"
-          then [ Filename.concat objects "byte" ]
-          else []
-        in
-        installed :: build)
-    |> List.filter (fun dir -> Sys.file_exists dir && Sys.is_directory dir)
+    match t.origin with
+    | Installed _ -> []
+    | Build ->
+        List.map (fun (p : Clflags.visible_include) -> p.path) visible @ hidden
+        |> List.concat_map (fun dir ->
+            let installed = Filename.concat dir ".private" in
+            let objects = Filename.dirname dir in
+            let build =
+              if
+                Filename.basename dir = "public_cmi"
+                && Filename.check_suffix objects ".objs"
+              then [ Filename.concat objects "byte" ]
+              else []
+            in
+            installed :: build)
+        |> List.filter (fun dir -> Sys.file_exists dir && Sys.is_directory dir)
   in
   Load_path.init ~auto_include:Load_path.no_auto_include ~visible
     ~hidden:(hidden @ private_dirs);
@@ -829,6 +1269,10 @@ let setup ~(caps : < Cap.fs_read ; .. >) t =
               failwith ("missing imported CMI " ^ name ^ "; rebuild typed evidence")
           in
           let info = Cmi_format.read_cmi path in
+          if not (Compilation_unit.Name.equal info.cmi_name unit_name) then
+            failwith
+              ("stale typed annotation: imported CMI fingerprint changed for " ^ name
+             ^ " (wrong compilation unit at " ^ path ^ ")");
           match
             Array.find_opt
               (fun imported -> Import_info.has_name imported ~name:unit_name)
@@ -840,3 +1284,102 @@ let setup ~(caps : < Cap.fs_read ; .. >) t =
                 ("stale typed annotation: imported CMI fingerprint changed for " ^ name)))
     t.info.cmt_imports;
   configured := Some t
+
+(* ^safe-y047 ^nlintcov-q6n2: the physical generated input is the source only when
+   its current direct-generation pipeline is known; .pp.mli alone proves nothing. *)
+let generated_empty_source ~caps ~root t =
+  let input = source t in
+  let reject reason =
+    failwith ("generated empty interface: " ^ reason ^ " at " ^ input)
+  in
+  let proofs =
+    match Hashtbl.find_opt empty_interfaces root with
+    | Some proofs -> proofs
+    | None -> reject "inventory unavailable"
+  in
+  let proof =
+    match List.filter (fun proof -> proof.input = input) proofs with
+    | [ proof ] -> proof
+    | _ -> reject "missing or ambiguous direct producer/compiler owner"
+  in
+  if
+    proof.annotation <> canonical ~caps t.path
+    || proof.unit_name <> Compilation_unit.name_as_string t.info.cmt_modname
+    || proof.compiler_args <> t.info.cmt_args
+  then reject "compiler owner mismatch";
+  if
+    not
+      (List.for_all
+         (fun (path, resolved, expected) ->
+           canonical ~caps path = resolved && file_digest ~caps path = expected)
+         proof.configuration)
+  then reject "owner/configuration changed since inventory";
+  let original_input = original input in
+  let authored =
+    Filename.concat root
+      (relative ~root:(Filename.concat root "_build/default") original_input)
+  in
+  if Sys.file_exists original_input || Sys.file_exists authored then
+    reject "original interface now exists";
+  let bytes = Cap_stdlib.In_channel.with_open_bin ~caps input In_channel.input_all in
+  if bytes <> empty_interface_bytes then
+    reject "compiler input is not the direct empty output";
+  (match t.info.cmt_annots with
+  | Cmt_format.Interface signature when signature.sig_items = [] -> ()
+  | _ -> reject "compiled signature is not empty");
+  check ~caps ~source:input t;
+  setup ~caps t;
+  let name = Compilation_unit.name t.info.cmt_modname in
+  let annotation_self =
+    Array.to_list t.info.cmt_imports
+    |> List.filter (fun imported -> Import_info.has_name imported ~name)
+  in
+  (match annotation_self with
+  | [ imported ]
+    when Import_info.crc imported <> None
+         && Import_info.crc imported = t.info.cmt_interface_digest ->
+      ()
+  | _ -> reject "required annotation self import missing or changed");
+  let cmi_path = Filename.chop_suffix t.path ".cmti" ^ ".cmi" in
+  let cmi = Cmi_format.read_cmi cmi_path in
+  let self =
+    Array.find_opt (fun imported -> Import_info.has_name imported ~name) cmi.cmi_crcs
+  in
+  if
+    (not (Compilation_unit.Name.equal cmi.cmi_name name))
+    || fst cmi.cmi_sign <> []
+    || t.info.cmt_interface_digest = None
+    || Option.bind self Import_info.crc <> t.info.cmt_interface_digest
+  then reject "current interface CMI mismatch";
+  input
+
+let authored_source ~caps t =
+  let resolved =
+    let built = original (source t) in
+    match workspace ~caps built with
+    | Some root when String.starts_with ~prefix:(root ^ "/_build/default/") built ->
+        let checked_in =
+          Filename.concat root (relative ~root:(root ^ "/_build/default") built)
+        in
+        if Sys.file_exists checked_in then checked_in
+        else
+          (* The annotation proves compilation. Reuse discovery's producer lookup
+           without re-running volatile Dune inventories while checking evidence. *)
+          begin match generated_producer ~caps ~root checked_in with
+          | Some _ when Sys.file_exists built -> built
+          | None -> failwith ("generated truth source producer unresolved: " ^ built)
+          | _ -> generated_empty_source ~caps ~root t
+          end
+    | _ -> built
+  in
+  (if resolved <> source t then
+     match workspace ~caps (source t) with
+     | Some root -> (
+         match Hashtbl.find_opt empty_interfaces root with
+         | Some proofs when List.exists (fun proof -> proof.input = source t) proofs ->
+             failwith
+               ("generated empty interface: original interface now exists at " ^ source t)
+         | _ -> ())
+     | None -> ());
+  check ~caps ~source:resolved t;
+  resolved

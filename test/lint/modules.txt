@@ -161,6 +161,8 @@ lib/ox_lint/caps.ml lib/ox_lint/.lint_engine.objs/byte/caps.cmt
 lib/ox_lint/caps.mli lib/ox_lint/.lint_engine.objs/byte/caps.cmti
 lib/ox_lint/caps_policy.ml lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmt
 lib/ox_lint/caps_policy.mli lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmti
+lib/ox_lint/codec_seams.ml lib/ox_lint/.lint_engine.objs/byte/codec_seams.cmt
+lib/ox_lint/codec_seams.mli lib/ox_lint/.lint_engine.objs/byte/codec_seams.cmti
 lib/ox_lint/concurrency.ml lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
 lib/ox_lint/concurrency.mli lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
 lib/ox_lint/constant_index.ml lib/ox_lint/.lint_engine.objs/byte/constant_index.cmt

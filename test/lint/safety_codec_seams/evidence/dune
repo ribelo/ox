@@ -1,0 +1,11 @@
+(library
+ (name codec_seams_fixtures)
+ (libraries
+  ox_http
+  ox_observability
+  ox_otel
+  ox_ai_systemone
+  ox_ai_realtime
+  ox_ai_openrouter
+  ox_app
+  yojson))

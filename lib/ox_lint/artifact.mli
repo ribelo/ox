@@ -15,7 +15,15 @@ open Ox_caps
     returning; returned annotations are in-memory values. Locking: compiler caches and
     runtime I/O retain their existing locking. ^nlintd-z5p5 ^nlintd-vneh ^nlintd-truth *)
 
-type t = { path : string; info : Cmt_format.cmt_infos; builddir : string }
+type origin
+(** Physical installed paths are separate from the unmodified compiler metadata. *)
+
+type t = {
+  path : string;
+  info : Cmt_format.cmt_infos;
+  builddir : string;
+  origin : origin;
+}
 
 val ignored :
   caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > ->
@@ -37,6 +45,10 @@ val workspace : caps:< Cap.fs_read ; .. > -> string -> string option
     [dune-project] used as a default-scan boundary. *)
 
 val read : caps:< Cap.fs_read ; .. > -> string -> t
+(** Build-tree rebasing, or public installed ownership from a unique adjacent
+    [dune-package] (also one parent for a sublibrary). Installed sources and annotations
+    must be uniquely listed, contained, non-symlinked plain inputs; absent PPX compiler
+    inputs are unsupported. Compiler metadata is unchanged. *)
 
 type target = Library | Executable
 type membership = Built of target | Data_only | Not_built | Unknown
@@ -71,9 +83,15 @@ val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
     failure; coverage is never inferred from existing annotations. ^nlint-2nwm. *)
 
 val authored_source : caps:< Cap.fs_read ; .. > -> t -> string
-(** Resolve a checked-in input or a declared generated input with producer provenance
-    using its actual evidence workspace. Missing input/inventory/provenance raises a named
-    failure, never a silent pass. ^nlintd-truth ^nlintcov-q6n2 *)
+(** Resolve and check a physical authored, declared-generated or installed source. A
+    direct Dune-generated empty interface may return its actual [.pp.mli] compiler input
+    only with a cached unique producer/compiler-owner proof, unchanged owner and
+    configuration identities, matching source digest, empty typed interface and current
+    CMI/import fingerprints. [generated_sources] must acquire that proof before checking;
+    this fs-read-only operation never queries Dune. Explicit scans without the inventory
+    remain unsupported. No authored or intermediate original may be replaced by
+    empty-interface evidence. Missing input/inventory/provenance raises a named failure,
+    never a silent pass. ^nlintd-truth ^nlintcov-q6n2 ^safe-y047 *)
 
 val current : unit -> t option
 (** The annotation whose checked compiler environment is currently configured;
@@ -81,16 +99,19 @@ val current : unit -> t option
 *)
 
 val setup : caps:< Cap.fs_read ; .. > -> t -> unit
-(** Reset caches and initialize rebased visible and hidden include paths, including Dune
-    private CMIs in installed [.private] and build-tree [byte] directories. Recorded paths
-    take precedence; every imported CMI fingerprint must still match. *)
+(** Reset caches and initialize visible and hidden include paths in recorded order.
+    Build-tree artifacts retain Dune private-CMI fallbacks. Installed artifacts map only
+    their manifest-owned object directory and independently proved same-manifest siblings;
+    the unavailable original cwd retains an empty search slot, never the invocation cwd.
+    Every imported CMI must have the expected unit identity and fingerprint. *)
 
 val rebuild_check : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> unit
 (** Rebuild [@check] after the whole-repository inventory and before reading evidence.
     Explicit scans do not repair their supplied evidence. ^nlintcov-q6n2 *)
 
 val source : t -> string
-(** Resolve the annotation's source through its rebased build directory. *)
+(** Resolve the physical source through its build directory or installed ownership,
+    without rewriting the recorded compiler source filename. *)
 
 val check : caps:< Cap.fs_read ; .. > -> source:string -> t -> unit
 (** Check source digest, original/preprocessed freshness and complete payload. *)

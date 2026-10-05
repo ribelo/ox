@@ -1,0 +1,77 @@
+(executable
+ (name test_codec_seams)
+ (modules test_codec_seams)
+ (libraries lint_engine ox_test))
+
+(executable
+ (name audit)
+ (modules audit)
+ (libraries lint_engine ox_test))
+
+(executable
+ (name fault)
+ (modules fault)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  source-check.sh
+  (source_tree evidence)
+  (package ox_http)
+  (package ox_observability)
+  (package ox_otel)
+  (package ox_ai_systemone)
+  (package ox_ai_realtime)
+  (package ox_ai_openrouter)
+  (package ox_app))
+ (action
+  (run
+   bash
+   %{dep:source-check.sh}
+   %{exe:test_codec_seams.exe}
+   evidence
+   %{workspace_root}/../install/default)))
+
+(rule
+ (alias runtest)
+ (deps
+  ../../../lib/http/url.mli
+  ../../../lib/http/header.mli
+  ../../../lib/otel/meter.mli
+  ../../../lib/observability/logger.mli
+  ../../../lib/observability/redact.mli
+  ../../../lib/http/.ox_http.objs/byte/ox_http__Url.cmti
+  ../../../lib/http/.ox_http.objs/byte/ox_http__Header.cmti
+  ../../../lib/otel/.ox_otel.objs/byte/ox_otel__Meter.cmti
+  ../../../lib/observability/.ox_observability.objs/byte/ox_observability__Logger.cmti
+  ../../../lib/observability/.ox_observability.objs/byte/ox_observability__Redact.cmti
+  ../../../lib/http/.ox_http.objs/byte/ox_http__Url.cmt
+  ../../../lib/http/.ox_http.objs/byte/ox_http__Header.cmt
+  ../../../lib/otel/.ox_otel.objs/byte/ox_otel__Meter.cmt
+  ../../../lib/observability/.ox_observability.objs/byte/ox_observability__Logger.cmt
+  ../../../lib/observability/.ox_observability.objs/byte/ox_observability__Redact.cmt)
+ (action
+  (chdir
+   ../../..
+   (progn
+    (run
+     %{exe:audit.exe}
+     lib/http/url.mli
+     lib/http/.ox_http.objs/byte/ox_http__Url.cmti)
+    (run
+     %{exe:audit.exe}
+     lib/http/header.mli
+     lib/http/.ox_http.objs/byte/ox_http__Header.cmti)
+    (run
+     %{exe:audit.exe}
+     lib/otel/meter.mli
+     lib/otel/.ox_otel.objs/byte/ox_otel__Meter.cmti)
+    (run
+     %{exe:audit.exe}
+     lib/observability/logger.mli
+     lib/observability/.ox_observability.objs/byte/ox_observability__Logger.cmti)
+    (run
+     %{exe:audit.exe}
+     lib/observability/redact.mli
+     lib/observability/.ox_observability.objs/byte/ox_observability__Redact.cmti)))))
