@@ -40,6 +40,8 @@ fails() {
   printf 'ok: %s refused (%s)\n' "$1" "$2"
 }
 
+compiles result_name.mli
+compiles result_name.ml
 compiles ../manual_encoder.mli
 compiles ../native_encoders.mli
 compiles ../module_codecs.mli
