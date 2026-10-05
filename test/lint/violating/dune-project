@@ -1,3 +1,7 @@
 (lang dune 3.21)
 ; ^ncapslint-2606: compiled negative evidence belongs to its own Dune project.
 (name lint_negative_evidence)
+
+; ^safe-tlyw: these compiled negative fixtures pin diagnostic line/column evidence.
+; Formatting can move those sites or reject intentionally ambiguous documentation.
+(formatting disabled)
