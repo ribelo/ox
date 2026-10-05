@@ -49,6 +49,9 @@
   (source_tree ../violating)
   (source_tree ../../caps/rules)
   ../violating/concurrency_violating.cma
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Public_exception.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Val_behaviour.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_safety.cmti
   ../../caps/rules/violating/caps_violating.cma)
  (action
   (run
