@@ -766,8 +766,12 @@ let check ~(caps : < Cap.fs_read ; .. >) ~source:input t =
     let built = original annotated in
     if (not (Sys.file_exists built)) || digest ~caps input <> digest ~caps built then
       failwith ("stale typed annotation: original source differs from build copy " ^ input);
-    if (Unix.stat input).st_mtime > (Unix.stat t.path).st_mtime then
-      failwith ("stale typed annotation: source is newer than annotation " ^ input)
+    (* ^safe-y047: identical non-preprocessed bytes remain valid after checkout or
+       cache restoration. Preprocessing still needs its separate source-time guard. *)
+    if
+      canonical ~caps built <> canonical ~caps annotated
+      && (Unix.stat input).st_mtime > (Unix.stat t.path).st_mtime
+    then failwith ("stale typed annotation: source is newer than annotation " ^ input)
   end;
   match t.info.cmt_annots with
   | Implementation _ when Filename.check_suffix input ".ml" -> ()

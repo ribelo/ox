@@ -1,6 +1,10 @@
 (* ^safe-y047 ^nlintcov-q6n2: exercise discovery, not a copied string parser. *)
 let run ~caps =
   match Array.to_list Sys.argv with
+  | [ _; "checked"; annotation; source ] ->
+      let artifact = Artifact.read ~caps annotation in
+      Artifact.check ~caps ~source artifact;
+      Artifact.setup ~caps artifact
   | [ _; "generated"; root ] -> (
       match Artifact.generated_sources ~caps ~root with
       | Error message -> failwith message

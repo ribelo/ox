@@ -38,4 +38,28 @@ printf '%s\n' '(test (name generated))' \
   '(rule (target generated.mli) (action (write-file %{target} "")))' > "$scratch/real/dune"
 # Nested inspection uses a separate workspace, never the enclosing build lock.
 env -u DUNE_INSIDE_DUNE "$probe" generated "$scratch/real"
-printf '%s\n' 'inventory: Dune escapes, binary actions, malformed input and recursive rules: pass'
+# ^safe-y047: a checkout can advance authored mtimes without changing compiler input.
+mkdir -p "$scratch/plain/build"
+printf 'let value = 1\n' > "$scratch/plain/value.ml"
+printf 'val value : int\n' > "$scratch/plain/value.mli"
+cp "$scratch/plain/value.ml" "$scratch/plain/value.mli" "$scratch/plain/build/"
+(cd "$scratch/plain/build"; ocamlc -bin-annot -c value.mli; ocamlc -bin-annot -c value.ml)
+touch -d '2030-01-01 UTC' "$scratch/plain/value.ml"
+"$probe" checked "$scratch/plain/build/value.cmt" "$scratch/plain/value.ml"
+printf 'let value = 2\n' > "$scratch/plain/value.ml"
+touch -r "$scratch/plain/build/value.ml" "$scratch/plain/value.ml"
+if "$probe" checked "$scratch/plain/build/value.cmt" "$scratch/plain/value.ml"; then
+  echo 'changed source with preserved timestamp was accepted' >&2; exit 1
+fi
+cp "$scratch/plain/value.ml" "$scratch/plain/build/value.ml"
+if "$probe" checked "$scratch/plain/build/value.cmt" "$scratch/plain/value.ml"; then
+  echo 'changed compiler input was accepted' >&2; exit 1
+fi
+# Preprocessed input still requires its separate authored-source freshness safeguard.
+cp "$scratch/plain/build/value.ml" "$scratch/plain/build/value.pp.ml"
+(cd "$scratch/plain/build"; ocamlc -bin-annot -c -impl value.pp.ml -o value.cmo)
+touch -d '2030-01-01 UTC' "$scratch/plain/value.ml"
+if "$probe" checked "$scratch/plain/build/value.cmt" "$scratch/plain/value.ml"; then
+  echo 'preprocessed source timestamp safeguard was lost' >&2; exit 1
+fi
+printf '%s\n' 'inventory: Dune escapes, malformed input, recursive rules and content freshness: pass'

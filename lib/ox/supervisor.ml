@@ -404,7 +404,7 @@ let supervise (type e) (t : e t) (cfg : e config) ~(initial : e entry list)
             else
               match Eio.Promise.await inc.finished with
               | Exit.Success () -> `Ready (* completed normally: it started fine *)
-              | Exit.Failure _ -> `Failed_start)
+              | Exit.Failure cause -> `Failed_start cause)
       in
       (* Start every [Down] child in specification order, each once the previous is
          ready. A failure to become ready that needs another recovery stops the batch. *)
@@ -423,10 +423,9 @@ let supervise (type e) (t : e t) (cfg : e config) ~(initial : e entry list)
                          { child_id = entry.spec_id; incarnation = inc.number });
                     go rest
                 | `Stop -> `Stop
-                | `Failed_start ->
+                | `Failed_start cause ->
                     settle_spontaneous entry inc;
-                    if initial then
-                      `Initial_failed (entry.spec_id, Option.get entry.last_cause)
+                    if initial then `Initial_failed (entry.spec_id, cause)
                     else if is_down entry then `Failed entry
                     else go rest)
         in
@@ -544,13 +543,11 @@ let supervise (type e) (t : e t) (cfg : e config) ~(initial : e entry list)
             | `Stop ->
                 Eio.Promise.resolve reply (Error `Stopped);
                 Some Terminal_stop
-            | `Failed_start ->
+            | `Failed_start cause ->
                 settle_spontaneous entry inc;
                 remove entry;
                 Eio.Promise.resolve reply
-                  (Error
-                     (`Start_failed
-                        { failed_id = entry.spec_id; cause = Option.get entry.last_cause }));
+                  (Error (`Start_failed { failed_id = entry.spec_id; cause }));
                 None)
       in
       let terminal =

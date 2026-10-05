@@ -780,16 +780,15 @@ and param_with_suffix node path params skipped =
           path false
           ((path.src, path.off - suffix_start, suffix_start) :: params)
           skipped
-    | None ->
-        if slash < 0 && Option.is_some node.value then begin
-          let value = Option.get node.value in
-          Ok
-            ( value,
-              Params.of_raw
-                ~params:((path.src, path.off, path.len) :: params)
-                ~remapping:node.remapping ~catch_all:None )
-        end
-        else backtrack path params skipped
+    | None -> (
+        match node.value with
+        | Some value when slash < 0 ->
+            Ok
+              ( value,
+                Params.of_raw
+                  ~params:((path.src, path.off, path.len) :: params)
+                  ~remapping:node.remapping ~catch_all:None )
+        | _ -> backtrack path params skipped)
 
 and catch_all node path params skipped =
   match node.value with
