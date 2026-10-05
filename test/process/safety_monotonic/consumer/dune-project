@@ -1,0 +1,2 @@
+(lang dune 3.22)
+(name process_monotonic_installed_consumer)
