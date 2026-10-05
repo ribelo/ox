@@ -237,14 +237,17 @@ objects="$project/_build/default/qualified/.deployment_qualified.objs/byte"
 cmt="$objects/deployment_qualified__Assistant__Dictation.cmt"
 cmti="$objects/deployment_qualified__Assistant__Dictation.cmti"
 [[ -f "$cmt" && -f "$cmti" ]]
-# The basename of the annotation is deliberately no longer a module name.
-inside_scratch "$cmt"; inside_scratch "$objects/evidence.cmt"
-mv "$cmt" "$objects/evidence.cmt"
+# Qualified source basenames differ from their genuine wrapped object names.
 expect 1 "$engine" --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"
 contains "$scratch/out" 'dictation.ml:2: ox-discarded-result:'
 expect 0 "$engine" --require-typed --rules ox-discarded-result \
   "$project/qualified/assistant/dictation.mli" "$project/qualified/other/dictation.ml"
-# Keep the renamed-evidence assertion above; Dune rule discovery may clean unknown targets.
+# Broader annotation lookup still rejects an object with a forged unit name.
+inside_scratch "$cmt"; inside_scratch "$objects/evidence.cmt"
+mv "$cmt" "$objects/evidence.cmt"
+expect 2 "$engine" --require-typed --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"
+contains "$scratch/err" 'annotation compilation unit differs from its object name'
+# Restore before Dune rule discovery can remove an unknown target.
 mv "$objects/evidence.cmt" "$cmt"
 expect 0 "$engine" --caps-gate "${cap_rules[@]}" --require-typed "$project/bin/skill_cli.mli"
 contains "$scratch/out" 'not built (not in any Dune target)'
@@ -277,7 +280,7 @@ mv "$imported.saved" "$imported"
 sibling="$project/qualified/assistant/dictation.cmt"
 cp "$objects/deployment_qualified__Other__Dictation.cmt" "$sibling"
 expect 2 "$engine" --require-typed --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"
-contains "$scratch/err" 'annotation belongs to another source'
+contains "$scratch/err" 'annotation compilation unit differs from its object name'
 inside_scratch "$sibling"; rm -- "$sibling"
 printf '\n(* changed after the build *)\n' >> "$project/qualified/assistant/dictation.ml"
 expect 2 "$engine" --require-typed --rules ox-discarded-result "$project/qualified/assistant/dictation.ml"

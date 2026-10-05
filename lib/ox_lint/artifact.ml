@@ -234,7 +234,7 @@ let parse_rules text =
 (* ^safe-y047 ^nlintcov-q6n2: installation is proved by the adjacent package
    manifest, never by a checkout, a basename search or an installation prefix guess.
    One parent permits Dune's public sublibraries (for example eio/core). *)
-let installed_origin ~(caps : < Cap.fs_read ; .. >) path info =
+let installed_origin ~(caps : < Cap.fs_read ; .. >) path (info : Cmt_format.cmt_infos) =
   let require condition message =
     if not condition then failwith ("installed artifact: " ^ message)
   in
@@ -299,10 +299,6 @@ let installed_origin ~(caps : < Cap.fs_read ; .. >) path info =
         safe_relative relative
       in
       let object_name = Filename.remove_extension (Filename.basename path) in
-      require
-        (Compilation_unit.name_as_string info.Cmt_format.cmt_modname
-        = String.capitalize_ascii object_name)
-        "annotation compilation unit differs from its object name";
       let rec modules = function
         | List (Atom ("module" | "alias" | "singleton") :: fields) ->
             if atom "obj_name" fields = object_name then [ fields ] else []
@@ -429,6 +425,11 @@ let installed_sibling ~caps t requested =
 let read ~(caps : < Cap.fs_read ; .. >) path =
   ignore caps#fs_read;
   let info = Cmt_format.read_cmt path in
+  let object_name = Filename.remove_extension (Filename.basename path) in
+  if
+    Compilation_unit.name_as_string info.cmt_modname
+    <> String.capitalize_ascii object_name
+  then failwith "annotation compilation unit differs from its object name";
   let origin = Option.value (installed_origin ~caps path info) ~default:Build in
   let builddir =
     match origin with

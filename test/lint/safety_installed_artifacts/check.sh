@@ -38,6 +38,32 @@ reject() {
     printf 'unexpected evidence failure: %s\n' "$diagnostic" >&2; exit 1
   fi
 }
+
+# ^safe-fr73: compile the SAME source under another unit, then misname its evidence.
+# Both source digests remain genuine; wrong-source rejection cannot pass this control.
+mkdir "$scratch/native"
+printf 'val answer : int\n' > "$scratch/native/execution_context.mli"
+printf 'let answer = 1\n' > "$scratch/native/execution_context.ml"
+(
+  cd "$scratch/native"
+  ocamlopt -bin-annot -c execution_context.mli
+  ocamlopt -bin-annot -c execution_context.ml
+  "$probe" --unit-names execution_context.cmt execution_context.cmti
+  ocamlopt -bin-annot -c -o wrong_unit.cmi -intf execution_context.mli
+  ocamlopt -bin-annot -c -o wrong_unit.cmx -impl execution_context.ml
+  mkdir renamed
+  cp wrong_unit.cmt renamed/execution_context.cmt
+  cp wrong_unit.cmti renamed/execution_context.cmti
+  for annotation in renamed/execution_context.{cmt,cmti}; do
+    if "$probe" --unit-names "$annotation" > "$scratch/unit-rejection.log" 2>&1; then
+      echo "wrong compiler unit accepted: $annotation" >&2; exit 1
+    fi
+    if [[ $(< "$scratch/unit-rejection.log") != *"compilation unit differs"* ]]; then
+      echo "wrong compiler unit rejected for another reason" >&2; exit 1
+    fi
+  done
+)
+
 copy_case() { cp -a "$scratch/relocated" "$scratch/$1"; case_lib="$scratch/$1/lib/fixture"; }
 copy_case no-manifest
 mv "$case_lib/dune-package" "$case_lib/manifest-hidden"

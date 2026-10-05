@@ -33,5 +33,11 @@ let check ~caps path =
 let () =
   let caps = Ox_caps_door.powerbox () in
   match Array.to_list Sys.argv with
+  | _ :: "--unit-names" :: paths when paths <> [] ->
+      List.iter
+        (fun path ->
+          let artifact = Artifact.read ~caps path in
+          Artifact.check ~caps ~source:(Artifact.authored_source ~caps artifact) artifact)
+        paths
   | _ :: paths when paths <> [] -> List.iter (check ~caps) paths
   | _ -> failwith "expected installed annotation paths"
