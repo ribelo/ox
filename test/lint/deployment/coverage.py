@@ -100,23 +100,14 @@ for path in sorted(tracked):
         errors.append("coverage hole: " + path)
         counts["coverage-holes"] += 1
         continue
-    if path.startswith("docs/"):
-        # Historical issue spikes/evidence are not Ox build targets. Keep this
-        # named boundary narrow rather than accepting every unknown source root.
-        if not path.startswith("docs/issues/") or not any(
-                part in {"spike", "evidence"} for part in path.split("/")):
-            errors.append("unreviewed documentation source: " + path)
-        if any((root / "docs").rglob("dune")):
-            errors.append("documentation evidence gained a Dune build stanza: " + path)
-        # ^nlintcov-8g4p: these sources are also declared data dependencies now.
+    # ^nlintcov-8g4p: provenance is the documentation tree, not subdirectory
+    # names. Actual Dune-resolved membership must still say this source is unbuilt;
+    # built or undecided documentation receives the same checks as ordinary code.
+    if path.startswith("docs/") and entry in {
+            ("excluded", "not-built"), ("excluded", "data-only")}:
         if entry == ("excluded", "data-only") and not re.search(
                 r"(?m)^\(data_only_dirs\s+docs\s*\)\s*$", (root / "dune").read_text()):
             errors.append("documentation data-only exclusion lacks root Dune declaration: " + path)
-        if entry not in {("excluded", "not-built"), ("excluded", "data-only")}:
-            errors.append("documentation evidence must be structurally excluded: "
-                          + path + ": " + ": ".join(entry))
-            if entry[0] == "undecided":
-                counts["undecided"] += 1
         counts["documentation-evidence"] += 1
         continue
     decision, reason = entry
@@ -132,7 +123,10 @@ for path in sorted(tracked):
                    for parent in parents if parent.is_relative_to(root)):
             errors.append("unjustified nested-project exclusion: " + path)
         counts[reason] += 1
-    elif reason in {"data-only", "not-built"}:
+    elif reason == "not-built":
+        errors.append("unbuilt tracked source outside documentation: " + path)
+        counts["coverage-holes"] += 1
+    elif reason == "data-only":
         counts[reason] += 1
     else:
         # A tracked OCaml source is not an empty directory or ignored mirror.

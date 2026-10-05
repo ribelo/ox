@@ -1,6 +1,14 @@
 ; ^nlint-hxar ^nlint-2nwm: standalone consumers, with no nested Dune lock on ox.
 
 ; ^nlintcov-8g4p: coverage.py runs outside Dune, after the live workspace build.
+; Its paired structural fixtures run in Dune without mutating a Git index.
+
+(rule
+ (alias runtest)
+ (deps coverage.py test_coverage.py)
+ (action
+  (run python3 %{dep:test_coverage.py})))
+
 ; Its inventory subprocess must not contend for the enclosing builder's workspace.
 
 ; ^nlintcov-q6n2: source_tree expands to declared source dependencies, not build outputs.

@@ -130,3 +130,20 @@ let fiber_promise sw =
     (Eio.Fiber.fork_promise ~sw (fun () ->
          Eio.Fiber.yield ();
          assert false))
+
+(* ^nlintcov-noerr: non-raising releases still own the same acquired channel. *)
+let bracket_out_noerr ~caps sw filename =
+  let resource = Ox_caps.Cap_stdlib.open_out ~caps filename in
+  Fun.protect
+    ~finally:(fun () -> Stdlib.close_out_noerr resource)
+    (fun () -> Eio.Switch.check sw)
+
+let hook_in_noerr ~caps sw filename =
+  let resource = Ox_caps.Cap_stdlib.open_in ~caps filename in
+  Eio.Switch.on_release sw (fun () -> Stdlib.close_in_noerr resource);
+  Eio.Switch.check sw
+
+(* ^nlintcov-cancel: disclosure names the actual opaque cleanup callback. *)
+let delegated_finalizer ~caps sw filename callback =
+  let resource = Ox_caps.Cap_stdlib.open_out ~caps filename in
+  Fun.protect ~finally:(fun () -> callback resource) (fun () -> Eio.Switch.check sw)

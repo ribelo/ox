@@ -115,3 +115,32 @@ val fiber_named : Eio.Switch.t -> unit
 
 val fiber_promise : Eio.Switch.t -> unit
 (** @raise Invalid_argument when startup checks a finished or wrong-domain switch. *)
+
+(* ^nlintcov-noerr *)
+val bracket_out_noerr :
+  caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> unit
+(** Cancellation: propagates. Cancellation safety: safe to re-run. Finalizers: resource
+    closed by Stdlib.close_out_noerr in the guaranteed finally callback. Raises
+    Eio.Cancel.Cancelled and Invalid_argument from the switch; other exceptions depend on
+    Ox_caps.Cap_stdlib and Stdlib. *)
+
+val hook_in_noerr : caps:< Ox_caps.Cap.fs_read ; .. > -> Eio.Switch.t -> string -> unit
+(** Cancellation: propagates. Cancellation safety: safe to re-run. Finalizers: resource
+    closed by Stdlib.close_in_noerr in the switch hook. Raises Eio.Cancel.Cancelled and
+    Invalid_argument from the switch; Eio.Switch.Release_error wraps a failing release
+    callback; other exceptions depend on Ox_caps.Cap_stdlib and Stdlib. *)
+
+(* ^nlintcov-cancel *)
+val delegated_finalizer :
+  caps:< Ox_caps.Cap.fs_write ; .. > ->
+  Eio.Switch.t ->
+  string ->
+  (out_channel -> unit) ->
+  unit
+(** Suspension: may suspend. Cancellation: propagates; effects of the caller callback
+    depend on caller code and are not checked. Cancellation safety: safe to re-run for
+    witnessed local paths; cancellation-path cleanup depends on the caller callback and is
+    not checked. Finalizers: invokes the callback through Fun.protect; cleanup depends on
+    the caller callback and is not checked. Raises Eio.Cancel.Cancelled and
+    Invalid_argument from the switch; Fun.Finally_raised wraps a failing callback; other
+    exceptions depend on Ox_caps.Cap_stdlib and the caller callback. *)

@@ -70,3 +70,25 @@ val fiber_join : Eio.Switch.t -> unit
 val external_callback : Eio.Switch.t -> (unit -> unit) -> unit
 (** Suspension: may suspend. Cancellation: propagates. Cancellation safety: safe
     to re-run. Finalizers: none. Locking: none. *)
+
+(* ^nlintcov-noerr ^nlintcov-cancel *)
+val success_only_noerr : caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> unit
+(** Cancellation: propagates; delegates to Ox_caps.Cap_stdlib and Stdlib are not checked.
+    Cancellation safety: safe to re-run; delegates to Ox_caps.Cap_stdlib and Stdlib are
+    not checked. Raises Eio.Cancel.Cancelled and Invalid_argument from the switch;
+    other exceptions depend on Ox_caps.Cap_stdlib and Stdlib. *)
+
+val wrong_channel_noerr :
+  caps:< Ox_caps.Cap.fs_read ; .. > -> Eio.Switch.t -> string -> in_channel -> unit
+(** Cancellation: propagates. Cancellation safety: safe to re-run. Raises
+    Eio.Cancel.Cancelled and Invalid_argument from the switch; Eio.Switch.Release_error
+    wraps a failing release callback; other exceptions depend on Ox_caps.Cap_stdlib
+    and Stdlib. *)
+
+(* ^nlintcov-cancel *)
+val mixed_delegated_catch :
+  caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> (out_channel -> unit) -> unit
+(** Suspension: may suspend. Cancellation: caught; delegates to the caller callback are
+    not checked. Cancellation safety: safe to re-run; cleanup depends on the caller
+    callback and is not checked. Raises Invalid_argument from the switch; other
+    exceptions depend on Ox_caps.Cap_stdlib and the caller callback. *)

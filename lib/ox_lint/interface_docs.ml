@@ -1830,6 +1830,9 @@ let cleanup_obligations ~caps evidence definition =
       [
         [ "Stdlib"; "close_in" ];
         [ "Stdlib"; "close_out" ];
+        (* ^nlintcov-noerr: discarding release errors does not change ownership. *)
+        [ "Stdlib"; "close_in_noerr" ];
+        [ "Stdlib"; "close_out_noerr" ];
         [ "Stdlib"; "In_channel"; "close" ];
         [ "Stdlib"; "Out_channel"; "close" ];
         [ "Eio"; "Resource"; "close" ];
@@ -1865,49 +1868,70 @@ let cleanup_obligations ~caps evidence definition =
         && List.exists (fun origin -> Path.name origin = path callee) closes
     | _ -> false
   in
+  (* ^nlintcov-cancel: preserve the actual opaque delegates per cleanup path;
+     a named acquisition or an unrelated sentence cannot bound a different call. *)
+  let unknown_targets e =
+    let effects = expression_effects e in
+    Names.union effects.opaque effects.opaque_raises
+  in
   let safe_before protected e =
     let effects = filter_effects Names.empty protected (expression_effects e) in
-    if (not (Names.is_empty effects.opaque)) || not (Names.is_empty effects.opaque_raises)
-    then `Unknown
-    else if not (Names.is_empty effects.exceptions) then `Missing
+    if not (Names.is_empty effects.exceptions) then `Missing
+    else if
+      (not (Names.is_empty effects.opaque)) || not (Names.is_empty effects.opaque_raises)
+    then `Unknown (Names.union effects.opaque effects.opaque_raises)
     else `Clean
   in
   let rec finalizer protected id e =
     match e.exp_desc with
     | Texp_function { body = Tfunction_body body; _ } -> finalizer protected id body
-    | Texp_function _ | Texp_ident _ -> `Unknown
+    | Texp_function _ -> `Unknown Names.empty
+    | Texp_ident _ -> `Unknown (Names.singleton (path e))
     | Texp_sequence (first, _, rest) -> (
         match finalizer protected id first with
         | `Clean -> `Clean
-        | `Unknown -> `Unknown
+        | `Unknown _ as unknown -> unknown
         | `Missing -> (
             match safe_before protected first with
             | `Clean -> finalizer protected id rest
             | other -> other))
     | Texp_let (_, bindings, body) ->
         let before = List.map (fun b -> safe_before protected b.vb_expr) bindings in
-        if List.mem `Unknown before then `Unknown
-        else if List.mem `Missing before then `Missing
+        let unknown =
+          List.filter_map (function `Unknown targets -> Some targets | _ -> None) before
+        in
+        if List.mem `Missing before then `Missing
+        else if List.exists Names.is_empty unknown then `Unknown Names.empty
+        else if unknown <> [] then
+          `Unknown (List.fold_left Names.union Names.empty unknown)
         else finalizer protected id body
     | Texp_ifthenelse (condition, yes, Some no) -> (
         match safe_before protected condition with
         | `Clean -> (
             match (finalizer protected id yes, finalizer protected id no) with
             | `Clean, `Clean -> `Clean
-            | `Unknown, _ | _, `Unknown -> `Unknown
-            | _ -> `Missing)
+            | `Missing, _ | _, `Missing -> `Missing
+            | `Unknown a, `Unknown b ->
+                `Unknown
+                  (if Names.is_empty a || Names.is_empty b then Names.empty
+                   else Names.union a b)
+            | `Unknown targets, _ | _, `Unknown targets -> `Unknown targets)
         | other -> other)
     | Texp_apply (callee, args, _, _, _)
       when List.assoc_opt (path callee) specials = Some "Eio.Cancel.protect" -> (
         match List.rev (arguments args) with
         | (_, callback) :: _ -> finalizer true id callback
-        | [] -> `Unknown)
+        | [] -> `Unknown Names.empty)
     | _ when direct_close id e -> `Clean
+    | Texp_apply (callee, _, _, _, _)
+      when List.exists (fun origin -> Path.name origin = path callee) closes ->
+        `Missing
     | _ -> (
-        if not (Names.is_empty (expression_effects e).opaque) then `Unknown
+        let targets = unknown_targets e in
+        if not (Names.is_empty targets) then `Unknown targets
         else
           match Expressions.find_opt evidence.expressions e with
-          | Some summary when summary.calls <> [] -> `Unknown
+          | Some summary when summary.calls <> [] -> `Unknown Names.empty
           | _ -> `Missing)
   in
   let registered id e =
@@ -1919,7 +1943,7 @@ let cleanup_obligations ~caps evidence definition =
       -> (
         match List.rev (arguments args) with
         | (_, callback) :: _ -> finalizer true id callback
-        | [] -> `Unknown)
+        | [] -> `Unknown Names.empty)
     | _ -> `Missing
   in
   let acquisitions =
@@ -1974,7 +1998,8 @@ let cleanup_obligations ~caps evidence definition =
         List.exists (fun origin -> Path.name origin = path callee) acquisitions
     | _ -> false
   in
-  let missing, opaque = (ref Names.empty, ref Names.empty) in
+  let missing, opaque = (ref Names.empty, ref []) in
+  let opaque_cleanup id targets = opaque := (Ident.name id, targets) :: !opaque in
   let cancellation id owned e =
     if not owned then begin
       let effects = expression_effects e in
@@ -1982,8 +2007,7 @@ let cleanup_obligations ~caps evidence definition =
         Names.mem cancelled effects.exceptions
         || not (Names.is_empty effects.cancellation)
       then missing := Names.add (Ident.name id) !missing
-      else if not (Names.is_empty effects.opaque) then
-        opaque := Names.add (Ident.name id) !opaque
+      else if not (Names.is_empty effects.opaque) then opaque_cleanup id effects.opaque
     end
   in
   let rec any_payload : pattern -> bool =
@@ -2029,10 +2053,20 @@ let cleanup_obligations ~caps evidence definition =
           owned)
         else if
           List.exists
-            (fun c -> c.c_guard <> None || finalizer false id c.c_rhs = `Unknown)
+            (fun c ->
+              c.c_guard <> None
+              || match finalizer false id c.c_rhs with `Unknown _ -> true | _ -> false)
             handlers
         then (
-          opaque := Names.add (Ident.name id) !opaque;
+          List.iter
+            (fun c ->
+              if c.c_guard <> None then opaque_cleanup id Names.empty
+              else
+                match finalizer false id c.c_rhs with
+                | `Unknown targets -> opaque_cleanup id targets
+                | `Missing -> opaque_cleanup id Names.empty
+                | `Clean -> ())
+            handlers;
           owned)
         else (
           cancellation id owned e;
@@ -2064,21 +2098,29 @@ let cleanup_obligations ~caps evidence definition =
           List.exists
             (fun (label, callback) ->
               label = Typedtree.Labelled "finally"
-              && finalizer false id callback = `Unknown)
+              && match finalizer false id callback with `Unknown _ -> true | _ -> false)
             args
         then (
-          opaque := Names.add (Ident.name id) !opaque;
+          List.iter
+            (fun (label, callback) ->
+              if label = Typedtree.Labelled "finally" then
+                match finalizer false id callback with
+                | `Unknown targets -> opaque_cleanup id targets
+                | _ -> ())
+            args;
           true)
         else (
           cancellation id owned e;
           owned)
     | _ when registered id e = `Clean || direct_close id e -> true
-    | _ when registered id e = `Unknown ->
-        opaque := Names.add (Ident.name id) !opaque;
-        true
-    | _ ->
-        cancellation id owned e;
-        owned
+    | _ -> (
+        match registered id e with
+        | `Unknown targets ->
+            opaque_cleanup id targets;
+            true
+        | _ ->
+            cancellation id owned e;
+            owned)
   in
   let base = Tast_iterator.default_iterator in
   let walk =
@@ -2100,7 +2142,7 @@ let cleanup_obligations ~caps evidence definition =
     }
   in
   walk.expr walk (function_body definition.body);
-  (Names.elements !missing, Names.elements !opaque)
+  (Names.elements !missing, !opaque)
 
 let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
   match artifact.Artifact.info.cmt_annots with
@@ -2311,12 +2353,29 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                             ("cleanup of " ^ resource
                            ^ " is not witnessed before cancellation can escape"))
                         missing;
-                      List.iter
+                      (* ^nlintcov-cancel: disclosure bounds only the relevant
+                         assertion, never concrete missing cleanup or other calls. *)
+                      let relevant =
+                        List.filter_map
+                          (fun label -> List.assoc_opt label claims)
+                          [ "cancellation safety"; "cancellation" ]
+                      in
+                      let unbounded =
+                        List.fold_left
+                          (fun resources (resource, targets) ->
+                            if
+                              Names.is_empty targets
+                              || not (Names.for_all (opaque_qualified relevant) targets)
+                            then Names.add resource resources
+                            else resources)
+                          Names.empty opaque
+                      in
+                      Names.iter
                         (fun resource ->
                           undecided value.loc
                             (qualified ^ ": cancellation-path cleanup of " ^ resource
                            ^ " depends on opaque calls"))
-                        opaque
+                        unbounded
                     end;
                     if
                       valid claims "cancellation" [ "protected throughout" ]

@@ -1,4 +1,4 @@
-(* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup *)
+(* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup ^nlintcov-noerr ^nlintcov-cancel *)
 open Ocaml_common
 open Ox_caps
 
@@ -9,7 +9,8 @@ let contains text needle =
   in
   loop 0
 
-let check ~caps ?(name = "docs_truth") ?(rewrite = Fun.id) directory =
+let check ~caps ?(name = "docs_truth") ?(rewrite = Fun.id)
+    ?(rules = [ "ox-val-behaviour"; "ox-cancel-safety" ]) directory =
   let source = directory ^ "/" ^ name ^ ".mli" in
   let artifact = Artifact.find ~caps source in
   Artifact.check ~caps ~source artifact;
@@ -22,8 +23,7 @@ let check ~caps ?(name = "docs_truth") ?(rewrite = Fun.id) directory =
   in
   let artifact = { artifact with info } in
   let findings, undecided = (ref [], ref []) in
-  Interface_docs.truth ~caps ~source ~artifact
-    ~rules:[ "ox-val-behaviour"; "ox-cancel-safety" ]
+  Interface_docs.truth ~caps ~source ~artifact ~rules
     ~emit:(fun rule _ message -> findings := (rule, message) :: !findings)
     ~undecided:(fun _ message -> undecided := message :: !undecided);
   (List.rev !findings, List.rev !undecided)
@@ -174,6 +174,42 @@ let run ~caps =
   check_recursive_applications ~caps;
   check_generated ~caps;
   check_unclaimed ~caps;
+  (* ^nlintcov-cancel: named limits must be in the cancellation claim itself.
+     Missing, unrelated or locking-only disclosure leaves cleanup undecided. *)
+  List.iter
+    (fun text ->
+      let findings, unknown =
+        check ~caps ~rules:[ "ox-cancel-safety" ]
+          ~rewrite:(only_document "delegated_finalizer" text)
+          "clean"
+      in
+      if findings <> [] then failwith "an opaque finalizer became a concrete defect";
+      if
+        not
+          (List.exists
+             (fun message ->
+               contains message "delegated_finalizer"
+               && contains message "cancellation-path cleanup of resource")
+             unknown)
+      then failwith ("unrelated disclosure decided opaque cleanup: " ^ text))
+    [
+      "Cancellation safety: safe to re-run.";
+      "Cancellation safety: safe to re-run; cleanup depends on Stdlib and is not checked.";
+      "Cancellation safety: safe to re-run. Locking: depends on the caller callback and \
+       is not checked.";
+      "Cancellation safety: safe to re-run. Finalizers: cleanup depends on the caller \
+       callback and is not checked.";
+    ];
+  let findings, unknown =
+    check ~caps ~rules:[ "ox-cancel-safety" ]
+      ~rewrite:
+        (only_document "delegated_finalizer"
+           "Cancellation safety: safe to re-run for local paths; cleanup depends on the \
+            caller callback and is not checked.")
+      "clean"
+  in
+  if findings <> [] || unknown <> [] then
+    failwith "specifically bounded cancellation cleanup remained undecided";
   check_strict_claims ~caps;
   (* Direct Eio leaf aliases must not become opaque compilation-unit edges. ^nlintd-truth *)
   let aliases, alias_unknown = check ~caps ~name:"docs_dependency" "clean" in
@@ -184,6 +220,23 @@ let run ~caps =
   let clean, unknown = check ~caps "clean" in
   if clean <> [] || unknown <> [] then
     failwith ("clean truth fixture: " ^ String.concat "\n" (List.map snd clean @ unknown));
+  (* ^nlintcov-cancel: the bound cannot cover a different, concretely non-cleaning handler. *)
+  let _, unknown =
+    check ~caps ~rules:[ "ox-cancel-safety" ]
+      ~rewrite:
+        (only_document "mixed_delegated_catch"
+           "Cancellation safety: safe to re-run; cleanup depends on the caller callback \
+            and is not checked.")
+      "violating"
+  in
+  if
+    not
+      (List.exists
+         (fun message ->
+           contains message "mixed_delegated_catch"
+           && contains message "cancellation-path cleanup of resource")
+         unknown)
+  then failwith "named callback hid a separate handler without cleanup";
   let bad, unknown = check ~caps "violating" in
   List.iter
     (fun (name, witness) ->
@@ -206,6 +259,9 @@ let run ~caps =
       ("wrong_raise", "Failure");
       ("wrong_raise", "@raise invalid_argument");
       ("unattested", "@raise invalid_argument");
+      (* ^nlintcov-noerr ^nlintcov-cancel *)
+      ("success_only_noerr", "cleanup of resource");
+      ("wrong_channel_noerr", "cleanup of resource");
       ("success_only", "cleanup of resource");
       ("late_hook", "cleanup of resource");
       ("irrelevant_hook", "cleanup of resource");

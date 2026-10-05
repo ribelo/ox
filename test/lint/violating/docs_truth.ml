@@ -92,3 +92,22 @@ let fiber_join sw =
 let external_callback pool f =
   ignore (Eio.Pool.create 1 f);
   ignore pool
+
+(* ^nlintcov-cancel: a named opaque handler must not hide another non-cleaning path. *)
+let mixed_delegated_catch ~caps sw filename callback =
+  let resource = Ox_caps.Cap_stdlib.open_out ~caps filename in
+  try Eio.Switch.check sw with
+  | Eio.Cancel.Cancelled (Failure _) -> callback resource
+  | Eio.Cancel.Cancelled _ -> ()
+
+(* ^nlintcov-noerr ^nlintcov-cancel: neither a noerr close nor disclosure fixes placement. *)
+let success_only_noerr ~caps sw filename =
+  let resource = Ox_caps.Cap_stdlib.open_out ~caps filename in
+  Eio.Switch.check sw;
+  Stdlib.close_out_noerr resource
+
+let wrong_channel_noerr ~caps sw filename other =
+  let resource = Ox_caps.Cap_stdlib.open_in ~caps filename in
+  Eio.Switch.on_release sw (fun () -> Stdlib.close_in_noerr other);
+  ignore resource;
+  Eio.Switch.check sw
