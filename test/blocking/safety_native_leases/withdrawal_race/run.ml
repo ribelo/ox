@@ -3,6 +3,11 @@
    No production test hook, scheduler replacement, or installed-consumer fallback. *)
 open Preclaim_producer.Ox_blocking
 
+let concurrency value =
+  match Ox.Concurrency.of_int value with
+  | Ok bound -> bound
+  | Error `Invalid -> Alcotest.fail "invalid test worker concurrency"
+
 exception Release_defect
 
 let[@inline never] release_marker () = raise Release_defect
@@ -26,7 +31,7 @@ let withdrawn_release () =
           Eio.Time.with_timeout_exn env#clock 5. (fun () ->
               let p =
                 Pool.create ~sw
-                  { max_threads = 1; max_queued = 1; shutdown_policy = Drain }
+                  { max_threads = concurrency 1; max_queued = 1; shutdown_policy = Drain }
               in
               let native = Native_claim_gate.arm () in
               let entered, enter = Eio.Promise.create () in

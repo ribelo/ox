@@ -8,13 +8,22 @@ exception Observer_defect
 let require name condition = if not condition then failwith name
 let inc n = ignore (Atomic.fetch_and_add n 1)
 
+let concurrency value =
+  match Ox.Concurrency.of_int value with
+  | Ok bound -> bound
+  | Error `Invalid -> failwith "invalid test worker concurrency"
+
 let () =
   Printexc.record_backtrace true;
   Eio_main.run (fun env ->
       Eio.Switch.run (fun sw ->
           let p =
             Pool.create ~sw
-              { max_threads = 1; max_queued = 1; shutdown_policy = Pool.Drain }
+              {
+                max_threads = concurrency 1;
+                max_queued = 1;
+                shutdown_policy = Pool.Drain;
+              }
           in
           let fd, writer = Unix.pipe ~cloexec:true () in
           let buffer = Bytes.create 1 in
@@ -101,7 +110,11 @@ let () =
                   require "release terminal once" (Atomic.get closed = 1)));
           let detached =
             Pool.create ~sw
-              { max_threads = 1; max_queued = 1; shutdown_policy = Pool.Detach_started }
+              {
+                max_threads = concurrency 1;
+                max_queued = 1;
+                shutdown_policy = Pool.Detach_started;
+              }
           in
           let unclaimed = Atomic.make 0 in
           (match

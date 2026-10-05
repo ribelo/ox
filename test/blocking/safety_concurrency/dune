@@ -1,0 +1,28 @@
+(data_only_dirs compile)
+
+(test
+ (name run)
+ (modules run runtime)
+ (libraries ox_blocking eio eio_main eio.unix alcotest))
+
+(rule
+ (alias runtest)
+ (deps
+  check-compile.sh
+  compile/positive.mli.in
+  compile/positive.ml.in
+  compile/raw.mli.in
+  compile/raw.ml.in)
+ (action
+  (run
+   bash
+   %{dep:check-compile.sh}
+   %{ocamlopt}
+   %{lib:ox_blocking:ox_blocking.cmi}
+   %{lib:ox:ox.cmi}
+   %{lib:eio:eio.cmi}
+   %{lib:eio.core:eio__core.cmi}
+   %{dep:compile/positive.mli.in}
+   %{dep:compile/positive.ml.in}
+   %{dep:compile/raw.mli.in}
+   %{dep:compile/raw.ml.in})))

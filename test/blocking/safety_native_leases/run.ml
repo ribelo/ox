@@ -4,7 +4,10 @@
 open Ox_blocking
 
 let pool ~sw ?(policy = Pool.Drain) () =
-  Pool.create ~sw { max_threads = 1; max_queued = 1; shutdown_policy = policy }
+  match Ox.Concurrency.of_int 1 with
+  | Error `Invalid -> Alcotest.fail "invalid test worker concurrency"
+  | Ok max_threads ->
+      Pool.create ~sw { max_threads; max_queued = 1; shutdown_policy = policy }
 
 let guarded f =
   Eio_main.run (fun env ->

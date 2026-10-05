@@ -1,0 +1,2 @@
+(* ^nparse-gb03: installed public interface, compiled before implementation. *)
+val create : sw:Eio.Switch.t -> Ox.Concurrency.t -> Ox_blocking.Pool.t

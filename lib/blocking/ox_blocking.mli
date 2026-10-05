@@ -19,7 +19,12 @@
 module Pool : sig
   type t
   type shutdown_policy = Drain | Detach_started
-  type config = { max_threads : int; max_queued : int; shutdown_policy : shutdown_policy }
+
+  type config = {
+    max_threads : Ox.Concurrency.t;
+    max_queued : int;
+    shutdown_policy : shutdown_policy;
+  }
 
   type stats = {
     active : int;
@@ -32,17 +37,18 @@ module Pool : sig
   }
 
   val create : sw:Eio.Switch.t -> ?name:string -> config -> t
-  (** Raises [Invalid_argument] for nonpositive [max_threads] or negative [max_queued].
-      Only [max_threads] callbacks can physically run at once. [max_queued] bounds
-      admitted waiting fibers; other [run] callers wait outside admission. The owner
-      switch retains every worker fiber, including calls whose caller has timed out or
-      cancelled. Shut down before releasing that switch. Suspension: never suspends; this
-      call only reads or constructs OCaml values; numeric bounds use delegated Stdlib
-      integer comparisons. Cancellation: not a cancellation point; this call performs no
-      Eio cancellation check; numeric bounds use delegated Stdlib integer comparisons
-      without an Eio check. Finalizers: none are registered by this call; existing
-      resource ownership is unchanged. Locking: no lock is acquired by this call.
-      ^nlintd-a7oq *)
+  (** Raises [Invalid_argument] for negative [max_queued]. [max_threads] is a checked
+      positive concurrency bound. Only [Ox.Concurrency.to_int max_threads] callbacks can
+      physically run at once. [max_queued] bounds admitted waiting fibers; other [run]
+      callers wait outside admission. The owner switch retains every worker fiber,
+      including calls whose caller has timed out or cancelled. Shut down before releasing
+      that switch. Suspension: never suspends; this call only reads or constructs OCaml
+      values; numeric bounds use delegated Stdlib integer comparisons and the delegated
+      [Ox.Concurrency.to_int] projection. Cancellation: not a cancellation point; this
+      call performs no Eio cancellation check; numeric bounds use delegated Stdlib integer
+      comparisons and the delegated [Ox.Concurrency.to_int] projection without an Eio
+      check. Finalizers: none are registered by this call; existing resource ownership is
+      unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
 
   val shutdown_policy : t -> shutdown_policy
   (** Suspension: never suspends; this call only reads or constructs OCaml values.

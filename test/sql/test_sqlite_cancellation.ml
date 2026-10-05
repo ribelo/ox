@@ -3,6 +3,11 @@ module C = S.Cancellation
 module T = Ox_sql_dsl
 module B = Ox_blocking
 
+let concurrency value =
+  match Ox.Concurrency.of_int value with
+  | Ok bound -> bound
+  | Error `Invalid -> Alcotest.fail "invalid test worker concurrency"
+
 (* Private native synchronization only: these fixtures expose neither a production
    query-notification API nor a timing heuristic. *)
 external progress_arm : unit -> unit = "ox_sqlite_test_progress_arm"
@@ -32,7 +37,7 @@ let with_workers f =
           Eio.Switch.run (fun sw ->
               let pool =
                 B.Pool.create ~sw
-                  { max_threads = 2; max_queued = 2; shutdown_policy = Drain }
+                  { max_threads = concurrency 2; max_queued = 2; shutdown_policy = Drain }
               in
               Fun.protect
                 ~finally:(fun () -> Eio.Cancel.protect (fun () -> B.Pool.shutdown pool))

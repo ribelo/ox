@@ -1,0 +1,4 @@
+(* ^nparse-gb03: this positive raw integer must not cross the worker bound. *)
+let create ~sw =
+  Ox_blocking.Pool.create ~sw
+    { max_threads = 1; max_queued = 0; shutdown_policy = Ox_blocking.Pool.Drain }
