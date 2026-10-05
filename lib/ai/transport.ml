@@ -1,4 +1,5 @@
 type response = { status : int; body : bytes }
+type replay_policy = Never_replay | Allow_duplicate_effects
 
 let default_timeout = Ox.Duration.seconds 10
 let default_max_request_bytes = 4 * 1024 * 1024
@@ -88,12 +89,10 @@ let map_error ~max_response_bytes : Ox_http.Client.error -> Error.t = function
       `Unavailable
         { Error.message; retryable = true; retry_after = None; status = Some status }
 
-(* The attempt policy (^nso-zmfp): one more attempt, only after a transport failure, a
-   timeout of the attempt itself, or HTTP 429/529 — nothing else. The reference adapter
-   retries exactly those three in its loop (`reference/jev.ts`), and a body over its
-   bound is none of them: it throws INVALID_RESPONSE, which is not retryable and ends the
-   call after one attempt. This predicate is the attempt policy, not the caller's verdict:
-   {!Error.retryable} answers that question. *)
+(* Candidates under duplicate-effect consent only (^safe-o2b6 ^safe-a5mq): a
+   transport failure, attempt timeout or HTTP 429/529. None proves the POST had no
+   remote effect. This predicate classifies errors; the replay policy separately
+   authorizes another attempt. The error's retryable flag is not permission. *)
 let retryable_error (error : Error.t) =
   match error with
   | `Unavailable _ | `Timeout -> true
@@ -151,12 +150,14 @@ let wait ~clock ~logger duration =
    reference retries only a transport failure, an attempt's timeout, and 429/529. *)
 type verdict = Reply of response | Retry of Error.t | Final of Error.t
 
-(* At most [max_attempts] attempts, the later ones only under {!retryable_error}, all
+(* ^safe-s51t: at most [max_attempts] attempts, later ones only with explicit
+   [Allow_duplicate_effects] consent and a retry candidate, all
    inside the caller's [deadline] because {!post_json} wraps this loop in one
    {!Ox.Timeout.timeout}. [timeout] caps one attempt's read so a hung peer cannot eat the
    whole budget. *)
 let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-    ?response_idle ~max_request_bytes ~max_response_bytes ~length ~attempts () =
+    ?response_idle ~max_request_bytes ~max_response_bytes ~length ~replay_policy ~attempts
+    () =
   let verdict =
     match
       attempt ~http ~url:endpoint ~authorization ~body ~max_response_bytes
@@ -182,18 +183,18 @@ let rec run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeo
   | Reply response -> Ok response
   | Final error -> Error error
   | Retry error ->
-      if attempts <= 1 then Error error
+      if replay_policy = Never_replay || attempts <= 1 then Error error
       else (
         wait ~clock ~logger backoff;
         run ~http ~clock ~logger ~endpoint ~authorization ~body
           ~deadline:(Ox.Duration.subtract deadline backoff)
           ~timeout ?response_idle ~max_request_bytes ~max_response_bytes ~length
-          ~attempts:(attempts - 1) ())
+          ~replay_policy ~attempts:(attempts - 1) ())
 
 let post_json ~http ~clock ~logger ?(timeout = default_timeout) ?response_idle
     ?(max_request_bytes = default_max_request_bytes)
     ?(max_response_bytes = default_max_response_bytes) ?(max_attempts = max_attempts)
-    ~endpoint ~authorization ~body ~deadline () =
+    ?(replay_policy = Never_replay) ~endpoint ~authorization ~body ~deadline () =
   if max_response_bytes <= 0 then
     invalid_arg "Ox_ai.Transport.post_json: max_response_bytes must be positive";
   if max_attempts < 1 then
@@ -204,5 +205,5 @@ let post_json ~http ~clock ~logger ?(timeout = default_timeout) ?response_idle
   else
     Ox.Timeout.timeout ~clock deadline (fun () ->
         run ~http ~clock ~logger ~endpoint ~authorization ~body ~deadline ~timeout
-          ?response_idle ~max_request_bytes ~max_response_bytes ~length
+          ?response_idle ~max_request_bytes ~max_response_bytes ~length ~replay_policy
           ~attempts:max_attempts ())

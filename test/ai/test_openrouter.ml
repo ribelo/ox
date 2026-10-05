@@ -250,11 +250,11 @@ let test_transport_controls () =
         "^nai-337c one attempt, one request" 1
         (Fake_server.connections server);
       let server = throttled [ ("Retry-After", "7") ] in
-      ((* ^nlint-hxar: The provider error is incidental here; the connection count below asserts the default retry budget. *)
+      ((* ^nlint-hxar: The provider error is incidental here; the connection count below asserts safe default replay refusal (^safe-s51t). *)
        let _attempt_result = embed server in
        ());
       Alcotest.(check int)
-        "^nai-337c default still two attempts" 2
+        "^safe-s51t default budget does not authorize replay" 1
         (Fake_server.connections server);
       (match
          embed ~max_attempts:1

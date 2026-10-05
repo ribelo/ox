@@ -1,48 +1,50 @@
-(* ^nso-zmfp: at most two attempts, the second only after a transport failure, a timeout
-   of the first attempt, or HTTP 429/529, with a short backoff on the clock, all inside
-   the caller's deadline. ^nso-61ka: each evaluation's usage and cost are logged at debug
-   with the request id.
-
-   The backoff is 100 ms on the real clock, so a case that expects a second attempt costs
-   that much wall time (^nso-hcfr). *)
+(* ^safe-o2b6 ^safe-a5mq ^safe-3o27: System One inherits the safe POST default.
+   Errors retain the ^nso-zmfp classifications but never authorize automatic replay.
+   Explicit duplicate-effect consent is tested at Transport.post_json in safety_retry.
+   ^nso-61ka: each evaluation's usage and cost are logged with the request id. *)
 
 open Test_helpers
 
 let unavailable body status = Fake_server.ok ~status ~reason:"Status" body
 
-let test_429_retries () =
-  (* ^nso-zmfp: 429 is the retryable status; the second answer is taken. *)
+let test_429_no_replay () =
+  (* ^safe-a5mq: 429 remains retryable in the error, not replay permission. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
           (unavailable {|{"error":"slow down"}|} 429 @ Fake_server.ok response_body)
       in
       let client = client ~sw env server () in
-      let response =
-        expect_ok
+      let error =
+        expect_error
           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
-      Alcotest.(check int) "two attempts" 2 (Fake_server.connections server);
-      Alcotest.(check string)
-        "the second reply is the answer" model response.Ox_ai_systemone.Codecs.model)
+      Alcotest.(check int) "^safe-o2b6 one attempt" 1 (Fake_server.connections server);
+      match error with
+      | `Unavailable { retryable = true; _ } -> ()
+      | _ -> Alcotest.fail "^safe-a5mq expected unchanged Unavailable classification")
 
-let test_529_retries () =
-  (* ^nso-zmfp: 529 is the other retryable status. *)
+let test_529_no_replay () =
+  (* ^safe-a5mq: 529 supplies no non-commit evidence. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
           (unavailable {|{"error":"overloaded"}|} 529 @ Fake_server.ok response_body)
       in
       let client = client ~sw env server () in
-      ignore
-        (expect_ok
-           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
-              ~questions:choice_questions));
-      Alcotest.(check int) "two attempts" 2 (Fake_server.connections server))
+      let error =
+        expect_error
+          (Ox_ai_systemone.Client.evaluate client ~deadline ~state
+             ~questions:choice_questions)
+      in
+      Alcotest.(check int) "^safe-o2b6 one attempt" 1 (Fake_server.connections server);
+      match error with
+      | `Unavailable { status = Some 529; retryable = true; _ } -> ()
+      | _ -> Alcotest.fail "^safe-a5mq expected unchanged 529 classification")
 
-let test_429_exhausted () =
-  (* ^nso-zmfp: two 429s are two attempts, and the failure is retryable for the caller. *)
+let test_429_classification () =
+  (* ^safe-a5mq: the error classification does not authorize a second POST. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
@@ -55,7 +57,9 @@ let test_429_exhausted () =
           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
-      Alcotest.(check int) "exactly two attempts" 2 (Fake_server.connections server);
+      Alcotest.(check int)
+        "^safe-a5mq no retry despite status" 1
+        (Fake_server.connections server);
       Alcotest.(check bool) "^nso-77t7 retryable" true (Ox_ai.Error.retryable error))
 
 let test_401_no_retry () =
@@ -112,8 +116,8 @@ let test_400_no_retry () =
         "invalid response" true
         (contains (Ox_ai.Error.to_string error) "invalid response"))
 
-let test_transport_failure_retries () =
-  (* ^nso-zmfp: the first attempt fails on the wire, so the second is tried. *)
+let test_transport_failure_no_replay () =
+  (* ^safe-o2b6: ambiguous transport failure is not automatically repeated. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
@@ -121,18 +125,18 @@ let test_transport_failure_retries () =
           @ Fake_server.ok response_body)
       in
       let client = client ~sw env server () in
-      let response =
-        expect_ok
+      let error =
+        expect_error
           (Ox_ai_systemone.Client.evaluate client ~deadline ~state
              ~questions:choice_questions)
       in
-      Alcotest.(check int) "two attempts" 2 (Fake_server.connections server);
-      Alcotest.(check string)
-        "the second reply is the answer" model response.Ox_ai_systemone.Codecs.model)
+      Alcotest.(check int) "^safe-o2b6 one attempt" 1 (Fake_server.connections server);
+      match error with
+      | `Unavailable { retryable = true; _ } -> ()
+      | _ -> Alcotest.fail "^safe-a5mq expected unchanged Unavailable classification")
 
-let test_attempt_timeout_is_retryable () =
-  (* ^nso-zmfp: both attempts time out inside the deadline; the failure is Timeout. The
-     attempt cap is short, so each attempt gives up long before the peer answers. *)
+let test_attempt_timeout_no_replay () =
+  (* ^safe-3o27: one attempt times out inside the deadline; no replay follows. *)
   run (fun ~sw env ->
       let server =
         Fake_server.serve ~net:env#net ~clock:env#clock ~sw
@@ -147,7 +151,9 @@ let test_attempt_timeout_is_retryable () =
       | Error `Timeout -> ()
       | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "a stalled attempt returned an answer");
-      Alcotest.(check int) "two attempts" 2 (Fake_server.connections server))
+      Alcotest.(check int)
+        "^safe-3o27 no retry after timeout" 1
+        (Fake_server.connections server))
 
 let test_usage_logged () =
   (* ^nso-61ka: usage and cost reach the debug log with the request id. *)
@@ -214,16 +220,19 @@ let () =
     [
       ( "retry matrix",
         [
-          Alcotest.test_case "^nso-zmfp 429 then success" `Quick test_429_retries;
-          Alcotest.test_case "^nso-zmfp 529 then success" `Quick test_529_retries;
-          Alcotest.test_case "^nso-zmfp 429 twice" `Quick test_429_exhausted;
+          Alcotest.test_case "^safe-a5mq 429 does not authorize replay" `Quick
+            test_429_no_replay;
+          Alcotest.test_case "^safe-a5mq 529 does not authorize replay" `Quick
+            test_529_no_replay;
+          Alcotest.test_case "^safe-a5mq 429 classification unchanged" `Quick
+            test_429_classification;
           Alcotest.test_case "^nso-zmfp 401 is not retried" `Quick test_401_no_retry;
           Alcotest.test_case "^nso-zmfp 500 is not retried" `Quick test_500_no_retry;
           Alcotest.test_case "^nso-zmfp 400 is not retried" `Quick test_400_no_retry;
-          Alcotest.test_case "^nso-zmfp transport failure retries" `Quick
-            test_transport_failure_retries;
-          Alcotest.test_case "^nso-zmfp attempt timeout is retryable" `Quick
-            test_attempt_timeout_is_retryable;
+          Alcotest.test_case "^safe-o2b6 transport failure does not replay" `Quick
+            test_transport_failure_no_replay;
+          Alcotest.test_case "^safe-3o27 attempt timeout does not replay" `Quick
+            test_attempt_timeout_no_replay;
         ] );
       ( "observability",
         [

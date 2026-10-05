@@ -294,8 +294,8 @@ let test_statuses () =
             false (contains text unexpected)))
     cases
 
-let test_429_retries () =
-  (* ^nchat-wtog: 429 is the retryable status; the second answer is taken. *)
+let test_429_no_replay () =
+  (* ^safe-a5mq: 429 remains retryable in the error, not replay permission. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
@@ -304,12 +304,14 @@ let test_429_retries () =
           @ Chat_server.ok (Chat_server.reply ()))
       in
       let client = client ~sw env server () in
-      let completion = expect_ok (complete client ()) in
-      Alcotest.(check int) "two attempts" 2 (Chat_server.connections server);
-      expect_content {|{"text":"ada"}|} completion)
+      let error = expect_error (complete client ()) in
+      Alcotest.(check int) "^safe-o2b6 one attempt" 1 (Chat_server.connections server);
+      match error with
+      | `Unavailable { retryable = true; _ } -> ()
+      | _ -> Alcotest.fail "^safe-a5mq expected unchanged Unavailable classification")
 
-let test_429_exhausted () =
-  (* ^nchat-wtog: two 429s are two attempts, and the failure is retryable. *)
+let test_429_classification () =
+  (* ^safe-a5mq: the error classification does not authorize a second POST. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
@@ -320,11 +322,13 @@ let test_429_exhausted () =
       in
       let client = client ~sw env server () in
       let error = expect_error (complete client ()) in
-      Alcotest.(check int) "exactly two attempts" 2 (Chat_server.connections server);
+      Alcotest.(check int)
+        "^safe-a5mq no retry despite status" 1
+        (Chat_server.connections server);
       Alcotest.(check bool) "^nchat-wtog retryable" true (Ox_ai.Error.retryable error))
 
-let test_transport_failure_retries () =
-  (* ^nchat-wtog: the first attempt fails on the wire, so the second is tried. *)
+let test_transport_failure_no_replay () =
+  (* ^safe-o2b6: ambiguous transport failure is not automatically repeated. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
@@ -332,12 +336,14 @@ let test_transport_failure_retries () =
           @ Chat_server.ok (Chat_server.reply ()))
       in
       let client = client ~sw env server () in
-      let completion = expect_ok (complete client ()) in
-      Alcotest.(check int) "two attempts" 2 (Chat_server.connections server);
-      expect_content {|{"text":"ada"}|} completion)
+      let error = expect_error (complete client ()) in
+      Alcotest.(check int) "^safe-o2b6 one attempt" 1 (Chat_server.connections server);
+      match error with
+      | `Unavailable { retryable = true; _ } -> ()
+      | _ -> Alcotest.fail "^safe-a5mq expected unchanged Unavailable classification")
 
-let test_attempt_timeout_is_retryable () =
-  (* ^nchat-wtog: both attempts time out inside the deadline; the failure is Timeout. *)
+let test_attempt_timeout_no_replay () =
+  (* ^safe-3o27: one attempt times out inside the deadline; no replay follows. *)
   run (fun ~sw env ->
       let server =
         Chat_server.serve_scripts ~net:env#net ~clock:env#clock ~sw
@@ -349,7 +355,9 @@ let test_attempt_timeout_is_retryable () =
       | Error `Timeout -> ()
       | Error error -> Alcotest.failf "not Timeout: %s" (Ox_ai.Error.to_string error)
       | Ok _ -> Alcotest.fail "a stalled attempt returned an answer");
-      Alcotest.(check int) "two attempts" 2 (Chat_server.connections server))
+      Alcotest.(check int)
+        "^safe-3o27 no retry after timeout" 1
+        (Chat_server.connections server))
 
 let test_request_bound () =
   (* ^nchat-wtog: over 4 MiB is refused before a socket exists. *)
@@ -763,12 +771,14 @@ let () =
           Alcotest.test_case "^nchat-wtog null content" `Quick test_null_content;
           Alcotest.test_case "^nchat-wtog malformed JSON" `Quick test_malformed_json;
           Alcotest.test_case "^nchat-wtog status mapping" `Quick test_statuses;
-          Alcotest.test_case "^nchat-wtog 429 then success" `Quick test_429_retries;
-          Alcotest.test_case "^nchat-wtog 429 twice" `Quick test_429_exhausted;
-          Alcotest.test_case "^nchat-wtog transport failure retries" `Quick
-            test_transport_failure_retries;
-          Alcotest.test_case "^nchat-wtog attempt timeout is retryable" `Quick
-            test_attempt_timeout_is_retryable;
+          Alcotest.test_case "^safe-a5mq 429 does not authorize replay" `Quick
+            test_429_no_replay;
+          Alcotest.test_case "^safe-a5mq 429 classification unchanged" `Quick
+            test_429_classification;
+          Alcotest.test_case "^safe-o2b6 transport failure does not replay" `Quick
+            test_transport_failure_no_replay;
+          Alcotest.test_case "^safe-3o27 attempt timeout does not replay" `Quick
+            test_attempt_timeout_no_replay;
           Alcotest.test_case "^nchat-wtog request over 4 MiB" `Quick test_request_bound;
           Alcotest.test_case "^nchat-wtog response over 1 MiB" `Quick test_response_bound;
           Alcotest.test_case "^nchat-wtog expired deadline" `Quick test_expired_deadline;

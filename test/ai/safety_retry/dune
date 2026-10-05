@@ -1,0 +1,4 @@
+(test
+ (name test_safety_retry)
+ (modules test_safety_retry retry_server)
+ (libraries ox ox_ai ox_http ox_observability eio eio.mock eio_main alcotest))
