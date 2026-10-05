@@ -659,8 +659,11 @@ let cache_empty_interfaces ~caps root rules =
                 (List [ Atom "chdir"; Atom "_build/default"; List (Atom "run" :: args) ])
             ) ->
               let args = List.map (function Atom arg -> arg | _ -> raise Exit) args in
-              let input = Option.get (option "-intf" args) in
-              let output = Option.get (option "-o" args) in
+              let input, output =
+                match (option "-intf" args, option "-o" args) with
+                | Some input, Some output -> (input, output)
+                | _ -> raise Exit
+              in
               if
                 not
                   (Filename.check_suffix input ".pp.mli"
