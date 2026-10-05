@@ -41,6 +41,7 @@ val create :
   caps:< Ox_caps.Cap.random ; .. > ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
+  mono_clock:_ Eio.Time.Mono.t ->
   http_client:Ox_http.Client.t ->
   endpoint:string ->
   service_name:string ->
@@ -61,6 +62,11 @@ val create :
     prefix, to which [/v1/logs], [/v1/traces] and [/v1/metrics] are appended. The supplied
     client remains caller-owned, and must outlive the worker it feeds. ^notel-j9vc
 
+    [clock] supplies Unix wall timestamps for metric points. [mono_clock] supplies the
+    export cadence and total ending budget; neither is distorted by wall-clock
+    corrections. Native timestamps are subtracted before conversion to seconds. ^safe-p9cw
+    ^safe-8peq ^safe-5a9k
+
     The exporter also registers its own release hook on [sw], so pending records are
     exported when the switch ends even if nobody calls {!shutdown}: Eio cancels the
     switch's fibers before it runs its release hooks, so the daemon is already gone and
@@ -71,18 +77,18 @@ val create :
     it. Release hooks registered after [create] run first (LIFO), preserving last records
     logged by program cleanup and Door SIGTERM. ^notel-1stb ^notel-056b ^notel-jx0z
 
-    Suspension: may suspend while starting the daemon fibers; delegated Ox.Channel,
-    Ox.Duration, Ox_caps.Cap_stdlib, Ox_http.Client, Ox_http.Url, Ox_json,
+    Suspension: may suspend while starting the daemon fibers; delegated Mtime, Mtime.Span,
+    Ox.Channel, Ox.Duration, Ox_caps.Cap_stdlib, Ox_http.Client, Ox_http.Url, Ox_json,
     Ox_observability.Logger, Stdlib, Stdlib.Array, Stdlib.Bytes, Stdlib.Float,
     Stdlib.Int64, Stdlib.List, Stdlib.Option, Stdlib.String operations retain their own
     behaviour. Cancellation: depends on the owner switch; both daemons inherit its
-    context; delegated Ox.Channel, Ox.Duration, Ox_caps.Cap_stdlib, Ox_http.Client,
-    Ox_http.Url, Ox_json, Ox_observability.Logger, Stdlib, Stdlib.Array, Stdlib.Bytes,
-    Stdlib.Float, Stdlib.Int64, Stdlib.List, Stdlib.Option, Stdlib.String operations
-    retain their own behaviour. Cancellation safety: safe to re-run; successfully
-    constructed exporters remain switch-owned and their ending is bounded. Finalizers: the
-    owner switch bounds recovery by the same ending deadline. Locking: single-domain state
-    changes hold no mutex across caller code.
+    context; delegated Mtime, Mtime.Span, Ox.Channel, Ox.Duration, Ox_caps.Cap_stdlib,
+    Ox_http.Client, Ox_http.Url, Ox_json, Ox_observability.Logger, Stdlib, Stdlib.Array,
+    Stdlib.Bytes, Stdlib.Float, Stdlib.Int64, Stdlib.List, Stdlib.Option, Stdlib.String
+    operations retain their own behaviour. Cancellation safety: safe to re-run;
+    successfully constructed exporters remain switch-owned and their ending is bounded.
+    Finalizers: the owner switch bounds recovery by the same ending deadline. Locking:
+    single-domain state changes hold no mutex across caller code.
 
     [resource] adds OTLP resource attributes to every export beside the exporter's own
     [service.name]: [service.version], [deployment.environment], a host or a build id, so

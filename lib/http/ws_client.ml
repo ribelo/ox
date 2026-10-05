@@ -22,9 +22,9 @@ type t = {
   shutdown : unit -> unit;
   lock : Eio.Mutex.t;
   mutable terminal : error option;
-  now : unit -> float;
+  clock : Eio.Time.Mono.ty Eio.Resource.t;
   mutable control_tokens : float;
-  mutable control_updated : float;
+  mutable control_updated : Mtime.t;
   selected : string option;
   max_message_bytes : int;
 }
@@ -264,9 +264,9 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
               shutdown = !cleanup;
               lock = Eio.Mutex.create ();
               terminal = None;
-              now = (fun () -> Eio.Time.now clock);
+              clock :> Eio.Time.Mono.ty Eio.Resource.t;
               control_tokens = 32.;
-              control_updated = Eio.Time.now clock;
+              control_updated = Eio.Time.Mono.now clock;
               selected;
               max_message_bytes;
             }
@@ -287,7 +287,7 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
               | End_of_file -> Error (`Closed (1006, "unexpected EOF"))
               | _ -> Printexc.raise_with_backtrace exn backtrace)))
   in
-  Ox.Timeout.timeout ~clock establishment_timeout perform
+  Ox.Timeout.timeout_mono ~clock establishment_timeout perform
 
 (* wsduplex-v8mq: publish the first failure before shutdown can suspend. *)
 let finish t error =
@@ -403,12 +403,13 @@ let valid_utf8 text =
   in
   go 0
 
-(* wsduplex-h6pk: elapsed-time budget, shared across receive calls. A backwards
-   wall-clock adjustment cannot refill the bucket. Normal keepalives never
-   consume a lifetime budget; pongs are bounded too. *)
+(* ^wsduplex-h6pk ^safe-p9cw ^safe-8peq: shared native monotonic refill budget.
+   Subtract timestamps before float conversion; wall corrections do not affect
+   either refill or the established connection lifetime. *)
 let control_frame t =
-  let now = max t.control_updated (t.now ()) in
-  let tokens = min 32. (t.control_tokens +. ((now -. t.control_updated) *. 32.)) in
+  let now = Eio.Time.Mono.now t.clock in
+  let elapsed = Mtime.Span.to_float_ns (Mtime.span t.control_updated now) /. 1e9 in
+  let tokens = min 32. (t.control_tokens +. (elapsed *. 32.)) in
   t.control_updated <- now;
   if tokens < 1. then fail (`Protocol "too many control frames per second");
   t.control_tokens <- tokens -. 1.

@@ -1,0 +1,5 @@
+(* ^safe-8peq: a wall clock cannot supply the elapsed export cadence. *)
+let bad ~caps ~sw ~http_client ~(clock : _ Eio.Time.clock) =
+  Ox_otel.create ~caps ~sw ~http_client ~clock ~mono_clock:clock
+    ~endpoint:"http://localhost" ~service_name:"negative"
+    ~ending_budget:(Ox.Duration.seconds 1) ()

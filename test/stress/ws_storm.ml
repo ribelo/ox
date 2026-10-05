@@ -93,7 +93,7 @@ let with_pair ~(caps : < Ox_caps.Cap.stderr ; .. >) ?(timeout = 2.) env f =
                 let ws =
                   Eio.Fiber.with_binding (Eio.Stdenv.debug env)#traceln quiet_trace
                     (fun () ->
-                      W.connect ~sw ~net ~clock:env#clock "ws://127.0.0.1/stress")
+                      W.connect ~sw ~net ~clock:env#mono_clock "ws://127.0.0.1/stress")
                   |> expect_ok
                 in
                 let server, input = Eio.Promise.await accepted in

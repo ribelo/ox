@@ -1,0 +1,5 @@
+(* ^safe-8peq: native elapsed time cannot masquerade as a Unix timestamp. *)
+let bad ~caps ~sw ~http_client ~(mono_clock : _ Eio.Time.Mono.t) =
+  Ox_otel.create ~caps ~sw ~http_client ~clock:mono_clock ~mono_clock
+    ~endpoint:"http://localhost" ~service_name:"negative"
+    ~ending_budget:(Ox.Duration.seconds 1) ()

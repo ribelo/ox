@@ -566,7 +566,8 @@ let test_realtime_session () =
       let url = Printf.sprintf "ws://127.0.0.1:%d/v1/realtime?model=test" port in
       let session =
         match
-          Ox_ai_realtime.Session.connect ~sw ~net:env#net ~clock:env#clock ~api_key:key
+          Ox_ai_realtime.Session.connect ~sw ~net:env#net ~clock:env#mono_clock
+            ~api_key:key
             ~headers:[ ("originator", "codex_cli_rs") ]
             ~protocols:[ "realtime" ] url
         with

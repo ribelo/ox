@@ -16,7 +16,7 @@ type event = { kind : string; raw : Ox_json.t }
 val connect :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   api_key:Ox_observability.Redact.t ->
   ?headers:(string * string) list ->
   ?ca_file:string ->

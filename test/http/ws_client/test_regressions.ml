@@ -48,9 +48,10 @@ module Script = struct
       t.on_close ())
 end
 
-let with_ws ?(on_close = fun () -> ()) next write test =
+let with_ws ?(on_close = fun () -> ()) ?(jump_wall = fun _ -> ()) next write test =
   Eio_mock.Backend.run_full (fun env ->
       Eio.Switch.run (fun sw ->
+          let wall = Eio_mock.Clock.make () in
           let response = ref "" in
           let upgraded = ref false in
           let on_write text =
@@ -88,7 +89,9 @@ let with_ws ?(on_close = fun () -> ()) next write test =
                     let data = !response in
                     response := "";
                     data)
-                  else next env#clock);
+                  else (
+                    jump_wall wall;
+                    next env#mono_clock));
               write = on_write;
               on_close;
               closed = false;
@@ -99,8 +102,10 @@ let with_ws ?(on_close = fun () -> ()) next write test =
           Eio_mock.Net.on_getaddrinfo net
             [ `Return [ `Tcp (Eio.Net.Ipaddr.V4.loopback, 80) ] ];
           Eio_mock.Net.on_connect net [ `Return flow ];
-          let ws = W.connect ~sw ~net ~clock:env#clock "ws://localhost/" |> expect_ok in
-          test env#clock sw ws))
+          let ws =
+            W.connect ~sw ~net ~clock:env#mono_clock "ws://localhost/" |> expect_ok
+          in
+          test env#mono_clock sw ws))
 
 let check_pong expected text =
   match C.decode ~masked:true (Bytes.of_string text) with
@@ -121,7 +126,7 @@ let test_quiet_pings () =
       if !sent = 100 then frame C.Text "still alive"
       else (
         incr sent;
-        Eio.Time.sleep clock 20.;
+        Eio.Time.Mono.sleep clock 20.;
         frame C.Ping (string_of_int !sent)))
     (fun text ->
       incr answered;
@@ -131,7 +136,11 @@ let test_quiet_pings () =
         "quiet receive survives" true
         (W.receive ws = Ok (`Text "still alive"));
       Alcotest.(check int) "all keepalives answered" 100 !answered;
-      Alcotest.(check (float 0.)) "mock elapsed seconds" 2000. (Eio.Time.now clock))
+      Alcotest.(check (float 0.))
+        "mock elapsed seconds" 2000.
+        (Mtime.Span.to_float_ns
+           (Mtime.span (Mtime.of_uint64_ns 0L) (Eio.Time.Mono.now clock))
+        /. 1e9))
 
 let test_burst opcode () =
   (* ^wsduplex-h6pk: both Ping and unsolicited Pong floods have a finite budget. *)
@@ -163,7 +172,7 @@ let test_connection_budget () =
       for _ = 1 to 32 do
         ignore (W.receive ws |> expect_ok)
       done;
-      Eio.Time.sleep clock 1.;
+      Eio.Time.Mono.sleep clock 1.;
       for _ = 1 to 32 do
         ignore (W.receive ws |> expect_ok)
       done;
@@ -227,8 +236,104 @@ let test_abnormal_close_cause () =
         (W.send_text ws "after EOF" = Error original);
       Alcotest.(check bool) "close retains EOF" true (W.close ws = Error original))
 
+let test_wall_jumps () =
+  (* ^safe-p9cw ^safe-8peq ^safe-5a9k: actual Ping/Pong refill, not a model. *)
+  List.iter
+    (fun direction ->
+      let ticks = ref 0 in
+      let jump_wall clock =
+        incr ticks;
+        Eio_mock.Clock.set_time clock (float_of_int (direction * !ticks * 1000))
+      in
+      let replies = ref 0 in
+      with_ws ~jump_wall
+        (fun _ -> frame C.Ping "jump")
+        (fun _ -> incr replies)
+        (fun mono_clock _ ws ->
+          Alcotest.(check bool)
+            "native clock did not advance" true
+            (Mtime.equal (Mtime.of_uint64_ns 0L) (Eio.Time.Mono.now mono_clock));
+          Alcotest.(check bool)
+            "wall jump cannot refill" true
+            (W.receive ws = Error (`Protocol "too many control frames per second"));
+          Alcotest.(check int) "exact burst allowance" 32 !replies))
+    [ -1; 1 ];
+  let frames = ref 0 in
+  with_ws
+    ~jump_wall:(fun clock -> Eio_mock.Clock.set_time clock (-1000000.))
+    (fun mono_clock ->
+      incr frames;
+      if !frames <= 32 then frame C.Ping "spent"
+      else if !frames = 33 then frame C.Text "boundary"
+      else if !frames = 34 then (
+        Eio.Time.Mono.sleep mono_clock 1.;
+        frame C.Ping "refilled")
+      else frame C.Text "after refill")
+    (fun _ -> ())
+    (fun _ _ ws ->
+      Alcotest.(check bool) "spent bucket" true (W.receive ws = Ok (`Text "boundary"));
+      Alcotest.(check bool)
+        "native second refills despite backward wall" true
+        (W.receive ws = Ok (`Text "after refill")))
+
+let test_establishment_wall_jumps () =
+  (* ^safe-p9cw ^safe-8peq ^safe-5a9k: exact native timeout of actual parked DNS. *)
+  Eio_mock.Backend.run_full (fun _ ->
+      Eio.Switch.run (fun sw ->
+          let mono = Eio_mock.Clock.Mono.make () in
+          let wall = Eio_mock.Clock.make () in
+          let origin = 9_000_000_000_000_000_000L in
+          let at ns =
+            Eio_mock.Clock.Mono.set_time mono (Mtime.of_uint64_ns (Int64.add origin ns))
+          in
+          at 0L;
+          let net = Eio_mock.Net.make "native-deadline" in
+          let parked, parked_ = Eio.Promise.create () in
+          let hold, _ = Eio.Promise.create () in
+          let cancelled = ref false in
+          Eio_mock.Net.on_getaddrinfo net
+            [
+              `Run
+                (fun () ->
+                  Eio.Promise.resolve parked_ ();
+                  try Eio.Promise.await hold
+                  with Eio.Cancel.Cancelled _ as exn ->
+                    cancelled := true;
+                    raise exn);
+            ];
+          let result, result_ = Eio.Promise.create () in
+          Eio.Fiber.fork ~sw (fun () ->
+              Eio.Promise.resolve result_
+                (W.connect ~sw ~net ~clock:mono ~establishment_timeout:(Ox.Duration.ms 20)
+                   "ws://localhost/"));
+          Eio.Promise.await parked;
+          List.iter
+            (fun value ->
+              Eio_mock.Clock.set_time wall value;
+              for _ = 1 to 8 do
+                Eio.Fiber.yield ()
+              done;
+              Alcotest.(check bool)
+                "wall jump cannot expire establishment" true
+                (Eio.Promise.peek result = None))
+            [ -1000000.; 1000000. ];
+          at 19_000_000L;
+          Eio.Fiber.yield ();
+          Alcotest.(check bool)
+            "19 native ms are before expiry" true
+            (Eio.Promise.peek result = None);
+          at 20_000_000L;
+          Alcotest.(check bool)
+            "expected timeout is a result" true
+            (Eio.Promise.await result = Error `Timeout);
+          Alcotest.(check bool) "pending DNS cancelled" true !cancelled))
+
 let cases =
   [
+    Alcotest.test_case "^safe-p9cw ^safe-8peq ^safe-5a9k native establishment" `Quick
+      test_establishment_wall_jumps;
+    Alcotest.test_case "^safe-p9cw ^safe-8peq ^safe-5a9k wall jumps" `Quick
+      test_wall_jumps;
     Alcotest.test_case "^wsduplex-h6pk quiet keepalive lifetime" `Quick test_quiet_pings;
     Alcotest.test_case "^wsduplex-h6pk ping flood" `Quick (test_burst C.Ping);
     Alcotest.test_case "^wsduplex-h6pk pong flood" `Quick (test_burst C.Pong);
