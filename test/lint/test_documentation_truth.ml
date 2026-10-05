@@ -153,7 +153,25 @@ let check_generated ~caps =
   if not (List.exists (fun (_, message) -> contains message "@raise failure") findings)
   then failwith "generated implementation was not analysed"
 
+(* ^nlintd-truth: one recursive node, distinct callback substitutions. *)
+let check_recursive_applications ~caps =
+  let rewrite =
+    only_document "recursive_active"
+      "Suspension: never suspends in Eio; effects of Stdlib operations depend on Stdlib \
+       and are not checked. Cancellation: not a cancellation point; delegated Stdlib \
+       calls add no Eio check. Finalizers: none. Locking: none."
+  in
+  let findings, unknown = check ~caps ~rewrite "clean" in
+  if unknown <> [] then
+    failwith ("finite recursive callback became opaque: " ^ String.concat "\n" unknown);
+  List.iter
+    (fun witness ->
+      if not (List.exists (fun (_, message) -> contains message witness) findings) then
+        failwith ("recursive callback lost its " ^ witness ^ " witness"))
+    [ "never suspends"; "no cancellation point" ]
+
 let run ~caps =
+  check_recursive_applications ~caps;
   check_generated ~caps;
   check_unclaimed ~caps;
   check_strict_claims ~caps;
@@ -201,6 +219,8 @@ let run ~caps =
       ("result_operator_yield", "never suspends");
       ("saturated_partial", "never suspends");
       ("prefix_partial", "never suspends");
+      ("recursive_prefix", "never suspends");
+      ("recursive_prefix", "no cancellation point");
       ("callback_yield", "never suspends");
       ("optional_default_yield", "never suspends");
     ];

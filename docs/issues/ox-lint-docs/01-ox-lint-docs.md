@@ -28,6 +28,10 @@ Write the contract, then check it: every `val` in `lib/**/*.mli` that can suspen
 9. As a kernel maintainer, I want documented exceptions matched against reachable explicit raises and known Eio cancellation checks, and unmentioned reachable raises reported, so that a sentence cannot invent Invalid_argument for cancellation. ^nlintd-raises
 10. As a kernel maintainer, I want resource-cleanup claims compared with cancellation-path finalization, mutation fixtures that distinguish a real finalizer from success-only cleanup, and measured limits and whole-library runtime, so that safety-looking code is not enforcement. ^nlintd-cleanup
 
+## Reachability bounds
+
+Story 8 (^nlintd-truth) includes recursive local operators, curried functions and partially applied callbacks. Construction visits the typed callee node together with its labelled actual substitution and invocation/partial mode, publishes pending graph nodes before following recursive demands, and keeps distinct callback substitutions distinct. The final argument of a compiler case-function is separate from its explicit parameter list: forming the callback must not execute its cases. A regenerating substitution with no finite state remains named undecided; no depth cap, recursion-limit exemption or silent pass is permitted. The regression evidence includes a recursive mapper partially applied to a fixed environment (the shape reported by nema), quiet and suspending substitutions of that mapper, and mutually recursive function prefixes that retain a reachable yield. Whole-workspace gate wall-clock time is measured before and after the change.
+
 ## Out of Scope
 
 Rewriting implementation behaviour or choosing intended retry semantics. Unsupported evidence must remain explicitly undecided; path feasibility beyond literal conditions and arbitrary user cleanup correctness are not proofs supplied by this checker.

@@ -74,6 +74,13 @@ val result_operator : Eio.Switch.t -> (unit, string) result
 val local_callback : Eio.Switch.t -> unit
 val ignored_callback : Eio.Switch.t -> unit
 val deferred_partial : Eio.Switch.t -> unit
+val recursive_partial : Eio.Switch.t -> unit
+val recursive_quiet : Eio.Switch.t -> unit
+
+val recursive_active : Eio.Switch.t -> unit
+(** Suspension: may suspend while invoking the callback. Cancellation: propagates
+    Eio.Cancel.Cancelled. Cancellation safety: safe to re-run; the callback changes no
+    application state. Finalizers: none. Locking: none. *)
 
 val optional_default : Eio.Switch.t -> string option
 (** Suspension: never suspends. Cancellation: not a cancellation point. *)

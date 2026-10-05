@@ -812,6 +812,27 @@ let add_unit ~caps evidence artifact =
     | _ -> []
   in
   let closures = Expressions.create 16 and next_closure = ref 0 in
+  (* ^nlintd-truth: an application is a graph node plus its actual substitution.
+     Publish pending nodes before descending: a recursive prefix may demand the
+     very application whose summary is still being constructed. *)
+  let nodes = Expressions.create 32 and next_node = ref 0 in
+  let node e =
+    match Expressions.find_opt nodes e with
+    | Some id -> id
+    | None ->
+        incr next_node;
+        Expressions.add nodes e !next_node;
+        !next_node
+  in
+  let state partial callee actuals =
+    let callee =
+      match local_definition callee with
+      | Some (_, definition) -> definition.body
+      | None -> callee
+    in
+    (node callee, partial, List.map (fun (label, actual) -> (label, node actual)) actuals)
+  in
+  let applications = Hashtbl.create 32 and next_application = ref 0 in
   let rec invokes e =
     match e.exp_desc with
     | Texp_function { body = Tfunction_body body; _ } ->
@@ -884,6 +905,30 @@ let add_unit ~caps evidence artifact =
     in
     bind actuals (parameters definition.body)
   and application seen partial callee actuals =
+    let ((callee_node, _, _) as current) = state partial callee actuals in
+    match Hashtbl.find_opt applications current with
+    | Some (_, { contents = Some summary }) -> summary
+    | Some (name, _) ->
+        if not (Hashtbl.mem evidence.definitions name) then
+          Hashtbl.add evidence.definitions name
+            { body = callee; unit_name; summary = empty_summary };
+        { empty_summary with calls = [ { target = name; filters = []; bindings = [] } ] }
+    | None when List.exists (fun (node, _, _) -> node = callee_node) seen ->
+        (* A repeated alias with a growing actual list cannot have a finite state
+           key. Name that unresolved substitution, rather than cap its depth. *)
+        unknown (origin callee ^ " regenerating partial-application substitution")
+    | None ->
+        incr next_application;
+        let name = unit_name ^ ":application-" ^ string_of_int !next_application in
+        let pending = ref None in
+        Hashtbl.add applications current (name, pending);
+        let summary = application_body (current :: seen) partial callee actuals in
+        pending := Some summary;
+        Option.iter
+          (fun definition -> definition.summary <- summary)
+          (Hashtbl.find_opt evidence.definitions name);
+        summary
+  and application_body seen partial callee actuals =
     let edge name definition =
       {
         empty_summary with
@@ -892,15 +937,15 @@ let add_unit ~caps evidence artifact =
       }
     in
     match local_definition callee with
-    | Some (name, definition) when not (List.mem name seen) -> (
+    | Some (name, definition) -> (
         match definition.body.exp_desc with
-        | Texp_ident _ -> application (name :: seen) partial definition.body actuals
+        | Texp_ident _ -> application seen partial definition.body actuals
         | Texp_apply (fn, stored, _, _, _) ->
-            application (name :: seen) partial fn (arguments stored @ actuals)
+            application seen partial fn (arguments stored @ actuals)
         | Texp_function { params; body; _ } when partial ->
             let supplied = List.map fst actuals in
-            let rec supplied_all supplied = function
-              | [] -> true
+            let rec remaining supplied = function
+              | [] -> Some supplied
               | p :: rest ->
                   let rec remove prefix = function
                     | [] -> None
@@ -908,14 +953,23 @@ let add_unit ~caps evidence artifact =
                         Some (List.rev_append prefix labels)
                     | label :: labels -> remove (label :: prefix) labels
                   in
-                  Option.fold ~none:false
-                    ~some:(fun supplied -> supplied_all supplied rest)
-                    (remove [] supplied)
+                  Option.bind (remove [] supplied) (fun supplied ->
+                      remaining supplied rest)
             in
-            if not (supplied_all supplied params) then empty_summary
+            let executes_body =
+              match (remaining supplied params, body) with
+              | None, _ -> false
+              | Some _, Tfunction_body _ -> true
+              (* The final case-function parameter is not in [params]. A callback
+                 such as [map fixed] must not execute [function ...] yet. *)
+              | Some supplied, Tfunction_cases _ -> List.mem Nolabel supplied
+            in
+            if not executes_body then empty_summary
             else
               let prefix = name ^ ":application-prefix" in
               if not (Hashtbl.mem evidence.definitions prefix) then begin
+                let pending = { definition with summary = empty_summary } in
+                Hashtbl.add evidence.definitions prefix pending;
                 let summary =
                   match body with
                   | Tfunction_body body -> expression body
@@ -926,7 +980,7 @@ let add_unit ~caps evidence artifact =
                              List.map expression (Option.to_list c.c_guard @ [ c.c_rhs ]))
                            cases.fc_cases)
                 in
-                Hashtbl.add evidence.definitions prefix { definition with summary }
+                pending.summary <- summary
               end;
               edge prefix definition
         | _ -> edge name definition)
@@ -942,8 +996,9 @@ let add_unit ~caps evidence artifact =
                   incr next_closure;
                   let name = unit_name ^ ":closure-" ^ string_of_int !next_closure in
                   Expressions.add closures callee name;
-                  Hashtbl.add evidence.definitions name
-                    { body = callee; unit_name; summary = invokes callee };
+                  let pending = { body = callee; unit_name; summary = empty_summary } in
+                  Hashtbl.add evidence.definitions name pending;
+                  pending.summary <- invokes callee;
                   name
             in
             edge name (Hashtbl.find evidence.definitions name)

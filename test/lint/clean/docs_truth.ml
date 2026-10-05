@@ -74,5 +74,20 @@ let scalar_leaves _ input =
   ignore (Filename.concat input (string_of_int n));
   n > 0
 
+(* ^nlintd-truth: nema db.ml maps a recursive case function partially applied
+   to its fixed environment; constructing that callback executes no case. *)
+type nested = Leaf | Branch of nested list
+
+let rec map_nested callback = function
+  | Leaf -> callback ()
+  | Branch children -> List.iter (map_nested callback) children
+
+let recursive_partial _ =
+  let deferred = map_nested (fun () -> Eio.Fiber.yield ()) in
+  ignore deferred
+
+let recursive_quiet _ = map_nested (fun () -> ()) (Branch [ Leaf ])
+let recursive_active _ = map_nested (fun () -> Eio.Fiber.yield ()) (Branch [ Leaf ])
+
 (* ^nlintd-raises: named external raise assertions stay local to this contract. *)
 let delegated_input channel _ = input_line channel

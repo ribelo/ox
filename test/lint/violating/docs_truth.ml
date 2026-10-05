@@ -29,6 +29,17 @@ let curried _ () = Eio.Fiber.yield ()
 let saturated_partial _ = let run = curried () in run ()
 let prefixed _ = Eio.Fiber.yield (); fun () -> ()
 let prefix_partial _ = let ignored = prefixed () in ignore ignored
+(* ^nlintd-truth: re-enter a pending prefix through mutual recursion. Its yield
+   must survive the cycle, even though the returned functions are not invoked. *)
+let rec prefix_first value =
+  Eio.Fiber.yield ();
+  let next = prefix_second value in
+  fun () -> next ()
+and prefix_second value =
+  let next = prefix_first value in
+  fun () -> next ()
+
+let recursive_prefix _ = let ignored = prefix_first () in ignore ignored
 let call_local f value = f value
 let callback_yield _ = call_local (fun () -> Eio.Fiber.yield ()) ()
 let read_optional ?(env = fun _ -> Eio.Fiber.yield (); None) () = env "value"

@@ -45,6 +45,7 @@ val operator_yield : Eio.Switch.t -> unit
 val result_operator_yield : Eio.Switch.t -> (unit, string) result
 val saturated_partial : Eio.Switch.t -> unit
 val prefix_partial : Eio.Switch.t -> unit
+val recursive_prefix : Eio.Switch.t -> unit
 val callback_yield : Eio.Switch.t -> unit
 val optional_default_yield : Eio.Switch.t -> unit option
 val functional_compare : Eio.Switch.t -> (unit -> unit) -> (unit -> unit) -> bool
