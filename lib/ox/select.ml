@@ -1,9 +1,8 @@
 type 'r ready = { poll : unit -> 'r option; wait : unit -> unit }
 
 type 'r timeout = {
-  now : unit -> float;
-  sleep_until : float -> unit;
-  after : float;
+  deadline : unit -> Mtime.t option;
+  wait_deadline : Mtime.t option -> unit;
   fire : unit -> 'r;
 }
 
@@ -38,9 +37,20 @@ let default_clause f = Default f
 let timeout_clause ~clock duration fire =
   Timeout
     {
-      now = (fun () -> Eio.Time.now clock);
-      sleep_until = (fun at -> Eio.Time.sleep_until clock at);
-      after = Duration.to_seconds duration;
+      (* ^safe-p9cw ^safe-5a9k: pin one native deadline when select begins.
+         Keep the timer outside handlers: a committed clause may suspend without
+         its handler being cancelled by the losing timeout. *)
+      deadline =
+        (fun () ->
+          let ms = Int64.of_int (Duration.to_ms duration) in
+          if ms > Int64.unsigned_div Int64.minus_one 1_000_000L then None
+          else
+            Mtime.add_span (Eio.Time.Mono.now clock)
+              (Mtime.Span.of_uint64_ns (Int64.mul ms 1_000_000L)));
+      wait_deadline =
+        (function
+        | Some at -> Eio.Time.Mono.sleep_until clock at
+        | None -> Eio.Fiber.await_cancel ());
       fire;
     }
 
@@ -83,10 +93,10 @@ let select clauses =
           in
           block ()
       | [], timeout :: _ ->
-          let deadline = timeout.now () +. timeout.after in
+          let deadline = timeout.deadline () in
           let waits =
             (fun () ->
-              timeout.sleep_until deadline;
+              timeout.wait_deadline deadline;
               true)
             :: Array.to_list
                  (Array.map

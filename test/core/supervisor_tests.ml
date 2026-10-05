@@ -14,7 +14,7 @@ let fmt = Printf.sprintf
 
 exception Boom of string
 
-let run f = Eio_mock.Backend.run_full (fun env -> f env#clock)
+let run f = Eio_mock.Backend.run_full (fun env -> f env#mono_clock)
 
 let quiesce () =
   for _ = 1 to 60 do
@@ -509,7 +509,7 @@ let window_case ~gap ~expect_exceeded =
             in
             fire t1;
             quiesce ();
-            Eio.Time.sleep clock gap;
+            Eio.Time.Mono.sleep clock gap;
             fire t2;
             quiesce ();
             if not expect_exceeded then (
@@ -624,9 +624,17 @@ let stop_one ~shutdown script =
               start_ok ~scope ~clock ~log ~strategy:S.One_for_one
                 [ scripted ~log ~shutdown "c" script ]
             in
-            let t0 = Eio.Time.now clock in
+            let t0 =
+              Mtime.Span.to_float_ns
+                (Mtime.span (Mtime.of_uint64_ns 0L) (Eio.Time.Mono.now clock))
+              /. 1e9
+            in
             outcome := Some (S.stop sup);
-            elapsed := Eio.Time.now clock -. t0;
+            elapsed :=
+              Mtime.Span.to_float_ns
+                (Mtime.span (Mtime.of_uint64_ns 0L) (Eio.Time.Mono.now clock))
+              /. 1e9
+              -. t0;
             Ok ())
       in
       check_bool "the owning scope is fine" true (result = Ok ());
@@ -679,7 +687,7 @@ let timeout_is_not_a_kill () =
             Eio.Fiber.fork ~sw:(Scope.switch scope) (fun () ->
                 ignore (S.stop sup);
                 stopped := true);
-            Eio.Time.sleep clock 3.;
+            Eio.Time.Mono.sleep clock 3.;
             check_bool "past the deadline the stop still waits for the finalizer" false
               !stopped;
             Eio.Promise.resolve release ();

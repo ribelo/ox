@@ -779,20 +779,20 @@ let retry_policy () =
       (* default policy: today's behaviour *)
       let tries = ref 0 in
       let result =
-        Retry.retry ~clock (Schedule.recurs 2) (fun () ->
+        Retry.retry ~clock:env#mono_clock (Schedule.recurs 2) (fun () ->
             incr tries;
             Error "x")
       in
       check_bool "default retries errors until the schedule ends" true (result = Error "x");
       check_int "three attempts" 3 !tries;
       check_bool "default: Ok returns at once" true
-        (Retry.retry ~clock (Schedule.recurs 5) (fun () -> Ok 1) = Ok 1);
+        (Retry.retry ~clock:env#mono_clock (Schedule.recurs 5) (fun () -> Ok 1) = Ok 1);
       (* is_success: an Ok that does not satisfy it is retried *)
       tries := 0;
       let start = Eio.Time.now clock in
       let policy = { Retry.default_policy with is_success = (fun v -> v >= 3) } in
       let result =
-        Retry.retry ~clock ~policy
+        Retry.retry ~clock:env#mono_clock ~policy
           (Schedule.spaced (Duration.ms 10))
           (fun () ->
             incr tries;
@@ -806,7 +806,7 @@ let retry_policy () =
       tries := 0;
       let policy = { Retry.default_policy with is_success = (fun _ -> false) } in
       let result =
-        Retry.retry ~clock ~policy (Schedule.recurs 2) (fun () ->
+        Retry.retry ~clock:env#mono_clock ~policy (Schedule.recurs 2) (fun () ->
             incr tries;
             Ok !tries)
       in
@@ -818,7 +818,7 @@ let retry_policy () =
         { Retry.default_policy with is_worth_retrying = (fun e -> e <> "fatal") }
       in
       let result =
-        Retry.retry ~clock ~policy
+        Retry.retry ~clock:env#mono_clock ~policy
           (Schedule.spaced (Duration.seconds 1))
           (fun () ->
             incr tries;
@@ -829,7 +829,7 @@ let retry_policy () =
       Alcotest.(check (float 0.00001)) "no sleep" 0.0 (elapsed start);
       tries := 0;
       let result =
-        Retry.retry ~clock ~policy (Schedule.recurs 5) (fun () ->
+        Retry.retry ~clock:env#mono_clock ~policy (Schedule.recurs 5) (fun () ->
             incr tries;
             if !tries < 3 then Error "again" else Error "fatal")
       in
@@ -846,7 +846,7 @@ let retry_policy () =
         }
       in
       let result =
-        Retry.retry ~clock ~policy (Schedule.recurs 2) (fun () ->
+        Retry.retry ~clock:env#mono_clock ~policy (Schedule.recurs 2) (fun () ->
             incr tries;
             if !tries < 3 then Error (Printf.sprintf "e%d" !tries) else Ok "done")
       in
@@ -855,12 +855,14 @@ let retry_policy () =
         (List.rev !seen = [ (1, Error "e1"); (2, Error "e2") ]);
       seen := [];
       check_bool "exhaustion returns the final attempt error" true
-        (Retry.retry ~clock ~policy (Schedule.recurs 1) (fun () -> Error "e") = Error "e");
+        (Retry.retry ~clock:env#mono_clock ~policy (Schedule.recurs 1) (fun () ->
+             Error "e")
+        = Error "e");
       check_int "on_retry is not called when the schedule ends" 1 (List.length !seen);
       (* the schedule's input is the attempt's result *)
       tries := 0;
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           ~policy:{ Retry.default_policy with is_success = (fun _ -> false) }
           (Schedule.recur_until (function Ok v -> v >= 2 | Error _ -> false))
           (fun () ->

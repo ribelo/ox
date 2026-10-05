@@ -30,7 +30,7 @@ let retry_resource_cases () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock and released = ref 0 and attempts = ref 0 in
       let outcome =
-        Retry.retry ~clock (Schedule.recurs 2) (fun () ->
+        Retry.retry ~clock:env#mono_clock (Schedule.recurs 2) (fun () ->
             incr attempts;
             match
               Scope.run (fun sw ->
@@ -49,7 +49,7 @@ let retry_resource_cases () =
       check_int "retry releases resources on success too" 3 !released;
       let values = ref [] in
       let stopped =
-        Retry.repeat ~clock
+        Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 7) (Schedule.spaced (Duration.ms 5)))
           (fun () ->
             let next = List.length !values + 1 in
@@ -62,7 +62,7 @@ let retry_resource_cases () =
       let result =
         Scope.run (fun _ ->
             Timeout.timeout ~clock (Duration.ms 13) (fun () ->
-                Retry.repeat ~clock
+                Retry.repeat ~clock:env#mono_clock
                   (Schedule.spaced (Duration.ms 10))
                   (fun () ->
                     incr attempts;
@@ -292,7 +292,7 @@ let cadence_cases () =
       let clock = env#clock in
       let start = Eio.Time.now clock and attempts = ref 0 in
       let outcome =
-        Retry.repeat ~clock
+        Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.fixed (Duration.ms 10)))
           (fun () ->
             incr attempts;
@@ -307,7 +307,7 @@ let cadence_cases () =
       check_float "repeat fixed overrun has no pileup" 0.07 fixed_elapsed;
       let spaced_start = Eio.Time.now clock in
       let spaced =
-        Retry.repeat ~clock
+        Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 10)))
           (fun () ->
             Eio.Time.sleep clock 0.02;
@@ -321,7 +321,7 @@ let cadence_cases () =
       let start = Eio.Time.now clock in
       attempts := 0;
       let outcome =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           (Schedule.both
              (Schedule.during (Duration.ms 12))
              (Schedule.spaced (Duration.ms 10)))
@@ -334,7 +334,7 @@ let cadence_cases () =
       let start = Eio.Time.now clock in
       attempts := 0;
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 4)
              (Schedule.jittered ~random:(Random.State.make [| 1 |]) ~min:0.5 ~max:1.5
                 (Schedule.spaced (Duration.ms 10))))
@@ -410,7 +410,7 @@ let resource_edge_cases () =
       | _ -> Alcotest.fail "acquire_use_release suppresses release failure after defect");
       let released = ref 0 in
       let result =
-        Retry.repeat ~clock:env#clock (Schedule.recurs 3) (fun () ->
+        Retry.repeat ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
             match
               Scope.run (fun sw ->
                   check_bool "scripted resource acquisition succeeds" true
@@ -428,11 +428,10 @@ let resource_edge_cases () =
 
 let retry_race_stress () =
   Eio_main.run (fun env ->
-      let clock = env#clock in
       for rounds = 1 to 20 do
         let live = ref 0 and attempts = ref 0 in
         let outcome =
-          Retry.retry ~clock (Schedule.recurs rounds) (fun () ->
+          Retry.retry ~clock:env#mono_clock (Schedule.recurs rounds) (fun () ->
               incr attempts;
               match
                 Scope.run (fun sw ->
@@ -466,7 +465,7 @@ let retry_race_stress () =
                     Error "first");
                   (fun () ->
                     Eio.Fiber.yield ();
-                    Retry.retry ~clock (Schedule.recurs 1)
+                    Retry.retry ~clock:env#mono_clock (Schedule.recurs 1)
                       (let seen = ref 0 in
                        fun () ->
                          incr seen;

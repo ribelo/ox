@@ -14,8 +14,9 @@ type verdict =
       (** No permit now; ask again after this long (at least 1 ms). Nothing was consumed. *)
 
 type algorithm = { try_acquire : now_ms:int -> verdict }
-(** The whole interface of a rate-limiting algorithm (^nfloor-ygtz): given the clock's
-    current time in milliseconds, either consume one permit and say [Granted], or say how
+(** The whole interface of a rate-limiting algorithm (^nfloor-ygtz): given elapsed
+    monotonic milliseconds since this limiter was created, either consume one permit
+    and say [Granted], or say how
     long to wait. It is a stateful record — each call may change the algorithm's counters —
     and it is only ever called under the limiter's lock, never re-entrantly, and must not
     suspend. Time never runs backwards for one limiter. *)
@@ -32,19 +33,22 @@ type config =
           and never holds more than [capacity] ([leakyBucket]): bursts of [capacity], then
           one operation per [per]. *)
   | Custom of (now_ms:int -> algorithm)
-      (** A caller-supplied algorithm, built once with the clock's time at creation, so a
+      (** A caller-supplied algorithm, built once with [now_ms = 0] at creation, so a
           config value can be shared without sharing state. *)
 
 type t
 
-val create : sw:Eio.Switch.t -> clock:_ Eio.Time.clock -> config -> t
-(** [create ~sw ~clock config] starts the limiter's algorithm at the clock's current time.
+val create : sw:Eio.Switch.t -> clock:_ Eio.Time.Mono.t -> config -> t
+(** [create ~sw ~clock config] starts the algorithm at a local monotonic origin.
+    [now_ms] is elapsed milliseconds from that origin; sub-millisecond spans are
+    truncated after native subtraction. Wall corrections cannot refill or delay permits.
+    ^safe-p9cw ^safe-8peq
     [sw] is the caller's switch and is only checked ([Invalid_argument] if it finished, the
     cancellation if it was cancelled): the limiter owns nothing on it.
 
-    Suspension: may suspend in the caller's Custom constructor; Eio.Time.now reads
-    the clock without waiting; delegated Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Cancellation: propagates from the switch check and
-    depends on the Custom callback; delegated Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Finalizers: none are registered. Locking: no lock
+    Suspension: may suspend in the caller's Custom constructor; Eio.Time.Mono.now reads
+    the clock without waiting; delegated Mtime, Mtime.Span, Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Cancellation: propagates from the switch check and
+    depends on the Custom callback; delegated Mtime, Mtime.Span, Stdlib, Stdlib.Float, Stdlib.Queue operations retain their own behaviour. Finalizers: none are registered. Locking: no lock
     is held around the Custom constructor. Cancellation safety: unsafe because
     progress is lost if a Custom constructor is interrupted after producing effects.
     ^nlintd-a7oq

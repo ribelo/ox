@@ -167,19 +167,20 @@ let retry_repeat_laws () =
       in
       let start = Eio.Time.now clock in
       check_bool "retry schedule until success" true
-        (Retry.retry ~clock (Schedule.spaced (Duration.ms 10)) attempt = Ok 9);
+        (Retry.retry ~clock:env#mono_clock (Schedule.spaced (Duration.ms 10)) attempt
+        = Ok 9);
       check_int "one initial plus two retries" 3 !calls;
       Alcotest.(check (float 0.00001)) "virtual retries" 0.02 (Eio.Time.now clock -. start);
       calls := 0;
       check_bool "retry does nothing on initial success" true
-        (Retry.retry ~clock (Schedule.recurs 5) (fun () ->
+        (Retry.retry ~clock:env#mono_clock (Schedule.recurs 5) (fun () ->
              incr calls;
              Ok 8)
         = Ok 8);
       check_int "initial success one call" 1 !calls;
       calls := 0;
       check_bool "terminal failure retained" true
-        (Retry.retry ~clock (Schedule.recurs 2) (fun () ->
+        (Retry.retry ~clock:env#mono_clock (Schedule.recurs 2) (fun () ->
              incr calls;
              Error !calls)
         = Error 3);
@@ -190,11 +191,11 @@ let retry_repeat_laws () =
         if !calls = 2 then Error "stop" else Ok !calls
       in
       check_bool "repeat stops on failure" true
-        (Retry.repeat ~clock (Schedule.recurs 5) fail_once = Error "stop");
+        (Retry.repeat ~clock:env#mono_clock (Schedule.recurs 5) fail_once = Error "stop");
       check_int "no further repeats" 2 !calls;
       calls := 0;
       check_bool "repeat recurs zero runs body once" true
-        (Retry.repeat ~clock (Schedule.recurs 0) (fun () ->
+        (Retry.repeat ~clock:env#mono_clock (Schedule.recurs 0) (fun () ->
              incr calls;
              Ok !calls)
         = Ok 0);
@@ -202,7 +203,7 @@ let retry_repeat_laws () =
       calls := 0;
       let start = Eio.Time.now clock in
       check_bool "successful values drive schedule" true
-        (Retry.repeat ~clock
+        (Retry.repeat ~clock:env#mono_clock
            (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 5)))
            (fun () ->
              incr calls;
@@ -214,7 +215,7 @@ let retry_repeat_laws () =
         (Eio.Time.now clock -. start);
       (match
          Scope.run (fun _ ->
-             Retry.retry ~clock (Schedule.recurs 3) (fun () ->
+             Retry.retry ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
                  incr calls;
                  failwith "defect"))
        with
@@ -418,7 +419,7 @@ let resource_repeat () =
       let acquired = ref 0 and released = ref 0 in
       (match
          Scope.run (fun _ ->
-             Retry.repeat ~clock:env#clock (Schedule.recurs 3) (fun () ->
+             Retry.repeat ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
                  incr acquired;
                  Scope.run (fun inner ->
                      check_bool "scripted resource acquisition succeeds" true
@@ -493,7 +494,7 @@ let retry_bounds () =
       in
       let start = Eio.Time.now clock in
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 3) (Schedule.spaced (Duration.ms 7)))
           attempt
       in

@@ -287,7 +287,7 @@ let test_retry_repeat_mock () =
       let start = Eio.Time.now clock in
       let calls = ref 0 in
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           (Schedule.spaced (Duration.ms 30))
           (fun () ->
             incr calls;
@@ -300,7 +300,7 @@ let test_retry_repeat_mock () =
         (Eio.Time.now clock -. start);
       let last = ref 0 in
       let result =
-        Retry.retry ~clock (Schedule.recurs 2) (fun () ->
+        Retry.retry ~clock:env#mono_clock (Schedule.recurs 2) (fun () ->
             incr last;
             Error "last")
       in
@@ -309,7 +309,7 @@ let test_retry_repeat_mock () =
       let repeats = ref 0 in
       let start = Eio.Time.now clock in
       let result =
-        Retry.repeat ~clock
+        Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 40)))
           (fun () ->
             incr repeats;
@@ -322,7 +322,7 @@ let test_retry_repeat_mock () =
         (Eio.Time.now clock -. start);
       let failures = ref 0 in
       let result =
-        Retry.repeat ~clock (Schedule.recurs 3) (fun () ->
+        Retry.repeat ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
             incr failures;
             if !failures = 2 then Error "stop" else Ok !failures)
       in
@@ -354,11 +354,13 @@ let test_loop_cancel_mock () =
           (Eio.Time.now clock -. start)
       in
       verify "retry interrupted" (fun () ->
-          Retry.retry ~clock
+          Retry.retry ~clock:env#mono_clock
             (Schedule.spaced (Duration.seconds 1))
             (fun () -> Error "try"));
       verify "repeat interrupted" (fun () ->
-          Retry.repeat ~clock (Schedule.spaced (Duration.seconds 1)) (fun () -> Ok ())))
+          Retry.repeat ~clock:env#mono_clock
+            (Schedule.spaced (Duration.seconds 1))
+            (fun () -> Ok ())))
 
 let with_fiber_census f =
   Eio_main.run (fun _ ->
