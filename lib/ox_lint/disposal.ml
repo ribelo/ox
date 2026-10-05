@@ -2,12 +2,10 @@
 open Ocaml_common
 open Typedtree
 
-let env = Envaux.env_of_only_summary ~allow_missing_modules:false
-
-(* ^safe-3osb: canonical names cannot contain an empty component sequence. *)
-let lid = Paths.lid
-
-let discarded_result emit =
+let discarded_result ~(caps : < Ox_caps.Cap.fs_read ; .. >) emit =
+  ignore caps#fs_read;
+  let env = Paths.env ~caps in
+  let lid = Paths.lid in
   let initial = Lazy.force Env.initial in
   let result, _ =
     Env.lookup_type ~use:false ~loc:Location.none (lid ("Stdlib", [ "result" ])) initial
@@ -21,8 +19,9 @@ let discarded_result emit =
     | _ -> false
   in
   let standard names =
-    let p, _, _ = Env.lookup_value ~use:false ~loc:Location.none (lid names) initial in
-    Env.normalize_value_path None initial p
+    match Paths.value ~caps names with
+    | Some path -> path
+    | None -> failwith "unresolved required standard disposal identity"
   in
   let discarders =
     List.map standard
@@ -37,12 +36,7 @@ let discarded_result emit =
   let constants = Hashtbl.create 16 in
   let apply = standard ("Stdlib", [ "@@" ]) in
   let pipe = standard ("Stdlib", [ "|>" ]) in
-  let is_value target e =
-    match e.exp_desc with
-    | Texp_ident { path; _ } ->
-        Path.same target (Env.normalize_value_path None (env e.exp_env) path)
-    | _ -> false
-  in
+  let is_value target e = Paths.is_value ~caps [ target ] e in
   let discarder e =
     match e.exp_desc with
     | Texp_ident { path; _ } -> (
@@ -97,6 +91,13 @@ let discarded_result emit =
         | _ -> false)
     | _ -> false
   in
+  let is_unit e =
+    let en = env e.exp_env in
+    match Types.get_desc (Ctype.expand_head en e.exp_type) with
+    | Tconstr (path, [], _) ->
+        Path.same (Env.normalize_type_path None en path) Predef.path_unit
+    | _ -> false
+  in
   let rec constant e =
     match e.exp_desc with
     | Texp_ident { path = Path.Pident id; _ } ->
@@ -108,6 +109,7 @@ let discarded_result emit =
     | Texp_variant (_, None) -> true
     | Texp_variant (_, Some (arg, _)) -> constant arg
     | Texp_tuple (args, _) -> List.for_all (fun (_, arg) -> constant arg) args
+    | Texp_apply _ when log_call e && is_unit e -> true
     | Texp_sequence (head, _, tail) -> log_call head && constant tail
     | Texp_let (_, bindings, tail) ->
         List.for_all (fun binding -> constant binding.vb_expr) bindings && constant tail
@@ -151,21 +153,13 @@ let discarded_result emit =
         ("Stdlib", [ "raise_notrace" ]);
       ]
     @ List.filter_map
-        (fun name ->
-          try Some (standard ("Alcotest", [ name ])) with Env.Error _ -> None)
+        (fun name -> Paths.value ~caps ("Alcotest", [ name ]))
         [ "fail"; "failf" ]
   in
   let terminal e =
     match e.exp_desc with
     | Texp_apply (fn, _, _, _, _) ->
         List.exists (fun target -> is_value target fn) assertions
-    | _ -> false
-  in
-  let is_unit e =
-    let en = env e.exp_env in
-    match Types.get_desc (Ctype.expand_head en e.exp_type) with
-    | Tconstr (path, [], _) ->
-        Path.same (Env.normalize_type_path None en path) Predef.path_unit
     | _ -> false
   in
   let bool = Predef.path_bool in
@@ -192,6 +186,14 @@ let discarded_result emit =
     in
     iterator.expr iterator body;
     !found
+  in
+  (* Only these binders name the same whole value. Do not search tuple/record
+     components: using a sibling field cannot retain a wildcard result. *)
+  let rec retains_value body pattern =
+    match pattern.pat_desc with
+    | Tpat_var { id; _ } -> used id body
+    | Tpat_alias { id; pattern; _ } -> used id body || retains_value body pattern
+    | _ -> false
   in
   let comparisons =
     List.map
@@ -223,6 +225,25 @@ let discarded_result emit =
           arguments
     | _ -> false
   in
+  let rec accepts_error : type k. k general_pattern -> bool =
+   fun p ->
+    match p.pat_desc with
+    | Tpat_value v -> accepts_error (v :> pattern)
+    | Tpat_any | Tpat_var _ -> true
+    | Tpat_alias { pattern; _ } -> accepts_error pattern
+    | Tpat_or (a, b, _) -> accepts_error a || accepts_error b
+    | Tpat_construct (_, desc, _, _, _) ->
+        is_result p.pat_env p.pat_type && desc.Data_types.cstr_name = "Error"
+    | _ -> false
+  in
+  let recovers_after cases =
+    let alternatives = List.filter (fun case -> accepts_error case.c_lhs) cases in
+    alternatives <> []
+    && List.exists (fun case -> Option.is_none case.c_guard) alternatives
+    && List.for_all
+         (fun case -> not (constant case.c_rhs || log_call case.c_rhs))
+         alternatives
+  in
   let check_cases cases =
     let statuses = List.map (fun case -> status case.c_rhs) cases in
     let preserves_status =
@@ -248,12 +269,18 @@ let discarded_result emit =
            cases
     in
     if not (preserves_status || boolean_projection || expected_error) then
-      List.iter
-        (fun case ->
-          if error_pattern case.c_lhs && constant case.c_rhs && not (observes_error case)
-          then emit case.c_rhs.exp_loc)
-        cases
+      let rec check = function
+        | [] -> ()
+        | case :: remaining ->
+            if
+              error_pattern case.c_lhs && constant case.c_rhs
+              && not (observes_error case && recovers_after remaining)
+            then emit case.c_rhs.exp_loc;
+            check remaining
+      in
+      check cases
   in
+  let binding_body = ref None in
   let retained = ref [] in
   let rec returned e =
     match e.exp_desc with
@@ -267,6 +294,9 @@ let discarded_result emit =
     expr =
       (fun self e ->
         let saved = !retained in
+        let saved_body = !binding_body in
+        (binding_body :=
+           match e.exp_desc with Texp_let (_, _, body) -> Some body | _ -> None);
         retained := returned e @ saved;
         (match e.exp_desc with
         | Texp_apply (fn, args, _, _, _) when discarder fn ->
@@ -293,26 +323,35 @@ let discarded_result emit =
             if not observed then check_cases cases
         | Texp_function { body = Tfunction_cases { fc_cases = cases; _ }; _ } ->
             check_cases cases
-        | Texp_let (_, bindings, body) ->
-            let iterator =
-              {
-                base with
-                pat =
-                  (fun (type k) self (p : k general_pattern) ->
-                    (match p.pat_desc with
-                    | (Tpat_var { id; _ } | Tpat_alias { id; _ })
-                      when is_result p.pat_env p.pat_type && not (used id body) ->
-                        emit p.pat_loc
-                    | _ -> ());
-                    base.pat self p);
-              }
-            in
-            List.iter (fun vb -> iterator.pat iterator vb.vb_pat) bindings
         | _ -> ());
         base.expr self e;
-        retained := saved);
+        retained := saved;
+        binding_body := saved_body);
     value_binding =
       (fun self vb ->
+        let body = !binding_body in
+        binding_body := None;
+        let patterns =
+          {
+            base with
+            pat =
+              (fun (type k) self (p : k general_pattern) ->
+                match p.pat_desc with
+                | Tpat_any when is_result p.pat_env p.pat_type -> emit p.pat_loc
+                | Tpat_alias { id; pattern; _ } -> (
+                    match body with
+                    | None -> ()
+                    | Some body when used id body || retains_value body pattern -> ()
+                    | Some _ when is_result p.pat_env p.pat_type -> emit p.pat_loc
+                    | Some _ -> base.pat self p)
+                | Tpat_var { id; _ } when is_result p.pat_env p.pat_type -> (
+                    match body with
+                    | Some body when not (used id body) -> emit p.pat_loc
+                    | _ -> ())
+                | _ -> base.pat self p);
+          }
+        in
+        patterns.pat patterns vb.vb_pat;
         (match vb.vb_pat.pat_desc with
         | Tpat_var { id; _ } when constant vb.vb_expr ->
             Hashtbl.replace constants (Ident.unique_name id) ()
@@ -320,8 +359,7 @@ let discarded_result emit =
         (match vb.vb_pat.pat_desc with
         | Tpat_var { id; _ } when discarder vb.vb_expr ->
             Hashtbl.replace aliases (Ident.unique_name id) ()
-        | Tpat_any when is_result vb.vb_expr.exp_env vb.vb_expr.exp_type ->
-            emit vb.vb_pat.pat_loc
         | _ -> ());
-        base.value_binding self vb);
+        base.value_binding self vb;
+        binding_body := body);
   }

@@ -38,3 +38,32 @@ val expected_error_predef : (int, string) result -> unit
 val expected_error_invalid_arg : (int, string) result -> unit
 val expected_error_raise : (int, string) result -> unit
 val expected_error_raise_notrace : (int, string) result -> unit
+val guarded_assertion : string -> (int, string) result -> unit
+val guarded_recovery : string -> (unit -> unit) -> (int, string) result -> unit
+val guard_success_only : string -> (int -> unit) -> (int, string) result -> unit
+val guarded_logging : string -> (int, string) result -> unit
+type result_alias = (int, string) result
+type disposal_record = { result : result_alias; number : int }
+val tuple_wildcard : unit -> int
+val record_wildcard : unit -> int
+val unused_wildcard_alias : unit -> unit
+val retained_wildcard_alias : unit -> result_alias
+val retained_tuple_alias : unit -> result_alias * int
+val own_tuple_wildcard : unit -> int
+val guarded_direct_logging : string -> (int, string) result -> unit
+val direct_logging : (int, string) result -> unit
+val retained_inner_alias : unit -> result_alias
+val retained_outer_alias : unit -> result_alias
+val retained_multi_inner : unit -> result_alias
+val retained_multi_middle : unit -> result_alias
+val retained_multi_outer : unit -> result_alias
+val unused_inner_alias : unit -> unit
+val unused_multi_alias : unit -> unit
+val shadowed_inner_alias : unit -> (int, 'a) result
+val shadowed_outer_alias : unit -> (int, 'a) result
+val discarded_inner_alias : unit -> unit
+val nested_tuple_alias : unit -> int
+val retained_inner_tuple : unit -> result_alias * int
+val retained_multi_tuple : unit -> result_alias * int
+val nested_record_alias : unit -> int
+val own_unused_alias : unit -> unit
