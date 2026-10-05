@@ -95,9 +95,6 @@ let test_ok_completion () =
                 ("rows", Logger.Int response.rows);
               ]
           | Error (_ : string) -> [])
-          [@@ox.allow
-            "ox-discarded-result: completion callback omits metadata on Error; \
-             Logger.span returns the original outcome checked below"]
       in
       let result =
         Logger.span logger ~complete

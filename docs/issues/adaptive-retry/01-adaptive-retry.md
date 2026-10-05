@@ -21,3 +21,8 @@ Scala Ox's `AdaptiveRetry` shares a token bucket among callers: each retry costs
 3. As a service author, I want an empty bucket to return the last `Error` at once without sleeping, so that a broken dependency fails fast. ^nadapt-d5fi
 4. As a kernel maintainer, I want the bucket's state behind `Ox.Mutex` (row 65) or an `Atomic`, mock-clock tests for pay, refund and exhaustion, and a stress case of many fibers sharing one bucket, so that the budget holds under concurrency. ^nadapt-lo33
 5. As a maintainer, I want the floor table's adaptive-retries row set to `have`, so that the floor check stays true. ^nadapt-zeti
+
+6. As a Service author, I want the policy for an identified non-idempotent retry operation to state when repetition is safe, so that partial success cannot silently duplicate an external effect. ^safe-o2b6
+7. As an agent, I want operation-specific deduplication, reconciliation or refusal of retry used where needed, so that an HTTP verb, function name or result type is not mistaken for idempotency evidence. ^safe-a5mq
+8. As a maintainer, I want timeout-after-commit and partial-success retry tests at an existing operation interface, so that the policy is verified against the failure window that motivates it. ^safe-3o27
+9. As a reviewer, I want retry budgets and scheduling kept separate from replay safety, so that adaptive-retry work is neither duplicated nor credited with a guarantee it does not provide. ^safe-s51t

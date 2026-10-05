@@ -247,12 +247,7 @@ let test_audio_waits () =
     (fun () ->
       Eio.Promise.resolve set_waiting ();
       (* ^safe-xls8 ^safe-pufa ^nlint-hxar: The losing read is deliberately cancelled; the subsequent admission and reads assert that the wait released its lock. *)
-      let _read_result =
-        read_pcm t
-          [@@ox.allow
-            "ox-discarded-result: losing PCM read is cancelled; subsequent admission and \
-             reads assert the released wait lock"]
-      in
+      let _read_result = read_pcm t in
       ())
     (fun () -> Eio.Promise.await waiting);
   check_offer "cancelled wait unlocked" (Ok ()) (offer_pcm t (Bytes.of_string "x"));

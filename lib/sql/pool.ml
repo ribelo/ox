@@ -28,12 +28,7 @@ let shutdown_state s =
       List.iter
         (fun c ->
           (* ^safe-xls8 ^safe-pufa: shutdown closes every handle best effort without changing its outcome. *)
-          let _close_result =
-            Connection.close c
-              [@@ox.allow
-                "ox-discarded-result: pool shutdown attempts every handle close even if \
-                 an earlier close fails"]
-          in
+          let _close_result = Connection.close c in
           ())
         !(s.handles);
       s.handles := []);
@@ -66,12 +61,7 @@ let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
             ~validate:(fun c -> Connection.ping c)
             ~dispose:(fun c ->
               (* ^safe-xls8 ^safe-pufa: disposal is best effort and must not replace a checkout failure. *)
-              let _close_result =
-                Connection.close c
-                  [@@ox.allow
-                    "ox-discarded-result: disposing a rejected pool handle must preserve \
-                     the checkout failure rather than replace it with a close failure"]
-              in
+              let _close_result = Connection.close c in
               ())
             max_size make
         in
@@ -90,13 +80,7 @@ let create ~caps ~sw ?clock ?default_timeout ?(max_size = 4) config =
         (* The first handle is already owned even if nobody checks it out. *)
         Eio.Switch.on_release sw (fun () ->
             (* ^safe-xls8 ^safe-pufa: switch release retains the pool's best-effort shutdown policy. *)
-            let _shutdown_result =
-              shutdown_state s
-                [@@ox.allow
-                  "ox-discarded-result: release invokes shutdown_state to close every \
-                   handle; its Ok acknowledgement carries no failure after best-effort \
-                   closes"]
-            in
+            let _shutdown_result = shutdown_state s in
             ());
         Ok (Pool s)
 
@@ -133,13 +117,7 @@ let use ?timeout runner f =
                         | Ok () -> ()
                         | Error _ ->
                             (* ^safe-xls8 ^safe-pufa: close the unusable handle without replacing run's outcome. *)
-                            let _close_result =
-                              Connection.close c
-                                [@@ox.allow
-                                  "ox-discarded-result: autocommit recovery closes the \
-                                   unusable handle without replacing the lease body \
-                                   outcome with a close failure"]
-                            in
+                            let _close_result = Connection.close c in
                             ());
                         (* ^nlintc-g6k3: [guard] protects the update, not its lock wait. *)
                         Eio.Cancel.protect (fun () ->

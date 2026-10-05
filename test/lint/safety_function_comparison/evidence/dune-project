@@ -1,3 +1,0 @@
-(lang dune 3.21)
-; ^safe-czoe: negative evidence is not ordinary repository-gate input.
-(name function_comparison_negative_evidence)

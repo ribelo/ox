@@ -97,9 +97,6 @@ let retained_hook_defect () =
                        (fun () ->
                          Eio.Semaphore.release started;
                          wait permit)
-                       [@@ox.allow
-                         "ox-discarded-result: caller reply is incidental to \
-                          cancellation and physical worker settlement assertions"]
                    in
                    ());
                   false
@@ -154,9 +151,6 @@ let detach_keeps_policy () =
                        (fun () ->
                          Eio.Semaphore.release started;
                          wait permit)
-                       [@@ox.allow
-                         "ox-discarded-result: caller reply is incidental to \
-                          cancellation and physical worker settlement assertions"]
                    in
                    ());
                   false

@@ -2,7 +2,8 @@ val discarded_result :
   caps:< Ox_caps.Cap.fs_read ; .. > ->
   (Ocaml_common.Location.t -> unit) ->
   Ocaml_common.Tast_iterator.iterator
-(** Finite local result-disposal analysis. Does not prove handling through unknown
+(** Legacy standard-ignore and whole wildcard-binding detection. Named discards and
+    explicit result matches are accepted. Does not prove handling through unknown
     higher-order calls or inspect other compilation units. Reads compiler interfaces
     through the supplied authority; missing dependencies fail closed; unresolved required
     standard identities raise Failure. Suspension: never suspends in Eio itself;

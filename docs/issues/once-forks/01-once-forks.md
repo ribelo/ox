@@ -23,6 +23,11 @@ A resource handed to a fiber or to a release callback can also be used by the co
 5. As a kernel maintainer, I want in-place callbacks (`Rate_limiter.run`, `run_or_drop`, `Resource.use_in_scope`'s acquire, `Retry.retry`/`repeat`'s thunk where it is called once per attempt only if that holds) to be `@ local once` exactly where the implementation calls them at most once, so that `docs/modes.md` lists the linearity of every closure parameter. ^nonce-lrzq
 6. As a kernel maintainer, I want compile-fail cases under `test/ownership/compile_fail/` (a unique value moved into two forks, used after a release took it, captured by raw `Eio.Fiber.fork`) and their compiling controls, run by a `check.sh` like `test/caps/compile_fail`, so that each refusal is pinned. ^nonce-mjpe
 
+7. As a consumer maintainer, I want raw-concurrency enforcement activated only after once-taking forks, a Spawner and guarded access exist and applicable callers have migrated, so that the compiler guarantees cannot be bypassed but no unavailable interface is demanded. ^safe-vaz6
+8. As an agent, I want ownership and validated capacity, concurrency and byte-limit guarantees inherited from their existing deliveries, so that this work closes legacy escape routes instead of duplicating their implementations. ^safe-6ukl
+9. As a reviewer, I want each activation backed by a compile-fail control, a clean public-interface control and installed-gate coverage, so that dormant or unverified surfaces are never advertised as enforced. ^safe-u2na
+10. As a delivery owner, I want each consumer or additional lifetime/suspension prerequisite recorded before activation and any wide migration sequenced expand, migrate, contract, so that each committed slice stays verifiable without swallowing unrelated work. ^safe-8o0p
+
 ## Implementation Decisions
 
 ```ocaml

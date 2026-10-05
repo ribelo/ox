@@ -482,111 +482,53 @@ let test_of_json_never_raises () =
     [
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.string json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.string json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.bool json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.bool json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.int json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.int json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.float json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.float json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.null json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.null json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.list Decode.int json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.list Decode.int json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.option Decode.int json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.option Decode.int json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.field "a" Decode.int json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.field "a" Decode.int json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.at [ "a"; "b" ] Decode.int json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.at [ "a"; "b" ] Decode.int json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
         let _decode_result =
           Decode.one_of [ Decode.field "a" Decode.int; Decode.field "b" Decode.int ] json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
         in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          Decode.try_or_none (Decode.field "a" Decode.string) json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = Decode.try_or_none (Decode.field "a" Decode.string) json in
         ());
       (fun json ->
         (* ^safe-xls8 ^safe-pufa ^nlint-hxar: This totality matrix accepts either Ok or Error; its only failure is a decoder raising on an input. *)
-        let _decode_result =
-          (Decode.one_of [] : unit Ox_json.Of_json.t) json
-            [@@ox.allow
-              "ox-discarded-result: decoder totality matrix accepts either success or \
-               refusal and fails only when decoding raises"]
-        in
+        let _decode_result = (Decode.one_of [] : unit Ox_json.Of_json.t) json in
         ());
     ]
   in

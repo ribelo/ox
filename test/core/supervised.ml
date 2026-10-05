@@ -164,13 +164,9 @@ let await_handle () =
                   yields 1;
                   Error "nope")
             in
-            ((match Scope.await f with
+            (match Scope.await f with
             | Error _ | Ok _ -> ()
-            | exception Eio.Cancel.Cancelled _ -> ())
-            [@ox.allow
-              "ox-discarded-result: safe-xls8 safe-pufa; observe scope-driven \
-               cancellation, not the join reply; outer assertions require Error nope and \
-               that the joiner never runs on"]);
+            | exception Eio.Cancel.Cancelled _ -> ());
             Eio.Fiber.yield ();
             after_error := true;
             Ok ())

@@ -23,6 +23,11 @@ Handles with a terminal operation are returned `@ unique`; the terminal operatio
 5. As a kernel maintainer, I want compile-fail cases (use after close, close twice, signal after wait) beside `once-forks`'s, so that each refusal is pinned. ^nown-ws29
 6. As a consumer maintainer, I want Leash, nema, Pie, grip and inn migrated in the same row, each call site either threading the handle or splitting it, so that no consumer stays on a removed signature. ^nown-xbnd
 
+7. As a native adapter author, I want an explicit lease retaining callback resources through physical completion, so that waiter timeout or cancellation cannot release a resource still in use. ^safe-zgfv
+8. As a resource owner, I want cancellation before claim, submission rejection and physical completion to release the retained ownership exactly once through the correct owner context, so that resources neither leak nor close early. ^safe-sw86
+9. As a maintainer, I want Drain, detach policy and settlement failures accounted for without adding a second cancellation model, so that Eio still owns interruption and native completion remains truthful. ^safe-bt9f
+10. As a reviewer, I want one demonstrated native-resource user migrated and the remaining bypass inventory explicit, so that the interface is verified by a real use rather than a hypothetical generic leasing framework. ^safe-m6vf
+
 ## Implementation Decisions
 
 Verified pattern (ADR-0010): `close w; write w` is refused ("already been used as unique"). A record with an `aliased` payload must be destructured and rebuilt to be returned `unique` after reading the payload. Handles stored in a Service record and used from several fibers cannot be `unique`; those Services use `duplex-halves` or keep a borrowing API and are listed in this row's notes.

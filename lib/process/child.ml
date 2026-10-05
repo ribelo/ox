@@ -134,12 +134,7 @@ let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write 
       Eio.Fiber.fork_daemon ~sw (fun () ->
           (try
              (* ^safe-xls8 ^safe-pufa: this bridge only waits; stop observes the retained defect. *)
-             let _finished_result =
-               (Eio.Promise.await finished : (exit, exn) result)
-                 [@@ox.allow
-                   "ox-discarded-result: cancellation bridge only waits for completion; \
-                    stop and the release hook observe the defect retained in finished"]
-             in
+             let _finished_result = (Eio.Promise.await finished : (exit, exn) result) in
              ()
            with Eio.Cancel.Cancelled _ -> ignore (Eio.Promise.try_resolve request_u ()));
           `Stop_daemon);

@@ -1365,9 +1365,6 @@ let completion_fields_on_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
       (* ^safe-xls8 ^safe-pufa: metadata projection does not consume the original span outcome. *)
       let complete result =
         match result with Ok status -> [ ("http.status", L.Int status) ] | Error _ -> []
-          [@@ox.allow
-            "ox-discarded-result: completion callback omits metadata on Error; \
-             Logger.span returns the original outcome asserted below"]
       in
       let completion_span_result =
         (L.span logger "request"

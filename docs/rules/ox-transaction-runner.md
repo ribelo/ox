@@ -103,5 +103,5 @@ missing, mismatched and stale evidence must have their respective exit statuses.
 A separate serialized acceptance performs a genuine `dune install` and invokes
 this installed script; it runs outside an enclosing Dune build to avoid recursive
 workspace locking. Build-tree-library native testing is separately named, not passed off as
-installed acceptance. Registry activation yields 36 registered rules, 35 active
-and one dormant. No production or test-file exemption is added.
+installed acceptance. Registry activation is reported by the running CLI. No production or test-file
+exemption is added.

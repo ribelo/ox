@@ -41,8 +41,8 @@ type t = {
 val all : caps:< Ox_caps.Cap.fs_read ; .. > -> t list
 
 val allowances : (string * string * string) list
-(** The path-wide allow-list stays empty. Local checked policy decisions are handled by
-    [Policy_exception]; capability rules are never eligible. ^safe-pufa *)
+(** The path-wide allow-list stays empty; named best-effort discards are ordinary
+    bindings. ^safe-s6km *)
 
 val dormant : t -> bool
 (** Registered but deliberately inactive; ^nlintcov-r3k8 ^nlint-r01u. *)

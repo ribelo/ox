@@ -1,43 +1,15 @@
 ---
-status: ready-for-agent
+status: implementing
 category: enhancement
 blocked_by: []
 ---
 
-# 15: Use monotonic time for elapsed-time decisions
+# Use monotonic clocks for elapsed time
 
-**Parent:** [Make unsafe Ox code fail at the strongest available seam](<01-ox-safety-gate.md>)
+**Parent:** [Concrete Eio/Ox safety gate](<01-ox-safety-gate.md>) · **Stories:** safe-p9cw, safe-8peq, safe-5a9k
 
-**Approved slice:** 14 of 19. File numbering starts after the specification.
+**Failure evidence:** The real ws_client max-timestamp workaround, OTel timing, migration elapsed time and supervised cooldown were corrected to monotonic clocks in Ox; a backward wall jump breaks elapsed arithmetic.
 
-**What to build:** Supported elapsed-time decisions use monotonic clocks while timestamps and calendar scheduling preserve wall-clock meaning.
+**Scope:** A small operation-specific check: Eio.Time.now, Unix.gettimeofday or Cap_unix.gettimeofday values in paired subtraction/comparison, or sleep/timeout arguments. No general provenance framework; timestamps and scalar-minus-wall civil delays remain legal. Replace elapsed calculations with Mono and Mtime.span.
 
-**Blocked by:** None (can start immediately).
-
-**Status:** ready-for-agent
-
-**Covers:** safe-p9cw, safe-8peq, safe-5a9k, safe-fr73, safe-y047, safe-czoe, safe-tlyw, safe-m5sp, safe-t37w, safe-12o2
-
-## Scope and integration
-
-New ox-monotonic-elapsed-time; do not duplicate ox-race-deadline.
-
-## Acceptance criteria
-
-- [ ] Start with named operation contracts and direct local wall-clock-to-elapsed flows; generic float arithmetic and opaque provenance are not automatically violations.
-- [ ] Keep calendar deadlines, logging timestamps and explicit conversions with a defined contract as clean controls.
-- [ ] Reuse monotonic-timeout delivery rather than reimplement timeout. If an additional operation needs a monotonic interface, add only that narrow interface and its tests before enforcing it.
-- [ ] Use virtual wall-clock jumps with monotonic elapsed controls; ensure cancellation and existing result behaviour remain unchanged.
-
-## Shared acceptance contract
-
-- [ ] Apply the parent specification's rule admission, diagnostic certainty, fresh-evidence and installed-CLI testing contracts. Cite the covered story IDs in tests.
-- [ ] Distinguish policy restrictions from demonstrated defects and unverified evidence. Missing evidence cannot be waived or turned into a clean decision.
-- [ ] Demonstrate the safe replacement, review real Ox findings, migrate the affected supported sites, and document the finite detection horizon and legitimate counterexamples. Do not activate an unsupported prohibition.
-- [ ] Run the repository build, test, formatting and capability/lint gates. Record actual verification and remaining external prerequisites; specification publication is not implementation completion.
-
-## Story-specific verification
-
-- safe-p9cw: Verify known wall-clock values reaching designated elapsed-time, local deadline or refill calculations reported; establish that clock corrections do not distort these decisions.
-- safe-8peq: Verify timestamp and duration provenance distinguished through typed interfaces or supported local flow rather than variable names; establish that legitimate calendar operations are not rewritten.
-- safe-5a9k: Verify the existing monotonic timeout and clock interfaces used as replacements and verified under clock jumps; establish that a lint fix changes the clock semantics intentionally.
+**Checks:** Pair wall-clock elapsed subtraction/sleep with its monotonic replacement, aliases and authentic shadowing controls. Fresh three-consumer counts and production-finding classification are required before activation; the parent defines the compact completion test.

@@ -120,9 +120,6 @@ let queued_cancellation () =
                   ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: The reply is incidental to this cancellation probe; the existing cancellation and physical-completion assertions decide the outcome. *)
                    let _cancelled_call_result =
                      run ~pool:p (fun () -> Atomic.set ran true)
-                       [@@ox.allow
-                         "ox-discarded-result: caller reply is incidental to \
-                          cancellation and physical worker settlement assertions"]
                    in
                    ());
                   false
@@ -168,9 +165,6 @@ let running_cancellation () =
                          Eio.Semaphore.release started;
                          wait permit;
                          42)
-                       [@@ox.allow
-                         "ox-discarded-result: caller reply is incidental to \
-                          cancellation and physical worker settlement assertions"]
                    in
                    ());
                   false
@@ -200,12 +194,7 @@ let defects_and_detach () =
       let p = pool ~sw ~policy:Pool.Detach_started () in
       (try
          ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: The callback is scripted to raise Native_defect; the existing failure sentinel rejects any normal return. *)
-          let _defect_result =
-            run ~pool:p (fun () -> raise Native_defect)
-              [@@ox.allow
-                "ox-discarded-result: scripted native exception is observed by the \
-                 defect sentinel or on_settled assertion, not a normal reply"]
-          in
+          let _defect_result = run ~pool:p (fun () -> raise Native_defect) in
           ());
          Alcotest.fail "callback defect lost"
        with Native_defect -> ());
@@ -229,12 +218,7 @@ let settled_after_completion () =
       Alcotest.(check int) "settled once" 1 (List.length !seen);
       (try
          (* ^safe-xls8 ^safe-pufa ^nlint-hxar: The callback is scripted to raise Exit; the existing on_settled assertion checks exception delivery rather than a normal reply. *)
-         let _defect_result =
-           run ~pool:p ~on_settled (fun () -> raise Exit)
-             [@@ox.allow
-               "ox-discarded-result: scripted native exception is observed by the defect \
-                sentinel or on_settled assertion, not a normal reply"]
-         in
+         let _defect_result = run ~pool:p ~on_settled (fun () -> raise Exit) in
          ()
        with Exit -> ());
       let first_outcome =
@@ -272,9 +256,6 @@ let settled_after_cancellation () =
                          Eio.Semaphore.release started;
                          wait permit;
                          1)
-                       [@@ox.allow
-                         "ox-discarded-result: caller reply is incidental to \
-                          cancellation and physical worker settlement assertions"]
                    in
                    ());
                   false
@@ -326,9 +307,6 @@ let settled_after_timeout_not_before_claim () =
                     run ~pool:p
                       ~on_settled:(fun _ -> settled := `Second :: !settled)
                       (fun () -> Atomic.set queued_ran true)
-                      [@@ox.allow
-                        "ox-discarded-result: caller reply is incidental to cancellation \
-                         and physical worker settlement assertions"]
                   in
                   ()
                 with Eio.Cancel.Cancelled _ -> ()))
@@ -589,9 +567,6 @@ let owner_cancellation_joins_worker () =
                              (fun () ->
                                Eio.Semaphore.release started;
                                wait permit)
-                             [@@ox.allow
-                               "ox-discarded-result: caller reply is incidental to \
-                                cancellation and physical worker settlement assertions"]
                          in
                          ());
                      Eio.Semaphore.acquire started;

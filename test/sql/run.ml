@@ -24,12 +24,7 @@ let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
           Fun.protect
             ~finally:(fun () ->
               (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Shutdown is best effort in fixture cleanup so its typed error does not replace the test body outcome. *)
-              let _shutdown_result =
-                P.shutdown pool
-                  [@@ox.allow
-                    "ox-discarded-result: fixture shutdown is best effort so a cleanup \
-                     failure does not replace the test body outcome"]
-              in
+              let _shutdown_result = P.shutdown pool in
               ())
             (fun () -> f pool (Eio.Stdenv.mono_clock env))))
 

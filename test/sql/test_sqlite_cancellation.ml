@@ -418,7 +418,6 @@ let _native_call_result =
                                let code = protected token db (fun db -> S.step stmt) in
                                Atomic.set physical true;
                                code))
-                         [@@ox.allow "ox-discarded-result: cancelled SQLite caller observes interruption; on_settled checks the native reply and retained lease before release"]
                          in ()));
                     Alcotest.fail "caller cancellation did not propagate"
                   with Eio.Cancel.Cancelled _ -> Eio.Promise.resolve caller_resolve ());

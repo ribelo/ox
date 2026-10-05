@@ -175,12 +175,7 @@ let cancellation () =
                 cancel := Some ctx;
                 try
                   ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: A normal reply makes this cancellation probe false; the existing interruption, slot and write assertions decide the outcome. *)
-                   let _call_result =
-                     Correlator.call c (msg 1)
-                       [@@ox.allow
-                         "ox-discarded-result: correlator cancellation probe rejects a \
-                          normal reply and checks interruption slot release and writes"]
-                   in
+                   let _call_result = Correlator.call c (msg 1) in
                    ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))
@@ -231,12 +226,7 @@ let cancellation_mid_write () =
                 cancel := Some ctx;
                 try
                   ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: A normal reply makes this cancellation probe false; the existing interruption, slot and write assertions decide the outcome. *)
-                   let _call_result =
-                     Correlator.call c (msg 1)
-                       [@@ox.allow
-                         "ox-discarded-result: correlator cancellation probe rejects a \
-                          normal reply and checks interruption slot release and writes"]
-                   in
+                   let _call_result = Correlator.call c (msg 1) in
                    ());
                   false
                 with Eio.Cancel.Cancelled _ -> true))

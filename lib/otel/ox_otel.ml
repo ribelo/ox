@@ -525,12 +525,7 @@ let create ~caps ~sw ~clock ~mono_clock ~http_client ~endpoint ~service_name
         Eio.Fiber.fork_daemon ~sw (fun () ->
             Eio.Promise.await t.ending.begun;
             (* ^safe-xls8 ^safe-pufa: finish settles the shared terminal result. *)
-            let _result =
-              finish t
-                [@@ox.allow
-                  "ox-discarded-result: controller completion is retained in ending.stop \
-                   for flush and shutdown callers"]
-            in
+            let _result = finish t in
             `Stop_daemon);
         (* ^notel-1stb: Eio cancels a switch's fibers before it runs its release hooks,
            so the daemon above is gone by the time this runs; the exporter exports the
@@ -542,10 +537,6 @@ let create ~caps ~sw ~clock ~mono_clock ~http_client ~endpoint ~service_name
             (* ^safe-xls8 ^safe-pufa: finish records the outcome; callbacks already report export failures. *)
             let _finish_result =
               (Eio.Cancel.protect (fun () -> finish t) : (unit, error) result)
-                [@@ox.allow
-                  "ox-discarded-result: switch release finishes the exporter; \
-                   ending.stop retains the terminal failure and export callbacks report \
-                   send failures"]
             in
             ());
         Ok t
@@ -568,12 +559,7 @@ let shutdown t =
   if t.worker_done && (not t.finishing) && not (Eio.Promise.is_resolved t.ending.stop)
   then begin
     (* ^safe-xls8 ^safe-pufa: finish settles the promise awaited below, including failures. *)
-    let _finish_result : (unit, error) result =
-      Eio.Cancel.protect (fun () -> finish t)
-        [@@ox.allow
-          "ox-discarded-result: takeover finish stores its result in ending.stop; \
-           shutdown returns that same retained result below"]
-    in
+    let _finish_result : (unit, error) result = Eio.Cancel.protect (fun () -> finish t) in
     ()
   end;
   Eio.Fiber.check ();

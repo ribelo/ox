@@ -14,20 +14,14 @@ let clean () =
   let _ = true in
   ()
 
-let handled () =
-  match (Ok 4 : (int, string) result) with Ok n -> n | Error e -> String.length e
+let handled () = match (Ok 4 : (int, string) result) with Ok _ -> () | Error _ -> ()
 
 let shadow_function () =
-  let ignore x = match x with Ok n -> n | Error e -> String.length e in
+  let ignore x = match x with Ok _ -> () | Error _ -> () in
   ignore (Ok 5)
 
 let drop = Std.ignore
-
-let value_alias () =
-  drop
-    (Ok 6 : (int, string) result)
-  [@ox.allow "ox-discarded-result: explicitly optional sample"]
-
+let value_alias () = drop (Ok 6 : (int, string) result)
 let passed_discard () = (fun discard -> discard (Ok 7 : (int, string) result)) Std.ignore
 
 let polymorphic x =
@@ -38,11 +32,7 @@ let later_instantiated () = polymorphic (Ok 1 : (int, string) result)
 
 let intentional () =
   (* Best effort: retain the caller's original outcome. *)
-  let _cleanup_result =
-    (Ok () : (unit, string) result)
-      [@@ox.allow
-        "ox-discarded-result: optional cleanup must preserve the primary outcome"]
-  in
+  let _cleanup_result = (Ok () : (unit, string) result) in
   ()
 
 module Stdlib = struct
@@ -56,3 +46,12 @@ let shadow_module () =
   ()
 
 let shadow_ignore () = Stdlib.ignore (Ok 11 : (int, string) Std.result)
+
+(* ^safe-prune: explicit projections remain ordinary matches. *)
+let as_option result = match result with Ok value -> Some value | Error _ -> None
+let release () = (Error "closed" : (unit, string) result)
+
+let named_release () =
+  (* Best effort: release must not replace the primary outcome. *)
+  let _release_result = release () in
+  ()

@@ -223,12 +223,7 @@ let cancel () =
         Eio.Fiber.first
           (fun () ->
             ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
-             let _request_result =
-               H.Client.request client ~method_:"GET" ~url ()
-                 [@@ox.allow
-                   "ox-discarded-result: normal HTTP reply loses this cancellation \
-                    probe; winner and peer socket closure are asserted"]
-             in
+             let _request_result = H.Client.request client ~method_:"GET" ~url () in
              ());
             false)
           (fun () ->

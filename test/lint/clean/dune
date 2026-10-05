@@ -3,13 +3,7 @@
 (library
  (name concurrency_clean)
  (modules
-  assertion_effects
   transaction_runner
-  warning_policy
-  codec_seams
-  io_count
-  constant_index
-  function_comparison
   identity_external
   catch_helper
   catch_all

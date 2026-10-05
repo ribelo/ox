@@ -115,12 +115,7 @@ let main ~(caps : < Ox_caps.Cap.exit ; .. >) () =
                         env.Ox_app.Env.base#stdout);
                   Eio.Flow.copy_string "ready\n" env.Ox_app.Env.base#stdout;
                   (* ^safe-xls8 ^safe-pufa ^nlint-hxar: The signal fixture tests owned interruption and the command exit code; a normal serve reply is incidental. *)
-                  (let _serve_result =
-                     Ox_app.serve ~sw ()
-                       [@@ox.allow
-                         "ox-discarded-result: signal fixture observes owned \
-                          interruption and exit code 19 rather than a normal serve reply"]
-                   in
+                  (let _serve_result = Ox_app.serve ~sw () in
                    ());
                   19))
         in

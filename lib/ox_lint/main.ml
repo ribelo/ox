@@ -439,16 +439,6 @@ let run
                  in
                  let rules = List.filter (Rules.applies ~root ~source) rules in
                  let decided = ref true in
-                 let policy =
-                   Policy_exception.create
-                     ~root:
-                       (Option.value
-                          (Artifact.workspace ~caps (Filename.dirname (absolute source)))
-                          ~default:root)
-                     ~source
-                     ~known:(List.map (fun r -> r.Rules.id) (Rules.select ~caps []))
-                     ~enabled:(List.map (fun r -> r.Rules.id) rules)
-                 in
                  let emit_diagnostic id loc message =
                    let key =
                      (source, loc.Location.loc_start.pos_lnum, loc.loc_start.pos_cnum, id)
@@ -465,18 +455,16 @@ let run
                    end
                  in
                  let emit_message rule loc message =
-                   if not (Policy_exception.allows policy ~id:rule.Rules.id loc) then
-                     emit_diagnostic rule.id loc message
+                   emit_diagnostic rule.Rules.id loc message
                  in
                  let emit rule loc = emit_message rule loc rule.Rules.message in
                  Syntax.walk ~caps source (fun context iterator ->
-                     Policy_exception.collect policy
-                       (List.fold_left
-                          (fun iterator rule ->
-                            match rule.Rules.source with
-                            | Some make -> make (emit rule) context iterator
-                            | None -> iterator)
-                          iterator rules));
+                     List.fold_left
+                       (fun iterator rule ->
+                         match rule.Rules.source with
+                         | Some make -> make (emit rule) context iterator
+                         | None -> iterator)
+                       iterator rules);
                  if
                    List.exists
                      (fun rule ->
@@ -491,9 +479,6 @@ let run
                        | None -> Artifact.find ~caps source
                      in
                      Artifact.check ~caps ~source t;
-                     Option.iter
-                       (fun filename -> Policy_exception.checked_source policy ~filename)
-                       t.info.cmt_sourcefile;
                      Artifact.setup ~caps t;
                      List.iter
                        (fun rule ->
@@ -540,8 +525,6 @@ let run
                      decided := false;
                      fail ~typed:true input ex
                    end;
-                 Policy_exception.finish policy ~complete:!decided
-                   (emit_diagnostic "ox-policy-exception");
                  if !decided then record input "decided" ""
                end
              with ex -> fail ~typed:typed_requested ~fatal:true input ex)

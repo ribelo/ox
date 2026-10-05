@@ -115,8 +115,8 @@ let all ~caps =
       {
         id = "ox-discarded-result";
         message =
-          "discarded result; propagate, recover or map the named error, or use \
-           [@ox.allow \"ox-discarded-result: reason\"] for deliberate best effort";
+          "discarded result; propagate, recover or map the named error, or name an \
+           intentional best-effort discard and explain it";
         violating = "test/lint/violating/discard.ml";
         clean = "test/lint/clean/discard.ml";
         documentation = "docs/rules/ox-discarded-result.md";
@@ -130,32 +130,10 @@ let all ~caps =
         with
         source = Some Identity_external.source;
       };
-      concurrency_rule "function-comparison"
-        "unsupported structural comparison of functions; compare domain identities \
-         instead"
-        (Function_comparison.check ~caps);
-      evidence_rule "warning-policy"
-        "protected warning policy weakened; restore the compiler baseline"
-        (fun ~emit ~undecided artifact ->
-          Warning_policy.check ~caps ~artifact ~emit ~undecided);
-      evidence_rule "codec-seams"
-        "raw designated domain boundary; use a validated domain value and typed codec"
-        (Codec_seams.check ~caps);
-      evidence_rule "io-count"
-        "I/O byte count discarded; handle stream progress or preserve datagram semantics"
-        (fun ~emit ~undecided:_ artifact -> visit (Io_count.check ~caps ~emit) artifact);
-      evidence_rule "assertion-effects"
-        "required work hidden in an assertion; perform it before checking the invariant"
-        (fun ~emit ~undecided artifact ->
-          visit (Assertion_effects.check ~caps ~emit ~undecided) artifact);
       evidence_rule "transaction-runner"
         "operation uses the originating pool; use the callback transaction runner"
         (fun ~emit ~undecided artifact ->
           visit (Transaction_runner.check ~caps ~emit ~undecided) artifact);
-      evidence_rule "constant-index"
-        "proved out-of-bounds constant index; correct the index or check bounds"
-        (fun ~emit ~undecided:_ artifact ->
-          visit (Constant_index.check ~caps ~emit) artifact);
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"

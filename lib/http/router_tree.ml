@@ -894,9 +894,6 @@ let remove t route =
   | Error _ ->
       (* ^safe-xls8 ^safe-pufa: an invalid pattern cannot identify a stored route. *)
       None
-      [@ox.allow
-        "ox-discarded-result: optional removal treats an invalid route pattern as absent \
-         without mutating the tree"]
   | Ok (norm_route, remapping) ->
       let remaining = Escape.full norm_route in
       if slice_equal remaining (Escape.full t.root.prefix) then begin
