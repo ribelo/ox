@@ -1,0 +1,13 @@
+; Installed consumer sources include intentionally ill-typed compiler fixtures.
+
+(data_only_dirs consumer)
+
+(alias
+ (name installed-consumer-inputs)
+ (deps
+  (source_tree consumer)))
+
+(test
+ (name run)
+ (modules run sql_monotonic)
+ (libraries ox_sql ox_test eio.mock alcotest))

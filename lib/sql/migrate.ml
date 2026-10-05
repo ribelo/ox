@@ -479,9 +479,9 @@ let validate config migrations states =
   in
   loop [] states
 
-let apply_migration ~caps pool table migration =
+let apply_migration ~clock pool table migration =
   let version = migration.Migration.version in
-  let start = Ox_caps.Cap_unix.gettimeofday ~caps () in
+  let start = Eio.Time.Mono.now clock in
   let* _ =
     execute pool
       ("INSERT INTO " ^ table ^ " (version,description,checksum,success) VALUES (?,?,?,0)")
@@ -495,7 +495,8 @@ let apply_migration ~caps pool table migration =
   in
   let* () = action in
   let elapsed_ms =
-    int_of_float ((Ox_caps.Cap_unix.gettimeofday ~caps () -. start) *. 1000.)
+    int_of_float
+      (Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1_000_000.)
   in
   let* _ =
     execute pool
@@ -504,7 +505,7 @@ let apply_migration ~caps pool table migration =
   in
   Ok { migration; elapsed_ms }
 
-let run_migrations ~caps config pool migrations =
+let run_migrations ~clock config pool migrations =
   let table = table_name config in
   let* states = read_states pool table in
   let up = up_migrations migrations in
@@ -515,16 +516,16 @@ let run_migrations ~caps config pool migrations =
         if List.exists (fun (v, _, _) -> Version.equal v m.Migration.version) states then
           loop acc rest
         else
-          let* applied = apply_migration ~caps pool table m in
+          let* applied = apply_migration ~clock pool table m in
           loop (applied :: acc) rest
   in
   loop [] up
 
-let run ~caps ?(config = Config.default) pool source =
+let run ~caps ~clock ?(config = Config.default) pool source =
   let* migrations = Source.resolve ~caps source in
-  run_migrations ~caps config pool migrations
+  run_migrations ~clock config pool migrations
 
-let run_to ~caps ?(config = Config.default) pool source ~target =
+let run_to ~caps ~clock ?(config = Config.default) pool source ~target =
   let* migrations = Source.resolve ~caps source in
   if
     not
@@ -534,7 +535,7 @@ let run_to ~caps ?(config = Config.default) pool source ~target =
          migrations)
   then Error (Version_not_present target)
   else
-    run_migrations ~caps config pool
+    run_migrations ~clock config pool
       (List.filter (fun m -> Version.compare m.Migration.version target <= 0) migrations)
 
 let undo ~caps ?(config = Config.default) pool source ~target =
