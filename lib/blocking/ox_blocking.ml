@@ -159,94 +159,121 @@ type 'a settled =
   | Raised of exn * Printexc.raw_backtrace
   | Hook_failed of exn * Printexc.raw_backtrace
 
-let execute pool ?name ?on_cancel ?on_settled fn =
+let execute pool ?name ?on_cancel ?on_settled ?on_unclaimed fn =
   let label = Option.value name ~default:pool.Pool.name in
-  (* 0 = pending; 1 = running; 2 = caller abandoned; 3 = physically done.
-     Only the winner of 0 -> 1 starts work. If cancellation wins 0 -> 2,
-     it releases the reservation; a late worker performs no callback. *)
+  (* ^safe-sw86: the actual native claim arbitrates against withdrawal, not a flag
+     around [fn]. 0 = pending; 1 = claimed; 2 = withdrawn/caller gone; 3 = done. *)
   let state = Atomic.make 0 in
   let drain_policy = pool.Pool.config.shutdown_policy = Pool.Drain in
-  (* nblock-l78q: in a Drain pool a failed [on_settled] hands its slot and defect to
-     whichever of the worker and the caller comes second: the worker if the caller is
-     already [gone], otherwise the caller, which either observes the defect or, being
-     cancelled, retains it in the pool. Both run in the owner's domain without suspending
-     between their write and read, so exactly one releases the slot and the slot is
-     released only after the defect was observed or retained. *)
-  let gone = Atomic.make false in
-  let hook_failure = Atomic.make None in
-  let release_cancelled_before_start () =
-    if Atomic.compare_and_set state 0 2 then (
-      inc pool.cancelled_before_start;
+  (* ^safe-bt9f: slot accounting is separate from the terminal notification. All
+     releases run on the owning Eio domain; retaining a defect never retains a slot. *)
+  let slot_released = ref false in
+  let release_slot () =
+    if not !slot_released then (
+      slot_released := true;
       Pool.release_slot pool)
   in
-  (* nblk-2h3g: the worker fiber lives on the pool owner's switch, so [on_settled] runs in
-     the owner's Eio context once the callback has physically finished (state 3), whether
-     or not the caller is still waiting. A call abandoned before a worker claimed it never
-     ran, so it never settles. *)
-  (* nblock-faq7: the slot is released here, after [on_settled], not on the system thread:
-     a [Drain] shutdown waits until no slot is held, so when it returns every hook ran. *)
-  let settle outcome settled =
-    match Option.iter (fun hook -> hook outcome) on_settled with
+  let gone = Atomic.make false in
+  let hook_failure = Atomic.make None in
+  let notify_unclaimed () = Option.iter (fun hook -> hook ()) on_unclaimed in
+  let withdraw () =
+    if Atomic.compare_and_set state 0 2 then (
+      inc pool.cancelled_before_start;
+      true)
+    else false
+  in
+  (* nblock-l78q: failure is published before checking [gone]. In the same Eio
+     domain the second observer releases the slot: worker for Gone, waiting caller
+     for Hook_failed, cancellation handler for a published failure. *)
+  let finish_hook hook settled =
+    match hook () with
     | () ->
-        Pool.release_slot pool;
+        release_slot ();
         settled
     | exception ex ->
         let bt = Printexc.get_raw_backtrace () in
-        if not drain_policy then Pool.release_slot pool
+        if not drain_policy then release_slot ()
         else (
           Atomic.set hook_failure (Some (ex, bt));
           if Atomic.get gone then (
             Pool.retain pool (ex, bt);
-            Pool.release_slot pool));
+            release_slot ()));
         Hook_failed (ex, bt)
   in
+  let settle outcome settled =
+    finish_hook (fun () -> Option.iter (fun hook -> hook outcome) on_settled) settled
+  in
+  (* ^safe-sw86: a pre-claim cancellation keeps its original exception, even if
+     the mandatory Unclaimed delivery raises. No worker can claim after withdrawal. *)
+  let abandon ~cancelled () =
+    if withdraw () then
+      Fun.protect ~finally:release_slot (fun () ->
+          match notify_unclaimed () with
+          | () -> ()
+          | exception ex ->
+              let bt = Printexc.get_raw_backtrace () in
+              if cancelled then Pool.retain pool (ex, bt)
+              else Printexc.raise_with_backtrace ex bt)
+  in
   let worker =
-    Eio.Fiber.fork_promise ~sw:pool.Pool.sw (fun () ->
-        match
-          Eio_unix.run_in_systhread ~label (fun () ->
-              if Atomic.compare_and_set state 0 1 then (
-                inc pool.Pool.active;
-                Fun.protect
-                  ~finally:(fun () ->
-                    dec pool.active;
-                    inc pool.completed;
-                    Atomic.set state 3)
-                  fn)
+    match
+      Eio.Fiber.fork_promise ~sw:pool.Pool.sw (fun () ->
+          match
+            Eio_unix.run_in_systhread ~label (fun () ->
+                if Atomic.compare_and_set state 0 1 then (
+                  inc pool.Pool.active;
+                  Fun.protect
+                    ~finally:(fun () ->
+                      dec pool.active;
+                      inc pool.completed;
+                      Atomic.set state 3)
+                    fn)
+                else (
+                  assert (Atomic.get state = 2);
+                  raise Exit))
+          with
+          | value -> settle (Ok value) (Value value)
+          | exception ex ->
+              let bt = Printexc.get_raw_backtrace () in
+              if Atomic.get state = 3 then settle (Error ex) (Raised (ex, bt))
+              else if withdraw () then finish_hook notify_unclaimed (Raised (ex, bt))
               else (
-                assert (Atomic.get state = 2);
-                raise Exit))
-        with
-        | value -> settle (Ok value) (Value value)
-        | exception ex ->
-            let bt = Printexc.get_raw_backtrace () in
-            if Atomic.get state = 3 then settle (Error ex) (Raised (ex, bt))
-            else (
-              release_cancelled_before_start ();
-              Raised (ex, bt)))
+                (* ^safe-sw86 ^safe-bt9f: state 2 may belong to the caller's
+                   suspended Unclaimed delivery. Only that delivery's finalizer
+                   may return its slot; the withdrawn worker owns no cleanup. *)
+                if Atomic.get state <> 2 then release_slot ();
+                Raised (ex, bt)))
+    with
+    | worker -> worker
+    | exception ex ->
+        let bt = Printexc.get_raw_backtrace () in
+        (* Synchronous owner-switch rejection occurs before any worker exists. *)
+        abandon
+          ~cancelled:(match ex with Eio.Cancel.Cancelled _ -> true | _ -> false)
+          ();
+        Printexc.raise_with_backtrace ex bt
   in
   match Eio.Promise.await worker with
   | Ok (Value value) -> value
   | Ok (Raised (ex, bt)) -> Printexc.raise_with_backtrace ex bt
   | Ok (Hook_failed (ex, bt)) ->
-      if drain_policy then Pool.release_slot pool;
+      if drain_policy then release_slot ();
       Printexc.raise_with_backtrace ex bt
   | Error ex ->
       (* The owner switch refused the worker fiber, so no callback can start. *)
-      release_cancelled_before_start ();
-      raise ex
+      let bt = Printexc.get_raw_backtrace () in
+      abandon ~cancelled:(match ex with Eio.Cancel.Cancelled _ -> true | _ -> false) ();
+      Printexc.raise_with_backtrace ex bt
   | exception (Eio.Cancel.Cancelled _ as ex) ->
       let bt = Printexc.get_raw_backtrace () in
       Atomic.set gone true;
       (match Atomic.get hook_failure with
       | Some failure ->
           Pool.retain pool failure;
-          Pool.release_slot pool
+          release_slot ()
       | None -> ());
-      if Atomic.compare_and_set state 0 2 then (
-        inc pool.cancelled_before_start;
-        Pool.release_slot pool)
-      else if Atomic.compare_and_set state 1 2 then
-        Option.iter (fun hook -> hook ()) on_cancel;
+      if Atomic.get state = 0 then abandon ~cancelled:true ();
+      if Atomic.compare_and_set state 1 2 then Option.iter (fun hook -> hook ()) on_cancel;
       Printexc.raise_with_backtrace ex bt
 
 let run ~pool ?name ?on_cancel ?on_settled fn =
@@ -265,6 +292,41 @@ let run_result ~pool ?name ?on_cancel ?on_settled fn =
   match run ~pool ?name ?on_cancel ?on_settled fn with
   | Ok result -> lift result
   | Error `Shutting_down -> Error `Shutting_down
+
+type 'a lease_end = Unclaimed | Settled of ('a, exn) result
+
+let run_leased_result ~pool ?name ?on_cancel ~release fn =
+  (* ^safe-zgfv ^safe-sw86: terminal delivery is independent of both worker claim
+     and slot accounting. The worker owns the closure through physical completion. *)
+  let terminal_delivered = Atomic.make false in
+  let terminal ending =
+    if Atomic.compare_and_set terminal_delivered false true then
+      Eio.Cancel.protect (fun () -> release ending)
+  in
+  let unclaimed () = terminal Unclaimed in
+  if Pool.shutdown_policy pool = Pool.Detach_started then (
+    unclaimed ();
+    Error `Requires_drain)
+  else
+    match reserve pool with
+    | Error `Shutting_down ->
+        unclaimed ();
+        Error `Shutting_down
+    | Ok () ->
+        lift
+          (execute pool ?name ?on_cancel ~on_unclaimed:unclaimed
+             ~on_settled:(fun outcome -> terminal (Settled outcome))
+             fn)
+    | exception ex ->
+        let bt = Printexc.get_raw_backtrace () in
+        (match unclaimed () with
+        | () -> ()
+        | exception release_ex -> (
+            let release_bt = Printexc.get_raw_backtrace () in
+            match ex with
+            | Eio.Cancel.Cancelled _ -> Pool.retain pool (release_ex, release_bt)
+            | _ -> Printexc.raise_with_backtrace release_ex release_bt));
+        Printexc.raise_with_backtrace ex bt
 
 let try_run_result ~pool ?name ?on_cancel ?on_settled fn =
   match try_run ~pool ?name ?on_cancel ?on_settled fn with

@@ -1,0 +1,7 @@
+(* ^safe-czoe ^safe-y047 ^safe-fr73: a local borrow cannot outlive its scope.
+   This tests locality, not uniqueness or a must-close obligation. *)
+type borrow = { buffer : bytes @@ global }
+let inspect (borrow @ local) = Bytes.length borrow.buffer
+let submit ~pool (borrow @ local) =
+  Ox_blocking.run_leased_result ~pool ~release:(fun _ -> ())
+    (fun () -> Ok (inspect borrow))

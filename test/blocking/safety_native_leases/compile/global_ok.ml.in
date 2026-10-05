@@ -1,0 +1,7 @@
+(* ^safe-czoe ^safe-y047: global captures compile; aliased data is intentionally
+   accepted. No Unique/once enforcement is claimed by this leased API. *)
+type borrow = { buffer : bytes @@ global }
+let inspect (borrow @ local) = Bytes.length borrow.buffer
+let submit ~pool borrow =
+  Ox_blocking.run_leased_result ~pool ~release:(fun _ -> ())
+    (fun () -> Ok (inspect borrow))

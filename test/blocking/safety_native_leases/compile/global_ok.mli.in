@@ -1,0 +1,5 @@
+(* ^safe-czoe ^safe-y047: compile-only global alias acceptance. *)
+type borrow = { buffer : bytes @@ global }
+val inspect : borrow @ local -> int
+val submit : pool:Ox_blocking.Pool.t -> borrow ->
+  (int, [ `Callback of 'e | `Requires_drain | `Shutting_down ]) result

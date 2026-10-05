@@ -138,6 +138,56 @@ val run_result :
     [Invalid_argument] from worker startup on a finished or wrong-domain owner switch, as
     with [run]. ^nlintd-raises *)
 
+type 'a lease_end =
+  | Unclaimed
+  | Settled of ('a, exn) result
+      (** The terminal ownership notification, not a uniqueness or must-close proof.
+          [Unclaimed] guarantees that the native callback cannot subsequently execute.
+          [Settled] reports physical completion, including a native exception. *)
+
+val run_leased_result :
+  pool:Pool.t ->
+  ?name:string ->
+  ?on_cancel:(unit -> unit) ->
+  release:(('a, 'e) result lease_end -> unit) ->
+  (unit -> ('a, 'e) result) ->
+  ('a, [ `Shutting_down | `Requires_drain | `Callback of 'e ]) result
+(** Retain a native lease independently of the waiting caller. The mandatory [release]
+    runs exactly once: [Unclaimed] on admission rejection, cancellation before the actual
+    worker claim, or worker startup failure; [Settled] only after physical completion.
+    [Detach_started] is rejected before admission with [Error `Requires_drain] and
+    [Unclaimed]. Callback errors remain [Error (`Callback e)]; native exceptions are
+    defects with their original backtrace.
+
+    Pools, callers and releases must use the same Eio domain. [Unclaimed] runs in the
+    withdrawing caller or failed-start worker Eio context; [Settled] runs in the worker
+    fiber on the pool owner's switch, never on the native thread. Neither release may
+    await its own pool or close the owner switch. Releases must not suspend for long.
+    [release] may raise: its exception is an accounted defect, not the legacy no-raise
+    hook contract. A live caller receives it; when that caller is gone it is retained
+    (exception and backtrace only, not a slot) and every Drain raises it after all slots
+    are released. An [Unclaimed] release defect during cancellation is retained without
+    replacing the original Eio cancellation. Use [Fun.protect] inside [release] when
+    observer failure must not prevent the actual resource cleanup.
+
+    Suspension: may suspend in admission, completion and caller-provided [release].
+    Cancellation: propagates caller cancellation, withdrawing work before claim or
+    requesting interruption via [on_cancel] at most once after claim (which must not
+    raise), without releasing a claimed lease. Finalizers: no switch finalizer is
+    registered; protected terminal delivery owns cleanup until [release] returns or
+    raises. Locking: admission uses Eio synchronization; caller callbacks own their locks.
+    Cancellation safety: unsafe because progress is lost to a cancelled caller while
+    admitted native work may still commit effects. Startup on a finished or wrong-domain
+    owner switch raises [Invalid_argument], after [Unclaimed]; owners must Drain before
+    closing dependent resources.
+
+    This seam does not enforce unique ownership, discharge a must-close obligation, or
+    prevent raw [run]/[run_result], direct native calls, aliased handles, or early closes.
+    The real production NemaOwner seam has not been migrated or authorized in this slice;
+    no bypass restriction or production adoption is claimed and ticket 18 remains open.
+    ^safe-zgfv ^safe-sw86 ^safe-bt9f ^safe-m6vf ^safe-fr73 ^safe-y047 ^safe-czoe
+    ^safe-tlyw ^safe-m5sp ^safe-t37w ^safe-12o2 *)
+
 val try_run_result :
   pool:Pool.t ->
   ?name:string ->

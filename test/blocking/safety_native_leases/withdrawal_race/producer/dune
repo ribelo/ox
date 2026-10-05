@@ -1,0 +1,12 @@
+; ^safe-sw86 ^safe-bt9f: compile the production source unchanged at a private test seam.
+
+(copy_files ../../../../../lib/blocking/ox_blocking.ml)
+
+(copy_files ../../../../../lib/blocking/ox_blocking.mli)
+
+(library
+ (name preclaim_producer)
+ (modules ox_blocking)
+ (libraries native_claim_gate ox eio eio.unix)
+ (flags
+  (:standard -open Native_claim_gate)))

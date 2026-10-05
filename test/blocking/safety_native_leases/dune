@@ -1,0 +1,24 @@
+; ^safe-zgfv ^safe-sw86 ^safe-bt9f: public leased native ownership witnesses.
+
+(test
+ (name run)
+ (libraries ox_blocking eio eio_main eio.unix alcotest unix))
+
+(rule
+ (alias runtest)
+ (deps
+  check-compile.sh
+  compile/global_ok.ml.in
+  compile/global_ok.mli.in
+  compile/local_fail.ml.in
+  compile/local_fail.mli.in)
+ (action
+  (run
+   bash
+   %{dep:check-compile.sh}
+   %{ocamlc}
+   %{lib:ox_blocking:ox_blocking.cmi}
+   %{dep:compile/global_ok.mli.in}
+   %{dep:compile/global_ok.ml.in}
+   %{dep:compile/local_fail.mli.in}
+   %{dep:compile/local_fail.ml.in})))
