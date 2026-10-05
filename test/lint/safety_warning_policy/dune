@@ -1,3 +1,7 @@
+; ^safe-tpzm ^safe-zxc1: literal warning sites are compiled in a fresh project.
+
+(data_only_dirs negative)
+
 ; ^safe-tpzm ^safe-zxc1: pure typed predicate seam, outside negative project.
 
 (test
