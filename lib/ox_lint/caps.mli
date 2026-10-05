@@ -14,7 +14,7 @@
 open Ocaml_common
 (** Compiler-resolved capability rules. ^ncapslint-nf4t ^ncapslint-8jcy *)
 
-type operation = { name : string; calls : string list list }
+type operation = { name : string; calls : Paths.name list }
 
 val operations : operation list
 

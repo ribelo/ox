@@ -1,0 +1,38 @@
+; ^safe-3osb ^safe-35sb: compile production implementations with test-only seams.
+
+(rule
+ (alias runtest)
+ (deps
+  compile_fail/check.sh
+  ../../../lib/ox_lint/.lint_engine.objs/byte/paths.cmi
+  (package ox_caps))
+ (action
+  (chdir
+   compile_fail
+   (run
+    bash
+    check.sh
+    %{ocamlc}
+    %{workspace_root}/lib/ox_lint/.lint_engine.objs/byte
+    %{lib:ocaml-compiler-libs.common:ocaml_common.cmi}
+    %{workspace_root}/../install/default/lib/ox_caps))))
+
+(rule
+ (target identity_docs.ml)
+ (action
+  (copy ../../../lib/ox_lint/interface_docs.ml %{target})))
+
+(rule
+ (target identity_syntax.ml)
+ (action
+  (copy ../../../lib/ox_lint/syntax.ml %{target})))
+
+(rule
+ (target identity_derive.ml)
+ (action
+  (copy ../../../lib/ppx_yojson_minimal/derive.ml %{target})))
+
+(test
+ (name run)
+ (modules run identity_docs identity_syntax identity_derive)
+ (libraries lint_engine ox_caps.door))

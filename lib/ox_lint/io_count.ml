@@ -98,34 +98,35 @@ let retained ~is_ignore bindings expression =
 let check ~caps ~emit =
   let specs =
     [
-      ([ "Unix"; "read" ], Stream, Count, 4);
-      ([ "Unix"; "write" ], Stream, Count, 4);
-      ([ "Unix"; "single_write" ], Stream, Count, 4);
-      ([ "Unix"; "recv" ], Socket, Count, 5);
-      ([ "Unix"; "send" ], Socket, Count, 5);
-      ([ "Unix"; "recvfrom" ], Datagram, Count_address, 5);
-      ([ "Unix"; "sendto" ], Datagram, Count, 6);
-      ([ "Stdlib"; "input" ], Stream, Count, 4);
+      ("Unix", [ "read" ], Stream, Count, 4);
+      ("Unix", [ "write" ], Stream, Count, 4);
+      ("Unix", [ "single_write" ], Stream, Count, 4);
+      ("Unix", [ "recv" ], Socket, Count, 5);
+      ("Unix", [ "send" ], Socket, Count, 5);
+      ("Unix", [ "recvfrom" ], Datagram, Count_address, 5);
+      ("Unix", [ "sendto" ], Datagram, Count, 6);
+      ("Stdlib", [ "input" ], Stream, Count, 4);
     ]
   in
-  let required names =
+  let required ((head, tail) as names) =
     match Paths.value ~caps names with
     | Some path -> path
     | None ->
-        invalid_arg ("ox-io-count: missing supported operation " ^ String.concat "." names)
+        invalid_arg
+          ("ox-io-count: missing supported operation " ^ String.concat "." (head :: tail))
   in
   (* A pure compilation unit need not depend on Unix at all. Artifact.setup
      verifies actual imports before this decider runs. Once Unix is present,
      every advertised operation contract is required, not silently dropped. *)
-  let unix_available = Option.is_some (Paths.module_ ~caps [ "Unix" ]) in
+  let unix_available = Option.is_some (Paths.module_ ~caps ("Unix", [])) in
   let targets =
     List.filter_map
-      (fun (names, semantics, shape, arity) ->
-        if List.hd names = "Unix" && not unix_available then None
-        else Some (required names, { semantics; shape; arity }))
+      (fun (head, tail, semantics, shape, arity) ->
+        if head = "Unix" && not unix_available then None
+        else Some (required (head, tail), { semantics; shape; arity }))
       specs
   in
-  let ignores = [ required [ "Stdlib"; "ignore" ] ] in
+  let ignores = [ required ("Stdlib", [ "ignore" ]) ] in
   let learned = ref [] in
   let ignore_aliases = ref [] in
   let is_ignore expression =
