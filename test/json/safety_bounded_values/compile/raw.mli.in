@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl: real public parse refuses the wrong bound domain. *)
+val parse : string -> (Ox_json.t, Ox_json.parse_error) result

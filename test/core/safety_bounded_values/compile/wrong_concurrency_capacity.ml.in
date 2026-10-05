@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl *)
+let value (input : Ox.Concurrency.t) : Ox.Capacity.t = input

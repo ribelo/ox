@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl: caller validates before passing a bound. *)
+val parse : Ox.Byte_limit.t -> string -> (Ox_json.t, Ox_json.parse_error) result

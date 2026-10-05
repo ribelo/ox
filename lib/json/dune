@@ -3,4 +3,4 @@
  (public_name ox_json)
  (synopsis
   "Untyped JSON accessors for Ox: bounded parse, builders, member reads")
- (libraries yojson))
+ (libraries ox yojson))

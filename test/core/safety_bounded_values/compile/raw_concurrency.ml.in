@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl *)
+let value : Ox.Concurrency.t = -1

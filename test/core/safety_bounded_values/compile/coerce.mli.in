@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl: integer representation is not public. *)
+val value : int -> Ox.Capacity.t

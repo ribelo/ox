@@ -8,10 +8,7 @@ type too_large = { limit : int; length : int }
 type parse_error = [ `Malformed of string | `Too_large of too_large ]
 
 let parse ?max_bytes raw =
-  (match max_bytes with
-  | Some limit when limit < 0 ->
-      invalid_arg "Ox_json.parse: max_bytes must not be negative"
-  | Some _ | None -> ());
+  let max_bytes = Option.map Ox.Byte_limit.to_int max_bytes in
   match max_bytes with
   | Some limit when String.length raw > limit ->
       Error (`Too_large { limit; length = String.length raw })

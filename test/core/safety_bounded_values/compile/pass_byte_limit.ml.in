@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl *)
+let value = Ox.Byte_limit.to_int (-1)

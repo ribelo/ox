@@ -98,6 +98,8 @@
    (>= 5.4.0))
   (conf-ox-oxcaml
    (= :version))
+  (ox
+   (= :version))
   (yojson
    (>= 2.0))
   (alcotest :with-test)))
