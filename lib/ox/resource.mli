@@ -1,3 +1,4 @@
+(* ^nonce-4jzx ^nonce-lrzq: affine callback boundaries. *)
 (** Ox's resource helpers ([useInScope], [useCloseableInScope]) over an Eio switch. A
     resource is released by [Eio.Switch.on_release], so the rules are Eio's: releases run
     in reverse registration order after every fiber of the switch has finished, with
@@ -24,13 +25,19 @@
       Eio has run release exactly once under cancellation protection and it has
       returned normally. *)
 
-val use_in_scope : sw:Eio.Switch.t -> (unit -> 'a) @ local -> ('a -> unit) -> 'a
+val use_in_scope : sw:Eio.Switch.t -> (unit -> 'a) @ local once -> ('a -> unit) @ once -> 'a
 (** [use_in_scope ~sw acquire release] runs [acquire] in the calling fiber, registers
-    [release] on [sw] and returns the resource. *)
+    [release] on [sw] and returns the resource. Other exceptions depend on [acquire]
+    and [release] callbacks and propagate; acquisition defects register no cleanup.
+    @raise Eio.Switch.Release_error if immediate release on a finished switch raises;
+      Eio wraps the release exception. *)
 
 val use_closeable_in_scope :
   sw:Eio.Switch.t ->
-  (unit -> ([> Eio.Resource.close_ty ] as 'a) Eio.Resource.t) @ local ->
+  (unit -> ([> Eio.Resource.close_ty ] as 'a) Eio.Resource.t) @ local once ->
   'a Eio.Resource.t
 (** {!use_in_scope} for an Eio resource that can be closed (a flow, a socket, a file, a
-    process): the release is [Eio.Resource.close]. *)
+    process): the release is [Eio.Resource.close]. Other exceptions depend on the
+    [acquire] callback and the Eio close provider; acquisition defects register no cleanup.
+    @raise Eio.Switch.Release_error if immediate close on a finished switch raises;
+      Eio wraps the close exception. *)

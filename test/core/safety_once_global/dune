@@ -1,0 +1,16 @@
+; ^nonce-ldtz ^nonce-mjpe: sound global guard runtime and public native controls.
+
+(test
+ (name once_runtime)
+ (modules once_runtime)
+ (libraries ox eio eio.mock alcotest))
+
+(rule
+ (alias runtest)
+ (deps
+  (package ox)
+  (source_tree compile_fail))
+ (action
+  (chdir
+   compile_fail
+   (run bash check.sh %{ocamlc} %{workspace_root}/../install/default/lib/ox))))

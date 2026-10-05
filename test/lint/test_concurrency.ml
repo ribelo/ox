@@ -10,23 +10,38 @@ let count ~caps (rule : Rules.t) dir =
   Option.iter
     (fun make -> Syntax.walk ~caps source (fun context base -> make emit context base))
     rule.source;
+  let inspect run =
+    let unit_name =
+      String.capitalize_ascii (Filename.remove_extension (Filename.basename source))
+    in
+    let annotation =
+      Printf.sprintf "%s/.concurrency_%s.objs/byte/concurrency_%s__%s.cmt" dir dir dir
+        unit_name
+    in
+    let artifact = Artifact.read ~caps annotation in
+    Artifact.check ~caps ~source artifact;
+    Artifact.setup ~caps artifact;
+    run artifact
+  in
   Option.iter
     (fun make ->
-      let unit_name =
-        String.capitalize_ascii (Filename.remove_extension (Filename.basename source))
-      in
-      let annotation =
-        Printf.sprintf "%s/.concurrency_%s.objs/byte/concurrency_%s__%s.cmt" dir dir dir
-          unit_name
-      in
-      let artifact = Artifact.read ~caps annotation in
-      Artifact.check ~caps ~source artifact;
-      Artifact.setup ~caps artifact;
-      let iterator : Tast_iterator.iterator = make emit in
-      match artifact.info.cmt_annots with
-      | Implementation tree -> iterator.structure iterator tree
-      | _ -> failwith "expected implementation fixture")
+      inspect (fun artifact ->
+          let iterator : Tast_iterator.iterator = make emit in
+          match artifact.info.cmt_annots with
+          | Implementation tree -> iterator.structure iterator tree
+          | _ -> failwith "expected implementation fixture"))
     rule.typed;
+  Option.iter
+    (fun run ->
+      inspect (fun artifact ->
+          run
+            ~emit:(fun loc _message -> emit loc)
+            ~undecided:(fun loc message ->
+              failwith
+                (Printf.sprintf "%s:%d: %s undecided: %s" source
+                   loc.Location.loc_start.Lexing.pos_lnum rule.id message))
+            artifact))
+    rule.evidence;
   List.sort Int.compare !sites
 
 (* ^nlintc-du4v ^nlintc-kdcl: actual named entries, not a library wearing an executable name. *)

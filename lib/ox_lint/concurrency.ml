@@ -578,6 +578,279 @@ let obj_magic ~caps emit =
       | _ -> false)
     emit
 
+(* ^nonce-ldtz ^nonce-mjpe: the entire seven-line GLOBAL guard is a finite
+   reviewed primitive. No local-to-global cast, provider waiver, or source/name
+   admission is supported. The only exemption is the proven physical cast node. *)
+let global_guard_source = "fe73e6eb236332ccc1f08748ddf88c31"
+let global_guard_interface = "d4fddfdf736cf8ec1cb7e9ba2eac2a70"
+
+let global_guard ~caps (artifact : Artifact.t) =
+  let phase = ref "exact global guard implementation" in
+  let require ok = if not ok then failwith ("Global Once guard proof: " ^ !phase) in
+  let pinned info pin = info.Cmt_format.cmt_source_digest = Some (Digest.from_hex pin) in
+  let untransformed info =
+    not
+      (Array.exists
+         (fun arg ->
+           List.exists
+             (fun flag -> String.starts_with ~prefix:flag arg)
+             [ "-pp"; "-plugin"; "-as-ppx" ])
+         info.Cmt_format.cmt_args)
+  in
+  let crc name imports =
+    match Array.find_opt (fun entry -> Import_info.has_name entry ~name) imports with
+    | Some entry -> Import_info.crc entry
+    | None -> None
+  in
+  let binding_id (pattern : pattern) =
+    match pattern.pat_desc with Tpat_var { id; _ } -> id | _ -> raise Exit
+  in
+  let variable id expression =
+    match expression.exp_desc with
+    | Texp_ident { path = Path.Pident found; _ } -> Ident.same id found
+    | _ -> false
+  in
+  let primitive expression name =
+    let environment = Lazy.force Env.initial in
+    let _, canonical, _ =
+      Env.lookup_value ~use:false ~loc:Location.none (Paths.lid name) environment
+    in
+    Paths.is_value ~caps (Paths.values ~caps [ name ]) expression
+    &&
+    match expression.exp_desc with
+    | Texp_ident { desc; _ } -> Shape.Uid.equal desc.val_uid canonical.val_uid
+    | _ -> false
+  in
+  let scalar name ty expression =
+    match expression.exp_desc with
+    | Texp_construct (_, description, _, [], _) ->
+        description.cstr_name = name
+        && Ctype.is_equal
+             (Paths.env ~caps expression.exp_env)
+             false [ description.cstr_res ] [ ty ]
+    | _ -> false
+  in
+  let application expression =
+    match expression.exp_desc with
+    | Texp_apply (fn, args, _, _, _) ->
+        (fn, List.map (function Nolabel, Arg (arg, _) -> arg | _ -> raise Exit) args)
+    | _ -> raise Exit
+  in
+  let function_body expression =
+    match expression.exp_desc with
+    | Texp_function
+        {
+          params = [ { fp_arg_label = Nolabel; fp_kind = Tparam_pat pattern; _ } ];
+          body = Tfunction_body body;
+          _;
+        } ->
+        (pattern, body)
+    | _ -> raise Exit
+  in
+  try
+    require
+      (Filename.check_suffix artifact.path ".cmt"
+      && pinned artifact.info global_guard_source
+      && untransformed artifact.info);
+    phase := "authored implementation freshness";
+    Artifact.check ~caps ~source:(Artifact.authored_source ~caps artifact) artifact;
+    phase := "matching native public interface and freshness";
+    let peer =
+      Artifact.read ~caps (Filename.chop_suffix artifact.path ".cmt" ^ ".cmti")
+    in
+    require
+      (pinned peer.info global_guard_interface
+      && untransformed peer.info
+      && Compilation_unit.equal artifact.info.cmt_modname peer.info.cmt_modname);
+    Artifact.check ~caps ~source:(Artifact.authored_source ~caps peer) peer;
+    phase := "both current import universes and public CMI fingerprint";
+    Artifact.setup ~caps peer;
+    Artifact.setup ~caps artifact;
+    let unit_name = Compilation_unit.name artifact.info.cmt_modname in
+    let current =
+      Cmi_format.read_cmi
+        (Load_path.find
+           (String.uncapitalize_ascii (Compilation_unit.Name.to_string unit_name) ^ ".cmi"))
+    in
+    let own = crc unit_name current.cmi_crcs in
+    require
+      (Compilation_unit.Name.equal current.cmi_name unit_name
+      && own <> None
+      && own = peer.info.cmt_interface_digest
+      && crc unit_name artifact.info.cmt_imports = own
+      &&
+      match artifact.info.cmt_interface_digest with
+      | None -> true
+      | Some digest -> Some digest = own);
+    phase := "sole public guard export and canonical owner UID";
+    let public =
+      match peer.info.cmt_annots with
+      | Cmt_format.Interface signature -> (
+          match
+            List.filter_map
+              (fun item ->
+                match item.sig_desc with
+                | Tsig_value declaration -> Some declaration
+                | Tsig_attribute _ -> None
+                | _ -> raise Exit)
+              signature.sig_items
+          with
+          | [ declaration ] when declaration.val_name.txt = "guard" -> declaration
+          | _ -> raise Exit)
+      | _ -> raise Exit
+    in
+    let environment = Lazy.force Env.initial in
+    let owner, exported, _ =
+      Env.lookup_value ~use:false ~loc:Location.none
+        (Paths.lid ("Ox", [ "Once"; "guard" ]))
+        environment
+    in
+    require (Shape.Uid.equal exported.val_uid public.val_val.val_uid);
+    (match Env.normalize_value_path None environment owner with
+    | Path.Pdot (Path.Pident id, "guard") ->
+        require
+          (Ident.is_global id && Ident.name id = Compilation_unit.Name.to_string unit_name)
+    | _ -> raise Exit);
+    phase := "native global-once input and global-many returned closure ABI";
+    (match public.val_desc.ctyp_desc with
+    | Ttyp_arrow (Nolabel, input, input_mode, output, output_mode) -> (
+        require
+          (input_mode.mode_modes.areality = Mode.Locality.Const.Global
+          && input_mode.mode_modes.linearity = Mode.Linearity.Const.Once
+          && output_mode.mode_modes.areality = Mode.Locality.Const.Global
+          && output_mode.mode_modes.linearity = Mode.Linearity.Const.Many);
+        match (input.ctyp_desc, output.ctyp_desc) with
+        | ( Ttyp_arrow (Nolabel, arg, _, result, _),
+            Ttyp_arrow (Nolabel, arg2, _, result2, _) ) ->
+            require
+              (Ctype.is_equal environment false
+                 [ arg.ctyp_type; arg2.ctyp_type ]
+                 [ Predef.type_unit; Predef.type_unit ]
+              && Ctype.is_equal environment false [ result.ctyp_type ]
+                   [ result2.ctyp_type ])
+        | _ -> raise Exit)
+    | _ -> raise Exit);
+    phase := "entire emitted module is exactly one nonrecursive guard";
+    let guard =
+      match artifact.info.cmt_annots with
+      | Cmt_format.Implementation
+          {
+            str_items =
+              [ { str_desc = Tstr_value (Asttypes.Nonrecursive, [ guard ]); _ } ];
+            _;
+          } ->
+          guard
+      | _ -> raise Exit
+    in
+    require (Ident.name (binding_id guard.vb_pat) = "guard");
+    let input, body = function_body guard.vb_expr in
+    let cast_binding, flag_binding, closure =
+      match body.exp_desc with
+      | Texp_let
+          ( Asttypes.Nonrecursive,
+            [ cast_binding ],
+            { exp_desc = Texp_let (Asttypes.Nonrecursive, [ flag_binding ], closure); _ }
+          ) ->
+          (cast_binding, flag_binding, closure)
+      | _ -> raise Exit
+    in
+    phase := "canonical Obj.magic_many applied only to the original input";
+    let cast, args = application cast_binding.vb_expr in
+    require (primitive cast ("Stdlib", [ "Obj"; "magic_many" ]));
+    (match args with
+    | [ arg ] -> require (variable (binding_id input) arg)
+    | _ -> raise Exit);
+    let input_environment = Paths.env ~caps input.pat_env in
+    let rec native ty =
+      let ty = Ctype.expand_head input_environment ty in
+      match Types.get_desc ty with Types.Tpoly (body, []) -> native body | _ -> ty
+    in
+    (match Types.get_desc (native input.pat_type) with
+    | Types.Tarrow ((Types.Nolabel, _, _), arg, _, _) ->
+        require
+          (Ctype.is_equal input_environment false [ native arg ] [ Predef.type_unit ])
+    | _ -> raise Exit);
+    phase := "canonical Atomic.make false and returned unit closure";
+    let make, args = application flag_binding.vb_expr in
+    require (primitive make ("Stdlib", [ "Atomic"; "make" ]));
+    (match args with
+    | [ arg ] -> require (scalar "false" Predef.type_bool arg)
+    | _ -> raise Exit);
+    let unit, decision = function_body closure in
+    (match unit.pat_desc with
+    | Tpat_construct (_, desc, _, [], _) ->
+        require
+          (desc.cstr_name = "()"
+          && Ctype.is_equal input_environment false [ unit.pat_type ] [ Predef.type_unit ]
+          )
+    | _ -> raise Exit);
+    phase := "permanent atomic exchange true before any caller entry";
+    let condition, reject, enter =
+      match decision.exp_desc with
+      | Texp_ifthenelse (condition, reject, Some enter) -> (condition, reject, enter)
+      | _ -> raise Exit
+    in
+    let exchange, args = application condition in
+    require (primitive exchange ("Stdlib", [ "Atomic"; "exchange" ]));
+    (match args with
+    | [ flag; yes ] ->
+        require
+          (variable (binding_id flag_binding.vb_pat) flag
+          && scalar "true" Predef.type_bool yes)
+    | _ -> raise Exit);
+    phase := "canonical rejection and exactly one callback entry";
+    let invalid, args = application reject in
+    require (primitive invalid ("Stdlib", [ "invalid_arg" ]));
+    (match args with
+    | [
+     {
+       exp_desc =
+         Texp_constant (Const_string ("Ox.Once.guard: callback already used", _, _));
+       _;
+     };
+    ] ->
+        ()
+    | _ -> raise Exit);
+    let invoke, args = application enter in
+    require (variable (binding_id cast_binding.vb_pat) invoke);
+    (match args with
+    | [ arg ] -> require (scalar "()" Predef.type_unit arg)
+    | _ -> raise Exit);
+    Ok cast
+  with
+  | Failure reason | Sys_error reason -> Error reason
+  | Exit | Not_found | Env.Error _ | Cmt_format.Error _ | Cmi_format.Error _
+  | Unix.Unix_error _ ->
+      Error ("Global Once guard proof: " ^ !phase)
+
+let obj_magic_artifact ~caps ~artifact ~undecided emit =
+  let approved =
+    if
+      artifact.Artifact.info.cmt_source_digest
+      = Some (Digest.from_hex global_guard_source)
+    then (
+      match global_guard ~caps artifact with
+      | Ok cast -> Some cast
+      | Error reason ->
+          (match artifact.info.cmt_annots with
+          | Cmt_format.Implementation { str_items = item :: _; _ } ->
+              undecided item.str_loc reason
+          | _ -> undecided Location.none reason);
+          None)
+    else None
+  in
+  Artifact.setup ~caps artifact;
+  let modules = Paths.modules ~caps [ ("Stdlib", [ "Obj" ]) ] in
+  identifiers
+    (fun expression ->
+      match expression.exp_desc with
+      | Texp_ident { path; _ } ->
+          String.starts_with ~prefix:"magic" (Path.last path)
+          && Paths.in_module ~caps modules expression
+          && not (match approved with Some cast -> cast == expression | None -> false)
+      | _ -> false)
+    emit
+
 let raw_concurrency ~caps emit =
   let fiber = Paths.modules ~caps [ ("Eio", [ "Fiber" ]) ] in
   let fiber_list = Paths.modules ~caps [ ("Eio", [ "Fiber"; "List" ]) ] in

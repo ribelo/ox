@@ -7,9 +7,22 @@ including OxCaml's `Obj.magic_portable`. Module aliases/opens are resolved;
 a user module merely named Obj is not the unsafe Stdlib module. Replace casts
 with a typed representation.
 
-The shipped allowance registry is empty. There is no reserved future cast path:
-any future ownership implementation faces the active rule. Violating fixtures
-are checked directly, not excused by a production allowance.
+One finite primitive is shipped for ^nonce-ldtz and ^nonce-mjpe: the single physical
+`Obj.magic_many` identifier in the seven-line **global** atomic guard in
+[Once](<../../lib/ox/once.ml>). The source and authored public interface digests,
+fresh CMT/CMti/current-CMI import fingerprints, canonical public export UID and
+compiler-native global-once/global-many ABI must agree. The complete emitted body
+must permanently claim `Atomic.exchange used true` before caller code, reject
+repeat entry, and never reset the claim. Canonical Stdlib identities are checked.
+A missing or contradictory peer is undecided and the cast remains a finding.
+A matching name, path, line or clone does not grant admission: only the proven
+physical expression object is exempt. The legacy factory still reports that cast.
+
+No `%identity` primitive, local-to-global bridge or Eio provider is exempt. Global
+closures are GC-markable; source pins do not establish safety for a closure
+capturing local allocation. Ordinary consumer casts and extra casts in an
+unreviewed implementation retain their findings. Violating fixtures are checked
+directly, not excused by a production allowance.
 
 **Accepted false negatives.** Value aliases and user wrappers around Obj casts
 are not followed. This rule is not a proof of memory or mode safety: other Obj

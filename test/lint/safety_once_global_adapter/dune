@@ -1,0 +1,25 @@
+; ^nonce-ldtz ^nonce-mjpe: exact adapter tests, no registry changes.
+
+(executable
+ (name test_global_adapter)
+ (modules test_global_adapter)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  ../../../lib/ox/once.ml
+  ../../../lib/ox/once.mli
+  ../../../lib/ox/.ox.objs/byte/ox__Once.cmt
+  ../../../lib/ox/.ox.objs/byte/ox__Once.cmti
+  (glob_files ../../../lib/ox/.ox.objs/byte/*.cmi)
+  check-aliases.sh
+  (source_tree evidence))
+ (action
+  (run
+   bash
+   %{dep:check-aliases.sh}
+   %{ocamlc}
+   %{exe:test_global_adapter.exe}
+   %{dep:../../../lib/ox/.ox.objs/byte/ox__Once.cmt}
+   evidence)))

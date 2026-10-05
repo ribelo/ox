@@ -1,3 +1,4 @@
+(* ^nonce-lrzq: affine callback boundaries. *)
 (** Rate limiting after Ox's [RateLimiter], computed on demand from an injected clock: a
     limiter has no background fiber, so nothing is left running when the last user is gone
     and a mock clock makes every algorithm deterministic.
@@ -56,12 +57,12 @@ val create : sw:Eio.Switch.t -> clock:_ Eio.Time.Mono.t -> config -> t
     @raise Invalid_argument if a window has [n < 1], a bucket [capacity < 1], or [per] is
     zero. ^nfloor-p4ae *)
 
-val run : t -> (unit -> 'a) @ local -> 'a
+val run : t -> (unit -> 'a) @ local once -> 'a
 (** [run t f] blocks until the algorithm grants a permit, then runs [f] in the calling
     fiber and returns its result, whatever it is: a [result] passes through unchanged,
     and an exception from [f] propagates. The permit is consumed before [f] starts and is
     not given back. ^nfloor-p4ae *)
 
-val run_or_drop : t -> (unit -> 'a) @ local -> 'a option
+val run_or_drop : t -> (unit -> 'a) @ local once -> 'a option
 (** [run_or_drop t f] is [Some (f ())] if a permit is available now and [None], without
     waiting or running [f], otherwise. ^nfloor-p4ae *)

@@ -143,6 +143,8 @@ lib/ox/exit.ml lib/ox/.ox.objs/byte/ox__Exit.cmt
 lib/ox/exit.mli lib/ox/.ox.objs/byte/ox__Exit.cmti
 lib/ox/interrupt_id.ml lib/ox/.ox.objs/byte/ox__Interrupt_id.cmt
 lib/ox/interrupt_id.mli lib/ox/.ox.objs/byte/ox__Interrupt_id.cmti
+lib/ox/once.ml lib/ox/.ox.objs/byte/ox__Once.cmt
+lib/ox/once.mli lib/ox/.ox.objs/byte/ox__Once.cmti
 lib/ox/rate_limiter.ml lib/ox/.ox.objs/byte/ox__Rate_limiter.cmt
 lib/ox/rate_limiter.mli lib/ox/.ox.objs/byte/ox__Rate_limiter.cmti
 lib/ox/resource.ml lib/ox/.ox.objs/byte/ox__Resource.cmt

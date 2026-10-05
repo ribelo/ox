@@ -1,3 +1,4 @@
+(* ^nonce-r7mi ^nonce-4jzx: affine callback boundaries. *)
 (** Cancellation and finalizers: Suspension: may suspend while starting fibers, joining
     scopes and running caller callbacks; delegated callback dispatch and Eio, Stdlib,
     Stdlib.List, Stdlib.Printexc operations retain their own behaviour. Cancellation:
@@ -51,7 +52,7 @@ val supervised_error : sw:Eio.Switch.t -> ('e t -> ('a, 'e) result) -> ('a, 'e) 
 
     @raise Invalid_argument if [sw] is finished. *)
 
-val fork_error : 'e t -> (unit -> ('a, 'e) result) -> ('a, 'e) fork
+val fork_error : 'e t -> (unit -> ('a, 'e) result) @ once -> ('a, 'e) fork
 (** [fork_error scope f] starts [f] as a supervised fiber. [Ok] is the fork's outcome,
     joinable with {!await}; [Error e] ends the scope with [e] as {!supervised_error}
     describes. If the scope is already ending the fiber is not started (Eio's rule).
@@ -59,21 +60,21 @@ val fork_error : 'e t -> (unit -> ('a, 'e) result) -> ('a, 'e) fork
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork : 'e t -> (unit -> unit) -> unit
+val fork : 'e t -> (unit -> unit) @ once -> unit
 (** [fork scope f] starts a plain fiber that cannot fail typed; an exception in it ends
     the scope, and its return value is not inspected.
 
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork_daemon : 'e t -> (unit -> unit) -> unit
+val fork_daemon : 'e t -> (unit -> unit) @ once -> unit
 (** Like {!fork} but the scope does not wait for it: it is cancelled when the body and the
     non-daemon forks have finished (Eio's [fork_daemon] split, unchanged).
 
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) -> unit
+val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) @ once -> unit
 (** A daemon whose [Error e] ends the scope like {!fork_error}'s; [Ok ()] just ends the
     daemon and leaves the scope running. {!Concurrent.with_background} is this.
 
@@ -87,6 +88,21 @@ val await : ('a, 'e) fork -> ('a, 'e) result
     Eio.Promise.await. Cancellation safety: safe to re-run; waiting does not consume the
     promise result. Finalizers: none are registered by this call. Locking: no lock is held
     by this wrapper; promise synchronisation is delegated to Eio. ^nlintd-a7oq *)
+
+val on_release : 'e t -> (unit -> unit) @ once -> unit
+(** [on_release scope release] transfers an affine callback to the scope's switch.
+    Eio runs releases protected, after forks finish, in reverse registration order.
+    A finished switch runs [release] immediately under cancellation protection,
+    then raises [Invalid_argument] if it returned normally. Suspension: may suspend
+    only in an immediate release callback. Cancellation: protected throughout; Eio
+    protects immediate release, and registration adds no cancellation check.
+    Finalizers: registers [release] exactly once; no callback is retried. Locking: Eio
+    locks registration but holds no lock around [release]. Affine ownership does not
+    require the caller to register a release. ^nonce-4jzx
+
+    @raise Invalid_argument if the switch is finished and immediate release returns.
+    @raise Eio.Switch.Release_error if release raises during immediate registration on
+      a finished switch; Eio wraps the release exception. *)
 
 val switch : 'e t -> Eio.Switch.t
 (** The scope's Eio switch, for [Eio.Switch.on_release] and other Eio APIs. Suspension:
