@@ -83,9 +83,15 @@ val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
     failure; coverage is never inferred from existing annotations. ^nlint-2nwm. *)
 
 val authored_source : caps:< Cap.fs_read ; .. > -> t -> string
-(** Resolve a checked-in input, a declared generated input with producer provenance, or a
-    manifest-owned plain installed source. Missing input/inventory/provenance raises a
-    named failure, never a silent pass. ^nlintd-truth ^nlintcov-q6n2 *)
+(** Resolve and check a physical authored, declared-generated or installed source. A
+    direct Dune-generated empty interface may return its actual [.pp.mli] compiler input
+    only with a cached unique producer/compiler-owner proof, unchanged owner and
+    configuration identities, matching source digest, empty typed interface and current
+    CMI/import fingerprints. [generated_sources] must acquire that proof before checking;
+    this fs-read-only operation never queries Dune. Explicit scans without the inventory
+    remain unsupported. No authored or intermediate original may be replaced by
+    empty-interface evidence. Missing input/inventory/provenance raises a named failure,
+    never a silent pass. ^nlintd-truth ^nlintcov-q6n2 ^safe-y047 *)
 
 val current : unit -> t option
 (** The annotation whose checked compiler environment is currently configured;
