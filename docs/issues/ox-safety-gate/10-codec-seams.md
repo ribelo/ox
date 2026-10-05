@@ -22,6 +22,10 @@ blocked_by: []
 
 New designated-interface representation policy, replacing name-based broad-contract heuristics.
 
+## Implementation decision
+
+2026-10-05: designate audited URL, private header-name/value, histogram configuration, logger-limit and redacting-representation contracts by resolved ownership. Do not call the transparent header list validated, or invent schemas for provider-owned protocol payloads. An interface-local `[@@@ox.domain]` opts a consumer into the same bounded representation checks; it adds obligations, never codec exemptions. Codec and extension exceptions remain exact audited value/field positions. Validation claims require the corresponding checked construction evidence; opaque naming alone is not validation.
+
 ## Acceptance criteria
 
 - [ ] Inventory and designate domain interfaces and codec seams explicitly in the existing rule policy; scope is not every interface in the ecosystem.
