@@ -119,7 +119,7 @@ type 'e t = {
 }
 
 type 'e config = {
-  now : unit -> float;
+  now : unit -> Mtime.t;
   with_deadline :
     Duration.t -> (unit -> (unit, [ `Timeout ]) result) -> (unit, [ `Timeout ]) result;
   intensity : intensity;
@@ -204,8 +204,8 @@ let supervise (type e) (t : e t) (cfg : e config) ~(initial : e entry list)
     ~(started : (unit, e start_failure) result Eio.Promise.u) :
     (unit, e intensity_error) result =
   let defects : e Cause.t list ref = ref [] in
-  let attempts : float list ref = ref [] in
-  let window_s = Duration.to_seconds cfg.intensity.window in
+  let attempts : Mtime.t list ref = ref [] in
+  let window_ms = Int64.of_int (Duration.to_ms cfg.intensity.window) in
   let emit event = cfg.on_event event in
   t.entries <- initial;
   let close_out outcome =
@@ -434,7 +434,15 @@ let supervise (type e) (t : e t) (cfg : e config) ~(initial : e entry list)
       in
       let check_intensity (entry : e entry) =
         let now = cfg.now () in
-        attempts := List.filter (fun at -> at > now -. window_s) !attempts;
+        (* ^safe-p9cw ^safe-5a9k: compare exact native elapsed spans to the
+           millisecond window; the boundary remains exclusive. Dividing first
+           also avoids overflowing when a valid Duration is a very large window. *)
+        attempts :=
+          List.filter
+            (fun at ->
+              let ns = Mtime.Span.to_uint64_ns (Mtime.span at now) in
+              Int64.unsigned_compare (Int64.unsigned_div ns 1_000_000L) window_ms < 0)
+            !attempts;
         if List.length !attempts >= cfg.intensity.max_restarts then
           Error
             {
@@ -608,8 +616,8 @@ let validate ~intensity children =
 
 let config ~clock ~intensity ~auto ~strategy ~dynamic ~on_event =
   {
-    now = (fun () -> Eio.Time.now clock);
-    with_deadline = (fun limit f -> Timeout.timeout ~clock limit f);
+    now = (fun () -> Eio.Time.Mono.now clock);
+    with_deadline = (fun limit f -> Timeout.timeout_mono ~clock limit f);
     intensity;
     auto;
     strategy;

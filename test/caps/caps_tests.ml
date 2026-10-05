@@ -122,7 +122,7 @@ let read_home ~(caps : < Cap.env ; .. >) () = Cap_sys.getenv_opt ~caps "HOME"
 let local_closures_compose ~(caps : < Cap.env ; .. >) () =
   Ox_test.run (fun env sw ->
       let limiter =
-        Ox.Rate_limiter.create ~sw ~clock:env#clock
+        Ox.Rate_limiter.create ~sw ~clock:env#mono_clock
           (Ox.Rate_limiter.Fixed_window { n = 1; per = Ox.Duration.seconds 1 })
       in
       let from_limiter = Ox.Rate_limiter.run limiter (fun () -> read_home ~caps ()) in

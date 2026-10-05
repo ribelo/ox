@@ -60,23 +60,24 @@
     exits. Exits that are already complete when a recovery begins are part of that one
     recovery.
 
-    The budget is [{ max_restarts; window }] over the supplied clock: one recovery batch
-    is one attempt however many children it restarts, a restarted incarnation that fails
-    and needs another recovery is another attempt, and the window is half-open — attempts
-    at or before [now - window] are forgotten. Before the attempt that would exceed the
-    budget every child is stopped and joined, then the supervisor ends with
-    [`Restart_intensity_exceeded]. [max_restarts = 0] disables automatic restart.
+    The budget is [{ max_restarts; window }] over the supplied monotonic clock: one
+    recovery batch is one attempt however many children it restarts, a restarted
+    incarnation that fails and needs another recovery is another attempt, and the window
+    is half-open — attempts at or before [now - window] are forgotten. Before the attempt
+    that would exceed the budget every child is stopped and joined, then the supervisor
+    ends with [`Restart_intensity_exceeded]. [max_restarts = 0] disables automatic
+    restart.
 
     {2 Shutdown}
 
     Shutdown is cooperative and never a kill. [Infinity] resolves [stop_requested] and
     waits for the child with no local deadline; [Timeout d] resolves it, waits at most [d]
-    on the supplied clock ({!Timeout.timeout}), then cancels the child's cancellation
-    context and still waits for its finalizers; [Brutal_kill] skips the grace signal and
-    cancels at once, still running finalizers and joining. Eio cannot kill a fiber, skip
-    its finalizers, or bound cancellation-protected cleanup: a child that ignores the
-    signal, or a finalizer that blocks, delays the join. Cancellation of the owning scope
-    takes precedence over every graceful mode. *)
+    on the supplied monotonic clock ({!Timeout.timeout_mono}), then cancels the child's
+    cancellation context and still waits for its finalizers; [Brutal_kill] skips the grace
+    signal and cancels at once, still running finalizers and joining. Eio cannot kill a
+    fiber, skip its finalizers, or bound cancellation-protected cleanup: a child that
+    ignores the signal, or a finalizer that blocks, delays the join. Cancellation of the
+    owning scope takes precedence over every graceful mode. *)
 
 type restart = Permanent | Temporary | Transient
 
@@ -174,7 +175,7 @@ type 'e t
 
 val start :
   scope:([> `Restart_intensity_exceeded of 'ce intensity_error ] as 'e) Scope.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   intensity:intensity ->
   ?auto_shutdown:auto_shutdown ->
   ?on_event:('ce event -> unit) ->
@@ -190,7 +191,9 @@ val start :
     joining its children, and its terminal typed failure [`Restart_intensity_exceeded]
     ends [scope] like any {!Scope.fork_error_daemon} failure — after every child was
     stopped and joined. Call {!stop} first for a graceful end. [clock] measures intensity
-    windows and [Timeout] shutdowns and should be monotonic.
+    windows and [Timeout] shutdowns; its type requires a monotonic clock. Restart windows
+    use native elapsed spans and shutdown deadlines use {!Timeout.timeout_mono}, so wall
+    corrections affect neither. ^safe-p9cw ^safe-8peq ^safe-5a9k
 
     [on_event] (default: {!Eio.traceln} for abnormal exits, backtraces included) receives
     every {!event} synchronously from the supervisor's fiber and must not suspend.
@@ -242,7 +245,7 @@ type ('input, 'e) simple
 
 val start_simple :
   scope:([> `Restart_intensity_exceeded of 'ce intensity_error ] as 'e) Scope.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   intensity:intensity ->
   ?on_event:('ce event -> unit) ->
   ('input, 'ce) template ->

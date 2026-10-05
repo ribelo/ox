@@ -9,9 +9,11 @@ let check_float = Alcotest.(check (float 0.0001))
 let check_floats = Alcotest.(check (list (float 0.0001)))
 
 let with_mock f =
-  Eio_mock.Backend.run_full (fun env -> Eio.Switch.run (fun sw -> f env#clock sw))
+  Eio_mock.Backend.run_full (fun env -> Eio.Switch.run (fun sw -> f env#mono_clock sw))
 
-let now = Eio.Time.now
+let now clock =
+  Mtime.Span.to_float_ns (Mtime.span (Mtime.of_uint64_ns 0L) (Eio.Time.Mono.now clock))
+  /. 1e9
 
 (* Start times of [n] consecutive [Rate_limiter.run]s. *)
 let starts clock limiter n =
@@ -31,7 +33,7 @@ let fixed_window () =
         Rate_limiter.create ~sw ~clock (Fixed_window { n = 2; per = Duration.seconds 1 })
       in
       let base = now clock in
-      Eio.Time.sleep clock 0.9;
+      Eio.Time.Mono.sleep clock 0.9;
       check_floats "boundary burst"
         [ base +. 0.9; base +. 0.9; base +. 1.; base +. 1. ]
         (starts clock limiter 4))
@@ -42,7 +44,7 @@ let sliding_window () =
         Rate_limiter.create ~sw ~clock
           (Sliding_window { n = 2; per = Duration.seconds 1 })
       in
-      Eio.Time.sleep clock 0.9;
+      Eio.Time.Mono.sleep clock 0.9;
       check_floats "never more than n in any interval of length per"
         [ 0.9; 0.9; 1.9; 1.9 ] (starts clock limiter 4);
       let limiter =
@@ -51,7 +53,7 @@ let sliding_window () =
       in
       let base = now clock in
       let first = Rate_limiter.run limiter (fun () -> now clock) in
-      Eio.Time.sleep clock 0.4;
+      Eio.Time.Mono.sleep clock 0.4;
       let rest = starts clock limiter 2 in
       check_floats "each permit returns per after its own start"
         [ base; base +. 0.4; base +. 1.0 ]
@@ -65,7 +67,7 @@ let token_bucket () =
       in
       check_floats "a full bucket bursts, then one per refill" [ 0.; 0.; 0.; 0.1; 0.2 ]
         (starts clock limiter 5);
-      Eio.Time.sleep clock 5.0;
+      Eio.Time.Mono.sleep clock 5.0;
       let base = now clock in
       check_floats "idle time refills to capacity and no further"
         [ base; base; base; base +. 0.1 ]
@@ -86,7 +88,7 @@ let run_or_drop () =
       check_bool "second is dropped" true (attempt () = None);
       check_int "a dropped operation is not run" 1 !ran;
       check_float "dropping did not wait" 0. (now clock);
-      Eio.Time.sleep clock 1.0;
+      Eio.Time.Mono.sleep clock 1.0;
       check_bool "next window admits again" true (attempt () = Some 2))
 
 let run_passes_results_through () =
@@ -115,12 +117,12 @@ let waiting_is_cancellable () =
             Rate_limiter.run limiter (fun () -> ());
             `Ran)
           (fun () ->
-            Eio.Time.sleep clock 1.0;
+            Eio.Time.Mono.sleep clock 1.0;
             `Cancelled)
       in
       check_bool "the waiter was cancelled while waiting" true (outcome = `Cancelled);
       check_float "the cancel came at 1s" 1.0 (now clock);
-      Eio.Time.sleep clock 9.0;
+      Eio.Time.Mono.sleep clock 9.0;
       check_bool "the cancelled wait consumed no permit" true
         (Rate_limiter.run_or_drop limiter (fun () -> ()) = Some ());
       check_bool "and the window holds n" true
@@ -164,11 +166,11 @@ let custom_algorithm () =
               else Rate_limiter.Wait (Duration.ms (1000 - into)));
         }
       in
-      Eio.Time.sleep clock 3.0;
+      Eio.Time.Mono.sleep clock 3.0;
       let limiter = Rate_limiter.create ~sw ~clock (Custom make) in
-      check_int "built once, with the clock's time at creation" 3000 !created_at;
+      check_int "^safe-8peq built once at local monotonic origin" 0 !created_at;
       let base = now clock in
-      Eio.Time.sleep clock 0.3;
+      Eio.Time.Mono.sleep clock 0.3;
       let granted = Rate_limiter.run limiter (fun () -> now clock) in
       check_float "the algorithm's own waiting decides" (base +. 1.0) granted;
       check_bool "asked again after the wait, not polled" true (!calls = 2))
@@ -335,7 +337,7 @@ let select_default () =
 
 let select_timeout () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock in
+      let clock = env#mono_clock in
       Eio.Switch.run (fun sw ->
           let a : (int, string) Channel.t = Channel.create () in
           let timeout ms =
@@ -345,10 +347,8 @@ let select_timeout () =
             (Select.select [ recv_a a; timeout 100 ] = Timed_out);
           check_float "after exactly the timeout" 0.1 (now clock);
           Eio.Fiber.fork ~sw (fun () ->
-              Eio.Time.sleep clock 0.05;
-              (* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-              let _send_result = Channel.send a 3 in
-              ());
+              Eio.Time.Mono.sleep clock 0.05;
+              check_bool "scripted channel send succeeds" true (Channel.send a 3 = Ok ()));
           let start = now clock in
           check_bool "a value before the deadline wins" true
             (Select.select [ recv_a a; timeout 100 ] = A 3);
@@ -395,7 +395,7 @@ let select_closed () =
 
 let select_cancellation_and_misuse () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock in
+      let clock = env#mono_clock in
       let a : (int, string) Channel.t = Channel.create () in
       let outcome =
         Eio.Fiber.first
@@ -403,7 +403,7 @@ let select_cancellation_and_misuse () =
             ignore (Select.select [ recv_a a ]);
             `Fired)
           (fun () ->
-            Eio.Time.sleep clock 1.0;
+            Eio.Time.Mono.sleep clock 1.0;
             `Cancelled)
       in
       check_bool "cancelling a blocked select" true (outcome = `Cancelled);
@@ -560,14 +560,15 @@ let durations ~(caps : < Ox_caps.Cap.fs_read ; .. >) () =
       let clock = env#clock in
       Eio.Switch.run (fun sw ->
           ignore
-            (Rate_limiter.create ~sw ~clock (Fixed_window { n = 1; per = Duration.ms 5 })));
+            (Rate_limiter.create ~sw ~clock:env#mono_clock
+               (Fixed_window { n = 1; per = Duration.ms 5 })));
       check_bool "timeout" true
         (Timeout.timeout ~clock (Duration.ms 5) (fun () ->
              Eio.Time.sleep clock 1.;
              (Ok () : (unit, [> `Timeout ]) result))
         = Error `Timeout);
       check_bool "retry sleeps a Duration" true
-        (Retry.retry ~clock (Schedule.recurs 1) (fun () ->
+        (Retry.retry ~clock:env#mono_clock (Schedule.recurs 1) (fun () ->
              (Error () : (unit, unit) result))
         = Error ()));
   (* no public interface of the tree takes a bare float for a delay, deadline, interval or timeout *)

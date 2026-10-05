@@ -1,4 +1,4 @@
-(** Cancellation and finalizers: Suspension: may suspend in Eio.Time.sleep, caller
+(** Cancellation and finalizers: Suspension: may suspend in Eio.Time.Mono.sleep, caller
     thunks, policy callbacks and schedule callbacks. Cancellation: propagates Eio.Cancel.Cancelled from the
     sleep and caller callbacks; the delegated Schedule driver can raise Invalid_argument
     on ordinal overflow or invalid numeric schedule output. Finalizers: no switch or cleanup hook is created;
@@ -22,7 +22,7 @@ val default_policy : ('a, 'e) policy
     behaviour of {!retry} without a policy. *)
 
 val retry :
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   ?policy:('a, 'e) policy ->
   (('a, 'e) result, 'o) Schedule.t ->
   (unit -> ('a, 'e) result) @ local ->
@@ -32,12 +32,17 @@ val retry :
     attempt's [result]) whether to continue, sleeps the schedule's delay on [clock] and
     runs again. When the schedule ends the last attempt's result is returned unchanged,
     [Ok] included. Jittered schedules capture their required random source when
-    constructed. Sleeping is promptly cancellable; no switch or finalizer is created. *)
+    constructed. [clock] is monotonic: the driver receives elapsed milliseconds from
+    this call's origin, not wall timestamps, with sub-millisecond spans truncated after
+    native subtraction. Sleeping is promptly cancellable; no switch or finalizer is
+    created. ^safe-p9cw ^safe-8peq *)
 
 val repeat :
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   ('a, 'o) Schedule.t ->
   (unit -> ('a, 'e) result) @ local ->
   ('o, 'e) result
 (** Run the thunk, feeding each [Ok] to the schedule, until it ends; an [Error] returns at
-    once. Sleeping uses only the supplied clock and is promptly cancellable. *)
+    once. Schedule time is elapsed milliseconds from this call's monotonic origin, as
+    for {!retry}. Sleeping uses only the supplied monotonic clock and is promptly
+    cancellable. ^safe-p9cw ^safe-8peq *)

@@ -43,13 +43,16 @@ val default_clause : (unit -> 'r) -> 'r clause
 (** Fires at once when no channel clause is ready, without waiting. At most one per
     {!select}. *)
 
-val timeout_clause : clock:_ Eio.Time.clock -> Duration.t -> (unit -> 'r) -> 'r clause
+val timeout_clause : clock:_ Eio.Time.Mono.t -> Duration.t -> (unit -> 'r) -> 'r clause
 (** Fires when no channel clause has become ready [Duration.t] after the {!select} began,
-    measured on [clock]; a ready channel clause always wins over an expired timeout. At
-    most one per {!select}. Suspension: never suspends; this call only reads or constructs
-    OCaml values. Cancellation: not a cancellation point; this call performs no Eio
-    cancellation check. Finalizers: none are registered by this call; existing resource
-    ownership is unchanged. Locking: no lock is acquired by this call. ^nlintd-a7oq *)
+    measured on the monotonic [clock]. A single native deadline is pinned on the first
+    blocking probe and is not reset by channel wakeups; a ready channel clause always wins
+    over an expired timeout. Wall corrections do not change the deadline. ^safe-p9cw
+    ^safe-8peq At most one per {!select}. Suspension: never suspends; this call only reads
+    or constructs OCaml values. Cancellation: not a cancellation point; this call performs
+    no Eio cancellation check. Finalizers: none are registered by this call; existing
+    resource ownership is unchanged. Locking: no lock is acquired by this call.
+    ^nlintd-a7oq *)
 
 val select : 'r clause list -> 'r
 (** [select clauses] blocks until a clause fires and returns its handler's result. A
@@ -65,11 +68,12 @@ val receive : ('a, 'e) Channel.t list -> ('a, 'e Channel.closed) result
     @raise Invalid_argument
       on an empty list. Suspension: may suspend waiting for a channel change; losing
       waiters are cancelled and joined before probing again; delegated callback dispatch
-      and Eio, Stdlib, Stdlib.Array, Stdlib.List operations retain their own behaviour.
-      Cancellation: propagates from the condition waits and Eio.Fiber.any; delegated
-      callback dispatch and Eio, Stdlib, Stdlib.Array, Stdlib.List operations retain their
-      own behaviour. Cancellation safety: safe to re-run; waiting branches only observe
-      queue changes, and the selected nonblocking receive does not suspend after taking an
-      item. Finalizers: the temporary Eio.Fiber.any scope joins its waiters before return;
-      no caller-switch hook is registered. Locking: channel probes hold no mutex; the
-      rotation cursor uses an atomic update. ^nlintd-a7oq *)
+      and Eio, Mtime, Mtime.Span, Stdlib, Stdlib.Array, Stdlib.List operations retain
+      their own behaviour. Cancellation: propagates from the condition waits and
+      Eio.Fiber.any; delegated callback dispatch and Eio, Mtime, Mtime.Span, Stdlib,
+      Stdlib.Array, Stdlib.List operations retain their own behaviour. Cancellation
+      safety: safe to re-run; waiting branches only observe queue changes, and the
+      selected nonblocking receive does not suspend after taking an item. Finalizers: the
+      temporary Eio.Fiber.any scope joins its waiters before return; no caller-switch hook
+      is registered. Locking: channel probes hold no mutex; the rotation cursor uses an
+      atomic update. ^nlintd-a7oq *)

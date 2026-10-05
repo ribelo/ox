@@ -78,11 +78,18 @@ let make_algorithm config ~now_ms =
 
 let create ~sw ~clock config =
   Eio.Switch.check sw;
-  let now_ms () = int_of_float (Float.round (Eio.Time.now clock *. 1000.)) in
+  (* ^safe-p9cw ^safe-8peq: the custom and built-in algorithms share local
+     monotonic milliseconds, truncated only after exact nanosecond subtraction. *)
+  let origin = Eio.Time.Mono.now clock in
+  let now_ms () =
+    Mtime.span origin (Eio.Time.Mono.now clock)
+    |> Mtime.Span.to_uint64_ns
+    |> fun ns -> Int64.to_int (Int64.unsigned_div ns 1_000_000L)
+  in
   {
-    algorithm = make_algorithm config ~now_ms:(now_ms ());
+    algorithm = make_algorithm config ~now_ms:0;
     now_ms;
-    sleep = (fun d -> Eio.Time.sleep clock (Duration.to_seconds d));
+    sleep = (fun d -> Eio.Time.Mono.sleep clock (Duration.to_seconds d));
     lock = Eio.Mutex.create ();
   }
 

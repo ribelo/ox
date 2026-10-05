@@ -10,7 +10,7 @@ let schedule_variants () =
       let check name schedule expected_time =
         let start = Eio.Time.now clock and tries = ref 0 in
         let result =
-          Retry.retry ~clock
+          Retry.retry ~clock:env#mono_clock
             (Schedule.both (Schedule.recurs 3) schedule)
             (fun () ->
               incr tries;
@@ -31,7 +31,7 @@ let schedule_variants () =
         0.03;
       let seen = ref [] in
       let result =
-        Retry.retry ~clock
+        Retry.retry ~clock:env#mono_clock
           (Schedule.recur_until (function Error err -> err >= 1 | Ok _ -> false))
           (fun () ->
             let n = List.length !seen + 1 in
@@ -46,7 +46,7 @@ let failure_schedules () =
       let clock = env#clock in
       let successes = ref [] in
       let result =
-        Retry.repeat ~clock
+        Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 3)))
           (fun () ->
             let n = List.length !successes + 1 in
@@ -59,7 +59,7 @@ let failure_schedules () =
       let result =
         Scope.run (fun _ ->
             Timeout.timeout ~clock (Duration.ms 12) (fun () ->
-                Retry.retry ~clock
+                Retry.retry ~clock:env#mono_clock
                   (Schedule.spaced (Duration.ms 10))
                   (fun () ->
                     incr tries;
@@ -72,7 +72,7 @@ let failure_schedules () =
       tries := 0;
       (match
          Scope.run (fun _ ->
-             Retry.retry ~clock (Schedule.recurs 5) (fun () ->
+             Retry.retry ~clock:env#mono_clock (Schedule.recurs 5) (fun () ->
                  incr tries;
                  raise (Eio.Cancel.Cancelled (Failure "external"))))
        with
