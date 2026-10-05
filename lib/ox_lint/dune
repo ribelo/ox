@@ -37,6 +37,27 @@
  (package ox_lint)
  (section share)
  (files
+  (../../docs/rules/ox-assertion-effects.md
+   as
+   docs/rules/ox-assertion-effects.md)
+  (../../test/lint/clean/assertion_effects.ml
+   as
+   test/lint/clean/assertion_effects.ml)
+  (../../test/lint/clean/assertion_effects.mli
+   as
+   test/lint/clean/assertion_effects.mli)
+  (../../test/lint/violating/assertion_effects.ml
+   as
+   test/lint/violating/assertion_effects.ml)
+  (../../test/lint/violating/assertion_effects.mli
+   as
+   test/lint/violating/assertion_effects.mli)
+  (../../test/lint/safety_assertion_effects/evidence/opaque.ml
+   as
+   test/lint/safety_assertion_effects/evidence/opaque.ml)
+  (../../test/lint/safety_assertion_effects/evidence/opaque.mli
+   as
+   test/lint/safety_assertion_effects/evidence/opaque.mli)
   (../../docs/rules/ox-io-count.md as docs/rules/ox-io-count.md)
   (../../test/lint/clean/io_count.ml as test/lint/clean/io_count.ml)
   (../../test/lint/clean/io_count.mli as test/lint/clean/io_count.mli)

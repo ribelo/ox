@@ -257,6 +257,8 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/policy_exception.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/assertion_effects.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/assertion_effects.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/interface_docs.cmt

@@ -137,6 +137,10 @@ let all ~caps =
       evidence_rule "io-count"
         "I/O byte count discarded; handle stream progress or preserve datagram semantics"
         (fun ~emit ~undecided:_ artifact -> visit (Io_count.check ~caps ~emit) artifact);
+      evidence_rule "assertion-effects"
+        "required work hidden in an assertion; perform it before checking the invariant"
+        (fun ~emit ~undecided artifact ->
+          visit (Assertion_effects.check ~caps ~emit ~undecided) artifact);
       evidence_rule "constant-index"
         "proved out-of-bounds constant index; correct the index or check bounds"
         (fun ~emit ~undecided:_ artifact ->

@@ -155,6 +155,8 @@ lib/ox/supervisor.ml lib/ox/.ox.objs/byte/ox__Supervisor.cmt
 lib/ox/supervisor.mli lib/ox/.ox.objs/byte/ox__Supervisor.cmti
 lib/ox/timeout.ml lib/ox/.ox.objs/byte/ox__Timeout.cmt
 lib/ox/timeout.mli lib/ox/.ox.objs/byte/ox__Timeout.cmti
+lib/ox_lint/assertion_effects.ml lib/ox_lint/.lint_engine.objs/byte/assertion_effects.cmt
+lib/ox_lint/assertion_effects.mli lib/ox_lint/.lint_engine.objs/byte/assertion_effects.cmti
 lib/ox_lint/artifact.ml lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
 lib/ox_lint/artifact.mli lib/ox_lint/.lint_engine.objs/byte/artifact.cmti
 lib/ox_lint/caps.ml lib/ox_lint/.lint_engine.objs/byte/caps.cmt
