@@ -682,13 +682,13 @@ let gen_structure_decl env mode (decl : Parsetree.type_declaration) :
           encoder;
           Printf.sprintf
             "ppx_yojson_decode_%s (_ppx_yojson_path : string) (_ppx_yojson_json : \
-             Yojson.Safe.t) : (%s, string) result = %s"
+             Yojson.Safe.t) : (%s, string) Stdlib.result = %s"
             name name decoded;
         ],
         [
           Printf.sprintf
-            "let %s_of_yojson (_ppx_yojson_json : Yojson.Safe.t) : (%s, string) result = \
-             ppx_yojson_decode_%s %S _ppx_yojson_json"
+            "let %s_of_yojson (_ppx_yojson_json : Yojson.Safe.t) : (%s, string) \
+             Stdlib.result = ppx_yojson_decode_%s %S _ppx_yojson_json"
             name name name name;
         ] )
 
@@ -710,7 +710,8 @@ let gen_signature_decl env mode (decl : Parsetree.type_declaration) : string lis
   | Bidirectional ->
       [
         encoder;
-        Printf.sprintf "val %s_of_yojson : Yojson.Safe.t -> (%s, string) result" name name;
+        Printf.sprintf "val %s_of_yojson : Yojson.Safe.t -> (%s, string) Stdlib.result"
+          name name;
       ]
 
 let prelude =
