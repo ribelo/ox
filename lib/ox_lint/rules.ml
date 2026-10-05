@@ -171,10 +171,15 @@ let all ~caps =
         typed = None;
         evidence = None;
       };
-      concurrency_rule "obj-magic"
-        "unchecked Obj.magic* cast; use a typed representation (no shipped cast \
-         exceptions)"
-        (Concurrency.obj_magic ~caps);
+      (let message =
+         "unchecked Obj.magic* cast; use a typed representation outside the verified \
+          affine adapter"
+       in
+       evidence_rule "obj-magic" message (fun ~emit ~undecided artifact ->
+           let report loc = emit loc message in
+           visit
+             (Concurrency.obj_magic_artifact ~caps ~artifact ~undecided report)
+             artifact));
       concurrency_rule "race-deadline"
         (* ^nmono-m4tg *)
         "use Ox.Timeout.timeout (wall clock) or Ox.Timeout.timeout_mono (monotonic \

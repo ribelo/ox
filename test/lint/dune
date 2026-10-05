@@ -225,6 +225,8 @@
   ../../lib/ox/.ox.objs/byte/ox__Exit.cmti
   ../../lib/ox/.ox.objs/byte/ox__Interrupt_id.cmt
   ../../lib/ox/.ox.objs/byte/ox__Interrupt_id.cmti
+  ../../lib/ox/.ox.objs/byte/ox__Once.cmt
+  ../../lib/ox/.ox.objs/byte/ox__Once.cmti
   ../../lib/ox/.ox.objs/byte/ox__Rate_limiter.cmt
   ../../lib/ox/.ox.objs/byte/ox__Rate_limiter.cmti
   ../../lib/ox/.ox.objs/byte/ox__Resource.cmt

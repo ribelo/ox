@@ -1,6 +1,6 @@
 # OxCaml mode decisions
 
-This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means the existing unrestricted callback parameter; it does **not** prove domain portability. The table records every public function with a closure argument in current interfaces (nmodes-d2rn, nmodes-8t8v, nmodes-8y46).
+This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means heap-compatible lifetime, independently of affinity; it does **not** prove domain portability. The closure-linearity inventory below distinguishes once from many. The table records every public function with a closure argument in current interfaces (nmodes-d2rn, nmodes-8t8v, nmodes-8y46).
 
 | Public function | Callback decision and reason |
 | --- | --- |
@@ -13,11 +13,11 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Ox.Timeout.timeout` | **Global**; forwarded to `Eio.Time.with_timeout`, whose signature does not accept `local`. |
 | `Ox.Scope.run` | **Global**; forwarded to `Eio.Switch.run`, whose signature does not accept `local`. |
 | `Ox.Observability.Context.with_fields` | **Global**; forwarded to `Eio.Fiber.with_binding`, whose signature does not accept `local`. |
-| `Ox.Concurrent.race, race_first, par, both, all, for_each, with_background` | **Global**; tasks run in Eio fibers (`Fiber.both`/`all`/`any`, `Fiber.List.map`), which take unmoded closures, and outlive the invocation of the spawning function. |
-| `Ox.Scope.supervised_error, fork_error, fork, fork_daemon, fork_error_daemon, exit_on_error` | **Global**; `supervised_error`'s body is forwarded to `Eio.Switch.run` and every fork thunk to `Eio.Fiber.fork`, both unmoded; `exit_on_error`'s body receives a closure that forks are expected to keep. |
-| `Ox.Rate_limiter.run, run_or_drop` | **Local**; the operation runs in place in the calling fiber after the permit is granted and is not retained (compiled against `@ local`). |
+| `Ox.Concurrent.race, race_first, par, both, all, with_background` | **Global once**; branches cross retained Eio fiber callbacks through the permanent global guard. Combinators join as their implementation specifies; affinity alone does not guarantee entry. `for_each` remains **global many** because its mapper runs once per item. |
+| `Ox.Scope.supervised_error, exit_on_error` | **Global many**; scope bodies cross upstream reusable callback signatures. `fork_error`, `fork`, `fork_daemon`, `fork_error_daemon` and `on_release` accept **global once** callbacks and retain only global guarded wrappers. |
+| `Ox.Rate_limiter.run, run_or_drop` | **Local once**; the operation runs directly in the calling fiber after a permit and is not retained. A refused permit or cancellation can prevent entry. |
 | `Ox.Rate_limiter.algorithm` record, `Custom` factory | **Global**; the algorithm's `try_acquire` is stored in the limiter for every later permit. |
-| `Ox.Resource.use_in_scope, use_closeable_in_scope` | `acquire` **local** (run in place); `release` **global**, stored on the switch until it ends. |
+| `Ox.Resource.use_in_scope, use_closeable_in_scope` | `acquire` **local once**, called directly; `release` **global once**, retained as a guarded global closure on the switch until it ends. |
 | `Ox.Select.receive_clause, send_clause, default_clause, timeout_clause` | **Global**; the handler is stored in the clause until the select fires or is cancelled. |
 | `Ox_app.run_simple` | **Global**; the program is forwarded to `run`, which stores it (see `Ox_app.run` above). |
 | `Ox.Schedule.recur_until, modify_delay, while_output` | **Global**; predicates and delay transformation are stored inside the schedule for future steps. |
@@ -34,6 +34,28 @@ This pass uses OxCaml 5.4.0+ox and the pinned Eio interfaces. “Global” means
 | `Ox.Agent.create ~init; get, update, get_and_update, cast, update_result, get_and_update_result ~fn` | **Global**; `init` is stored until the owner fiber runs it, and every `fn` is stored in a mailbox request until the owner runs it, possibly after the caller was cancelled (nactor-75ef). |
 | `Ox_caps.Cap_unix, Cap_sys, Cap_stdlib` (every wrapper's `~caps`); `Ox_process.Child.spawn ~caps` | **Global** argument, never retained. A `@ local` capability parameter was compiled first and refused in use: a partial application such as `~getenv:(Cap_sys.getenv_opt ~caps)` then became a local closure ("This value is local but is expected to be global" at Leash's `Config.validate`), and `Cap_stdlib.printf ~caps fmt a b` needed a separate application. A `@ local` closure (`Rate_limiter.run`, `Resource.use_in_scope`'s acquire) still captures a global capability and calls a wrapper (`test/caps`, ^ncaps-4btv). The `with_open_*` callbacks are global (not narrowed in this row). Capabilities are objects and do not cross into a `portable` closure (^ncaps-vlwm). |
 | `Ox.Supervisor.child, template ~start; Supervisor.start ~on_event` | **Global**; the start function is retained for every restart and `on_event` for the supervisor's lifetime; the child runs on its own Eio fiber (nactor-d120). |
+
+## Closure-linearity inventory (nonce-lrzq)
+
+Affinity means a closure can be used at most once; it can still be dropped. It
+proves neither must-run nor must-close, timely release, or domain portability.
+
+| Public control | Native closure contract | Reason |
+| --- | --- | --- |
+| `Ox.Once.guard` | **Global once**, returns **global many** | A permanent atomic claim enters caller code at most once, including defects and cancellation. Only global captures are accepted. |
+| `Ox.Scope.fork, fork_error, fork_daemon, fork_error_daemon` | **Global once** | Eio retains fork callbacks; the guard transfers affine captures to its global heap closure. |
+| `Ox.Scope.on_release` | **Global once** | Eio retains the guarded release until the switch ends, or invokes it immediately when already finished. No cleanup obligation is created by affinity. |
+| `Ox.Concurrent.par, both, all, race, race_first, with_background` | **Global once** branches; collection spine **once** | Guard each retained branch before using Eio's reusable callback APIs. Cancellation can prevent entry. |
+| `Ox.Resource.use_in_scope` | Acquire **local once**; release **global once** | Acquire is called directly in the caller's lifetime. Only the release is retained on the switch. |
+| `Ox.Resource.use_closeable_in_scope` | Acquire **local once** | Acquire runs directly; the returned global resource is closed by the switch's retained release. |
+| `Ox.Rate_limiter.run, run_or_drop` | **Local once** | Direct callback entry only after a permit; refusal or cancellation may drop it. No callback is stored in a heap guard. |
+| `Ox.Retry.retry, repeat`; `Ox.Concurrent.for_each`; limiter `Custom` factory/algorithm; supervised `start` and scope `run, supervised_error, exit_on_error` | **Many**, retaining the locality decisions above | Retry/mapper/Custom/start can be invoked repeatedly, while the scope bodies cross upstream many-callback signatures without an affine adapter. No new one-shot promise is made. |
+
+Native consumers and refusals have authored interface peers in
+[the global/direct-local controls](<../test/core/safety_once_global/compile_fail/check.sh>).
+Local captures into the global guard or a fork are compiler errors. There is no
+unrooted local-to-global primitive and no local mutex/cancellation bridge; those
+require an independent lifetime/rooting design, not source pins or these tests.
 
 ## Typed errors across a fork (nsup-hje5)
 

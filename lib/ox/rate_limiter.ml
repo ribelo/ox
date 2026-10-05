@@ -97,7 +97,8 @@ let acquire t =
   Eio.Mutex.use_rw ~protect:true t.lock (fun () ->
       t.algorithm.try_acquire ~now_ms:(t.now_ms ()))
 
-let run t (f @ local) =
+(* ^nonce-lrzq: waiting never duplicates the in-place callback. *)
+let run t (f @ local once) =
   let rec wait_for_permit () =
     match acquire t with
     | Granted -> ()
@@ -108,5 +109,5 @@ let run t (f @ local) =
   wait_for_permit ();
   f ()
 
-let run_or_drop t (f @ local) =
+let run_or_drop t (f @ local once) =
   match acquire t with Granted -> Some (f ()) | Wait _ -> None

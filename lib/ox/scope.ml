@@ -149,7 +149,9 @@ let supervised_error ~sw f =
           | Ok value -> value
           | Error e -> raise (ended e)))
 
-let fork_error t f =
+(* ^nonce-r7mi: retained Eio callbacks cross the guarded boundary. *)
+let fork_error t (f @ once) =
+  let f = Once.guard f in
   let promise, resolve = Eio.Promise.create () in
   Eio.Fiber.fork ~sw:t.sw (fun () ->
       let result = f () in
@@ -157,15 +159,20 @@ let fork_error t f =
       match result with Ok _ -> () | Error e -> raise (t.ended e));
   promise
 
-let fork t f = Eio.Fiber.fork ~sw:t.sw f
+let fork t (f @ once) = Eio.Fiber.fork ~sw:t.sw (Once.guard f)
 
-let fork_daemon t f =
+let fork_daemon t (f @ once) =
+  let f = Once.guard f in
   Eio.Fiber.fork_daemon ~sw:t.sw (fun () ->
       f ();
       `Stop_daemon)
 
-let fork_error_daemon t f =
+let fork_error_daemon t (f @ once) =
+  let f = Once.guard f in
   Eio.Fiber.fork_daemon ~sw:t.sw (fun () ->
       match f () with Ok () -> `Stop_daemon | Error e -> raise (t.ended e))
+
+(* ^nonce-4jzx: Eio retains releases beyond this call. *)
+let on_release t (release @ once) = Eio.Switch.on_release t.sw (Once.guard release)
 
 let await = Eio.Promise.await

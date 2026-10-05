@@ -1,0 +1,3 @@
+(library
+ (name global_alias_controls)
+ (modules alias_controls))

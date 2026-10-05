@@ -34,6 +34,32 @@ val obj_magic :
   caps:< Ox_caps.Cap.fs_read ; .. > -> (Location.t -> unit) -> Tast_iterator.iterator
 (** All values named magic* originating in Stdlib.Obj; ^nlintc-7be1. *)
 
+val obj_magic_artifact :
+  caps:< Ox_caps.Cap.fs_read ; .. > ->
+  artifact:Artifact.t ->
+  undecided:(Location.t -> string -> unit) ->
+  (Location.t -> unit) ->
+  Tast_iterator.iterator
+(** Admit only the exact physical cast in the verified global atomic guard. Any
+    candidate's missing or contradictory native/source/peer evidence is undecided;
+    ordinary casts remain findings. No local callback conversion.
+
+    Suspension: never suspends in Eio itself; synchronous compiler/filesystem work may
+    block the domain; operations delegate to Stdlib, Ox_caps, Env, Envaux, Longident,
+    Path, Cmi_format, Cmt_format, Compilation_unit, Ctype, Import_info, Load_path, Shape,
+    Types, Unix and their higher-order callbacks; capability object method dispatch and
+    returned visitor calls depend on the provider and caller-provided [emit] and
+    [undecided]. Cancellation: not a cancellation point in Eio itself; operations delegate
+    to Stdlib, Ox_caps, Env, Envaux, Longident, Path, Cmi_format, Cmt_format,
+    Compilation_unit, Ctype, Import_info, Load_path, Shape, Types, Unix and their
+    higher-order callbacks; capability object method dispatch depends on the supplied
+    provider; returned visitor calls depend on caller code. Raises: [Failure] on
+    unavailable or contradictory imported compiler evidence; filesystem and compiler-libs
+    failures and caller callback exceptions propagate. Finalizers: none are registered.
+    Locking: compiler/Stdlib synchronization is delegated; initialize and traverse only
+    with the matching compiler environment; the visitor must not be shared across
+    simultaneous walks. ^nonce-ldtz ^nonce-mjpe *)
+
 val race_deadline :
   caps:< Ox_caps.Cap.fs_read ; .. > -> (Location.t -> unit) -> Tast_iterator.iterator
 (** A race branch containing a known sleep; ^nlintc-4gjw. *)
