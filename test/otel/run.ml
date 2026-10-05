@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 module L = Ox_observability.Logger
 module O = Ox_otel
 
@@ -7,7 +8,12 @@ let json raw = Yojson.Safe.from_string raw
 let member name = Yojson.Safe.Util.member name
 let list json = Yojson.Safe.Util.to_list json
 let string json = Yojson.Safe.Util.to_string json
-let first name document = document |> member name |> list |> List.hd
+
+(* ^safe-bguw ^safe-3osb: required OTLP fixture parts never default to empty. *)
+let first name document =
+  match document |> member name |> list with
+  | head :: _ -> head
+  | [] -> Alcotest.failf "missing first OTLP %s fixture" name
 
 let contains haystack needle =
   let rec search index =
@@ -59,7 +65,9 @@ let metric_named name received =
   | None -> Alcotest.failf "no metric named %s on the wire" name
 
 let data_point metric field =
-  metric |> member field |> member "dataPoints" |> list |> List.hd
+  match metric |> member field |> member "dataPoints" |> list with
+  | head :: _ -> head
+  | [] -> Alcotest.failf "missing OTLP %s data point fixture" field
 
 let wire_encoding () =
   (* ^notel-z7dk: v1 OTLP resource/scope/span envelope and decimal ns strings. *)
@@ -85,7 +93,10 @@ let wire_encoding () =
   let resource = first "resourceSpans" doc in
   let attrs = resource |> member "resource" |> member "attributes" |> list in
   check_string "service identity" "nema"
-    (List.hd attrs |> member "value" |> member "stringValue" |> string);
+    ((match attrs with
+       | head :: _ -> head
+       | [] -> Alcotest.fail "missing otel/run fixture: attrs")
+    |> member "value" |> member "stringValue" |> string);
   let scope = first "scopeSpans" resource in
   let encoded = first "spans" scope in
   check_string "trace ID" span.trace_id (encoded |> member "traceId" |> string);
@@ -114,7 +125,11 @@ let wire_encoding () =
   check_string "message" "degraded"
     (row |> member "body" |> member "stringValue" |> string);
   let attrs = row |> member "attributes" |> list in
-  let retry = List.find (fun attr -> attr |> member "key" |> string = "retry") attrs in
+  let retry =
+    match List.find_opt (fun attr -> attr |> member "key" |> string = "retry") attrs with
+    | Some value -> value
+    | None -> Alcotest.fail "missing otel/run fixture: matching record"
+  in
   check_string "integer attribute encoded as OTLP intValue" "3"
     (retry |> member "value" |> member "intValue" |> string)
 
@@ -270,17 +285,28 @@ let instruments_stamp_points () =
   O.Meter.record durations 7.0;
   let points = List.rev !seen in
   Alcotest.(check int) "one point per measurement" 2 (List.length points);
-  let counter : O.Meter.point = List.nth points 0 in
+  let counter : O.Meter.point =
+    match points with
+    | value :: _ -> value
+    | _ -> Alcotest.fail "missing otel/run fixture: points element 0"
+  in
   check_string "the counter's name" "http.requests" counter.name;
   check_string "its unit" "{request}" counter.unit_;
   check_string "its description" "served" counter.description;
-  check_string "its attribute" "/query" (List.assoc "route" counter.attrs);
+  check_string "its attribute" "/query"
+    (match List.assoc_opt "route" counter.attrs with
+    | Some value -> value
+    | None -> Alcotest.fail "missing otel/run fixture: field route");
   Alcotest.(check bool)
     "a counter is monotonic" true
     (counter.kind = O.Meter.Counter { monotonic = true });
   Alcotest.(check bool) "recorded as a double" true (counter.value = O.Meter.Float 2.5);
   check_int "stamped by the meter's clock" 42 counter.ts_ms;
-  let sample : O.Meter.point = List.nth points 1 in
+  let sample : O.Meter.point =
+    match points with
+    | _ :: value :: _ -> value
+    | _ -> Alcotest.fail "missing otel/run fixture: points element 1"
+  in
   check_string "the histogram's name" "http.duration" sample.name;
   Alcotest.(check bool) "the sample value" true (sample.value = O.Meter.Float 7.0);
   Alcotest.(check bool)
@@ -320,7 +346,7 @@ let with_collector ?(status = 200) ?(refuse_traces = false) f =
           let port =
             match Eio.Net.listening_addr listener with
             | `Tcp (_, port) -> port
-            | _ -> assert false
+            | _ -> Alcotest.fail "expected TCP listening address in otel/run fixture"
           in
           let received = ref [] in
           Eio.Fiber.fork_daemon ~sw (fun () ->
@@ -434,8 +460,20 @@ let log_and_spans ~(caps : < Ox_caps.Cap.random ; .. >) () =
           !received
       in
       check_int "two completed spans" 2 (List.length spans);
-      let outer = List.find (fun row -> row |> member "name" |> string = "outer") spans in
-      let inner = List.find (fun row -> row |> member "name" |> string = "inner") spans in
+      let outer =
+        match
+          List.find_opt (fun row -> row |> member "name" |> string = "outer") spans
+        with
+        | Some value -> value
+        | None -> Alcotest.fail "missing otel/run fixture: matching record"
+      in
+      let inner =
+        match
+          List.find_opt (fun row -> row |> member "name" |> string = "inner") spans
+        with
+        | Some value -> value
+        | None -> Alcotest.fail "missing otel/run fixture: matching record"
+      in
       check_string "nested trace"
         (outer |> member "traceId" |> string)
         (inner |> member "traceId" |> string);
@@ -461,7 +499,10 @@ let release_exports_pending ~(caps : < Ox_caps.Cap.random ; .. >) () =
       let records = log_records !received in
       check_int "the record logged before the release" 1 (List.length records);
       check_string "the last message reached the collector" "last words"
-        (List.hd records |> member "body" |> member "stringValue" |> string))
+        ((match records with
+           | head :: _ -> head
+           | [] -> Alcotest.fail "missing otel/run fixture: records")
+        |> member "body" |> member "stringValue" |> string))
 
 (* ^notel-1stb: the exporter registers its own release hook when it is created, so a
    release hook registered later runs first (releases are LIFO) and the record it logs
@@ -482,7 +523,10 @@ let release_hook_records ~(caps : < Ox_caps.Cap.random ; .. >) () =
       let records = log_records !received in
       check_int "the record logged while stopping" 1 (List.length records);
       check_string "it reached the collector" "stopped"
-        (List.hd records |> member "body" |> member "stringValue" |> string))
+        ((match records with
+           | head :: _ -> head
+           | [] -> Alcotest.fail "missing otel/run fixture: records")
+        |> member "body" |> member "stringValue" |> string))
 
 (* ^notel-1stb: a consumer that registers shutdown with the switch's release no longer
    waits for the cancelled worker, and the ending it reads is the one the release
@@ -508,7 +552,12 @@ let shutdown_in_release ~(caps : < Ox_caps.Cap.random ; .. >) () =
       | Some (Error error) ->
           Alcotest.failf "shutdown in a release hook: %a" O.pp_error error
       | None -> Alcotest.fail "the release hook never ran");
-      (match O.shutdown (Option.get !opened) with
+      (match
+         O.shutdown
+           (match !opened with
+           | Some value -> value
+           | None -> Alcotest.fail "missing otel/run fixture: !opened")
+       with
       | Ok () -> ()
       | Error error -> Alcotest.failf "shutdown after the release: %a" O.pp_error error);
       let requests = List.length !received in
@@ -787,7 +836,11 @@ let counter_and_histogram_on_the_wire ~(caps : < Ox_caps.Cap.random ; .. >) () =
       exporter_ok (O.flush exporter);
       exporter_ok (O.shutdown exporter);
       check_int "metrics alone: one request" 1 (List.length !received);
-      let request = List.hd !received in
+      let request =
+        match !received with
+        | head :: _ -> head
+        | [] -> Alcotest.fail "missing otel/run fixture: !received"
+      in
       Alcotest.(check bool)
         "the metrics path" true
         (String.ends_with ~suffix:"/otlp/v1/metrics HTTP/1.1" request.target);
@@ -1163,7 +1216,11 @@ let inherited_context_on_spans_and_logs ~(caps : < Ox_caps.Cap.random ; .. >) ()
       check_string "a redacted log field stays redacted" "<redacted>"
         (string_attr correlated "token");
       let retry =
-        List.find (fun attr -> attr |> member "key" |> string = "retry") correlated
+        match
+          List.find_opt (fun attr -> attr |> member "key" |> string = "retry") correlated
+        with
+        | Some retry -> retry
+        | None -> Alcotest.fail "missing correlated OTLP retry attribute fixture"
       in
       check_string "an explicit log value keeps its integer type" "7"
         (retry |> member "value" |> member "intValue" |> string);

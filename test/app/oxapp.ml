@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Row 46, story ^nfloor-6n2e: every item of Ox's OxApp has a Door counterpart or a
    recorded reason not to. One case per item; the table of items is docs/design/ox-floor.md
    (section OxApp). Cases that need the real Door (Eio_main, argv, signals) spawn
@@ -43,8 +44,18 @@ let spawn_simple
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid simple fixture spawn"
           in
-          let stdout = Option.get (Ox_process.Child.stdout child) in
-          let stderr = Option.get (Ox_process.Child.stderr child) in
+          let stdout =
+            match Ox_process.Child.stdout child with
+            | Some value -> value
+            | None ->
+                Alcotest.fail "missing app/oxapp fixture: (Ox_process.Child.stdout child)"
+          in
+          let stderr =
+            match Ox_process.Child.stderr child with
+            | Some value -> value
+            | None ->
+                Alcotest.fail "missing app/oxapp fixture: (Ox_process.Child.stderr child)"
+          in
           let reader = Eio.Buf_read.of_flow ~max_size:4096 stdout in
           after_ready (child, reader, env#clock);
           let status =

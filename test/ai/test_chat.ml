@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Story tests for the chat client against the fake chat server (^nchat-kk3g).
 
    ^nchat-dys0: one call returns the first choice's content and usage. ^nchat-6kd8: the
@@ -31,7 +32,12 @@ let test_complete () =
       Alcotest.(check int) "total tokens" 14 completion.usage.total_tokens;
       Alcotest.(check (option string)) "request id" (Some "gen-chat-1") completion.id;
       Alcotest.(check int) "one connection" 1 (Chat_server.connections server);
-      let method_, headers, _ = Option.get (Chat_server.request server) in
+      let method_, headers, _ =
+        match Chat_server.request server with
+        | Some value -> value
+        | None ->
+            Alcotest.fail "missing ai/test_chat fixture: (Chat_server.request server)"
+      in
       Alcotest.(check string) "method" "POST" method_;
       Alcotest.(check (option string))
         "path" (Some Chat_server.path)
@@ -50,18 +56,21 @@ let test_complete () =
         (match member "max_tokens" body with `Int tokens -> Some tokens | _ -> None);
       let sent = list_of (member "messages" body) in
       Alcotest.(check int) "two messages" 2 (List.length sent);
+      let system_message, user_message =
+        match sent with
+        | system_message :: user_message :: _ -> (system_message, user_message)
+        | _ -> Alcotest.fail "missing encoded system/user message fixtures"
+      in
       Alcotest.(check string)
         "system role" "system"
-        (text_of (member "role" (List.nth sent 0)));
+        (text_of (member "role" system_message));
       Alcotest.(check string)
         "system content" "Answer with one JSON object."
-        (text_of (member "content" (List.nth sent 0)));
-      Alcotest.(check string)
-        "user role" "user"
-        (text_of (member "role" (List.nth sent 1)));
+        (text_of (member "content" system_message));
+      Alcotest.(check string) "user role" "user" (text_of (member "role" user_message));
       Alcotest.(check string)
         "user content" {|{"goal":"type ada"}|}
-        (text_of (member "content" (List.nth sent 1)));
+        (text_of (member "content" user_message));
       Alcotest.(check string)
         "the request is compact JSON" (Chat_server.body server)
         (Yojson.Safe.to_string body))
@@ -451,7 +460,12 @@ let test_fake_chat_server () =
         (List.length (Chat_server.requests server));
       Alcotest.(check string)
         "the client's path" Chat_server.path
-        (match Option.get (Chat_server.request server) with
+        (match
+           match Chat_server.request server with
+           | Some value -> value
+           | None ->
+               Alcotest.fail "missing ai/test_chat fixture: (Chat_server.request server)"
+         with
         | _, headers, _ -> Option.value (List.assoc_opt "host" headers) ~default:""))
 
 let test_usage_logged () =

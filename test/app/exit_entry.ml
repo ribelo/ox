@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* ^ncaps-0mvw ^nfloor-6n2e: returning and exiting Doors agree. *)
 type outcome = { code : int; stdout : string; stderr : string }
 
@@ -17,8 +18,20 @@ let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write 
             | Ok child -> child
             | Error _ -> Alcotest.fail "invalid exit fixture spawn"
           in
-          let stdout = Option.get (Ox_process.Child.stdout child) in
-          let stderr = Option.get (Ox_process.Child.stderr child) in
+          let stdout =
+            match Ox_process.Child.stdout child with
+            | Some value -> value
+            | None ->
+                Alcotest.fail
+                  "missing app/exit_entry fixture: (Ox_process.Child.stdout child)"
+          in
+          let stderr =
+            match Ox_process.Child.stderr child with
+            | Some value -> value
+            | None ->
+                Alcotest.fail
+                  "missing app/exit_entry fixture: (Ox_process.Child.stderr child)"
+          in
           let reader = Eio.Buf_read.of_flow ~max_size:4096 stdout in
           let status =
             Eio.Time.with_timeout_exn env#clock 10. (fun () ->

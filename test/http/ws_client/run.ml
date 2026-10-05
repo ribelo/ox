@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 module H = Ox_http
 module C = H.Ws_codec
 module W = H.Ws_client
@@ -24,7 +25,9 @@ let serve ?(tls = false) ?(observe_tls = fun _ -> ()) server test =
           let port =
             match Eio.Net.listening_addr listener with
             | `Tcp (_, port) -> port
-            | _ -> assert false
+            | _ ->
+                Alcotest.fail
+                  "expected TCP listening address in http/ws_client/run fixture"
           in
           Eio.Fiber.fork ~sw (fun () ->
               Eio.Switch.run (fun server_sw ->
@@ -74,7 +77,10 @@ let request flow =
   in
   (line, headers [], input)
 
-let header key headers = List.assoc key headers
+let header key headers =
+  match List.assoc_opt key headers with
+  | Some value -> value
+  | None -> Alcotest.fail "missing http/ws_client/run fixture: field key"
 
 let upgrade ?(status = 101) ?(accept = true) flow headers =
   let value =
@@ -176,7 +182,11 @@ let test_tls_close () =
          ignore (Eio.Buf_read.take 1 input);
          Alcotest.fail "expected TLS EOF"
        with End_of_file -> ());
-      let ssl = Option.get !peer_ssl in
+      let ssl =
+        match !peer_ssl with
+        | Some value -> value
+        | None -> Alcotest.fail "missing http/ws_client/run fixture: !peer_ssl"
+      in
       match
         H.Ox_http_tls_openssl.read ssl (Cstruct.to_bigarray (Cstruct.create 1)) 0 1
       with

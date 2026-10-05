@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 open Ox_rpc
 
 type message = { id : int option; session : string option; value : int }
@@ -74,8 +75,26 @@ let routing () =
         Eio.Fiber.fork_promise ~sw (fun () -> Correlator.call c (msg ~session:"B" 2))
       in
       wait_until (fun () -> List.length f.writes = 2);
-      let a_id = Option.get (List.find (fun m -> m.value = 1) f.writes).id in
-      let b_id = Option.get (List.find (fun m -> m.value = 2) f.writes).id in
+      let a_id =
+        match
+          (match List.find_opt (fun m -> m.value = 1) f.writes with
+          | Some value -> value
+          | None -> Alcotest.fail "missing rpc/run fixture: matching record")
+            .id
+        with
+        | Some value -> value
+        | None -> Alcotest.fail "missing RPC request message ID fixture"
+      in
+      let b_id =
+        match
+          (match List.find_opt (fun m -> m.value = 2) f.writes with
+          | Some value -> value
+          | None -> Alcotest.fail "missing rpc/run fixture: matching record")
+            .id
+        with
+        | Some value -> value
+        | None -> Alcotest.fail "missing RPC request message ID fixture"
+      in
       Alcotest.(check bool) "distinct IDs" true (a_id <> b_id);
       push f (msg 10);
       push f (msg ~id:a_id ~session:"B" 11);
@@ -127,7 +146,18 @@ let deadline () =
       | Error `Timeout -> ()
       | _ -> Alcotest.fail "expected timeout");
       Alcotest.(check int) "slot dropped" 0 (Correlator.stats c).pending;
-      push f (msg ~id:(Option.get (List.hd f.writes).id) 99);
+      push f
+        (msg
+           ~id:
+             (match
+                (match f.writes with
+                | head :: _ -> head
+                | [] -> Alcotest.fail "missing rpc/run fixture: f.writes")
+                  .id
+              with
+             | Some value -> value
+             | None -> Alcotest.fail "missing RPC request message ID fixture")
+           99);
       wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
       Alcotest.(check int)
         "late reply is notification" 99 (take_message (Correlator.notifications c)).value;
@@ -156,10 +186,25 @@ let cancellation () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       wait_until (fun () -> (Correlator.stats c).pending = 1 && !cancel <> None);
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "test cancelled request");
+      Eio.Cancel.cancel
+        (match !cancel with
+        | Some value -> value
+        | None -> Alcotest.fail "missing rpc/run fixture: !cancel")
+        (Failure "test cancelled request");
       Alcotest.(check bool) "interruption propagated" true (Eio.Promise.await_exn outcome);
       Alcotest.(check int) "cancelled slot removed" 0 (Correlator.stats c).pending;
-      push f (msg ~id:(Option.get (List.hd f.writes).id) 12);
+      push f
+        (msg
+           ~id:
+             (match
+                (match f.writes with
+                | head :: _ -> head
+                | [] -> Alcotest.fail "missing rpc/run fixture: f.writes")
+                  .id
+              with
+             | Some value -> value
+             | None -> Alcotest.fail "missing RPC request message ID fixture")
+           12);
       wait_until (fun () -> (Correlator.stats c).buffered_notifications = 1);
       Alcotest.(check int)
         "late reply" 12 (take_message (Correlator.notifications c)).value;
@@ -197,7 +242,11 @@ let cancellation_mid_write () =
                 with Eio.Cancel.Cancelled _ -> true))
       in
       wait_until (fun () -> !started);
-      Eio.Cancel.cancel (Option.get !cancel) (Failure "cancelled mid-write");
+      Eio.Cancel.cancel
+        (match !cancel with
+        | Some value -> value
+        | None -> Alcotest.fail "missing rpc/run fixture: !cancel")
+        (Failure "cancelled mid-write");
       Alcotest.(check bool) "interruption propagated" true (Eio.Promise.await_exn outcome);
       Alcotest.(check bool) "frame written whole" true !finished;
       Correlator.close c)
@@ -263,11 +312,24 @@ let write_failure () =
       | _ -> Alcotest.fail "expected local write failure");
       Alcotest.(check int) "no retry" 1 (List.length f.writes);
       Alcotest.(check int) "slot removed" 0 (Correlator.stats c).pending;
-      f.on_write <- (fun sent -> push f (msg ~id:(Option.get sent.id) 42));
+      f.on_write <-
+        (fun sent ->
+          push f
+            (msg
+               ~id:
+                 (match sent.id with
+                 | Some value -> value
+                 | None -> Alcotest.fail "missing rpc/run fixture: sent.id")
+               42));
       check_reply 42 (Correlator.call c (msg 2));
       Alcotest.(check (list int))
         "fresh id after failure" [ 1; 2 ]
-        (List.map (fun m -> Option.get m.id) f.writes);
+        (List.map
+           (fun m ->
+             match m.id with
+             | Some value -> value
+             | None -> Alcotest.fail "missing rpc/run fixture: m.id")
+           f.writes);
       Correlator.close c)
 
 let () =
