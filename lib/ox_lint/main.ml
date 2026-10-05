@@ -239,7 +239,10 @@ let run
          if !paths = [] && not !self_check then invalid_arg "no PATH supplied; see --help";
          (* ^nlintcov-q6n2: named and discovered generated evidence share provenance. *)
          let typed_requested =
-           !require_typed || List.exists (fun r -> Option.is_some r.Rules.typed) rules
+           !require_typed
+           || List.exists
+                (fun r -> Option.is_some r.Rules.typed || Option.is_some r.evidence)
+                rules
          in
          let selections =
            List.rev !paths
@@ -436,12 +439,19 @@ let run
                  in
                  let rules = List.filter (Rules.applies ~root ~source) rules in
                  let decided = ref true in
-                 let emit_message rule loc message =
+                 let policy =
+                   Policy_exception.create
+                     ~root:
+                       (Option.value
+                          (Artifact.workspace ~caps (Filename.dirname (absolute source)))
+                          ~default:root)
+                     ~source
+                     ~known:(List.map (fun r -> r.Rules.id) (Rules.select ~caps []))
+                     ~enabled:(List.map (fun r -> r.Rules.id) rules)
+                 in
+                 let emit_diagnostic id loc message =
                    let key =
-                     ( source,
-                       loc.Location.loc_start.pos_lnum,
-                       loc.loc_start.pos_cnum,
-                       rule.Rules.id )
+                     (source, loc.Location.loc_start.pos_lnum, loc.loc_start.pos_cnum, id)
                    in
                    if not (Hashtbl.mem sites key) then begin
                      Hashtbl.add sites key ();
@@ -450,20 +460,28 @@ let run
                        if !inventory then Cap_stdlib.eprintf ~caps
                        else Cap_stdlib.printf ~caps
                      in
-                     print "%s:%d: %s: %s\n" source loc.loc_start.pos_lnum rule.id
+                     print "%s:%d: %s: %s\n" source loc.loc_start.pos_lnum id
                        (with_producer input message)
                    end
                  in
+                 let emit_message rule loc message =
+                   if not (Policy_exception.allows policy ~id:rule.Rules.id loc) then
+                     emit_diagnostic rule.id loc message
+                 in
                  let emit rule loc = emit_message rule loc rule.Rules.message in
                  Syntax.walk ~caps source (fun context iterator ->
-                     List.fold_left
-                       (fun iterator rule ->
-                         match rule.Rules.source with
-                         | Some make -> make (emit rule) context iterator
-                         | None -> iterator)
-                       iterator rules);
+                     Policy_exception.collect policy
+                       (List.fold_left
+                          (fun iterator rule ->
+                            match rule.Rules.source with
+                            | Some make -> make (emit rule) context iterator
+                            | None -> iterator)
+                          iterator rules));
                  if
-                   List.exists (fun rule -> Option.is_some rule.Rules.typed) rules
+                   List.exists
+                     (fun rule ->
+                       Option.is_some rule.Rules.typed || Option.is_some rule.evidence)
+                     rules
                    || !require_typed
                  then
                    begin try
@@ -473,17 +491,31 @@ let run
                        | None -> Artifact.find ~caps source
                      in
                      Artifact.check ~caps ~source t;
+                     Option.iter
+                       (fun filename -> Policy_exception.checked_source policy ~filename)
+                       t.info.cmt_sourcefile;
                      Artifact.setup ~caps t;
                      List.iter
                        (fun rule ->
-                         match rule.Rules.typed with
-                         | None -> ()
-                         | Some make -> (
-                             let iterator = make (emit rule) in
+                         Option.iter
+                           (fun make ->
+                             let iterator : Tast_iterator.iterator = make (emit rule) in
                              match t.info.cmt_annots with
                              | Implementation tree -> iterator.structure iterator tree
                              | Interface tree -> iterator.signature iterator tree
-                             | _ -> assert false))
+                             | _ -> assert false)
+                           rule.Rules.typed;
+                         Option.iter
+                           (fun check ->
+                             check ~emit:(emit_message rule)
+                               ~undecided:(fun loc message ->
+                                 decided := false;
+                                 fail ~typed:true input
+                                   (Failure
+                                      (Printf.sprintf "line %d: %s: %s"
+                                         loc.Location.loc_start.pos_lnum rule.id message)))
+                               t)
+                           rule.evidence)
                        rules;
                      match t.info.cmt_annots with
                      | Interface _
@@ -508,6 +540,8 @@ let run
                      decided := false;
                      fail ~typed:true input ex
                    end;
+                 Policy_exception.finish policy ~complete:!decided
+                   (emit_diagnostic "ox-policy-exception");
                  if !decided then record input "decided" ""
                end
              with ex -> fail ~typed:typed_requested ~fatal:true input ex)

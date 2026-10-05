@@ -26,14 +26,23 @@ type t = {
     Ast_iterator.iterator)
     option;
   typed : ((Location.t -> unit) -> Tast_iterator.iterator) option;
+  evidence :
+    (emit:(Location.t -> string -> unit) ->
+    undecided:(Location.t -> string -> unit) ->
+    Artifact.t ->
+    unit)
+    option;
 }
-(** Each rule owns its tier, replacement and evidence; ^nlint-emql. *)
+(** Each rule owns its tier, replacement and evidence. [evidence] runs only after source
+    freshness and compiler imports are checked; its [undecided] callback is never a
+    waivable finding. Legacy fixed-message visitors remain supported. ^nlint-emql
+    ^safe-fr73 ^safe-y047 *)
 
 val all : caps:< Ox_caps.Cap.fs_read ; .. > -> t list
 
 val allowances : (string * string * string) list
-(** The shipped per-rule allow-list is empty; retained for future explicit policy;
-    ^nlintc-j03j ^nlintc-7be1. *)
+(** The path-wide allow-list stays empty. Local checked policy decisions are handled by
+    [Policy_exception]; capability rules are never eligible. ^safe-pufa *)
 
 val dormant : t -> bool
 (** Registered but deliberately inactive; ^nlintcov-r3k8 ^nlint-r01u. *)

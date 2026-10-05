@@ -1,0 +1,18 @@
+(executable
+ (name test_identity_external)
+ (modules test_identity_external)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  positive/identity_external.ml
+  positive/identity_external.mli
+  positive/.identity_external_positive.objs/byte/identity_external_positive__Identity_external.cmt
+  positive/.identity_external_positive.objs/byte/identity_external_positive__Identity_external.cmti
+  negative/identity_external.ml
+  negative/identity_external.mli
+  negative/.identity_external_negative.objs/byte/identity_external_negative__Identity_external.cmt
+  negative/.identity_external_negative.objs/byte/identity_external_negative__Identity_external.cmti)
+ (action
+  (run ./test_identity_external.exe)))

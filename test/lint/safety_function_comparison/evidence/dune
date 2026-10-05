@@ -1,0 +1,34 @@
+(library
+ (name function_comparison_fixtures)
+ (modules bad good))
+
+(executable
+ (name runtime)
+ (modules runtime)
+ (libraries function_comparison_fixtures))
+
+(rule
+ (target bad.ml)
+ (deps ../../violating/function_comparison.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(rule
+ (target good.ml)
+ (deps ../../clean/function_comparison.ml)
+ (action
+  (copy %{deps} %{target})))
+
+; Public fixture interfaces retain the callable runtime witnesses.
+
+(rule
+ (target bad.mli)
+ (deps ../../violating/function_comparison.mli)
+ (action
+  (copy %{deps} %{target})))
+
+(rule
+ (target good.mli)
+ (deps ../../clean/function_comparison.mli)
+ (action
+  (copy %{deps} %{target})))

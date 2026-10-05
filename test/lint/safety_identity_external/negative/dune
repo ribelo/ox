@@ -1,0 +1,7 @@
+(copy_files ../../violating/identity_external.ml)
+
+(copy_files ../../violating/identity_external.mli)
+
+(library
+ (name identity_external_negative)
+ (modules identity_external))

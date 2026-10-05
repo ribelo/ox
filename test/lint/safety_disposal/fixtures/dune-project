@@ -1,0 +1,4 @@
+(lang dune 3.21)
+; ^safe-s6km ^safe-pufa: intentionally negative evidence is explicitly compiled, never default-gate application scope.
+(name lint_disposal_evidence)
+(formatting disabled)

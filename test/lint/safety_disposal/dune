@@ -1,0 +1,34 @@
+(executable
+ (name test_disposal)
+ (modules test_disposal)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps fixtures/forms.ml fixtures/.disposal_fixtures.objs/byte/forms.cmt)
+ (action
+  (run ./test_disposal.exe)))
+
+(rule
+ (alias runtest)
+ (deps
+  check.sh
+  fixtures/allow.ml
+  fixtures/stale.ml
+  fixtures/bad.ml
+  fixtures/blank.ml
+  fixtures/unknown.ml
+  fixtures/forbidden.ml
+  fixtures/absent.ml
+  fixtures/narrow.ml
+  fixtures/wildcard.ml
+  fixtures/list.ml
+  fixtures/placement.ml
+  fixtures/.disposal_fixtures.objs/byte/allow.cmt
+  fixtures/.disposal_fixtures.objs/byte/stale.cmt
+  fixtures/.disposal_fixtures.objs/byte/narrow.cmt
+  fixtures/.disposal_fixtures.objs/byte/forbidden.cmt)
+ (action
+  (chdir
+   fixtures
+   (run bash ../check.sh %{bin:ox-lint}))))

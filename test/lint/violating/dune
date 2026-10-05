@@ -3,6 +3,9 @@
 (library
  (name concurrency_violating)
  (modules
+  constant_index
+  function_comparison
+  identity_external
   catch_all
   suspending_finalizer
   stdlib_lock

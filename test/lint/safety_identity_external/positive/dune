@@ -1,0 +1,7 @@
+(copy_files ../../clean/identity_external.ml)
+
+(copy_files ../../clean/identity_external.mli)
+
+(library
+ (name identity_external_positive)
+ (modules identity_external))

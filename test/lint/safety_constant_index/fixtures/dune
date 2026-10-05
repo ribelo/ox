@@ -1,0 +1,4 @@
+(library
+ (name constant_index_fixture)
+ (wrapped false)
+ (modules fixture))

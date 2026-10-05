@@ -1,6 +1,5 @@
 (* ^nlint-hxar ^nlint-emql: the first typed rule, from the measured spike. *)
 open Ocaml_common
-open Typedtree
 
 type t = {
   id : string;
@@ -15,53 +14,15 @@ type t = {
     Ast_iterator.iterator)
     option;
   typed : ((Location.t -> unit) -> Tast_iterator.iterator) option;
+  evidence :
+    (emit:(Location.t -> string -> unit) ->
+    undecided:(Location.t -> string -> unit) ->
+    Artifact.t ->
+    unit)
+    option;
 }
 
-let env = Envaux.env_of_only_summary ~allow_missing_modules:false
-let lid names = Option.get (Longident.unflatten names)
-
-let discarded_result emit =
-  let initial = Lazy.force Env.initial in
-  let result, _ =
-    Env.lookup_type ~use:false ~loc:Location.none (lid [ "Stdlib"; "result" ]) initial
-  in
-  let result = Env.normalize_type_path None initial result in
-  let ignore, _, _ =
-    Env.lookup_value ~use:false ~loc:Location.none (lid [ "Stdlib"; "ignore" ]) initial
-  in
-  let ignore = Env.normalize_value_path None initial ignore in
-  let report loc e =
-    let en = env e.exp_env in
-    match Types.get_desc (Ctype.expand_head en e.exp_type) with
-    | Tconstr (path, [ _; _ ], _)
-      when Path.same (Env.normalize_type_path None en path) result ->
-        emit loc
-    | _ -> ()
-  in
-  let base = Tast_iterator.default_iterator in
-  {
-    base with
-    expr =
-      (fun self e ->
-        (match e.exp_desc with
-        | Texp_apply (fn, args, _, _, _) -> (
-            match fn.exp_desc with
-            | Texp_ident { path; _ }
-              when Path.same (Env.normalize_value_path None (env fn.exp_env) path) ignore
-              ->
-                List.iter
-                  (function _, Arg (arg, _) -> report e.exp_loc arg | _ -> ())
-                  args
-            | _ -> ())
-        | _ -> ());
-        base.expr self e);
-    value_binding =
-      (fun self vb ->
-        (match vb.vb_pat.pat_desc with
-        | Tpat_any -> report vb.vb_pat.pat_loc vb.vb_expr
-        | _ -> ());
-        base.value_binding self vb);
-  }
+let discarded_result = Disposal.discarded_result
 
 (* ^nlintc-7be1: implementations may hide exceptions; signatures expose them. *)
 let public_exception ~caps emit _context (base : Ast_iterator.iterator) =
@@ -87,7 +48,7 @@ let public_exception ~caps emit _context (base : Ast_iterator.iterator) =
   }
 
 (* ^ncapslint-nf4t ^ncapslint-snhg: one registry and one fixture/page triangle. *)
-let concurrency_rule name message typed =
+let basic_rule name message =
   let file = String.map (fun c -> if c = '-' then '_' else c) name in
   {
     id = "ox-" ^ name;
@@ -96,8 +57,22 @@ let concurrency_rule name message typed =
     clean = "test/lint/clean/" ^ file ^ ".ml";
     documentation = "docs/rules/ox-" ^ name ^ ".md";
     source = None;
-    typed = Some typed;
+    typed = None;
+    evidence = None;
   }
+
+let concurrency_rule name message typed =
+  { (basic_rule name message) with typed = Some typed }
+
+(* ^safe-fr73 ^safe-y047: checked evidence can report uncertainty without a finding. *)
+let evidence_rule name message evidence =
+  { (basic_rule name message) with evidence = Some evidence }
+
+let visit iterator artifact =
+  match artifact.Artifact.info.cmt_annots with
+  | Cmt_format.Implementation tree -> iterator.Tast_iterator.structure iterator tree
+  | Cmt_format.Interface tree -> iterator.Tast_iterator.signature iterator tree
+  | _ -> invalid_arg "complete checked annotation required"
 
 let capability_rule ~caps name typed =
   {
@@ -119,6 +94,7 @@ let capability_rule ~caps name typed =
     documentation = "docs/rules/ox-caps-" ^ name ^ ".md";
     source = (if name = "signature" then None else Some (Caps.source ~caps name));
     typed = Some typed;
+    evidence = None;
   }
 
 (* ^nlintd-z5p5 ^nlintd-vneh: interfaces use the same fixture/page registry. *)
@@ -139,14 +115,29 @@ let all ~caps =
       {
         id = "ox-discarded-result";
         message =
-          "discarded result; match Ok/Error, propagate the error, or name an intentional \
-           discard with a reason";
+          "discarded result; propagate, recover or map the named error, or use \
+           [@ox.allow \"ox-discarded-result: reason\"] for deliberate best effort";
         violating = "test/lint/violating/discard.ml";
         clean = "test/lint/clean/discard.ml";
         documentation = "docs/rules/ox-discarded-result.md";
         source = None;
         typed = Some discarded_result;
+        evidence = None;
       };
+      {
+        (basic_rule "identity-external"
+           "unchecked %identity declaration; use a compiler-checked typed function")
+        with
+        source = Some Identity_external.source;
+      };
+      concurrency_rule "function-comparison"
+        "unsupported structural comparison of functions; compare domain identities \
+         instead"
+        (Function_comparison.check ~caps);
+      evidence_rule "constant-index"
+        "proved out-of-bounds constant index; correct the index or check bounds"
+        (fun ~emit ~undecided:_ artifact ->
+          visit (Constant_index.check ~caps ~emit) artifact);
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"
@@ -171,6 +162,7 @@ let all ~caps =
         documentation = "docs/rules/ox-public-exception.md";
         source = Some (public_exception ~caps);
         typed = None;
+        evidence = None;
       };
       concurrency_rule "obj-magic"
         "unchecked Obj.magic* cast; use a typed representation (no shipped cast \

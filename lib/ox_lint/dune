@@ -31,6 +31,56 @@
   (main.exe as ox-lint)
   (../caps/caps-gate as caps-gate)))
 
+; ^safe-fr73 ^safe-t37w: installed policies carry both interface and implementation evidence.
+
+(install
+ (package ox_lint)
+ (section share)
+ (files
+  (../../docs/rules/ox-constant-index.md as docs/rules/ox-constant-index.md)
+  (../../test/lint/clean/constant_index.ml
+   as
+   test/lint/clean/constant_index.ml)
+  (../../test/lint/clean/constant_index.mli
+   as
+   test/lint/clean/constant_index.mli)
+  (../../test/lint/violating/constant_index.ml
+   as
+   test/lint/violating/constant_index.ml)
+  (../../test/lint/violating/constant_index.mli
+   as
+   test/lint/violating/constant_index.mli)
+  (../../docs/rules/ox-function-comparison.md
+   as
+   docs/rules/ox-function-comparison.md)
+  (../../test/lint/clean/function_comparison.ml
+   as
+   test/lint/clean/function_comparison.ml)
+  (../../test/lint/clean/function_comparison.mli
+   as
+   test/lint/clean/function_comparison.mli)
+  (../../test/lint/violating/function_comparison.ml
+   as
+   test/lint/violating/function_comparison.ml)
+  (../../test/lint/violating/function_comparison.mli
+   as
+   test/lint/violating/function_comparison.mli)
+  (../../docs/rules/ox-identity-external.md
+   as
+   docs/rules/ox-identity-external.md)
+  (../../test/lint/clean/identity_external.ml
+   as
+   test/lint/clean/identity_external.ml)
+  (../../test/lint/clean/identity_external.mli
+   as
+   test/lint/clean/identity_external.mli)
+  (../../test/lint/violating/identity_external.ml
+   as
+   test/lint/violating/identity_external.ml)
+  (../../test/lint/violating/identity_external.mli
+   as
+   test/lint/violating/identity_external.mli)))
+
 (install
  (package ox_lint)
  (section share)

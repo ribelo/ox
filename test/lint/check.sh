@@ -31,7 +31,7 @@ compile stale
 expect 1 --rules ox-discarded-result "$scratch/violating/discard.ml"
 [[ "$(wc -l < "$scratch/out")" = 7 ]]
 for line in 6 9 14 15 16 19 28; do
-  grep -q ":$line: ox-discarded-result: discarded result; match Ok/Error" "$scratch/out"
+  grep -q ":$line: ox-discarded-result: discarded result; propagate, recover or map the named error" "$scratch/out"
 done
 expect 0 --require-typed "$scratch/clean/discard.ml"
 [[ ! -s "$scratch/out" && ! -s "$scratch/err" ]]

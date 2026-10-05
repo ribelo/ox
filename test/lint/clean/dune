@@ -3,6 +3,9 @@
 (library
  (name concurrency_clean)
  (modules
+  constant_index
+  function_comparison
+  identity_external
   catch_helper
   catch_all
   suspending_finalizer

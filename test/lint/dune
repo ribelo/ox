@@ -243,6 +243,16 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/caps_policy.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/concurrency.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/constant_index.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/constant_index.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/function_comparison.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/function_comparison.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/identity_external.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/identity_external.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/disposal.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/disposal.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/policy_exception.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/policy_exception.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/artifact.cmt
