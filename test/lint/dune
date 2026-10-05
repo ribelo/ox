@@ -267,6 +267,8 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/disposal.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/policy_exception.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/policy_exception.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/assertion_effects.cmt

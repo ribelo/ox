@@ -80,7 +80,7 @@ dune build --root "$project/lib/nested" @check
 # ^nlint-r01u: both repository spellings select non-capability rules by default.
 expect 1 "$engine" --repo-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
-contains "$scratch/err" "35 registered rules selected (34 active, 1 dormant)"
+contains "$scratch/err" "36 registered rules selected (35 active, 1 dormant)"
 expect 1 "$engine" --caps-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
 # ^nlintcov-q6n2: inventory forces the universe producer; the default gate rebuilds after it.
@@ -387,4 +387,6 @@ printf '_dev/\n' > "$scratch/no-git/tests/.gitignore"
 ln -s missing-target "$scratch/no-git/tests/_dev/broken.mli"
 expect 2 "$engine" --caps-gate "${cap_rules[@]}" "$scratch/no-git/tests"
 contains "$scratch/err" 'broken.mli'
+# ^safe-fr73 ^safe-czoe: real installation acceptance runs separately outside
+# an enclosing Dune build, avoiding recursive workspace lock acquisition.
 printf 'deployment: qualified identity, membership, freshness, prefix and root override: pass\n'

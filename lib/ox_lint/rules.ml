@@ -148,6 +148,10 @@ let all ~caps =
         "required work hidden in an assertion; perform it before checking the invariant"
         (fun ~emit ~undecided artifact ->
           visit (Assertion_effects.check ~caps ~emit ~undecided) artifact);
+      evidence_rule "transaction-runner"
+        "operation uses the originating pool; use the callback transaction runner"
+        (fun ~emit ~undecided artifact ->
+          visit (Transaction_runner.check ~caps ~emit ~undecided) artifact);
       evidence_rule "constant-index"
         "proved out-of-bounds constant index; correct the index or check bounds"
         (fun ~emit ~undecided:_ artifact ->

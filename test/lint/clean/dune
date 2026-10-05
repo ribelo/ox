@@ -4,6 +4,7 @@
  (name concurrency_clean)
  (modules
   assertion_effects
+  transaction_runner
   warning_policy
   codec_seams
   io_count
@@ -25,7 +26,7 @@
   docs_generated
   docs_generated_dependency)
  (modules_without_implementation public_exception)
- (libraries eio ox ox_caps ox_http yojson unix threads))
+ (libraries eio ox ox_caps ox_http ox_sql yojson unix threads))
 
 ; ^nlintd-truth ^nlintcov-q6n2: no checked-in implementation sibling exists.
 

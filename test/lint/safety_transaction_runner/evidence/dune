@@ -1,0 +1,28 @@
+(library
+ (name transaction_cases)
+ (wrapped false)
+ (modules
+  violating
+  controls
+  routing
+  nested
+  undecided
+  fresh
+  duplicates
+  operations
+  wrapper_bad
+  wrapper_clean
+  callback_routing
+  duplicate_origins
+  eager_results)
+ (libraries ox_sql eio eio_main))
+
+(library
+ (name transaction_no_sql)
+ (wrapped false)
+ (modules no_sql))
+
+(executable
+ (name test_rollback)
+ (modules test_rollback)
+ (libraries ox_sql ox_test eio_main))

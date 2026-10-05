@@ -1,0 +1,1 @@
+val pure : string -> int
