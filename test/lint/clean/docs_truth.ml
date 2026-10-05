@@ -91,3 +91,42 @@ let recursive_active _ = map_nested (fun () -> Eio.Fiber.yield ()) (Branch [ Lea
 
 (* ^nlintd-raises: named external raise assertions stay local to this contract. *)
 let delegated_input channel _ = input_line channel
+
+(* ^nlintd-truth ^nlintd-raises: callback demand retains callee handlers. *)
+let protect_callback callback = try callback () with Sys_error _ -> ()
+let forward_protected callback = protect_callback callback
+let callback_caught _ = forward_protected (fun () -> raise (Sys_error "read"))
+
+let rec recursive_protect callback depth =
+  try if depth = 0 then callback () else recursive_protect callback (depth - 1)
+  with Sys_error _ -> ()
+
+let callback_recursive_caught _ = recursive_protect (fun () -> raise (Sys_error "read")) 2
+let shield_callback callback = Eio.Cancel.protect callback
+let callback_masked _ = shield_callback (fun () -> Eio.Fiber.yield ())
+let finalizer_callback callback = Fun.protect ~finally:callback (fun () -> ())
+let callback_wrapped _ = finalizer_callback (fun () -> failwith "release")
+
+(* ^nlintd-truth: recording a closure does not execute its assertion. *)
+let stored_only _ =
+  let handlers = Hashtbl.create 1 in
+  Hashtbl.replace handlers "event" (fun () -> assert false)
+
+(* ^nlintd-truth ^nlintd-raises: caller startup vs child execution. *)
+let fiber_daemon sw =
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Eio.Fiber.yield ();
+      assert false)
+
+let fiber_named sw =
+  let child () =
+    Eio.Fiber.yield ();
+    failwith "child"
+  in
+  Eio.Fiber.fork ~sw child
+
+let fiber_promise sw =
+  ignore
+    (Eio.Fiber.fork_promise ~sw (fun () ->
+         Eio.Fiber.yield ();
+         assert false))

@@ -197,8 +197,8 @@ let run ~caps =
           ("missing truth mutation witness: " ^ name ^ " / " ^ witness ^ "\n"
           ^ String.concat "\n" (List.map snd bad @ unknown)))
     [
-      ("fiber_spawn", "never suspends");
-      ("fiber_spawn", "no cancellation point");
+      (* ^nlintd-truth ^nlintd-raises: only fork startup is the caller effect. *)
+      ("fiber_spawn", "Invalid_argument");
       ("domain_join", "never suspends");
       ("forward", "never suspends");
       ("forward", "no cancellation point");
@@ -223,6 +223,13 @@ let run ~caps =
       ("recursive_prefix", "no cancellation point");
       ("callback_yield", "never suspends");
       ("optional_default_yield", "never suspends");
+      ("callback_uncaught", "Sys_error");
+      ("callback_guarded", "Sys_error");
+      ("callback_caught_then_uncaught", "Sys_error");
+      ("stored_then_called", "Assert_failure");
+      ("fiber_caller_wait", "never suspends");
+      ("fiber_caller_wait", "Eio.Cancel.Cancelled");
+      ("fiber_join", "Eio.Promise.await_exn");
     ];
   if
     not
@@ -245,7 +252,7 @@ let run ~caps =
              (fun message -> contains message name && contains message "opaque call")
              unknown)
       then failwith ("unresolved target passed silently: " ^ name))
-    [ "functional_compare"; "unresolved_operator" ];
+    [ "functional_compare"; "unresolved_operator"; "stored_lookup"; "external_callback" ];
   if
     not
       (List.exists

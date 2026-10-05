@@ -349,6 +349,43 @@ let cancel_safety ~(caps : < Cap.fs_read ; .. >) emit =
 (* ^nlintd-truth ^nlintd-raises: a finite graph of effects, never recursive AST expansion. *)
 module Names = Set.Make (String)
 
+(* ^nlintd-truth ^nlintd-raises: retain the callee's handler around each callback
+   demand. Canonical transfers, rather than growing filter lists, keep recursive
+   callback propagation finite. Each route maps one exception atom to at most one
+   atom; these operations distribute over union. *)
+type route = { excluded : Names.t; destination : string option; explicit : bool }
+type transfer = { direct : route; checked : route; dynamic : route; protected : bool }
+
+let route explicit = { excluded = Names.empty; destination = None; explicit }
+
+let identity =
+  { direct = route true; checked = route false; dynamic = route false; protected = false }
+
+let dead_route = { excluded = Names.singleton "*"; destination = None; explicit = false }
+let dead route = Names.mem "*" route.excluded
+
+module Transfers = Set.Make (struct
+  type t = transfer
+
+  let compare_route a b =
+    match Names.compare a.excluded b.excluded with
+    | 0 -> compare (a.destination, a.explicit) (b.destination, b.explicit)
+    | n -> n
+
+  let compare a b =
+    match compare_route a.direct b.direct with
+    | 0 -> (
+        match compare_route a.checked b.checked with
+        | 0 -> (
+            match compare_route a.dynamic b.dynamic with
+            | 0 -> Bool.compare a.protected b.protected
+            | n -> n)
+        | n -> n)
+    | n -> n
+end)
+
+module Demands = Map.Make (String)
+
 type effects = {
   suspension : Names.t;
   cancellation : Names.t;
@@ -357,6 +394,7 @@ type effects = {
   explicit_raises : Names.t;
   opaque : Names.t;
   opaque_raises : Names.t;
+  demands : Transfers.t Demands.t;
 }
 
 type transformation = Filter of Names.t * bool | Wrap of string
@@ -383,6 +421,7 @@ type evidence = {
   definitions : (string, definition) Hashtbl.t;
   exports : (string, string) Hashtbl.t;
   resolved : (string, effects) Hashtbl.t;
+  mutable builders : (unit -> unit) list;
 }
 
 let empty_effects =
@@ -394,6 +433,7 @@ let empty_effects =
     explicit_raises = Names.empty;
     opaque = Names.empty;
     opaque_raises = Names.empty;
+    demands = Demands.empty;
   }
 
 let empty_summary = { effects = empty_effects; calls = [] }
@@ -407,6 +447,7 @@ let union a b =
     explicit_raises = Names.union a.explicit_raises b.explicit_raises;
     opaque = Names.union a.opaque b.opaque;
     opaque_raises = Names.union a.opaque_raises b.opaque_raises;
+    demands = Demands.union (fun _ a b -> Some (Transfers.union a b)) a.demands b.demands;
   }
 
 let join a b = { effects = union a.effects b.effects; calls = a.calls @ b.calls }
@@ -414,6 +455,19 @@ let joins xs = List.fold_left join empty_summary xs
 
 let unknown name =
   { empty_summary with effects = { empty_effects with opaque = Names.singleton name } }
+
+let unknown_call name =
+  let summary = unknown name in
+  if String.contains name ':' then
+    {
+      summary with
+      effects =
+        {
+          summary.effects with
+          demands = Demands.singleton name (Transfers.singleton identity);
+        };
+    }
+  else summary
 
 (* ^nlintd-truth: an unresolved exception identity cannot itself suspend or check cancellation. *)
 let unknown_raise name =
@@ -435,35 +489,119 @@ let thrown name =
 
 let cancelled = "Eio.Cancel.Cancelled"
 
-let filter_effects handled protected effects =
-  let unhandled xs =
-    if Names.mem "*" handled then Names.empty else Names.diff xs handled
+let filter_route handled protected dynamic route =
+  if dead route then dead_route
+  else
+    let handled =
+      if protected && (not route.explicit) && not dynamic then Names.add cancelled handled
+      else handled
+    in
+    match route.destination with
+    | Some name ->
+        if Names.mem "*" handled || Names.mem name handled then dead_route else route
+    | None ->
+        if Names.mem "*" handled then dead_route
+        else if dynamic then route
+        else { route with excluded = Names.union route.excluded handled }
+
+let transfer_step transformation transfer =
+  match transformation with
+  | Filter (handled, protected) ->
+      {
+        direct = filter_route handled protected false transfer.direct;
+        checked = filter_route handled protected false transfer.checked;
+        dynamic =
+          filter_route handled protected
+            (transfer.dynamic.destination = None)
+            transfer.dynamic;
+        protected = transfer.protected || protected;
+      }
+  | Wrap name ->
+      let wrap route =
+        if dead route then dead_route
+        else { route with destination = Some name; explicit = true }
+      in
+      {
+        transfer with
+        direct = wrap transfer.direct;
+        checked = wrap transfer.checked;
+        dynamic = wrap transfer.dynamic;
+      }
+
+let compose_route dynamic inner outer =
+  if dead inner || dead outer then dead_route
+  else
+    match inner.destination with
+    | Some name when Names.mem name outer.excluded -> dead_route
+    | Some name ->
+        {
+          inner with
+          destination = Some (Option.value ~default:name outer.destination);
+          explicit = outer.explicit;
+        }
+    | None ->
+        {
+          excluded =
+            (if dynamic then inner.excluded else Names.union inner.excluded outer.excluded);
+          destination = outer.destination;
+          explicit = outer.explicit;
+        }
+
+let compose inner outer =
+  let route dynamic r =
+    let next =
+      if dynamic && r.destination = None then outer.dynamic
+      else if r.explicit then outer.direct
+      else outer.checked
+    in
+    compose_route dynamic r next
   in
-  let explicit_raises = unhandled effects.explicit_raises in
+  {
+    direct = route false inner.direct;
+    checked = route false inner.checked;
+    dynamic = route true inner.dynamic;
+    protected = inner.protected || outer.protected;
+  }
+
+let map_demands f demands =
+  Demands.map
+    (fun transfers ->
+      Transfers.fold (fun t out -> Transfers.add (f t) out) transfers Transfers.empty)
+    demands
+
+let apply_transfer transfer effects =
+  let apply dynamic route names =
+    let names = if dead route then Names.empty else Names.diff names route.excluded in
+    match route.destination with
+    | Some name when not (Names.is_empty names) -> (Names.singleton name, Names.empty)
+    | _ when dynamic -> (Names.empty, names)
+    | _ -> (names, Names.empty)
+  in
+  let direct, _ = apply false transfer.direct effects.explicit_raises in
+  let checked, _ =
+    apply false transfer.checked (Names.diff effects.exceptions effects.explicit_raises)
+  in
+  let dynamic, opaque_raises = apply true transfer.dynamic effects.opaque_raises in
+  let explicit route names = if route.explicit then names else Names.empty in
   {
     effects with
-    explicit_raises;
-    opaque_raises = (if Names.mem "*" handled then Names.empty else effects.opaque_raises);
-    cancellation = (if protected then Names.empty else effects.cancellation);
-    exceptions =
-      ( unhandled effects.exceptions |> fun xs ->
-        if protected then Names.union explicit_raises (Names.remove cancelled xs) else xs
-      );
+    exceptions = Names.union direct (Names.union checked dynamic);
+    explicit_raises =
+      Names.union
+        (explicit transfer.direct direct)
+        (Names.union
+           (explicit transfer.checked checked)
+           (explicit transfer.dynamic dynamic));
+    opaque_raises;
+    cancellation = (if transfer.protected then Names.empty else effects.cancellation);
+    demands = map_demands (fun inner -> compose inner transfer) effects.demands;
   }
 
 let transform transformation effects =
-  match transformation with
-  | Filter (handled, protected) -> filter_effects handled protected effects
-  | Wrap name ->
-      if Names.is_empty effects.exceptions && Names.is_empty effects.opaque_raises then
-        effects
-      else
-        {
-          effects with
-          exceptions = Names.singleton name;
-          opaque_raises = Names.empty;
-          explicit_raises = Names.singleton name;
-        }
+  apply_transfer (transfer_step transformation identity) effects
+
+let filter_effects handled protected effects =
+  transform (Filter (handled, protected)) effects
 
 let apply_filters filters effects =
   List.fold_left (fun effects filter -> transform filter effects) effects filters
@@ -542,6 +680,56 @@ let special_names =
     "Eio.Switch.on_release_cancellable";
     "Thread.create";
     "Domain.spawn";
+    (* ^nlintd-truth: source-verified ownership/storage boundaries. *)
+    "Eio.Fiber.fork";
+    "Eio.Fiber.fork_daemon";
+    "Eio.Fiber.fork_promise";
+    "Eio.Domain_manager.run";
+    "Eio_main.run";
+    "Eio.Switch.run";
+    "Eio.Time.with_timeout";
+    "Eio.Time.with_timeout_exn";
+    "Eio.Time.Timeout.run";
+    "Eio.Time.Timeout.run_exn";
+    "Eio.Mutex.use_ro";
+    "Eio.Mutex.use_rw";
+    "Eio.Pool.use";
+    "Ox_json.Of_json.list";
+    "Ox_json.Of_json.option";
+    "Ox_json.Of_json.field";
+    "Ox_sql_dsl.transaction";
+    "Stdlib.Hashtbl.replace";
+    "Stdlib.Hashtbl.add";
+    "Stdlib.List.iter";
+    "Stdlib.List.map";
+    "Stdlib.List.filter_map";
+    "Stdlib.List.fold_left";
+    "Stdlib.List.fold_right";
+    "Stdlib.Array.iter";
+    "Stdlib.Array.map";
+    "Stdlib.Option.iter";
+    "Stdlib.Option.map";
+    "Stdlib.List.mapi";
+    "Stdlib.List.filter";
+    "Stdlib.List.concat_map";
+    "Stdlib.List.find";
+    "Stdlib.List.find_opt";
+    "Stdlib.List.find_map";
+    "Stdlib.List.exists";
+    "Stdlib.List.for_all";
+    "Stdlib.List.sort";
+    "Stdlib.List.sort_uniq";
+    "Stdlib.Array.find_opt";
+    "Stdlib.String.iter";
+    "Stdlib.String.map";
+    "Stdlib.String.for_all";
+    "Stdlib.Hashtbl.iter";
+    "Stdlib.Option.bind";
+    "Stdlib.Option.fold";
+    "Stdlib.Result.map";
+    "Stdlib.Result.map_error";
+    "Stdlib.|>";
+    "Stdlib.@@";
   ]
 
 let leaf_origins ~caps =
@@ -1005,12 +1193,10 @@ let add_unit ~caps evidence artifact =
         | _ when partial -> unknown (origin callee ^ " partial application")
         | _ when pure_callee actuals callee -> empty_summary
         | _ ->
-            join (invokes callee)
-              (joins
-                 (List.filter_map
-                    (fun (_, actual) ->
-                      if function_typed actual then Some (invokes actual) else None)
-                    actuals)))
+            let invocation = invokes callee in
+            if List.exists (fun (_, actual) -> function_typed actual) actuals then
+              join invocation (unknown ("callback invocation by " ^ origin callee))
+            else invocation)
   and expression e =
     match Expressions.find_opt evidence.expressions e with
     | Some summary -> summary
@@ -1044,6 +1230,142 @@ let add_unit ~caps evidence artifact =
              creation can fail synchronously, but cannot suspend the Eio fiber.
              Domain_manager.run is deliberately not a spawning exemption. *)
           | Some (("Thread.create" | "Domain.spawn") as name) -> unknown_raise name
+          (* ^nlintd-truth ^nlintd-raises: fork starts another fiber. Its callback
+             fails the owner switch/promise, not this call. Eio's fork functions
+             check the switch synchronously (domain/finished: Invalid_argument),
+             but perform no caller cancellation check. Waits are separate calls. *)
+          | Some
+              ( "Eio.Fiber.fork" | "Eio.Fiber.fork_daemon" | "Eio.Fiber.fork_promise"
+              | "Eio.Domain_manager.run" | "Eio_main.run" | "Eio.Switch.run"
+              | "Eio.Time.with_timeout" | "Eio.Time.with_timeout_exn"
+              | "Eio.Time.Timeout.run" | "Eio.Time.Timeout.run_exn" | "Eio.Mutex.use_ro"
+              | "Eio.Mutex.use_rw" | "Eio.Pool.use" | "Ox_json.Of_json.list"
+              | "Ox_json.Of_json.option" | "Ox_json.Of_json.field"
+              | "Ox_sql_dsl.transaction" | "Stdlib.Hashtbl.replace" | "Stdlib.Hashtbl.add"
+              | "Stdlib.List.iter" | "Stdlib.List.map" | "Stdlib.List.filter_map"
+              | "Stdlib.List.fold_left" | "Stdlib.List.fold_right" | "Stdlib.Array.iter"
+              | "Stdlib.Array.map" | "Stdlib.Array.find_opt" | "Stdlib.Option.iter"
+              | "Stdlib.Option.map" | "Stdlib.Option.bind" | "Stdlib.Option.fold"
+              | "Stdlib.List.mapi" | "Stdlib.List.filter" | "Stdlib.List.concat_map"
+              | "Stdlib.List.find" | "Stdlib.List.find_opt" | "Stdlib.List.find_map"
+              | "Stdlib.List.exists" | "Stdlib.List.for_all" | "Stdlib.List.sort"
+              | "Stdlib.List.sort_uniq" | "Stdlib.String.iter" | "Stdlib.String.map"
+              | "Stdlib.String.for_all" | "Stdlib.Hashtbl.iter" | "Stdlib.Result.map"
+              | "Stdlib.Result.map_error" | "Stdlib.|>" | "Stdlib.@@" )
+            when function_typed e ->
+              application [] true callee args
+          | Some
+              (("Eio.Fiber.fork" | "Eio.Fiber.fork_daemon" | "Eio.Fiber.fork_promise") as
+               name) ->
+              leaf name false false [ "Invalid_argument" ]
+          | Some
+              ( "Eio_main.run" | "Eio.Switch.run" | "Eio.Time.with_timeout"
+              | "Eio.Time.with_timeout_exn" | "Eio.Time.Timeout.run"
+              | "Eio.Time.Timeout.run_exn" | "Eio.Mutex.use_ro" | "Eio.Mutex.use_rw"
+              | "Eio.Pool.use" ) as contract ->
+              (* Eio source: these callbacks execute before this caller returns.
+                 Keep the callee opaque; this is invocation, not a purity claim. *)
+              let callback =
+                match List.rev args with
+                | (_, callback) :: _ -> invokes callback
+                | [] -> unknown "missing immediate callback"
+              in
+              let callback =
+                if
+                  contract = Some "Eio.Mutex.use_rw"
+                  && List.exists
+                       (fun (label, value) ->
+                         label = Typedtree.Labelled "protect"
+                         &&
+                         match value.exp_desc with
+                         | Texp_construct (_, d, _, [], _) -> d.cstr_name = "true"
+                         | _ -> false)
+                       args
+                then under Names.empty true callback
+                else callback
+              in
+              let body = join (invokes callee) callback in
+              if contract = Some "Eio.Switch.run" then
+                joins
+                  [
+                    body;
+                    leaf "Eio.Switch.run" false true [];
+                    unknown_raise "Eio.Switch.run owned-fiber failure";
+                    unknown "callback invocation by Eio.Switch.run owned-fiber failure";
+                  ]
+              else body
+          | Some ("Ox_json.Of_json.list" | "Ox_json.Of_json.option") ->
+              (* lib/json/ox_json.ml:127-158: only the decoder is invoked. *)
+              join (invokes callee)
+                (match args with
+                | (_, callback) :: _ -> invokes callback
+                | [] -> empty_summary)
+          | Some "Ox_json.Of_json.field" ->
+              join (invokes callee)
+                (match args with
+                | _ :: (_, callback) :: _ -> invokes callback
+                | _ -> empty_summary)
+          | Some "Ox_sql_dsl.transaction" ->
+              (* lib/sql_dsl/ox_sql_dsl.ml:66-104: every callback's exception is
+                 returned as Raised, not synchronously propagated. *)
+              let callbacks =
+                List.filter_map
+                  (fun (label, value) ->
+                    if
+                      List.mem label
+                        [
+                          Typedtree.Labelled "begin_";
+                          Typedtree.Labelled "commit";
+                          Typedtree.Labelled "rollback";
+                        ]
+                    then Some (invokes value)
+                    else None)
+                  args
+              in
+              let callbacks =
+                match List.rev args with
+                | (_, callback) :: _ -> invokes callback :: callbacks
+                | [] -> callbacks
+              in
+              join (invokes callee) (under (Names.singleton "*") false (joins callbacks))
+          | Some "Eio.Domain_manager.run" ->
+              (* A joined domain re-delivers failures to its waiting caller. *)
+              join
+                (leaf "Eio.Domain_manager.run" true true [ "Eio.Cancel.Cancelled" ])
+                (match List.rev args with
+                | (_, callback) :: _ -> invokes callback
+                | [] -> unknown "Eio.Domain_manager.run callback")
+          | Some ("Stdlib.Hashtbl.replace" | "Stdlib.Hashtbl.add") ->
+              (* Values, including closures, are stored, not invoked. Hash/equality
+                 remain external evidence, not a blanket purity assumption. *)
+              invokes callee
+          | Some ("Stdlib.Option.bind" | "Stdlib.|>") ->
+              join (invokes callee)
+                (match List.filter (fun (label, _) -> label = Typedtree.Nolabel) args with
+                | _ :: (_, callback) :: _ -> invokes callback
+                | _ -> unknown ("missing immediate callback for " ^ origin callee))
+          | Some "Stdlib.Option.fold" ->
+              join (invokes callee)
+                (joins
+                   (List.filter_map
+                      (fun (label, arg) ->
+                        if label = Typedtree.Labelled "some" then Some (invokes arg)
+                        else None)
+                      args))
+          | Some
+              ( "Stdlib.List.iter" | "Stdlib.List.map" | "Stdlib.List.filter_map"
+              | "Stdlib.List.fold_left" | "Stdlib.List.fold_right" | "Stdlib.Array.iter"
+              | "Stdlib.Array.map" | "Stdlib.Option.iter" | "Stdlib.Option.map"
+              | "Stdlib.List.mapi" | "Stdlib.List.filter" | "Stdlib.List.concat_map"
+              | "Stdlib.List.find" | "Stdlib.List.find_opt" | "Stdlib.List.find_map"
+              | "Stdlib.List.exists" | "Stdlib.List.for_all" | "Stdlib.List.sort"
+              | "Stdlib.List.sort_uniq" | "Stdlib.Array.find_opt" | "Stdlib.String.iter"
+              | "Stdlib.String.map" | "Stdlib.String.for_all" | "Stdlib.Hashtbl.iter"
+              | "Stdlib.Result.map" | "Stdlib.Result.map_error" | "Stdlib.@@" ) ->
+              join (invokes callee)
+                (match args with
+                | (_, callback) :: _ -> invokes callback
+                | [] -> unknown ("missing immediate callback for " ^ origin callee))
           | Some "Eio.Cancel.protect" ->
               joins (List.map (fun (_, e) -> under Names.empty true (invokes e)) args)
           | Some "Fun.protect" ->
@@ -1056,6 +1378,8 @@ let add_unit ~caps evidence artifact =
                      else callback)
                    args)
           | Some ("Eio.Switch.on_release" | "Eio.Switch.on_release_cancellable") ->
+              (* Eio switch.ml:164-177: a live switch stores the hook, but a
+                 finished switch invokes it protected now, then raises. *)
               let callbacks =
                 match List.rev args with
                 | (_, callback) :: _ -> under Names.empty true (invokes callback)
@@ -1068,7 +1392,12 @@ let add_unit ~caps evidence artifact =
               | Some (name, suspends, checks, exceptions) ->
                   join
                     (leaf name suspends checks exceptions)
-                    (if function_typed e then empty_summary
+                    (if
+                       function_typed e
+                       || not
+                            (List.mem name
+                               [ "Stdlib.Result.bind"; "Stdlib.Result.Syntax.let*" ])
+                     then empty_summary
                      else
                        joins
                          (List.filter_map
@@ -1076,19 +1405,7 @@ let add_unit ~caps evidence artifact =
                               if function_typed arg then Some (invokes arg) else None)
                             args))
               | None when pure_callee args callee -> empty_summary
-              | None ->
-                  let callbacks =
-                    joins
-                      (List.filter_map
-                         (fun (_, arg) ->
-                           if function_typed e || Option.is_some (local_definition callee)
-                           then None
-                           else if function_typed arg then Some (invokes arg)
-                           else None)
-                         args)
-                  in
-                  let invocation = application [] (function_typed e) callee args in
-                  join invocation callbacks)
+              | None -> application [] (function_typed e) callee args)
         in
         join evaluated call
     | Texp_ident _ | Texp_constant _ -> empty_summary
@@ -1237,11 +1554,17 @@ let add_unit ~caps evidence artifact =
     base.expr walk e;
     !result
   in
-  Hashtbl.to_seq_values evidence.definitions
-  |> List.of_seq
-  |> List.iter (fun definition ->
-      if definition.unit_name = unit_name then
-        definition.summary <- invokes definition.body)
+  (* ^nlintd-truth: publish every unit's declarations before constructing calls;
+     otherwise file order turns available cross-unit callbacks into opaque ones. *)
+  evidence.builders <-
+    (fun () ->
+      Artifact.setup ~caps artifact;
+      Hashtbl.to_seq_values evidence.definitions
+      |> List.of_seq
+      |> List.iter (fun definition ->
+          if definition.unit_name = unit_name then
+            definition.summary <- invokes definition.body))
+    :: evidence.builders
 
 (* ^nlintd-truth: callback substitutions are summaries on finite graph edges, not
    recursive AST expansion. Only callback demands actually reached by a callee are
@@ -1258,26 +1581,34 @@ and edge_effects evidence edge =
   let callee =
     Option.value
       (Hashtbl.find_opt evidence.resolved key)
-      ~default:(unknown edge.target).effects
+      ~default:(unknown_call edge.target).effects
   in
   let substituted =
     List.fold_left
       (fun effects (parameter, actual) ->
-        if Names.mem parameter callee.opaque then
-          union effects (summary_effects evidence actual)
-        else effects)
-      {
-        callee with
-        opaque =
-          List.fold_left
-            (fun xs (parameter, _) -> Names.remove parameter xs)
-            callee.opaque edge.bindings;
-      }
-      edge.bindings
+        match Demands.find_opt parameter callee.demands with
+        | None -> effects
+        | Some transfers ->
+            let actual = summary_effects evidence actual in
+            let bound =
+              Transfers.fold
+                (fun transfer out -> union out (apply_transfer transfer actual))
+                transfers empty_effects
+            in
+            union
+              {
+                effects with
+                opaque = Names.remove parameter effects.opaque;
+                demands = Demands.remove parameter effects.demands;
+              }
+              bound)
+      callee edge.bindings
   in
   apply_filters edge.filters substituted
 
 let resolve evidence =
+  List.iter (fun build -> build ()) (List.rev evidence.builders);
+  evidence.builders <- [];
   let reverse = Hashtbl.create 128 in
   let target key = Option.value (Hashtbl.find_opt evidence.exports key) ~default:key in
   let rec depend name summary =
@@ -1317,7 +1648,8 @@ let resolve evidence =
         && Names.equal after.exceptions before.exceptions
         && Names.equal after.explicit_raises before.explicit_raises
         && Names.equal after.opaque before.opaque
-        && Names.equal after.opaque_raises before.opaque_raises)
+        && Names.equal after.opaque_raises before.opaque_raises
+        && Demands.equal Transfers.equal after.demands before.demands)
     then (
       Hashtbl.replace evidence.resolved name after;
       List.iter enqueue (Option.value (Hashtbl.find_opt reverse name) ~default:[]))
@@ -1336,6 +1668,7 @@ let package_evidence ~caps (implementation : Artifact.t) =
           definitions = Hashtbl.create 128;
           exports = Hashtbl.create 128;
           resolved = Hashtbl.create 128;
+          builders = [];
         }
       in
       Cap_sys.readdir ~caps directory
@@ -1431,6 +1764,14 @@ let exception_mentioned docs name =
   List.exists (fun text -> contains text name || contains text short) docs
 
 let opaque_qualified docs target =
+  let prefix = "callback invocation by " in
+  let callback = String.starts_with ~prefix target in
+  let target =
+    if callback then
+      String.sub target (String.length prefix)
+        (String.length target - String.length prefix)
+    else target
+  in
   let target = String.lowercase_ascii target in
   let module_name = List.hd (String.split_on_char '.' target) in
   let module_name =
@@ -1444,7 +1785,8 @@ let opaque_qualified docs target =
      || contains text "outside" || contains text "not checked")
       &&
       if
-        contains target "callback argument to"
+        (callback && (contains text "callback" || contains text "caller code"))
+        || contains target "callback argument to"
         || contains target "returned-function callback"
       then contains text "callback" || contains text "caller code"
       else
@@ -1907,7 +2249,11 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                   in
                   if
                     List.mem "ox-val-behaviour" rules
-                    && (no_suspend || no_check || raises_tags docs <> [])
+                    && (no_suspend || no_check
+                       || raises_tags docs <> []
+                       || Names.exists
+                            (fun target -> contains target "callback invocation by")
+                            effects.opaque)
                   then
                     Names.iter
                       (fun target ->
@@ -1929,7 +2275,12 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                                     && opaque_qualified [ doc ] target)
                                   docs)
                         in
-                        if not bounded then
+                        if
+                          (not bounded)
+                          && (no_suspend || no_check
+                             || raises_tags docs <> []
+                             || contains target "callback invocation by")
+                        then
                           undecided value.loc
                             (qualified ^ ": opaque call " ^ target
                            ^ "; document the delegated/callback limit"))

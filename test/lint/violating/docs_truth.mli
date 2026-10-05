@@ -54,3 +54,19 @@ val unresolved_operator : Eio.Switch.t -> (unit -> (unit -> unit) -> unit) -> un
 val unqualified_input : in_channel -> Eio.Switch.t -> string
 (** @raise End_of_file at end of input. *)
 
+
+val callback_uncaught : Eio.Switch.t -> unit
+val callback_guarded : Eio.Switch.t -> bool -> unit
+val callback_caught_then_uncaught : Eio.Switch.t -> unit
+val stored_then_called : Eio.Switch.t -> unit
+val stored_lookup : Eio.Switch.t -> unit
+
+val fiber_caller_wait : Eio.Switch.t -> unit
+(** Raises Invalid_argument from startup. *)
+
+val fiber_join : Eio.Switch.t -> unit
+(** Raises Invalid_argument from startup. *)
+
+val external_callback : Eio.Switch.t -> (unit -> unit) -> unit
+(** Suspension: may suspend. Cancellation: propagates. Cancellation safety: safe
+    to re-run. Finalizers: none. Locking: none. *)

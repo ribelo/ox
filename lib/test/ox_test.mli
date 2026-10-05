@@ -18,7 +18,10 @@ val run : (env -> Eio.Switch.t -> 'a) -> 'a
     Finalizers: the owned switch joins children and runs its release hooks protected
     before Eio_main returns. Locking: no harness lock spans the callback. Cancellation
     safety: unsafe because progress is lost; completed callback effects and mock clock
-    updates remain if the run is interrupted. ^nlintd-a7oq *)
+    updates remain if the run is interrupted. Failures from caller code, owned children
+    and release hooks are delegated to Eio.Switch.run and re-delivered at the join; their
+    exception constructors depend on that code. ^nlintd-a7oq ^nlintd-truth ^nlintd-raises
+*)
 
 val advance : Eio_mock.Clock.t -> Ox.Duration.t -> unit
 (** Sets virtual wall time and yields to let due sleepers run; does not run switch

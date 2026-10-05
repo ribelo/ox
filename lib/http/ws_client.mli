@@ -47,8 +47,9 @@ val connect :
       if max_message_bytes is negative or sw is finished. ^nlintd-raises
 
     @raise Tls_failure
-      if the delegated OpenSSL TLS handshake fails; the exception is private to Tls_flow
-      and failure_message extracts its message. ^nlintd-truth *)
+      if the OpenSSL TLS handshake fails inside the establishment callback delegated to
+      Ox.Timeout.timeout; the exception is private to Tls_flow and failure_message
+      extracts its message. ^nlintd-truth ^nlintd-raises *)
 
 val selected_protocol : t -> string option
 val send_text : t -> string -> (unit, error) result

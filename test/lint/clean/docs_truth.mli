@@ -49,6 +49,7 @@ val finalizer_raises : Eio.Switch.t -> unit
 (** @raise Fun.Finally_raised when the finalizer fails. *)
 
 (* ^nlintd-truth: known primitive identities and disclosed readiness are not opaque. *)
+
 val primitives : Eio.Switch.t -> int -> int
 val thread_spawn : _ Eio.Time.clock -> unit
 val domain_spawn : _ Eio.Time.clock -> unit
@@ -66,6 +67,7 @@ val buffered_publish : unit Eio.Stream.t -> unit
     none. Locking: delegated to the stream. *)
 
 (* ^nlintd-truth *)
+
 val visible_operator : Eio.Switch.t -> unit
 
 val result_operator : Eio.Switch.t -> (unit, string) result
@@ -90,3 +92,26 @@ val scalar_leaves : Eio.Switch.t -> string -> bool
 
 val delegated_input : in_channel -> Eio.Switch.t -> string
 (** @raise End_of_file from delegated Stdlib.input_line at end of input. *)
+
+(* ^nlintd-truth ^nlintd-raises *)
+
+val callback_caught : Eio.Switch.t -> unit
+val callback_recursive_caught : Eio.Switch.t -> unit
+
+val callback_masked : Eio.Switch.t -> unit
+(** Suspension: may suspend while yielding. Cancellation: protected throughout.
+    Finalizers: none. Locking: none. *)
+
+val callback_wrapped : Eio.Switch.t -> unit
+(** @raise Fun.Finally_raised when the callback fails. *)
+
+val stored_only : Eio.Switch.t -> unit
+
+val fiber_daemon : Eio.Switch.t -> unit
+(** @raise Invalid_argument when startup checks a finished or wrong-domain switch. *)
+
+val fiber_named : Eio.Switch.t -> unit
+(** @raise Invalid_argument when startup checks a finished or wrong-domain switch. *)
+
+val fiber_promise : Eio.Switch.t -> unit
+(** @raise Invalid_argument when startup checks a finished or wrong-domain switch. *)

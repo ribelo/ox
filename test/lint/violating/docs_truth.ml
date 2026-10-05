@@ -1,5 +1,5 @@
 (* ^nlintd-truth ^nlintd-raises ^nlintd-cleanup *)
-(* ^nlintd-truth: fibers and synchronous domain joins are not detached native spawning. *)
+(* ^nlintd-truth: fork startup differs from synchronous domain joins. *)
 let fiber_spawn sw clock = Eio.Fiber.fork ~sw (fun () -> Eio.Time.sleep clock 1.)
 let domain_join manager clock = Eio.Domain_manager.run manager (fun () -> Eio.Time.sleep clock 1.)
 let alias = Docs_dependency.noop
@@ -52,3 +52,43 @@ let unresolved_operator _ op =
 (* ^nlintd-raises: a tag without its unresolved source remains undecided. *)
 let unqualified_input channel _ = input_line channel
 
+
+(* ^nlintd-truth ^nlintd-raises: clean/violating invocation pairs. *)
+let protect_wrong callback = try callback () with Invalid_argument _ -> ()
+let callback_uncaught _ = protect_wrong (fun () -> raise (Sys_error "read"))
+
+let protect_guarded callback flag =
+  try callback () with Sys_error _ when flag -> ()
+
+let callback_guarded _ flag =
+  protect_guarded (fun () -> raise (Sys_error "read")) flag
+
+let protect_then_invoke callback =
+  (try callback () with Sys_error _ -> ());
+  callback ()
+
+let callback_caught_then_uncaught _ =
+  protect_then_invoke (fun () -> raise (Sys_error "read"))
+
+let stored_then_called _ =
+  let handlers = Hashtbl.create 1 in
+  let handler () = assert false in
+  Hashtbl.replace handlers "event" handler;
+  handler ()
+
+let stored_lookup _ =
+  let handlers = Hashtbl.create 1 in
+  Hashtbl.replace handlers "event" (fun () -> assert false);
+  (Hashtbl.find handlers "event") ()
+
+let fiber_caller_wait sw =
+  Eio.Fiber.fork_daemon ~sw (fun () -> assert false);
+  Eio.Fiber.yield ()
+
+let fiber_join sw =
+  let result = Eio.Fiber.fork_promise ~sw (fun () -> assert false) in
+  ignore (Eio.Promise.await_exn result)
+
+let external_callback pool f =
+  ignore (Eio.Pool.create 1 f);
+  ignore pool

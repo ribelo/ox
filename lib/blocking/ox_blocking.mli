@@ -99,7 +99,10 @@ val run :
 (** Wait for a slot. Cancellation before worker claim prevents callback execution; after
     claim it releases the caller, invokes [on_cancel] at most once in the caller fiber,
     and keeps the slot until physical completion. The hook must not throw. Callback
-    exceptions propagate with their backtrace as defects.
+    exceptions propagate with their backtrace as defects. Raises [Invalid_argument] if the
+    pool owner's switch is finished or belongs to another domain when starting the worker
+    fiber. This startup check is in the caller, unlike worker execution. ^nlintd-truth
+    ^nlintd-raises
 
     [on_settled] (every [run] variant) is invoked exactly once, in the pool owner's Eio
     context (never the system thread), after the callback has physically finished, with
@@ -120,7 +123,9 @@ val try_run :
   ?on_settled:(('a, exn) result -> unit) ->
   (unit -> 'a) ->
   'a try_run_outcome
-(** Never waits for admission; returns [Not_run Saturated] if no slot is free. *)
+(** Never waits for admission; returns [Not_run Saturated] if no slot is free. Raises
+    [Invalid_argument] from worker startup on a finished or wrong-domain owner switch, as
+    with [run]. ^nlintd-raises *)
 
 val run_result :
   pool:Pool.t ->
@@ -129,7 +134,9 @@ val run_result :
   ?on_settled:((('a, 'e) result, exn) result -> unit) ->
   (unit -> ('a, 'e) result) ->
   ('a, [ `Shutting_down | `Callback of 'e ]) result
-(** Preserve callback errors as typed [`Callback e], distinct from pool failures. *)
+(** Preserve callback errors as typed [`Callback e], distinct from pool failures. Raises
+    [Invalid_argument] from worker startup on a finished or wrong-domain owner switch, as
+    with [run]. ^nlintd-raises *)
 
 val try_run_result :
   pool:Pool.t ->
@@ -138,6 +145,8 @@ val try_run_result :
   ?on_settled:((('a, 'e) result, exn) result -> unit) ->
   (unit -> ('a, 'e) result) ->
   ('a try_run_outcome, [ `Callback of 'e ]) result
+(** Raises [Invalid_argument] from worker startup on a finished or wrong-domain owner
+    switch, as with [run]. ^nlintd-raises *)
 
 val run_result_timeout :
   pool:Pool.t ->
@@ -150,7 +159,9 @@ val run_result_timeout :
   (unit -> ('a, 'e) result) ->
   ('a, [ `Shutting_down | `Timed_out of 'timeout | `Callback of 'e ]) result
 (** Timeout bounds the caller wait only. Started native work retains its slot; [on_cancel]
-    runs once if timeout wins and work has not completed. *)
+    runs once if timeout wins and work has not completed. Raises [Invalid_argument] from
+    worker startup on a finished or wrong-domain owner switch, as with [run_result].
+    ^nlintd-truth ^nlintd-raises *)
 
 val try_run_result_timeout :
   pool:Pool.t ->
@@ -162,3 +173,5 @@ val try_run_result_timeout :
   ?on_settled:((('a, 'e) result, exn) result -> unit) ->
   (unit -> ('a, 'e) result) ->
   ('a try_run_outcome, [ `Timed_out of 'timeout | `Callback of 'e ]) result
+(** Raises [Invalid_argument] from worker startup on a finished or wrong-domain owner
+    switch, as with [try_run_result]. ^nlintd-truth ^nlintd-raises *)
