@@ -288,6 +288,7 @@ let catch_all ~caps emit =
   let following = ref [] in
   let assign = Paths.values ~caps [ [ "Stdlib"; ":=" ] ] in
   let dereference = Paths.values ~caps [ [ "Stdlib"; "!" ] ] in
+  let ignored = Paths.values ~caps [ [ "Stdlib"; "ignore" ] ] in
   let cell e =
     match e.exp_desc with
     | Texp_ident { path; _ } -> Some (key !unit_name e path)
@@ -355,6 +356,11 @@ let catch_all ~caps emit =
             | Some (cell, _) when cell = target -> overwritten := true
             | _ -> ());
             (match e.exp_desc with
+            | Texp_apply (fn, args, _, _, _)
+              when (not (Paths.is_value ~caps ignored fn))
+                   && not (Paths.is_value ~caps dereference fn) ->
+                if List.exists (fun (_, arg) -> contains_read arg) (arguments args) then
+                  observed := true
             | Texp_assert (condition, _) ->
                 if contains_read condition then observed := true
             | Texp_match (scrutinee, _, cases, _, _)
@@ -366,7 +372,10 @@ let catch_all ~caps emit =
                      cases ->
                 if contains_read scrutinee then observed := true
             | _ -> ());
-            match e.exp_desc with Texp_function _ -> () | _ -> base.expr self e);
+            match e.exp_desc with
+            | Texp_function _ -> ()
+            | Texp_apply (fn, _, _, _, _) when Paths.is_value ~caps ignored fn -> ()
+            | _ -> base.expr self e);
       }
     in
     List.iter (iterator.expr iterator) expressions;
@@ -453,6 +462,22 @@ let catch_all ~caps emit =
           tree.str_items
     | _ -> ()
   in
+  (* ^nlintc-du4v: _exit runs no handlers and returns to no caller, even in a
+     fork child owned by a library. Every possible handler result must terminate. *)
+  let immediate_exits =
+    Paths.values ~caps [ [ "Unix"; "_exit" ]; [ "Ox_caps"; "Cap_unix"; "_exit" ] ]
+  in
+  let rec immediate_exit e =
+    match e.exp_desc with
+    | Texp_apply (fn, _, _, _, _) -> Paths.is_value ~caps immediate_exits fn
+    | Texp_sequence (_, _, last) | Texp_let (_, _, last) -> immediate_exit last
+    | Texp_ifthenelse (_, yes, Some no) -> immediate_exit yes && immediate_exit no
+    | Texp_match (_, _, cases, _, _) ->
+        cases <> [] && List.for_all (fun c -> immediate_exit c.c_rhs) cases
+    | Texp_try (body, cases, _) ->
+        immediate_exit body && List.for_all (fun c -> immediate_exit c.c_rhs) cases
+    | _ -> false
+  in
   let check cases =
     let cancellation_passes = ref false in
     List.iter
@@ -460,12 +485,18 @@ let catch_all ~caps emit =
         let p = case.c_lhs in
         if is_cancelled p then begin
           let passes =
-            Option.fold ~none:false ~some:(fun id -> propagates id case.c_rhs) (binding p)
+            immediate_exit case.c_rhs
+            || Option.fold ~none:false
+                 ~some:(fun id -> propagates id case.c_rhs)
+                 (binding p)
           in
           if Option.is_some (binding p) && not passes then emit p.pat_loc;
           if case.c_guard = None && passes then cancellation_passes := true
         end
-        else if (not !cancellation_passes) && case.c_guard = None then
+        else if
+          (not !cancellation_passes) && case.c_guard = None
+          && not (immediate_exit case.c_rhs)
+        then
           match p.pat_desc with
           | Tpat_any -> emit p.pat_loc
           | Tpat_var { id; name = { txt = "exn" | "_exn"; _ }; _ }

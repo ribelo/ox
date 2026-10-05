@@ -40,3 +40,16 @@ val protected_cancellation : Eio.Switch.t -> unit
 
 val swallowed_cancel : caps:< Ox_caps.Cap.fs_write ; .. > -> Eio.Switch.t -> string -> unit
 (** Cancellation: classified as caught locally. Cancellation safety: safe to re-run. Raises Invalid_argument; other exceptions depend on Ox_caps.Cap_stdlib and Stdlib. *)
+(* ^nlintd-truth *)
+val operator_yield : Eio.Switch.t -> unit
+val result_operator_yield : Eio.Switch.t -> (unit, string) result
+val saturated_partial : Eio.Switch.t -> unit
+val prefix_partial : Eio.Switch.t -> unit
+val callback_yield : Eio.Switch.t -> unit
+val optional_default_yield : Eio.Switch.t -> unit option
+val functional_compare : Eio.Switch.t -> (unit -> unit) -> (unit -> unit) -> bool
+val unresolved_operator : Eio.Switch.t -> (unit -> (unit -> unit) -> unit) -> unit
+
+val unqualified_input : in_channel -> Eio.Switch.t -> string
+(** @raise End_of_file at end of input. *)
+

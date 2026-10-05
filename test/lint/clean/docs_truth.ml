@@ -42,3 +42,37 @@ let thread_spawn clock = ignore (Thread.create (fun () -> Eio.Time.sleep clock 1
 let domain_spawn clock = ignore (Domain.spawn (fun () -> Eio.Time.sleep clock 1.))
 let background clock = Eio.Time.sleep clock 1.
 let named_thread_spawn clock = ignore (Thread.create background clock)
+
+(* ^nlintd-truth: visible operators, higher-order locals and default readers. *)
+let ( let* ) value continuation = continuation value
+
+let visible_operator _ =
+  let* () = () in
+  ()
+
+let result_operator _ =
+  let open Result.Syntax in
+  let* () = Ok () in
+  Ok ()
+
+let call_local f value = f value
+let local_callback _ = call_local (fun () -> ()) ()
+let discard_callback f = ignore f
+let ignored_callback _ = discard_callback (fun () -> Eio.Fiber.yield ())
+let curried _ () = Eio.Fiber.yield ()
+
+let deferred_partial _ =
+  let deferred = curried () in
+  ignore deferred
+
+let sync_reader key = if String.trim key <> "" then Some key else None
+let read_optional ?(env = sync_reader) () = env "value"
+let optional_default _ = read_optional ()
+
+let scalar_leaves _ input =
+  let n = Option.value (int_of_string_opt (String.trim input)) ~default:0 in
+  ignore (Filename.concat input (string_of_int n));
+  n > 0
+
+(* ^nlintd-raises: named external raise assertions stay local to this contract. *)
+let delegated_input channel _ = input_line channel

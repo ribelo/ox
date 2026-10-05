@@ -43,7 +43,8 @@ aliases and opaque construction helpers are not followed.
 
 **A store needs visible use.** Storing the original exception (possibly in a tuple,
 variant or record payload) in a ref or mutable record field counts only when the
-visible continuation returns the stored contents, asserts about them, or scrutinizes
+visible continuation returns the stored contents, passes an observable read to a
+consumer (including a presence test against `None`), asserts about them, or scrutinizes
 them in a non-wildcard match. An unread store, ignored dereference, deferred reader
 or intervening overwrite stays a finding. The target must be origin-resolved and
 identifiable; this is not arbitrary heap or whole-program use tracking. Rendering an
@@ -58,6 +59,13 @@ and match/try results are traversed. Let right-hand sides, discarded sequence pr
 unknown callbacks, named/deferred programs, refs/record-result routes, optional Door
 callbacks, utility modules and library initializers receive no terminal privilege.
 Returning a rendered error or status to a continuing caller is still a finding.
+^nlintc-du4v ^nlintc-kdcl
+
+**Immediate child termination is terminal anywhere.** An origin-resolved
+`Unix._exit` or `Ox_caps.Cap_unix._exit` as the handler result returns to no
+caller and runs no `at_exit` handlers. It needs no executable-entry privilege.
+All conditional/match/try results must terminate; let right-hand sides, discarded
+prefixes and deferred callbacks do not count. This does not widen `Stdlib.exit`.
 ^nlintc-du4v ^nlintc-kdcl
 
 **Separate hazard deliberately not covered:** suspension after catching a

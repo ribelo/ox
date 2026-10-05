@@ -6,6 +6,26 @@ The rule checks the sentence shape **and implementation evidence**. A finite typ
 
 Only claims that depend on unresolved evidence produce **undecided** diagnostics; a value with no suspension/raising/cleanup claim does not become undecided merely because it calls opaque code. Known non-suspending primitives use a small explicit compiler-primitive table, not a Stdlib-wide exemption. Transparent generated aliases, empty structures and constant bindings are traversed. Direct Eio aliases retain their leaf semantics and known callback bodies are traversed. Source-verified allocation leaves are a small explicit Eio table. External opaque calls, callback parameters and unsupported functor evidence produce named **undecided** diagnostics unless a relevant sentence explicitly bounds that dependency. Dynamic re-raise and stored-exception identities are uncertain only for exception assertions. Abstract module-type declarations have shape contracts, not nonexistent implementation bindings. A locking-only delegation cannot qualify an unconditional suspension/cancellation claim. Missing or stale implementation evidence is undecided and fatal under `--require-typed`. Tests are still required for behaviour beyond the finite evidence model.
 
+Visible binding operators follow their resolved operator and continuation. Supplied
+callback summaries substitute only the callback parameters actually invoked by local
+callees; optional defaults and partially applied local aliases retain their bindings.
+Partial creation does not execute a deferred body, but an already-saturated prefix
+can still suspend before returning a closure. These edges stay in the finite summary
+graph rather than recursively expanding helper ASTs. Verified Stdlib leaves include
+`int_of_string_opt`, `Option.value`, `String.trim` and `Result.bind`; polymorphic
+comparisons are only total leaves at scalar instantiations. Functional or
+unconstrained comparisons remain named opaque targets. ^nlintd-truth
+
+Evidence stops at the package boundary. An installed dependency interface proves
+that documentation exists, not that its implementation contract was decided true;
+this engine does not import those sentences as proof or assume that `Ox_caps` or
+`Ox_sql` is exempt. A val’s own relevant sentence can explicitly name and bound
+an unresolved delegate, making that scoped assertion decided without proving the
+delegate. A `@raise` clause naming its actual unresolved source similarly bounds
+that raise assertion; an unnamed source stays undecided. Such disclosures never
+become transitive evidence for another val, and never hide a known contradiction.
+^nlintd-truth ^nlintd-raises
+
 Generated sibling implementations are resolved through their actual evidence workspace
 and declared Dune producer, not an assumed source-tree sibling; missing provenance or
 fresh evidence stays named **undecided**. Adding the missing contract shape activates

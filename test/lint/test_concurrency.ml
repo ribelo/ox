@@ -65,7 +65,8 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let expectations =
     [
       ( "ox-catch-all",
-        [ 6; 14; 15; 16; 17; 18; 21; 25; 31; 37; 38; 40; 44; 48; 53; 59; 66 ] );
+        [ 6; 14; 15; 16; 17; 18; 21; 25; 31; 37; 38; 40; 44; 48; 53; 59; 66; 70; 73; 76 ]
+      );
       ("ox-suspending-finalizer", [ 4; 5; 10; 14; 20 ]);
       ("ox-stdlib-lock", [ 6; 11; 18; 21; 29; 34; 41 ]);
       ("ox-raw-concurrency", [ 4; 5; 6; 7; 8; 9; 10; 14 ]);

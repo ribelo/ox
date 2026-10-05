@@ -64,3 +64,13 @@ type exception_cell = { mutable raised : exn option }
 let unobserved_field f =
   let cell = { raised = None } in
   try f () with exn -> cell.raised <- Some exn
+
+(* ^nlintc-du4v ^nlintc-kdcl: an exit on only one result cannot license the other. *)
+let child_branch ~caps terminate f =
+  try f () with _ -> if terminate then Ox_caps.Cap_unix._exit ~caps 127 else ()
+
+let child_discarded ~caps f =
+  try f () with _ -> ignore (fun () -> Ox_caps.Cap_unix._exit ~caps 127)
+
+let child_rhs ~caps f =
+  try f () with _ -> let _ = Ox_caps.Cap_unix._exit ~caps 127 in ()

@@ -197,6 +197,12 @@ let run ~caps =
       ("masked_added_check", "no added Eio");
       ("protected_cancellation", "cancellation can escape");
       ("swallowed_cancel", "cleanup of resource");
+      ("operator_yield", "never suspends");
+      ("result_operator_yield", "never suspends");
+      ("saturated_partial", "never suspends");
+      ("prefix_partial", "never suspends");
+      ("callback_yield", "never suspends");
+      ("optional_default_yield", "never suspends");
     ];
   if
     not
@@ -211,6 +217,26 @@ let run ~caps =
            contains message "locking_only" && contains message "opaque call")
          unknown)
   then failwith "an unrelated locking delegation licensed a scheduling claim";
+  List.iter
+    (fun name ->
+      if
+        not
+          (List.exists
+             (fun message -> contains message name && contains message "opaque call")
+             unknown)
+      then failwith ("unresolved target passed silently: " ^ name))
+    [ "functional_compare"; "unresolved_operator" ];
+  if
+    not
+      (List.exists
+         (fun message ->
+           contains message "unqualified_input"
+           && contains message "@raise end_of_file"
+           && contains message "opaque calls")
+         unknown)
+  then failwith "an unnamed external raise source was treated as proof";
+  if List.exists (fun message -> contains message "let-operator invocation") unknown then
+    failwith "visible operator origin was replaced with a generic opacity";
   Cap_stdlib.print_endline ~caps
     "documentation truth: package reachability, relevant qualifications, raises, masking \
      and cancellation-path cleanup: pass"

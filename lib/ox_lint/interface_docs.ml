@@ -360,8 +360,15 @@ type effects = {
 }
 
 type transformation = Filter of Names.t * bool | Wrap of string
-type edge = { target : string; filters : transformation list }
-type summary = { effects : effects; calls : edge list }
+
+type edge = {
+  target : string;
+  filters : transformation list;
+  bindings : (string * summary) list;
+}
+
+and summary = { effects : effects; calls : edge list }
+
 type definition = { body : expression; unit_name : string; mutable summary : summary }
 
 module Expressions = Hashtbl.Make (struct
@@ -508,6 +515,18 @@ let semantic_leaves =
     ("Eio.Cancel.check", false, true, [ "Invalid_argument" ]);
     ("Eio.Switch.on_release", false, false, [ "Invalid_argument" ]);
     ("Eio.Switch.on_release_cancellable", false, false, [ "Invalid_argument" ]);
+    (* ^nlintd-truth: installed 5.4.0+ox stdlib.mli:729, option.mli:38,
+       string.mli:251 and result.mli:64 specify these synchronous total leaves. *)
+    ("Stdlib.int_of_string_opt", false, false, []);
+    (* ^nlintd-truth: installed stdlib.ml:279 fixes the decimal format;
+       filename.ml:303 guards the only indexed access before concatenation. *)
+    ("Stdlib.string_of_int", false, false, []);
+    ("Stdlib.Filename.concat", false, false, []);
+    ("Stdlib.Option.value", false, false, []);
+    ("Stdlib.String.trim", false, false, []);
+    ("Stdlib.Result.bind", false, false, []);
+    (* ^nlintd-truth: installed result.ml:62 is exactly an alias of bind. *)
+    ("Stdlib.Result.Syntax.let*", false, false, []);
   ]
 
 let special_names =
@@ -571,7 +590,28 @@ let known_exception e =
 
 (* ^nlintd-truth: deliberately known non-suspending, non-resource primitives.
    This is not a blanket Stdlib exemption: absent primitives remain opaque. *)
-let primitive_is_pure description =
+(* ^nlintd-truth: stdlib.mli:128-162 excludes arbitrary polymorphic comparison.
+   Scalar instantiations cannot reach functional values or cyclic structures. *)
+let scalar_type ty =
+  match Types.get_desc ty with
+  | Tconstr (path, _, _) ->
+      List.exists (Path.same path)
+        [
+          Predef.path_int;
+          Predef.path_float;
+          Predef.path_char;
+          Predef.path_string;
+          Predef.path_bool;
+          Predef.path_unit;
+        ]
+  | _ -> false
+
+let scalar_comparison ty =
+  match Types.get_desc ty with
+  | Tarrow (_, argument, _, _) -> scalar_type argument
+  | _ -> false
+
+let primitive_is_pure ?argument e description =
   match description.Types.val_kind with
   | Val_prim primitive ->
       List.mem primitive.Primitive.prim_name
@@ -613,6 +653,17 @@ let primitive_is_pure description =
           "%field1";
           "%setfield0";
         ]
+      || List.mem primitive.Primitive.prim_name
+           [
+             "%equal";
+             "%notequal";
+             "%lessthan";
+             "%greaterthan";
+             "%lessequal";
+             "%greaterequal";
+             "%compare";
+           ]
+         && Option.fold ~none:(scalar_comparison e.exp_type) ~some:scalar_type argument
   | _ -> false
 
 let rec function_body e =
@@ -715,8 +766,13 @@ let add_unit ~caps evidence artifact =
   let function_typed e =
     match Types.get_desc e.exp_type with Tarrow _ -> true | _ -> false
   in
-  let pure_callee e =
-    match e.exp_desc with Texp_ident { desc; _ } -> primitive_is_pure desc | _ -> false
+  let pure_callee args e =
+    let argument =
+      match args with (_, first) :: _ -> Some first.exp_type | [] -> None
+    in
+    match e.exp_desc with
+    | Texp_ident { desc; _ } -> primitive_is_pure ?argument e desc
+    | _ -> false
   in
   (* ^nlintd-truth: invoking an exported alias has the same leaf semantics as
      applying it; reading a non-function value is not a call. *)
@@ -738,26 +794,168 @@ let add_unit ~caps evidence artifact =
       join summary (unknown_raise (name ^ " stored exception"))
     else summary
   in
+  let local_definition e =
+    match e.exp_desc with
+    | Texp_ident { path; _ } ->
+        let name = key e path in
+        let name = Option.value (Hashtbl.find_opt evidence.exports name) ~default:name in
+        Option.map
+          (fun definition -> (name, definition))
+          (Hashtbl.find_opt evidence.definitions name)
+    | _ -> None
+  in
+  let rec parameters e =
+    match e.exp_desc with
+    | Texp_function { params; body = Tfunction_body body; _ } -> params @ parameters body
+    | Texp_function { params; _ } -> params
+    | Texp_let (_, _, body) | Texp_sequence (_, _, body) -> parameters body
+    | _ -> []
+  in
+  let closures = Expressions.create 16 and next_closure = ref 0 in
   let rec invokes e =
     match e.exp_desc with
-    | Texp_function { body = Tfunction_body body; _ } -> invokes body
+    | Texp_function { body = Tfunction_body body; _ } ->
+        if function_typed body then invokes body else expression body
     | Texp_function { body = Tfunction_cases cases; _ } ->
         joins
           (List.map
              (fun c ->
-               joins (List.map expression (Option.to_list c.c_guard @ [ c.c_rhs ])))
+               join
+                 (joins (List.map expression (Option.to_list c.c_guard)))
+                 (if function_typed c.c_rhs then invokes c.c_rhs else expression c.c_rhs))
              cases.fc_cases)
     | Texp_ident { path; desc; _ } -> (
-        if (not (function_typed e)) || primitive_is_pure desc then empty_summary
+        if (not (function_typed e)) || primitive_is_pure e desc then empty_summary
         else
           match List.assoc_opt (origin e) leaves with
           | Some (name, suspends, checks, exceptions) ->
               leaf name suspends checks exceptions
           | None ->
-              { empty_summary with calls = [ { target = key e path; filters = [] } ] })
-    | Texp_apply (callee, _, _, _, _) when function_typed e ->
-        join (expression e) (unknown ("returned-function callback from " ^ origin callee))
+              {
+                empty_summary with
+                calls = [ { target = key e path; filters = []; bindings = [] } ];
+              })
+    | Texp_apply (callee, args, _, _, _) when function_typed e ->
+        join (expression e) (application [] false callee (arguments args))
+    | Texp_let (_, bindings, body) when function_typed e ->
+        join (joins (List.map (fun vb -> expression vb.vb_expr) bindings)) (invokes body)
+    | Texp_sequence (first, _, last) when function_typed e ->
+        join (expression first) (invokes last)
+    | Texp_ifthenelse (condition, yes, no) when function_typed e ->
+        joins (expression condition :: invokes yes :: List.map invokes (Option.to_list no))
     | _ -> expression e
+  and bindings definition actuals =
+    let rec select label prefix = function
+      | [] -> (None, List.rev prefix)
+      | (actual_label, actual) :: rest when label = actual_label ->
+          (Some actual, List.rev_append prefix rest)
+      | item :: rest -> select label (item :: prefix) rest
+    in
+    let rec bind actuals = function
+      | [] -> []
+      | parameter :: rest ->
+          let actual, actuals = select parameter.fp_arg_label [] actuals in
+          let pattern, actual =
+            match parameter.fp_kind with
+            | Tparam_pat pattern -> (pattern, actual)
+            | Tparam_optional_default (pattern, default, _) ->
+                let actual =
+                  match actual with
+                  | Some { exp_desc = Texp_construct (_, d, _, [ (_, value) ], _); _ }
+                    when d.cstr_name = "Some" ->
+                      Some value
+                  | Some { exp_desc = Texp_construct (_, d, _, [], _); _ }
+                    when d.cstr_name = "None" ->
+                      Some default
+                  | None -> Some default
+                  | actual -> actual
+                in
+                (pattern, actual)
+          in
+          let bound =
+            match actual with
+            | Some actual when function_typed actual ->
+                List.map
+                  (fun id -> (local_key definition.unit_name id, invokes actual))
+                  (Typedtree.pat_bound_idents pattern)
+            | _ -> []
+          in
+          bound @ bind actuals rest
+    in
+    bind actuals (parameters definition.body)
+  and application seen partial callee actuals =
+    let edge name definition =
+      {
+        empty_summary with
+        calls =
+          [ { target = name; filters = []; bindings = bindings definition actuals } ];
+      }
+    in
+    match local_definition callee with
+    | Some (name, definition) when not (List.mem name seen) -> (
+        match definition.body.exp_desc with
+        | Texp_ident _ -> application (name :: seen) partial definition.body actuals
+        | Texp_apply (fn, stored, _, _, _) ->
+            application (name :: seen) partial fn (arguments stored @ actuals)
+        | Texp_function { params; body; _ } when partial ->
+            let supplied = List.map fst actuals in
+            let rec supplied_all supplied = function
+              | [] -> true
+              | p :: rest ->
+                  let rec remove prefix = function
+                    | [] -> None
+                    | label :: labels when label = p.fp_arg_label ->
+                        Some (List.rev_append prefix labels)
+                    | label :: labels -> remove (label :: prefix) labels
+                  in
+                  Option.fold ~none:false
+                    ~some:(fun supplied -> supplied_all supplied rest)
+                    (remove [] supplied)
+            in
+            if not (supplied_all supplied params) then empty_summary
+            else
+              let prefix = name ^ ":application-prefix" in
+              if not (Hashtbl.mem evidence.definitions prefix) then begin
+                let summary =
+                  match body with
+                  | Tfunction_body body -> expression body
+                  | Tfunction_cases cases ->
+                      joins
+                        (List.concat_map
+                           (fun c ->
+                             List.map expression (Option.to_list c.c_guard @ [ c.c_rhs ]))
+                           cases.fc_cases)
+                in
+                Hashtbl.add evidence.definitions prefix { definition with summary }
+              end;
+              edge prefix definition
+        | _ -> edge name definition)
+    | _ -> (
+        match callee.exp_desc with
+        | Texp_apply (fn, stored, _, _, _) ->
+            application seen partial fn (arguments stored @ actuals)
+        | Texp_function _ ->
+            let name =
+              match Expressions.find_opt closures callee with
+              | Some name -> name
+              | None ->
+                  incr next_closure;
+                  let name = unit_name ^ ":closure-" ^ string_of_int !next_closure in
+                  Expressions.add closures callee name;
+                  Hashtbl.add evidence.definitions name
+                    { body = callee; unit_name; summary = invokes callee };
+                  name
+            in
+            edge name (Hashtbl.find evidence.definitions name)
+        | _ when partial -> unknown (origin callee ^ " partial application")
+        | _ when pure_callee actuals callee -> empty_summary
+        | _ ->
+            join (invokes callee)
+              (joins
+                 (List.filter_map
+                    (fun (_, actual) ->
+                      if function_typed actual then Some (invokes actual) else None)
+                    actuals)))
   and expression e =
     match Expressions.find_opt evidence.expressions e with
     | Some summary -> summary
@@ -813,21 +1011,28 @@ let add_unit ~caps evidence artifact =
           | _ -> (
               match List.assoc_opt (origin callee) leaves with
               | Some (name, suspends, checks, exceptions) ->
-                  leaf name suspends checks exceptions
-              | None when pure_callee callee -> invokes callee
+                  join
+                    (leaf name suspends checks exceptions)
+                    (if function_typed e then empty_summary
+                     else
+                       joins
+                         (List.filter_map
+                            (fun (_, arg) ->
+                              if function_typed arg then Some (invokes arg) else None)
+                            args))
+              | None when pure_callee args callee -> empty_summary
               | None ->
                   let callbacks =
                     joins
                       (List.filter_map
                          (fun (_, arg) ->
-                           if function_typed arg then Some (invokes arg) else None)
+                           if function_typed e || Option.is_some (local_definition callee)
+                           then None
+                           else if function_typed arg then Some (invokes arg)
+                           else None)
                          args)
                   in
-                  let invocation =
-                    if function_typed e then
-                      unknown (origin callee ^ " partial application")
-                    else invokes callee
-                  in
+                  let invocation = application [] (function_typed e) callee args in
                   join invocation callbacks)
         in
         join evaluated call
@@ -900,7 +1105,74 @@ let add_unit ~caps evidence artifact =
         in
         join (expression condition) branches
     | Texp_send _ -> children (unknown "object method dispatch") e
-    | Texp_letop _ -> children (unknown "let-operator invocation") e
+    | Texp_letop { let_; ands; body; _ } ->
+        (* ^nlintd-truth: a binding operator is a path-resolved ordinary call. *)
+        let callback =
+          joins (List.map expression (Option.to_list body.c_guard @ [ body.c_rhs ]))
+        in
+        let rec operator seen op target callback =
+          match Hashtbl.find_opt evidence.definitions target with
+          | Some definition when not (List.mem target seen) -> (
+              match definition.body.exp_desc with
+              | Texp_ident { path; _ } ->
+                  operator (target :: seen) op (key definition.body path) callback
+              | _ ->
+                  let callback_parameters =
+                    match callback with
+                    | None -> []
+                    | Some summary -> (
+                        match List.rev (parameters definition.body) with
+                        | p :: _ -> (
+                            let pattern =
+                              match p.fp_kind with
+                              | Tparam_pat p | Tparam_optional_default (p, _, _) -> p
+                            in
+                            match Types.get_desc pattern.pat_type with
+                            | Tarrow _ ->
+                                List.map
+                                  (fun id -> (local_key definition.unit_name id, summary))
+                                  (Typedtree.pat_bound_idents pattern)
+                            | _ -> [])
+                        | [] -> [])
+                  in
+                  let invocation =
+                    {
+                      empty_summary with
+                      calls =
+                        [
+                          {
+                            target;
+                            filters = [];
+                            bindings =
+                              bindings definition [ (Nolabel, op.bop_exp) ]
+                              @ callback_parameters;
+                          };
+                        ];
+                    }
+                  in
+                  if callback_parameters = [] then
+                    join invocation (joins (Option.to_list callback))
+                  else invocation)
+          | _ ->
+              let invocation =
+                match List.assoc_opt target leaves with
+                | Some (name, suspends, checks, exceptions) ->
+                    leaf name suspends checks exceptions
+                | None ->
+                    {
+                      empty_summary with
+                      calls = [ { target; filters = []; bindings = [] } ];
+                    }
+              in
+              join invocation (joins (Option.to_list callback))
+        in
+        joins
+          (expression let_.bop_exp
+          :: operator [] let_ (key e let_.bop_op_path) (Some callback)
+          :: List.concat_map
+               (fun op ->
+                 [ expression op.bop_exp; operator [] op (key e op.bop_op_path) None ])
+               ands)
     | _ -> children empty_summary e
   and children initial e =
     let result = ref initial in
@@ -910,30 +1182,63 @@ let add_unit ~caps evidence artifact =
     base.expr walk e;
     !result
   in
-  Hashtbl.iter
-    (fun _ definition ->
+  Hashtbl.to_seq_values evidence.definitions
+  |> List.of_seq
+  |> List.iter (fun definition ->
       if definition.unit_name = unit_name then
-        definition.summary <-
-          (match definition.body.exp_desc with
-          | Texp_ident _ -> invokes definition.body
-          | _ -> invokes definition.body))
-    evidence.definitions
+        definition.summary <- invokes definition.body)
+
+(* ^nlintd-truth: callback substitutions are summaries on finite graph edges, not
+   recursive AST expansion. Only callback demands actually reached by a callee are
+   substituted; merely passing a closure does not execute it. *)
+let rec summary_effects evidence summary =
+  List.fold_left
+    (fun effects edge -> union effects (edge_effects evidence edge))
+    summary.effects summary.calls
+
+and edge_effects evidence edge =
+  let key =
+    Option.value (Hashtbl.find_opt evidence.exports edge.target) ~default:edge.target
+  in
+  let callee =
+    Option.value
+      (Hashtbl.find_opt evidence.resolved key)
+      ~default:(unknown edge.target).effects
+  in
+  let substituted =
+    List.fold_left
+      (fun effects (parameter, actual) ->
+        if Names.mem parameter callee.opaque then
+          union effects (summary_effects evidence actual)
+        else effects)
+      {
+        callee with
+        opaque =
+          List.fold_left
+            (fun xs (parameter, _) -> Names.remove parameter xs)
+            callee.opaque edge.bindings;
+      }
+      edge.bindings
+  in
+  apply_filters edge.filters substituted
 
 let resolve evidence =
   let reverse = Hashtbl.create 128 in
   let target key = Option.value (Hashtbl.find_opt evidence.exports key) ~default:key in
+  let rec depend name summary =
+    List.iter
+      (fun edge ->
+        let key = target edge.target in
+        if Hashtbl.mem evidence.definitions key then
+          Hashtbl.replace reverse key
+            (name :: Option.value (Hashtbl.find_opt reverse key) ~default:[]);
+        List.iter (fun (_, actual) -> depend name actual) edge.bindings)
+      summary.calls
+  in
   Hashtbl.iter
     (fun name definition ->
-      let effects = ref definition.summary.effects in
-      List.iter
-        (fun edge ->
-          let key = target edge.target in
-          if Hashtbl.mem evidence.definitions key then
-            Hashtbl.replace reverse key
-              (name :: Option.value (Hashtbl.find_opt reverse key) ~default:[])
-          else effects := union !effects (unknown edge.target).effects)
-        definition.summary.calls;
-      Hashtbl.replace evidence.resolved name !effects)
+      depend name definition.summary;
+      Hashtbl.replace evidence.resolved name definition.summary.effects)
     evidence.definitions;
   let queue = Queue.create () in
   let queued = Hashtbl.create 128 in
@@ -948,14 +1253,7 @@ let resolve evidence =
     Hashtbl.remove queued name;
     let definition = Hashtbl.find evidence.definitions name in
     let before = Hashtbl.find evidence.resolved name in
-    let after =
-      List.fold_left
-        (fun effects edge ->
-          match Hashtbl.find_opt evidence.resolved (target edge.target) with
-          | None -> effects
-          | Some callee -> union effects (apply_filters edge.filters callee))
-        before definition.summary.calls
-    in
+    let after = union before (summary_effects evidence definition.summary) in
     if
       not
         (Names.equal after.suspension before.suspension
@@ -963,7 +1261,8 @@ let resolve evidence =
         && Names.equal after.check_reachability before.check_reachability
         && Names.equal after.exceptions before.exceptions
         && Names.equal after.explicit_raises before.explicit_raises
-        && Names.equal after.opaque before.opaque)
+        && Names.equal after.opaque before.opaque
+        && Names.equal after.opaque_raises before.opaque_raises)
     then (
       Hashtbl.replace evidence.resolved name after;
       List.iter enqueue (Option.value (Hashtbl.find_opt reverse name) ~default:[]))
@@ -1103,6 +1402,27 @@ let opaque_qualified docs target =
         || (contains target "stored exception" && contains text "promise"))
     docs
 
+(* ^nlintd-raises: the author owns a specifically named delegated raise claim;
+   this bounds that val's assertion, never supplies evidence to callers. *)
+let delegated_raise docs tag target =
+  let marker = "@raise " ^ tag in
+  List.exists
+    (fun text ->
+      match index text marker 0 with
+      | None -> false
+      | Some at ->
+          let start = at + String.length marker in
+          let stop =
+            Option.value (index text "@raise " start) ~default:(String.length text)
+          in
+          let clause = String.sub text start (stop - start) in
+          (contains clause "from" || contains clause "propagat"
+         || contains clause "delegat" || contains clause "depends on"
+         || contains clause "failure of" || contains clause " if "
+         || contains clause " when ")
+          && opaque_qualified [ "delegated " ^ clause ] target)
+    docs
+
 (* ^nlintd-cleanup: cleanup requires a cancellation-path witness for the same resource.
    A success-only close, or a hook that merely mentions the handle, is not a witness. *)
 let cleanup_obligations ~caps evidence definition =
@@ -1131,18 +1451,7 @@ let cleanup_obligations ~caps evidence definition =
     match Expressions.find_opt evidence.expressions e with
     | None ->
         { empty_effects with opaque = Names.singleton "unanalysed cleanup expression" }
-    | Some summary ->
-        List.fold_left
-          (fun effects edge ->
-            let key =
-              Option.value
-                (Hashtbl.find_opt evidence.exports edge.target)
-                ~default:edge.target
-            in
-            match Hashtbl.find_opt evidence.resolved key with
-            | Some effects' -> union effects (apply_filters edge.filters effects')
-            | None -> union effects (unknown edge.target).effects)
-          summary.effects summary.calls
+    | Some summary -> summary_effects evidence summary
   in
   let argument id args =
     List.exists
@@ -1513,14 +1822,17 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                   List.iter
                     (fun tag ->
                       if
-                        not
-                          (Names.exists
-                             (fun name ->
-                               String.lowercase_ascii name = tag
-                               || String.lowercase_ascii
-                                    (List.hd (List.rev (String.split_on_char '.' name)))
-                                  = tag)
-                             effects.exceptions)
+                        (not
+                           (Names.exists
+                              (fun name ->
+                                String.lowercase_ascii name = tag
+                                || String.lowercase_ascii
+                                     (List.hd (List.rev (String.split_on_char '.' name)))
+                                   = tag)
+                              effects.exceptions))
+                        && not
+                             (Names.exists (delegated_raise docs tag)
+                                (Names.union effects.opaque effects.opaque_raises))
                       then
                         if
                           Names.is_empty effects.opaque

@@ -19,3 +19,25 @@ let locking_only _ f = f ()
 let masked_added_check sw = Eio.Cancel.protect (fun () -> Eio.Switch.check sw)
 let protected_cancellation _ = Eio.Cancel.protect (fun () -> raise (Eio.Cancel.Cancelled (Failure "explicit")))
 let swallowed_cancel ~caps sw filename = let resource = Ox_caps.Cap_stdlib.open_out ~caps filename in ignore resource; try Eio.Switch.check sw with Eio.Cancel.Cancelled _ -> ()
+(* ^nlintd-truth: neither saturation nor operator continuations erase effects. *)
+let ( let* ) value continuation = continuation value
+let operator_yield _ = let* () = () in Eio.Fiber.yield ()
+let result_operator_yield _ =
+  let ( let* ) = Result.bind in
+  let* () = Ok () in Eio.Fiber.yield (); Ok ()
+let curried _ () = Eio.Fiber.yield ()
+let saturated_partial _ = let run = curried () in run ()
+let prefixed _ = Eio.Fiber.yield (); fun () -> ()
+let prefix_partial _ = let ignored = prefixed () in ignore ignored
+let call_local f value = f value
+let callback_yield _ = call_local (fun () -> Eio.Fiber.yield ()) ()
+let read_optional ?(env = fun _ -> Eio.Fiber.yield (); None) () = env "value"
+let optional_default_yield _ = read_optional ()
+let functional_compare _ f g = f <> g
+let unresolved_operator _ op =
+  let ( let* ) = op in
+  let* () = () in ()
+
+(* ^nlintd-raises: a tag without its unresolved source remains undecided. *)
+let unqualified_input channel _ = input_line channel
+

@@ -102,3 +102,25 @@ let stored_field f =
   let cell = { raised = None } in
   (try f () with exn -> cell.raised <- Some exn);
   match cell.raised with Some _ -> true | None -> false
+
+(* ^nlintc-du4v ^nlintc-kdcl: fork-child termination is terminal in libraries. *)
+module U = Ox_caps.Cap_unix
+
+let child ~caps f = try f () with _ -> U._exit ~caps 127
+
+let child_tails ~caps f =
+  try f ()
+  with Eio.Cancel.Cancelled _ as exn ->
+    ignore exn;
+    let status = 127 in
+    if status == 127 then U._exit ~caps status else U._exit ~caps 1
+
+let child_match ~caps f =
+  try f ()
+  with _ -> ( match true with true -> U._exit ~caps 1 | false -> U._exit ~caps 2)
+
+(* ^nlintc-du4v ^nlintc-kdcl: a presence test is an observable read. *)
+let observed_presence ~(caps : < Ox_caps.Cap.stdout ; .. >) f =
+  let raised = ref None in
+  (try f () with exn -> raised := Some exn);
+  Ox_caps.Cap_stdlib.printf ~caps "%b\n" (!raised <> None)

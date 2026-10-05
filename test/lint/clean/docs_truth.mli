@@ -64,3 +64,22 @@ val buffered_publish : unit Eio.Stream.t -> unit
     Eio.Cancel.Cancelled cannot be delivered without waiting. Cancellation safety: safe to
     re-run; the free-slot branch has no cancellation point and commits once. Finalizers:
     none. Locking: delegated to the stream. *)
+
+(* ^nlintd-truth *)
+val visible_operator : Eio.Switch.t -> unit
+
+val result_operator : Eio.Switch.t -> (unit, string) result
+(** Suspension: never suspends. Cancellation: not a cancellation point. *)
+
+val local_callback : Eio.Switch.t -> unit
+val ignored_callback : Eio.Switch.t -> unit
+val deferred_partial : Eio.Switch.t -> unit
+
+val optional_default : Eio.Switch.t -> string option
+(** Suspension: never suspends. Cancellation: not a cancellation point. *)
+
+val scalar_leaves : Eio.Switch.t -> string -> bool
+(** Suspension: never suspends. Cancellation: not a cancellation point. *)
+
+val delegated_input : in_channel -> Eio.Switch.t -> string
+(** @raise End_of_file from delegated Stdlib.input_line at end of input. *)
