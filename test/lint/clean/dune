@@ -5,6 +5,7 @@
  (modules
   assertion_effects
   warning_policy
+  codec_seams
   io_count
   constant_index
   function_comparison
@@ -24,7 +25,7 @@
   docs_generated
   docs_generated_dependency)
  (modules_without_implementation public_exception)
- (libraries eio ox ox_caps unix threads))
+ (libraries eio ox ox_caps ox_http yojson unix threads))
 
 ; ^nlintd-truth ^nlintcov-q6n2: no checked-in implementation sibling exists.
 

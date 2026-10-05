@@ -71,6 +71,15 @@
   (../../test/lint/violating/warning_policy.mli
    as
    test/lint/violating/warning_policy.mli)
+  (../../docs/rules/ox-codec-seams.md as docs/rules/ox-codec-seams.md)
+  (../../test/lint/clean/codec_seams.ml as test/lint/clean/codec_seams.ml)
+  (../../test/lint/clean/codec_seams.mli as test/lint/clean/codec_seams.mli)
+  (../../test/lint/violating/codec_seams.ml
+   as
+   test/lint/violating/codec_seams.ml)
+  (../../test/lint/violating/codec_seams.mli
+   as
+   test/lint/violating/codec_seams.mli)
   (../../docs/rules/ox-io-count.md as docs/rules/ox-io-count.md)
   (../../test/lint/clean/io_count.ml as test/lint/clean/io_count.ml)
   (../../test/lint/clean/io_count.mli as test/lint/clean/io_count.mli)

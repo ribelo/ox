@@ -138,6 +138,9 @@ let all ~caps =
         "protected warning policy weakened; restore the compiler baseline"
         (fun ~emit ~undecided artifact ->
           Warning_policy.check ~caps ~artifact ~emit ~undecided);
+      evidence_rule "codec-seams"
+        "raw designated domain boundary; use a validated domain value and typed codec"
+        (Codec_seams.check ~caps);
       evidence_rule "io-count"
         "I/O byte count discarded; handle stream progress or preserve datagram semantics"
         (fun ~emit ~undecided:_ artifact -> visit (Io_count.check ~caps ~emit) artifact);
