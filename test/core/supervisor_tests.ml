@@ -45,16 +45,32 @@ let exceeded = function
 
 let make_log () =
   let entries = ref [] in
-  ((fun line -> entries := line :: !entries), fun () -> List.rev !entries)
+  (entries, fun () -> List.rev !entries)
 
-let rec cause_tag = function
-  | Cause.Fail _ -> "fail"
-  | Cause.Die _ -> "die"
-  | Cause.Interrupt _ -> "interrupt"
-  | Cause.Finalizer c -> "cleanup:" ^ cause_tag c
-  | Cause.Suppressed { primary; finalizer } ->
-      cause_tag primary ^ "+" ^ cause_tag finalizer
-  | Cause.Concurrent _ -> "many"
+let record_log entries line = entries := line :: !entries
+
+let cause_tag cause =
+  let pending = ref [ `Cause cause ] in
+  let tag = ref "" in
+  let running = ref true in
+  while !running do
+    match !pending with
+    | [] -> running := false
+    | step :: rest -> (
+        pending := rest;
+        match step with
+        | `Text text -> tag := !tag ^ text
+        | `Cause cause -> (
+            match cause with
+            | Cause.Fail _ -> tag := !tag ^ "fail"
+            | Cause.Die _ -> tag := !tag ^ "die"
+            | Cause.Interrupt _ -> tag := !tag ^ "interrupt"
+            | Cause.Finalizer c -> pending := `Text "cleanup:" :: `Cause c :: rest
+            | Cause.Suppressed { primary; finalizer } ->
+                pending := `Cause primary :: `Text "+" :: `Cause finalizer :: rest
+            | Cause.Concurrent _ -> tag := !tag ^ "many"))
+  done;
+  !tag
 
 let describe : _ S.event -> string = function
   | S.Child_started { child_id; incarnation } -> fmt "up %s#%d" child_id incarnation
@@ -92,7 +108,7 @@ type act =
 let rec act ~log id (ctx : string S.context) = function
   | Serve ->
       Eio.Promise.await ctx.stop_requested;
-      log (fmt "graceful %s#%d" id ctx.incarnation);
+      record_log log (fmt "graceful %s#%d" id ctx.incarnation);
       Ok ()
   | Complete -> Ok ()
   | Fail e -> Error e
@@ -111,14 +127,14 @@ let rec act ~log id (ctx : string S.context) = function
       with
       | `Go -> act ~log id ctx next
       | `Stop ->
-          log (fmt "graceful %s#%d" id ctx.incarnation);
+          record_log log (fmt "graceful %s#%d" id ctx.incarnation);
           Ok ())
 
 let scripted ~log ?restart ?shutdown ?significant id (script : int -> act) =
   S.child ~id ?restart ?shutdown ?significant (fun ctx ->
-      log (fmt "start %s#%d" id ctx.incarnation);
+      record_log log (fmt "start %s#%d" id ctx.incarnation);
       Eio.Switch.on_release (Scope.switch ctx.scope) (fun () ->
-          log (fmt "released %s#%d" id ctx.incarnation));
+          record_log log (fmt "released %s#%d" id ctx.incarnation));
       match script ctx.incarnation with
       | Early_fail e -> Error e
       | a ->
@@ -139,7 +155,7 @@ let start_ok ~scope ~clock ~log ?(intensity = intensity ()) ?auto_shutdown ~stra
     children =
   match
     S.start ~scope ~clock ~intensity ?auto_shutdown
-      ~on_event:(fun e -> log (describe e))
+      ~on_event:(fun e -> log := describe e :: !log)
       ~strategy children
   with
   | Ok sup -> sup
@@ -320,7 +336,7 @@ let defect_reporting () =
                     (match e with
                     | S.Child_exited { cause = Some c; _ } -> seen := c :: !seen
                     | _ -> ());
-                    log (describe e))
+                    log := describe e :: !log)
                   ~strategy:S.One_for_one
                   [ scripted ~log "x" (fun _ -> Crash boom) ]
               with
@@ -384,7 +400,7 @@ let cleanup_failures () =
               match
                 S.start ~scope ~clock
                   ~intensity:(intensity ~max_restarts:0 ())
-                  ~on_event:(fun e -> log (describe e))
+                  ~on_event:(fun e -> log := describe e :: !log)
                   ~strategy:S.One_for_one
                   [
                     S.child ~id:"g" (fun ctx ->
@@ -685,7 +701,7 @@ let timeout_is_not_a_kill () =
                       (* a finalizer no cancellation can interrupt until the gate opens *)
                       Eio.Switch.on_release (Scope.switch ctx.scope) (fun () ->
                           Eio.Promise.await gate;
-                          log "finalizer done");
+                          record_log log "finalizer done");
                       ctx.ready ();
                       Eio.Fiber.await_cancel ());
                 ]
@@ -776,9 +792,9 @@ let dynamic_template () =
       let triggers = Hashtbl.create 3 in
       let template =
         S.template ~id:"w" (fun (name, kind) (ctx : string S.context) ->
-            log (fmt "start %s#%d" name ctx.incarnation);
+            record_log log (fmt "start %s#%d" name ctx.incarnation);
             Eio.Switch.on_release (Scope.switch ctx.scope) (fun () ->
-                log (fmt "released %s#%d" name ctx.incarnation));
+                record_log log (fmt "released %s#%d" name ctx.incarnation));
             match kind with
             | `Bad -> Error "no start"
             | `Good ->
@@ -797,7 +813,7 @@ let dynamic_template () =
             let simple =
               match
                 S.start_simple ~scope ~clock ~intensity:(intensity ())
-                  ~on_event:(fun e -> log (describe e))
+                  ~on_event:(fun e -> log := describe e :: !log)
                   template
               with
               | Ok simple -> simple
@@ -1031,11 +1047,11 @@ let nested () =
       let group =
         S.child ~id:"group" (fun (ctx : inner_error S.context) ->
             incr group_starts;
-            log (fmt "group start %d" !group_starts);
+            record_log log (fmt "group start %d" !group_starts);
             match
               S.start ~scope:ctx.scope ~clock
                 ~intensity:(intensity ~max_restarts:0 ())
-                ~on_event:(fun e -> log ("inner " ^ describe e))
+                ~on_event:(fun e -> log := ("inner " ^ describe e) :: !log)
                 ~strategy:S.One_for_all
                 [
                   scripted ~log "x" (fun _ ->

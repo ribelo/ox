@@ -366,14 +366,24 @@ let guarded f =
               Eio.Time.with_timeout_exn env#clock 5. (fun () -> f sw tracked_gate))))
 
 (* Start a callback held at [permit]; return once it is physically running. *)
-let start_gated ~sw ~gate p ?on_settled () =
+let start_gated ~sw ~gate p ?counter () =
   let started = Eio.Semaphore.make 0 in
   let permit = gate () in
   let call =
     Eio.Fiber.fork_promise ~sw (fun () ->
-        run ~pool:p ?on_settled (fun () ->
-            Eio.Semaphore.release started;
-            wait permit))
+        let work () =
+          Eio.Semaphore.release started;
+          wait permit
+        in
+        match counter with
+        | None -> run ~pool:p work
+        | Some (settled, hook, notification_error) ->
+            run ~pool:p
+              ~on_settled:(fun _ ->
+                inc settled;
+                try Eio.Semaphore.release hook
+                with Sys_error _ as ex -> notification_error := Some ex)
+              work)
   in
   Eio.Semaphore.acquire started;
   (call, permit)
@@ -382,11 +392,11 @@ let start_gated ~sw ~gate p ?on_settled () =
 let settled_counter () =
   let settled = Atomic.make 0 in
   let hook = Eio.Semaphore.make 0 in
-  let on_settled _ =
-    inc settled;
-    Eio.Semaphore.release hook
-  in
-  (settled, hook, on_settled)
+  (settled, hook, ref None)
+
+(* Notification defects are reported only after the physical callbacks have settled. *)
+let check_notification (_, _, notification_error) =
+  match !notification_error with None -> () | Some ex -> raise ex
 
 (* A Drain caller in its own fiber; [Ok n] reports [seen ()] when Drain returned. *)
 let drain ~sw ?(seen = fun () -> 0) p =
@@ -415,9 +425,9 @@ let pending name promise =
 let two_drainers_join_one_ending () =
   guarded (fun sw gate ->
       let p = pool ~sw ~threads:2 () in
-      let settled, hook, on_settled = settled_counter () in
-      let a, permit_a = start_gated ~sw ~gate p ~on_settled () in
-      let b, permit_b = start_gated ~sw ~gate p ~on_settled () in
+      let ((settled, hook, _) as counter) = settled_counter () in
+      let a, permit_a = start_gated ~sw ~gate p ~counter () in
+      let b, permit_b = start_gated ~sw ~gate p ~counter () in
       let seen () = Atomic.get settled in
       let d1 = drain ~sw ~seen p in
       let d2 = drain ~sw ~seen p in
@@ -431,16 +441,17 @@ let two_drainers_join_one_ending () =
       call_ok "first call" a;
       call_ok "second call" b;
       Alcotest.(check int) "each hook exactly once" 2 (Atomic.get settled);
-      Alcotest.(check int) "nothing active" 0 (Pool.stats p).active)
+      Alcotest.(check int) "nothing active" 0 (Pool.stats p).active;
+      check_notification counter)
 
 (* nblock-8z91 nblock-de0p nblock-vm4e: a drainer cancelled after one callback finished
    leaves an ending a surviving drainer completes; repeating it changes nothing. *)
 let cancelled_drainer_leaves_drain () =
   guarded (fun sw gate ->
       let p = pool ~sw ~threads:2 () in
-      let settled, hook, on_settled = settled_counter () in
-      let a, permit_a = start_gated ~sw ~gate p ~on_settled () in
-      let b, permit_b = start_gated ~sw ~gate p ~on_settled () in
+      let ((settled, hook, _) as counter) = settled_counter () in
+      let a, permit_a = start_gated ~sw ~gate p ~counter () in
+      let b, permit_b = start_gated ~sw ~gate p ~counter () in
       let cancel = ref None in
       let gave_up =
         Eio.Fiber.fork_promise ~sw (fun () ->
@@ -462,7 +473,8 @@ let cancelled_drainer_leaves_drain () =
       Alcotest.(check bool)
         "cancelled drainer released" true
         (Eio.Promise.await_exn gave_up);
-      (match try_run ~pool:p (fun () -> Alcotest.fail "admitted after seal") with
+      let admitted_after_seal = Atomic.make false in
+      (match try_run ~pool:p (fun () -> Atomic.set admitted_after_seal true) with
       | Not_run Shutting_down -> ()
       | _ -> Alcotest.fail "admission must stay sealed");
       let survivor = drain ~sw ~seen:(fun () -> Atomic.get settled) p in
@@ -475,7 +487,9 @@ let cancelled_drainer_leaves_drain () =
       Pool.shutdown p;
       Pool.shutdown p;
       Alcotest.(check bool) "repeated drain keeps accounting" true (before = Pool.stats p);
-      Alcotest.(check int) "hooks not rerun" 2 (Atomic.get settled))
+      Alcotest.(check int) "hooks not rerun" 2 (Atomic.get settled);
+      Alcotest.(check bool) "admitted after seal" false (Atomic.get admitted_after_seal);
+      check_notification counter)
 
 (* nblock-de0p: repeated Drain of an idle pool returns at once without new accounting. *)
 let repeated_drain_idle () =
@@ -525,7 +539,12 @@ let drain_seals_admission () =
 let drain_preserves_outcomes () =
   within (fun _env sw ->
       let p = pool ~sw ~threads:2 () in
-      let settled, _hook, on_settled = settled_counter () in
+      let ((settled, hook, notification_error) as counter) = settled_counter () in
+      let on_settled _ =
+        inc settled;
+        try Eio.Semaphore.release hook
+        with Sys_error _ as ex -> notification_error := Some ex
+      in
       (match run_result ~pool:p ~on_settled (fun () -> Ok 3) with
       | Ok 3 -> ()
       | _ -> Alcotest.fail "value lost");
@@ -536,7 +555,8 @@ let drain_preserves_outcomes () =
       | _ -> Alcotest.fail "callback defect converted"
       | exception Native_defect -> ());
       Pool.shutdown p;
-      Alcotest.(check int) "each hook once before drain" 3 (Atomic.get settled))
+      Alcotest.(check int) "each hook once before drain" 3 (Atomic.get settled);
+      check_notification counter)
 
 exception Owner_stop
 
@@ -546,6 +566,7 @@ let owner_cancellation_joins_worker () =
   Eio_main.run (fun env ->
       let permit = gate () in
       let caller_released, set_caller_released = Eio.Promise.create () in
+      let notification_error = ref None in
       let settled = Atomic.make 0 in
       let owner_done = Atomic.make false in
       let settled_at_owner_end = ref (-1) in
@@ -561,7 +582,9 @@ let owner_cancellation_joins_worker () =
                          let _cancelled_call_result =
                            run ~pool:p
                              ~on_cancel:(fun () ->
-                               Eio.Promise.resolve set_caller_released ())
+                               try Eio.Promise.resolve set_caller_released ()
+                               with Invalid_argument _ as ex ->
+                                 notification_error := Some ex)
                              ~on_settled:(fun _ -> inc settled)
                              (fun () ->
                                Eio.Semaphore.release started;
@@ -589,7 +612,8 @@ let owner_cancellation_joins_worker () =
                   Alcotest.(check bool)
                     "owner still joining the worker" false (Atomic.get owner_done);
                   Alcotest.(check int) "not settled while running" 0 (Atomic.get settled))));
-      Alcotest.(check int) "hook ran before the owner ended" 1 !settled_at_owner_end)
+      Alcotest.(check int) "hook ran before the owner ended" 1 !settled_at_owner_end;
+      match !notification_error with None -> () | Some ex -> raise ex)
 
 let () =
   Alcotest.run "ox_blocking"
