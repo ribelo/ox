@@ -1,0 +1,3 @@
+(test
+ (name positive)
+ (libraries ox_otel ox_http ox_test eio eio.mock))

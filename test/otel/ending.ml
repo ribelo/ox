@@ -54,6 +54,7 @@ let with_collector
               done;
               `Stop_daemon);
           let clock = Eio_mock.Clock.make () in
+          let mono_clock = Eio_mock.Clock.Mono.make () in
           let client =
             if mock_http_clock then Ox_http.Client.create ~sw ~net:env#net ~clock ()
             else Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock ()
@@ -62,12 +63,12 @@ let with_collector
           Eio.Switch.run (fun owned ->
               Fun.protect
                 ~finally:(fun () -> ignore (Eio.Promise.try_resolve release () : bool))
-                (fun () -> f env owned client endpoint clock arrivals release))))
+                (fun () -> f env owned client endpoint clock mono_clock arrivals release))))
 
 let make ?(batch_size = 1) ?(max_queue = 1) ?request_deadline ?on_error ?on_signal_error
-    ~caps ~sw ~client ~endpoint ~clock ~budget () =
-  O.create ~ending_budget:budget ~caps ~sw ~clock ~http_client:client ~endpoint
-    ~service_name:"ending" ~batch_size ~max_queue ?request_deadline ?on_error
+    ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget () =
+  O.create ~ending_budget:budget ~caps ~sw ~clock ~mono_clock ~http_client:client
+    ~endpoint ~service_name:"ending" ~batch_size ~max_queue ?request_deadline ?on_error
     ?on_signal_error ()
   |> ok
 
@@ -89,14 +90,21 @@ let fork_result ~sw f =
 
 let budget = Ox.Duration.ms 30
 
-let advance clock =
-  Eio_mock.Clock.set_time clock 1.;
+let advance mono_clock =
+  Eio_mock.Clock.Mono.set_time mono_clock
+    (Mtime.of_uint64_ns (Int64.of_float (1. *. 1e9)));
   Eio.Fiber.yield ()
 
 let full_queue_budget ~caps () =
-  (* ^notel-056b ^notel-jx0z: the total deadline includes a full-queue Stop admission. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
-      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~budget () in
+  (* ^notel-056b ^notel-jx0z ^safe-p9cw ^safe-8peq ^safe-5a9k: total native ending
+     budget includes full-queue Stop admission and subtracts a large origin first. *)
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
+      let origin = 9_000_000_000_000_000_000L in
+      let at ns =
+        Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns (Int64.add origin ns))
+      in
+      at 0L;
+      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget () in
       let log = logger env exporter in
       L.info log "in flight";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -104,7 +112,23 @@ let full_queue_budget ~caps () =
       let result = fork_result ~sw (fun () -> O.shutdown exporter) in
       Eio.Fiber.yield ();
       Eio.Fiber.yield ();
-      advance clock;
+      List.iter
+        (fun wall ->
+          Eio_mock.Clock.set_time clock wall;
+          for _ = 1 to 8 do
+            Eio.Fiber.yield ()
+          done;
+          Alcotest.(check bool)
+            "wall jump cannot end budget" true
+            (Eio.Promise.peek result = None))
+        [ -1000000.; 1000000. ];
+      at 29_000_000L;
+      Eio.Fiber.yield ();
+      Alcotest.(check bool)
+        "29 native ms are before expiry" true
+        (Eio.Promise.peek result = None);
+      at 30_000_000L;
+      Eio.Fiber.yield ();
       match guard env "full-queue shutdown" result with
       | Error `Drain_deadline -> ()
       | result ->
@@ -113,8 +137,8 @@ let full_queue_budget ~caps () =
 
 let cancelled_shutdown ~caps () =
   (* ^notel-48tm ^notel-s12c: cancelling the admitting waiter must not lose Stop. *)
-  with_collector (fun env sw client endpoint clock arrivals release ->
-      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~budget () in
+  with_collector (fun env sw client endpoint clock mono_clock arrivals release ->
+      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget () in
       let log = logger env exporter in
       L.info log "in flight";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -138,7 +162,7 @@ let cancelled_shutdown ~caps () =
 let consumed_flush ~caps () =
   (* ^notel-hjd5 ^notel-d52a ^notel-opp7: a consumed control survives cancellation
      during its metric POST, and the uncertain window is sent at least once again. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
       let opened, open_ = Eio.Promise.create () in
       let hold, _ = Eio.Promise.create () in
       let owner_done =
@@ -147,7 +171,8 @@ let consumed_flush ~caps () =
                 match
                   Eio.Switch.run (fun owned ->
                       let exporter =
-                        make ~caps ~sw:owned ~client ~endpoint ~clock ~budget ()
+                        make ~caps ~sw:owned ~client ~endpoint ~clock ~mono_clock ~budget
+                          ()
                       in
                       Eio.Promise.resolve open_ (exporter, cc);
                       Eio.Promise.await hold)
@@ -171,12 +196,14 @@ let consumed_flush ~caps () =
 let automatic_budget ~caps () =
   (* ^notel-056b ^notel-jx0z ^notel-48tm ^notel-s12c: automatic release owns the same
      terminal result and budget, without protecting cancellation of joining callers. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
       let created, ready = Eio.Promise.create () in
       let ending =
         fork_result ~sw (fun () ->
             Eio.Switch.run (fun owned ->
-                let exporter = make ~caps ~sw:owned ~client ~endpoint ~clock ~budget () in
+                let exporter =
+                  make ~caps ~sw:owned ~client ~endpoint ~clock ~mono_clock ~budget ()
+                in
                 Eio.Promise.resolve ready exporter;
                 Eio.Switch.on_release owned (fun () ->
                     L.info (logger env exporter) "last")))
@@ -197,7 +224,7 @@ let automatic_budget ~caps () =
       guard env "automatic-release waiter cancellation" cancelled;
       let joined = fork_result ~sw (fun () -> O.shutdown exporter) in
       Eio.Fiber.yield ();
-      advance clock;
+      advance mono_clock;
       guard env "automatic release" ending;
       Alcotest.(check bool)
         "shutdown joins automatic release's deadline" true
@@ -209,18 +236,18 @@ let automatic_budget ~caps () =
 let retires_worker ~caps () =
   (* ^notel-m8ax: an idle worker's mock-clock wake-up is still observable after Stop,
      even though closed metric admission means this is not a post-shutdown send leak. *)
-  with_collector (fun _env sw client endpoint clock _arrivals _release ->
-      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~budget () in
+  with_collector (fun _env sw client endpoint clock mono_clock _arrivals _release ->
+      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget () in
       ok (O.shutdown exporter);
       Eio.Fiber.yield ();
       Alcotest.(check bool)
         "ending leaves no worker timer" false
-        (Eio_mock.Clock.try_advance clock))
+        (Eio_mock.Clock.Mono.try_advance mono_clock))
 
 let preseal_flush ~caps () =
   (* ^notel-5qi9 ^notel-d52a: a Flush blocked before admission wakes at ending expiry. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
-      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~budget () in
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
+      let exporter = make ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget () in
       let log = logger env exporter in
       L.info log "in flight";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -232,7 +259,7 @@ let preseal_flush ~caps () =
           : (unit, O.error) result Eio.Promise.t);
       Eio.Fiber.yield ();
       Eio.Fiber.yield ();
-      advance clock;
+      advance mono_clock;
       match guard env "pre-seal Flush" flushed with
       | Error `Drain_deadline -> ()
       | result ->
@@ -248,10 +275,10 @@ let global_deadline ~caps () =
     (fun () ->
       with_collector ~mock_http_clock:true
         ~before_reply:(fun index -> if index = 2 then Eio.Promise.await second)
-        (fun env sw client endpoint clock arrivals release ->
+        (fun env sw client endpoint clock mono_clock arrivals release ->
           let exporter =
             make ~request_deadline:(Ox.Duration.seconds 2) ~caps ~sw ~client ~endpoint
-              ~clock ~budget ()
+              ~clock ~mono_clock ~budget ()
           in
           let log = logger env exporter in
           L.info log "first";
@@ -259,11 +286,13 @@ let global_deadline ~caps () =
           L.info log "second";
           let first = fork_result ~sw (fun () -> O.shutdown exporter) in
           Eio.Fiber.yield ();
-          Eio_mock.Clock.set_time clock 0.020;
+          Eio_mock.Clock.Mono.set_time mono_clock
+            (Mtime.of_uint64_ns (Int64.of_float (0.020 *. 1e9)));
           Eio.Promise.resolve release ();
           ignore (Eio.Stream.take arrivals : string * string);
           let later = fork_result ~sw (fun () -> O.shutdown exporter) in
-          Eio_mock.Clock.set_time clock 0.031;
+          Eio_mock.Clock.Mono.set_time mono_clock
+            (Mtime.of_uint64_ns (Int64.of_float (0.031 *. 1e9)));
           let deadline result =
             match result with
             | Error `Drain_deadline -> ()
@@ -278,8 +307,10 @@ let global_deadline ~caps () =
 let accounting ~caps () =
   (* ^notel-od2q ^notel-d52a ^notel-5qi9: expiration accounts for bounded retained
      data and admitted controls, settles those controls, and rejects later admission. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
-      let exporter = make ~max_queue:3 ~caps ~sw ~client ~endpoint ~clock ~budget () in
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
+      let exporter =
+        make ~max_queue:3 ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget ()
+      in
       let log = logger env exporter in
       L.info log "uncertain";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -295,7 +326,7 @@ let accounting ~caps () =
       Eio.Fiber.yield ();
       let stop = fork_result ~sw (fun () -> O.shutdown exporter) in
       Eio.Fiber.yield ();
-      advance clock;
+      advance mono_clock;
       let deadline = function
         | Error `Drain_deadline -> ()
         | _ -> Alcotest.fail "expected the recorded deadline"
@@ -319,7 +350,7 @@ let accounting ~caps () =
 let queued_controls_recovery ~caps () =
   (* ^notel-d52a ^notel-opp7 ^notel-g1e1: recover mixed data with both a pending
      batch-overflow Flush and a queued Flush; retain neither a lost nor duplicate resolver. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
       let opened, open_ = Eio.Promise.create () in
       let hold, _ = Eio.Promise.create () in
       let owner =
@@ -329,7 +360,7 @@ let queued_controls_recovery ~caps () =
                   Eio.Switch.run (fun owned ->
                       let exporter =
                         make ~batch_size:2 ~max_queue:4 ~caps ~sw:owned ~client ~endpoint
-                          ~clock ~budget ()
+                          ~clock ~mono_clock ~budget ()
                       in
                       Eio.Promise.resolve open_ (exporter, cc);
                       Eio.Promise.await hold)
@@ -374,7 +405,7 @@ let hooks_and_terminal_failure ~caps () =
   (* ^notel-s12c ^notel-d52a ^notel-nf92: a parking summary cannot retain the
      worker or steal a failure; the independent signal hook also remains best effort. *)
   with_collector ~response:"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n"
-    (fun env sw client endpoint clock arrivals release ->
+    (fun env sw client endpoint clock mono_clock arrivals release ->
       let never, _ = Eio.Promise.create () in
       let calls = ref 0 in
       let exporter =
@@ -383,7 +414,7 @@ let hooks_and_terminal_failure ~caps () =
           ~on_signal_error:(fun _ _ ->
             incr calls;
             failwith "summary defect")
-          ~caps ~sw ~client ~endpoint ~clock ~budget ()
+          ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget ()
       in
       L.info (logger env exporter) "refused";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -402,7 +433,7 @@ let hooks_and_terminal_failure ~caps () =
       Eio.Fiber.yield ();
       Alcotest.(check bool)
         "refusal ending retires worker" false
-        (Eio_mock.Clock.try_advance clock))
+        (Eio_mock.Clock.Mono.try_advance mono_clock))
 
 let private_diagnostics ~caps () =
   (* ^notel-nf92: raw peer headers and malformed body text are absent even when
@@ -414,12 +445,13 @@ let private_diagnostics ~caps () =
       "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Secret: %s\r\n\r\n%s\r\n"
       header_secret body_secret
   in
-  with_collector ~response (fun env sw client endpoint clock arrivals release ->
+  with_collector ~response
+    (fun env sw client endpoint clock mono_clock arrivals release ->
       let callbacks = ref [] in
       let exporter =
         make
           ~on_error:(fun error -> callbacks := error :: !callbacks)
-          ~caps ~sw ~client ~endpoint ~clock ~budget ()
+          ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget ()
       in
       O.Meter.add (O.Meter.counter (O.meter exporter) ~name:"private" ()) 2.;
       let flush = fork_result ~sw (fun () -> O.flush exporter) in
@@ -447,10 +479,10 @@ let private_diagnostics ~caps () =
 
 let invalid_budget ~caps () =
   (* ^notel-056b: construction requires an explicit positive finite ending budget. *)
-  with_collector (fun _env sw client endpoint clock _arrivals _release ->
+  with_collector (fun _env sw client endpoint clock mono_clock _arrivals _release ->
       match
-        O.create ~caps ~sw ~http_client:client ~endpoint ~clock ~service_name:"ending"
-          ~ending_budget:Ox.Duration.zero ()
+        O.create ~caps ~sw ~http_client:client ~endpoint ~clock ~mono_clock
+          ~service_name:"ending" ~ending_budget:Ox.Duration.zero ()
       with
       | Error (`Invalid_config _) -> ()
       | _ -> Alcotest.fail "zero ending budget accepted")
@@ -458,19 +490,19 @@ let invalid_budget ~caps () =
 let worker_defect_recovery ~caps () =
   (* ^notel-d52a ^notel-g1e1: a worker defect stays a switch defect, while later
      shutdown observes bounded recovery rather than a retired worker's lost command. *)
-  with_collector (fun env sw client endpoint clock arrivals release ->
+  with_collector (fun env sw client endpoint clock mono_clock arrivals release ->
       let armed = ref false in
       let module Clock = struct
         type t = unit
-        type time = float
+        type time = Mtime.t
 
         let now () =
           if !armed then (
             armed := false;
             failwith "worker clock defect")
-          else Eio.Time.now clock
+          else Eio.Time.Mono.now mono_clock
 
-        let sleep_until () time = Eio.Time.sleep_until clock time
+        let sleep_until () time = Eio.Time.Mono.sleep_until mono_clock time
       end in
       let observed = Eio.Resource.T ((), Eio.Time.Pi.clock (module Clock)) in
       let opened, open_ = Eio.Promise.create () in
@@ -480,7 +512,8 @@ let worker_defect_recovery ~caps () =
             match
               Eio.Switch.run (fun owned ->
                   let exporter =
-                    make ~caps ~sw:owned ~client ~endpoint ~clock:observed ~budget ()
+                    make ~caps ~sw:owned ~client ~endpoint ~clock ~mono_clock:observed
+                      ~budget ()
                   in
                   Eio.Promise.resolve open_ exporter;
                   Eio.Promise.await hold)
@@ -506,10 +539,10 @@ let request_deadline ~caps () =
   (* ^notel-g1e1: the request's shorter deadline remains a typed transport timeout,
      independently of a longer total ending budget, on the same controlled clock. *)
   with_collector ~mock_http_clock:true
-    (fun env sw client endpoint clock arrivals _release ->
+    (fun env sw client endpoint clock mono_clock arrivals _release ->
       let exporter =
         make ~request_deadline:(Ox.Duration.ms 10) ~caps ~sw ~client ~endpoint ~clock
-          ~budget ()
+          ~mono_clock ~budget ()
       in
       L.info (logger env exporter) "send timeout";
       ignore (Eio.Stream.take arrivals : string * string);
@@ -529,13 +562,13 @@ let request_deadline ~caps () =
 let private_headers_and_transport ~caps () =
   (* ^notel-nf92: construction and both HTTP response phases retain useful classifiers
      without request secrets, response headers, or peer body text in callback data. *)
-  with_collector (fun env sw client endpoint clock arrivals _release ->
+  with_collector (fun env sw client endpoint clock mono_clock arrivals _release ->
       List.iter
         (fun headers ->
           let callbacks = ref [] in
           let exporter =
-            O.create ~caps ~sw ~clock ~http_client:client ~endpoint ~service_name:"ending"
-              ~ending_budget:budget ~headers
+            O.create ~caps ~sw ~clock ~mono_clock ~http_client:client ~endpoint
+              ~service_name:"ending" ~ending_budget:budget ~headers
               ~on_error:(fun error -> callbacks := error :: !callbacks)
               ()
             |> ok
@@ -557,12 +590,13 @@ let private_headers_and_transport ~caps () =
         "invalid private headers never sent" 0 (Eio.Stream.length arrivals));
   List.iter
     (fun (label, response, valid) ->
-      with_collector ~response (fun env sw client endpoint clock arrivals release ->
+      with_collector ~response
+        (fun env sw client endpoint clock mono_clock arrivals release ->
           let callbacks = ref [] in
           let exporter =
             make
               ~on_error:(fun error -> callbacks := error :: !callbacks)
-              ~caps ~sw ~client ~endpoint ~clock ~budget ()
+              ~caps ~sw ~client ~endpoint ~clock ~mono_clock ~budget ()
           in
           L.info (logger env exporter) "private phases";
           ignore (Eio.Stream.take arrivals : string * string);
@@ -600,6 +634,68 @@ let private_headers_and_transport ~caps () =
         function `Status 503 -> true | _ -> false );
     ]
 
+let cadence_wall_jumps ~caps () =
+  (* ^safe-p9cw ^safe-8peq ^safe-5a9k: real worker cadence and Unix wire stamps. *)
+  with_collector (fun env sw client endpoint clock mono_clock arrivals release ->
+      let exporter =
+        O.create ~caps ~sw ~clock ~mono_clock ~http_client:client ~endpoint
+          ~service_name:"wall-jump" ~ending_budget:budget
+          ~metrics_interval:(Ox.Duration.seconds 1) ()
+        |> ok
+      in
+      let settle () =
+        for _ = 1 to 8 do
+          Eio.Fiber.yield ()
+        done
+      in
+      let at ns =
+        Eio_mock.Clock.Mono.set_time mono_clock (Mtime.of_uint64_ns ns);
+        settle ()
+      in
+      let check_empty label = Alcotest.(check int) label 0 (Eio.Stream.length arrivals) in
+      let counter = O.Meter.counter (O.meter exporter) ~name:"native-cadence" () in
+      Eio_mock.Clock.set_time clock 1000.;
+      O.Meter.add counter 3.;
+      Eio_mock.Clock.set_time clock 10.;
+      settle ();
+      check_empty "backward wall is not due";
+      Eio_mock.Clock.set_time clock 1000000.;
+      settle ();
+      check_empty "forward wall is not due";
+      at 999_000_000L;
+      check_empty "native interval not reached";
+      at 1_000_000_000L;
+      let verify stamp =
+        let request = fork_result ~sw (fun () -> Eio.Stream.take arrivals) in
+        let target, body = guard env "native metrics cadence" request in
+        Alcotest.(check string) "metric route" "POST /v1/metrics HTTP/1.1" target;
+        let open Yojson.Safe.Util in
+        let first key value = value |> member key |> to_list |> List.hd in
+        let point =
+          Yojson.Safe.from_string body |> first "resourceMetrics" |> first "scopeMetrics"
+          |> first "metrics" |> member "sum" |> first "dataPoints"
+        in
+        Alcotest.(check string)
+          "wall Unix nanos preserved" stamp
+          (point |> member "timeUnixNano" |> to_string)
+      in
+      verify "1000000000000";
+      Eio.Promise.resolve release ();
+      settle ();
+      Eio_mock.Clock.set_time clock 2000.;
+      O.Meter.add counter 2.;
+      Eio_mock.Clock.set_time clock (-1000.);
+      settle ();
+      check_empty "second backward wall";
+      Eio_mock.Clock.set_time clock 999999.;
+      settle ();
+      check_empty "second forward wall";
+      at 1_999_000_000L;
+      check_empty "second interval not reached";
+      at 2_000_000_000L;
+      verify "2000000000000";
+      ok (O.shutdown exporter))
+
 let () =
   let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.random >) in
   Alcotest.run "OTLP ending"
@@ -622,6 +718,9 @@ let () =
         ] );
       ( "ending contract",
         [
+          Alcotest.test_case
+            "native cadence / Unix timestamps (^safe-p9cw ^safe-8peq ^safe-5a9k)" `Quick
+            (cadence_wall_jumps ~caps);
           Alcotest.test_case "independent request deadline (^notel-g1e1)" `Quick
             (request_deadline ~caps);
           Alcotest.test_case "private headers and transport phases (^notel-nf92)" `Quick

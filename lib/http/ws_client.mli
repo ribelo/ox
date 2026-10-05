@@ -30,7 +30,7 @@ type error =
 val connect :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
-  clock:_ Eio.Time.clock ->
+  clock:_ Eio.Time.Mono.t ->
   ?ca_file:string ->
   ?headers:(string * string) list ->
   ?protocols:string list ->
@@ -38,17 +38,21 @@ val connect :
   ?max_message_bytes:int ->
   string ->
   (t, error) result
-(** The switch owns the socket. [establishment_timeout] defaults to ten seconds and bounds
-    DNS, TCP, TLS and HTTP upgrade together, never the established stream (^oxpie-g2x6).
-    Expiry returns [`Timeout] and releases any pending socket; cancellation propagates to
-    the caller and also releases it. Headers cannot override upgrade fields.
+(** The switch owns the socket. [clock] is native monotonic time for establishment and
+    shared Ping/Pong refill; wall-calendar corrections cannot change either. ^safe-p9cw
+    ^safe-8peq ^safe-5a9k
+
+    [establishment_timeout] defaults to ten seconds and bounds DNS, TCP, TLS and HTTP
+    upgrade together, never the established stream (^oxpie-g2x6). Expiry returns
+    [`Timeout] and releases any pending socket; cancellation propagates to the caller and
+    also releases it. Headers cannot override upgrade fields.
 
     @raise Invalid_argument
       if max_message_bytes is negative or sw is finished. ^nlintd-raises
 
     @raise Tls_failure
       if the OpenSSL TLS handshake fails inside the establishment callback delegated to
-      Ox.Timeout.timeout; the exception is private to Tls_flow and failure_message
+      Ox.Timeout.timeout_mono; the exception is private to Tls_flow and failure_message
       extracts its message. ^nlintd-truth ^nlintd-raises *)
 
 val selected_protocol : t -> string option

@@ -1,0 +1,3 @@
+(* ^safe-8peq: the old wall clock cannot reach the native elapsed boundary. *)
+let bad ~sw ~net ~(clock : _ Eio.Time.clock) url =
+  Ox_http.Ws_client.connect ~sw ~net ~clock url

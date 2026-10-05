@@ -133,7 +133,7 @@ let test_plain () =
       Eio.Flow.copy_string (frame C.Close "\003\232") flow)
     (fun env sw url ->
       let ws =
-        W.connect ~sw ~net:env#net ~clock:env#clock
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock
           ~headers:[ ("Authorization", "Bearer local") ]
           url
         |> expect_ok
@@ -158,7 +158,7 @@ let test_tls () =
       Eio.Flow.copy_string (frame C.Text "secure") flow)
     (fun env sw url ->
       let ws =
-        W.connect ~sw ~net:env#net ~clock:env#clock ~ca_file:"../localhost.crt" url
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock ~ca_file:"../localhost.crt" url
         |> expect_ok
       in
       match W.receive ws with Ok (`Text "secure") -> () | _ -> Alcotest.fail "TLS event")
@@ -194,7 +194,7 @@ let test_tls_close () =
       | _ -> Alcotest.fail "WebSocket close did not send TLS close_notify")
     (fun env sw url ->
       let ws =
-        W.connect ~sw ~net:env#net ~clock:env#clock ~ca_file:"../localhost.crt" url
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock ~ca_file:"../localhost.crt" url
         |> expect_ok
       in
       W.close ws |> expect_ok;
@@ -206,7 +206,7 @@ let test_tls_untrusted () =
   serve ~tls:true
     (fun _ flow -> ignore (request flow))
     (fun env sw url ->
-      match W.connect ~sw ~net:env#net ~clock:env#clock url with
+      match W.connect ~sw ~net:env#net ~clock:env#mono_clock url with
       | Error (`Tls _) -> ()
       | _ -> Alcotest.fail "expected TLS verification error")
 
@@ -217,7 +217,7 @@ let test_reject () =
       let _, headers, _ = request flow in
       upgrade ~status:401 flow headers)
     (fun env sw url ->
-      match W.connect ~sw ~net:env#net ~clock:env#clock url with
+      match W.connect ~sw ~net:env#net ~clock:env#mono_clock url with
       | Error (`Upgrade_failed (401, _)) -> ()
       | _ -> Alcotest.fail "expected 401 upgrade failure")
 
@@ -228,7 +228,7 @@ let test_bad_accept () =
       let _, headers, _ = request flow in
       upgrade ~accept:false flow headers)
     (fun env sw url ->
-      match W.connect ~sw ~net:env#net ~clock:env#clock url with
+      match W.connect ~sw ~net:env#net ~clock:env#mono_clock url with
       | Error (`Protocol _) -> ()
       | _ -> Alcotest.fail "expected invalid accept rejection")
 
@@ -243,7 +243,7 @@ let test_timeout () =
           with End_of_file -> peer_closed := true))
     (fun env sw url ->
       match
-        W.connect ~sw ~net:env#net ~clock:env#clock
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock
           ~establishment_timeout:(Ox.Duration.ms 60) url
       with
       | Error `Timeout -> ()
@@ -266,7 +266,7 @@ let test_dial_timeout () =
                 Eio_mock.Net.on_getaddrinfo net [ `Return [ `Tcp (local, 80) ] ];
                 Eio_mock.Net.on_connect net [ `Run stall ]);
               (match
-                 W.connect ~sw ~net ~clock:env#clock
+                 W.connect ~sw ~net ~clock:env#mono_clock
                    ~establishment_timeout:(Ox.Duration.ms 20) "ws://localhost/realtime"
                with
               | Error `Timeout -> ()
@@ -290,7 +290,7 @@ let test_tls_timeout () =
     (fun env sw url ->
       let url = "wss" ^ String.sub url 2 (String.length url - 2) in
       match
-        W.connect ~sw ~net:env#net ~clock:env#clock ~ca_file:"../localhost.crt"
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock ~ca_file:"../localhost.crt"
           ~establishment_timeout:(Ox.Duration.ms 60) url
       with
       | Error `Timeout -> ()
@@ -307,7 +307,7 @@ let test_established_lifetime () =
       Eio.Flow.copy_string (frame C.Text "after establishment budget") flow)
     (fun env sw url ->
       let ws =
-        W.connect ~sw ~net:env#net ~clock:env#clock
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock
           ~establishment_timeout:(Ox.Duration.ms 100) url
         |> expect_ok
       in
@@ -324,7 +324,8 @@ let test_limit () =
       Eio.Flow.copy_string "\x82\x7f\x00\x00\x00\x00\x00\x10\x00\x00" flow)
     (fun env sw url ->
       let ws =
-        W.connect ~sw ~net:env#net ~clock:env#clock ~max_message_bytes:32 url |> expect_ok
+        W.connect ~sw ~net:env#net ~clock:env#mono_clock ~max_message_bytes:32 url
+        |> expect_ok
       in
       match W.receive ws with
       | Error `Message_too_large -> ()
@@ -342,7 +343,7 @@ let test_fragmented () =
       in
       Eio.Flow.copy_string (part ^ frame C.Ping "p" ^ frame C.Continuation "lo") flow)
     (fun env sw url ->
-      let ws = W.connect ~sw ~net:env#net ~clock:env#clock url |> expect_ok in
+      let ws = W.connect ~sw ~net:env#net ~clock:env#mono_clock url |> expect_ok in
       match W.receive ws with
       | Ok (`Text "hello") -> ()
       | _ -> Alcotest.fail "fragmented text lost")
@@ -355,7 +356,7 @@ let test_bad_utf8 () =
       upgrade flow headers;
       Eio.Flow.copy_string (frame C.Text "\255") flow)
     (fun env sw url ->
-      let ws = W.connect ~sw ~net:env#net ~clock:env#clock url |> expect_ok in
+      let ws = W.connect ~sw ~net:env#net ~clock:env#mono_clock url |> expect_ok in
       match W.receive ws with
       | Error (`Protocol _) -> ()
       | _ -> Alcotest.fail "accepted invalid text")
@@ -368,7 +369,7 @@ let test_close_wakes_reader () =
       upgrade flow headers;
       Eio.Time.sleep env#clock 0.08)
     (fun env sw url ->
-      let ws = W.connect ~sw ~net:env#net ~clock:env#clock url |> expect_ok in
+      let ws = W.connect ~sw ~net:env#net ~clock:env#mono_clock url |> expect_ok in
       let done_, resolve = Eio.Promise.create () in
       Eio.Fiber.fork ~sw (fun () -> Eio.Promise.resolve resolve (W.receive ws));
       Eio.Fiber.yield ();
@@ -388,7 +389,8 @@ let test_switch_ownership () =
       with End_of_file -> peer_closed := true)
     (fun env _ url ->
       Eio.Switch.run (fun session_sw ->
-          ignore (W.connect ~sw:session_sw ~net:env#net ~clock:env#clock url |> expect_ok)));
+          ignore
+            (W.connect ~sw:session_sw ~net:env#net ~clock:env#mono_clock url |> expect_ok)));
   Alcotest.(check bool) "switch closed peer socket" true !peer_closed
 
 let test_cancel_upgrade () =
@@ -405,7 +407,7 @@ let test_cancel_upgrade () =
           (fun () ->
             ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
              let _connect_result =
-               W.connect ~sw ~net:env#net ~clock:env#clock url
+               W.connect ~sw ~net:env#net ~clock:env#mono_clock url
                  [@@ox.allow
                    "ox-discarded-result: losing upgrade is cancelled; winner and peer \
                     socket closure are the asserted observations"]

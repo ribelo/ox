@@ -37,7 +37,7 @@ type ending = {
   resolve : (unit, error) result Eio.Promise.u;
   begun : unit Eio.Promise.t;
   begin_ : unit Eio.Promise.u;
-  mutable deadline : float option;
+  mutable started_at : Mtime.t option;
 }
 
 type t = {
@@ -53,11 +53,9 @@ type t = {
   headers : (string * string) list;
   on_error : error -> unit;
   on_signal_error : signal -> error -> unit;
-  with_timeout : float -> (unit -> (unit, error) result) -> (unit, error) result;
-  wait : float -> command option;
-  metrics_interval_ms : int;
-  now : unit -> float;
-  now_ms : unit -> int;
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t;
+  clock : float Eio.Time.clock_ty Eio.Resource.t;
+  metrics_interval_seconds : float;
   ending_seconds : float;
   ids : Random.State.t;
   mutable dropped : int;
@@ -301,17 +299,18 @@ let drain t =
   settled t
 
 let begin_ending t =
-  match t.ending.deadline with
-  | Some deadline -> deadline
+  match t.ending.started_at with
+  | Some started_at -> started_at
   | None ->
       (* Non-suspending sealing also wakes all pre-seal admission waiters. Stop is
          channel closure, so no caller must park while trying to enqueue it. *)
-      let deadline = t.now () +. t.ending_seconds in
-      t.ending.deadline <- Some deadline;
+      (* ^safe-p9cw ^safe-8peq: retain a native origin, not a float absolute deadline. *)
+      let started_at = Eio.Time.Mono.now t.mono_clock in
+      t.ending.started_at <- Some started_at;
       t.closed <- true;
       Ox.Channel.done_ t.queue;
       Eio.Promise.resolve t.ending.begin_ ();
-      deadline
+      started_at
 
 let record_ending t result =
   settle_controls t result;
@@ -353,13 +352,19 @@ let finish t =
       Fun.protect
         ~finally:(fun () -> t.finishing <- false)
         (fun () ->
-          let deadline = begin_ending t in
-          let remaining = deadline -. t.now () in
+          let started_at = begin_ending t in
+          let remaining =
+            t.ending_seconds
+            -. Mtime.Span.to_float_ns
+                 (Mtime.span started_at (Eio.Time.Mono.now t.mono_clock))
+               /. 1e9
+          in
           if remaining <= 0. then expire t
           else
             try
               let result =
-                t.with_timeout remaining (fun () ->
+                Eio.Time.Timeout.run_exn (Eio.Time.Timeout.seconds t.mono_clock remaining)
+                  (fun () ->
                     if t.worker_done then
                       match t.worker_result with Some result -> result | None -> drain t
                     else begin
@@ -371,10 +376,26 @@ let finish t =
             with Eio.Time.Timeout -> expire t)
 
 let worker t =
-  let due = ref (t.now_ms () + t.metrics_interval_ms) in
+  let started_at = ref (Eio.Time.Mono.now t.mono_clock) in
+  let remaining () =
+    t.metrics_interval_seconds
+    -. Mtime.Span.to_float_ns (Mtime.span !started_at (Eio.Time.Mono.now t.mono_clock))
+       /. 1e9
+  in
+  let wait seconds =
+    match
+      Eio.Time.Timeout.run (Eio.Time.Timeout.seconds t.mono_clock seconds) (fun () ->
+          Ok
+            (match Ox.Channel.receive t.queue with
+            | Ok command -> command
+            | Error (`Done | `Error ()) -> End))
+    with
+    | Ok command -> Some command
+    | Error `Timeout -> None
+  in
   let flush_window () =
     export_metrics t;
-    due := t.now_ms () + t.metrics_interval_ms
+    started_at := Eio.Time.Mono.now t.mono_clock
   in
   let rec loop () =
     let command =
@@ -382,7 +403,7 @@ let worker t =
       | Some command ->
           t.pending <- None;
           Some command
-      | None -> t.wait (float_of_int (max 0 (!due - t.now_ms ())) /. 1000.)
+      | None -> wait (max 0. (remaining ()))
     in
     match command with
     | Some End ->
@@ -411,14 +432,14 @@ let worker t =
             let result = send t t.in_flight in
             t.in_flight <- [];
             note t (match item with Log _ -> Logs | Span _ -> Traces) result);
-        if t.now_ms () >= !due then flush_window ();
+        if remaining () <= 0. then flush_window ();
         loop ()
   in
   loop ()
 
-let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ~ending_budget
-    ?(scope_name = "ox_otel") ?(resource = []) ?(headers = []) ?(batch_size = 64)
-    ?(max_queue = 1024) ?(metrics_interval = Ox.Duration.seconds 60)
+let create ~caps ~sw ~clock ~mono_clock ~http_client ~endpoint ~service_name
+    ~ending_budget ?(scope_name = "ox_otel") ?(resource = []) ?(headers = [])
+    ?(batch_size = 64) ?(max_queue = 1024) ?(metrics_interval = Ox.Duration.seconds 60)
     ?(max_metric_series = 1024) ?request_deadline ?(on_error = fun _ -> ())
     ?(on_signal_error = fun _ _ -> ()) () =
   if batch_size < 1 || max_queue < 1 || max_metric_series < 1 then
@@ -463,22 +484,10 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ~ending_budget
             headers;
             on_error;
             on_signal_error;
-            with_timeout = (fun seconds f -> Eio.Time.with_timeout_exn clock seconds f);
-            wait =
-              (fun seconds ->
-                match
-                  Eio.Time.with_timeout clock seconds (fun () ->
-                      Ok
-                        (match Ox.Channel.receive queue with
-                        | Ok command -> command
-                        | Error (`Done | `Error ()) -> End))
-                with
-                | Ok command -> Some command
-                | Error `Timeout -> None);
-            metrics_interval_ms = max 1 (Ox.Duration.to_ms metrics_interval);
-            now = (fun () -> Eio.Time.now clock);
+            mono_clock :> Eio.Time.Mono.ty Eio.Resource.t;
+            clock :> float Eio.Time.clock_ty Eio.Resource.t;
+            metrics_interval_seconds = Ox.Duration.to_seconds_float metrics_interval;
             ending_seconds = Ox.Duration.to_seconds_float ending_budget;
-            now_ms = (fun () -> int_of_float (Eio.Time.now clock *. 1000.));
             ids = Ox_caps.Cap_stdlib.Random.make_self_init ~caps ();
             dropped = 0;
             metrics = Metric_aggregation.create ~max_series:max_metric_series;
@@ -492,7 +501,7 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ~ending_budget
             retiring = false;
             finishing = false;
             worker_result = None;
-            ending = { stop; resolve; begun; begin_; deadline = None };
+            ending = { stop; resolve; begun; begin_; started_at = None };
             controls = [];
             abandoned = nothing_abandoned;
             recovering = [];
@@ -545,7 +554,9 @@ let create ~caps ~sw ~clock ~http_client ~endpoint ~service_name ~ending_budget
    per exporter, single domain — and a record that would add a series beyond
    [max_metric_series] is counted as dropped instead of growing memory without bound. *)
 let meter t =
-  Meter.create ~now_ms:t.now_ms ~record:(fun point ->
+  Meter.create
+    ~now_ms:(fun () -> int_of_float (Eio.Time.now t.clock *. 1000.))
+    ~record:(fun point ->
       if not t.closed then
         if not (Metric_aggregation.add t.metrics point) then t.dropped <- t.dropped + 1)
 
