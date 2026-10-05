@@ -66,6 +66,14 @@ let targets =
           ] );
     ]
 
+(* ^safe-3osb: splitting a string always retains a first lexical component. *)
+let compiler_name text =
+  match String.index_opt text '.' with
+  | None -> (text, [])
+  | Some i ->
+      ( String.sub text 0 i,
+        String.split_on_char '.' (String.sub text (i + 1) (String.length text - i - 1)) )
+
 let origins ~(caps : < Cap.fs_read ; .. >) () =
   ignore caps#fs_read;
   let initial = Lazy.force Env.initial in
@@ -76,7 +84,7 @@ let origins ~(caps : < Cap.fs_read ; .. >) () =
           try
             let path, declaration =
               Env.lookup_type ~use:false ~loc:Location.none
-                (Paths.lid (String.split_on_char '.' name))
+                (Paths.lid (compiler_name name))
                 initial
             in
             Some
@@ -737,7 +745,7 @@ let leaf_origins ~caps =
     (fun (name, suspension, cancellation, exceptions) ->
       Option.map
         (fun path -> (Path.name path, (name, suspension, cancellation, exceptions)))
-        (Paths.value ~caps (String.split_on_char '.' name)))
+        (Paths.value ~caps (compiler_name name)))
     semantic_leaves
 
 let special_origins ~caps =
@@ -751,7 +759,7 @@ let special_origins ~caps =
       in
       Option.map
         (fun path -> (Path.name path, name))
-        (Paths.value ~caps (String.split_on_char '.' explicit)))
+        (Paths.value ~caps (compiler_name explicit)))
     special_names
 
 let exception_name description =
@@ -1758,9 +1766,18 @@ let readiness_qualified claims label target =
       && List.exists (contains text)
            [ "because"; "when"; "if"; "slot"; "capacity"; "ready" ]
 
+(* ^safe-3osb: empty strings and leading/trailing dots retain empty components. *)
+let first_component text =
+  match String.index_opt text '.' with None -> text | Some i -> String.sub text 0 i
+
+let last_component text =
+  match String.rindex_opt text '.' with
+  | None -> text
+  | Some i -> String.sub text (i + 1) (String.length text - i - 1)
+
 let exception_mentioned docs name =
   let name = String.lowercase_ascii name in
-  let short = List.hd (List.rev (String.split_on_char '.' name)) in
+  let short = last_component name in
   List.exists (fun text -> contains text name || contains text short) docs
 
 let opaque_qualified docs target =
@@ -1773,7 +1790,7 @@ let opaque_qualified docs target =
     else target
   in
   let target = String.lowercase_ascii target in
-  let module_name = List.hd (String.split_on_char '.' target) in
+  let module_name = first_component target in
   let module_name =
     match index module_name "__" 0 with
     | Some i -> String.sub module_name 0 i
@@ -1828,15 +1845,15 @@ let cleanup_obligations ~caps evidence definition =
   let closes =
     Paths.values ~caps
       [
-        [ "Stdlib"; "close_in" ];
-        [ "Stdlib"; "close_out" ];
+        ("Stdlib", [ "close_in" ]);
+        ("Stdlib", [ "close_out" ]);
         (* ^nlintcov-noerr: discarding release errors does not change ownership. *)
-        [ "Stdlib"; "close_in_noerr" ];
-        [ "Stdlib"; "close_out_noerr" ];
-        [ "Stdlib"; "In_channel"; "close" ];
-        [ "Stdlib"; "Out_channel"; "close" ];
-        [ "Eio"; "Resource"; "close" ];
-        [ "Eio"; "Flow"; "close" ];
+        ("Stdlib", [ "close_in_noerr" ]);
+        ("Stdlib", [ "close_out_noerr" ]);
+        ("Stdlib", [ "In_channel"; "close" ]);
+        ("Stdlib", [ "Out_channel"; "close" ]);
+        ("Eio", [ "Resource"; "close" ]);
+        ("Eio", [ "Flow"; "close" ]);
       ]
   in
   let path e =
@@ -1948,7 +1965,7 @@ let cleanup_obligations ~caps evidence definition =
   in
   let acquisitions =
     Paths.values ~caps
-      (List.map (String.split_on_char '.')
+      (List.map compiler_name
          [
            "Stdlib.open_in";
            "Stdlib.open_out";
@@ -1976,7 +1993,7 @@ let cleanup_obligations ~caps evidence definition =
   in
   let switch_owned =
     Paths.values ~caps
-      (List.map (String.split_on_char '.')
+      (List.map compiler_name
          [
            "Eio.Path.open_in";
            "Eio.Path.open_out";
@@ -2265,9 +2282,7 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                            (Names.exists
                               (fun name ->
                                 String.lowercase_ascii name = tag
-                                || String.lowercase_ascii
-                                     (List.hd (List.rev (String.split_on_char '.' name)))
-                                   = tag)
+                                || String.lowercase_ascii (last_component name) = tag)
                               effects.exceptions))
                         && not
                              (Names.exists (delegated_raise docs tag)

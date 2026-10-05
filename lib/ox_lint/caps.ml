@@ -2,207 +2,206 @@
 open Ocaml_common
 open Typedtree
 
-type operation = { name : string; calls : string list list }
+type operation = { name : string; calls : Paths.name list }
 
 let operations =
   [
-    { name = "fork"; calls = [ [ "Unix"; "fork" ] ] };
+    { name = "fork"; calls = [ ("Unix", [ "fork" ]) ] };
     {
       name = "exec";
       calls =
         [
-          [ "Unix"; "execv" ];
-          [ "Unix"; "execve" ];
-          [ "Unix"; "execvp" ];
-          [ "Unix"; "execvpe" ];
-          [ "Unix"; "create_process" ];
-          [ "Unix"; "create_process_env" ];
-          [ "Unix"; "open_process_in" ];
-          [ "Unix"; "open_process_out" ];
-          [ "Unix"; "open_process" ];
-          [ "Unix"; "open_process_full" ];
-          [ "Unix"; "open_process_args_in" ];
-          [ "Unix"; "open_process_args_out" ];
-          [ "Unix"; "open_process_args" ];
-          [ "Unix"; "open_process_args_full" ];
-          [ "Unix"; "system" ];
-          [ "Sys"; "command" ];
+          ("Unix", [ "execv" ]);
+          ("Unix", [ "execve" ]);
+          ("Unix", [ "execvp" ]);
+          ("Unix", [ "execvpe" ]);
+          ("Unix", [ "create_process" ]);
+          ("Unix", [ "create_process_env" ]);
+          ("Unix", [ "open_process_in" ]);
+          ("Unix", [ "open_process_out" ]);
+          ("Unix", [ "open_process" ]);
+          ("Unix", [ "open_process_full" ]);
+          ("Unix", [ "open_process_args_in" ]);
+          ("Unix", [ "open_process_args_out" ]);
+          ("Unix", [ "open_process_args" ]);
+          ("Unix", [ "open_process_args_full" ]);
+          ("Unix", [ "system" ]);
+          ("Sys", [ "command" ]);
         ];
     };
-    { name = "exit"; calls = [ [ "Stdlib"; "exit" ]; [ "Unix"; "_exit" ] ] };
+    { name = "exit"; calls = [ ("Stdlib", [ "exit" ]); ("Unix", [ "_exit" ]) ] };
     {
       name = "chdir";
-      calls = [ [ "Sys"; "chdir" ]; [ "Unix"; "chdir" ]; [ "Unix"; "chroot" ] ];
+      calls = [ ("Sys", [ "chdir" ]); ("Unix", [ "chdir" ]); ("Unix", [ "chroot" ]) ];
     };
     {
       name = "env";
       calls =
         [
-          [ "Sys"; "getenv" ];
-          [ "Sys"; "getenv_opt" ];
-          [ "Unix"; "getenv" ];
-          [ "Unix"; "environment" ];
-          [ "Unix"; "unsafe_environment" ];
-          [ "Unix"; "putenv" ];
+          ("Sys", [ "getenv" ]);
+          ("Sys", [ "getenv_opt" ]);
+          ("Unix", [ "getenv" ]);
+          ("Unix", [ "environment" ]);
+          ("Unix", [ "unsafe_environment" ]);
+          ("Unix", [ "putenv" ]);
         ];
     };
     {
       name = "signal";
       calls =
         [
-          [ "Unix"; "kill" ];
-          [ "Unix"; "sigprocmask" ];
-          [ "Sys"; "signal" ];
-          [ "Sys"; "set_signal" ];
+          ("Unix", [ "kill" ]);
+          ("Unix", [ "sigprocmask" ]);
+          ("Sys", [ "signal" ]);
+          ("Sys", [ "set_signal" ]);
         ];
     };
     {
       name = "time";
-      calls = [ [ "Unix"; "time" ]; [ "Unix"; "gettimeofday" ]; [ "Sys"; "time" ] ];
+      calls = [ ("Unix", [ "time" ]); ("Unix", [ "gettimeofday" ]); ("Sys", [ "time" ]) ];
     };
     {
       name = "random";
-      calls = [ [ "Random"; "self_init" ]; [ "Random"; "State"; "make_self_init" ] ];
+      calls = [ ("Random", [ "self_init" ]); ("Random", [ "State"; "make_self_init" ]) ];
     };
     {
       name = "stdin";
       calls =
         [
-          [ "Stdlib"; "stdin" ];
-          [ "Unix"; "stdin" ];
-          [ "In_channel"; "stdin" ];
-          [ "Stdlib"; "read_line" ];
-          [ "Stdlib"; "read_int" ];
-          [ "Stdlib"; "read_int_opt" ];
-          [ "Scanf"; "scanf" ];
+          ("Stdlib", [ "stdin" ]);
+          ("Unix", [ "stdin" ]);
+          ("In_channel", [ "stdin" ]);
+          ("Stdlib", [ "read_line" ]);
+          ("Stdlib", [ "read_int" ]);
+          ("Stdlib", [ "read_int_opt" ]);
+          ("Scanf", [ "scanf" ]);
         ];
     };
     {
       name = "stdout";
       calls =
         [
-          [ "Stdlib"; "print_string" ];
-          [ "Stdlib"; "print_bytes" ];
-          [ "Stdlib"; "print_char" ];
-          [ "Stdlib"; "print_int" ];
-          [ "Stdlib"; "print_float" ];
-          [ "Stdlib"; "print_endline" ];
-          [ "Stdlib"; "print_newline" ];
-          [ "Stdlib"; "stdout" ];
-          [ "Unix"; "stdout" ];
-          [ "Out_channel"; "stdout" ];
-          [ "Printf"; "printf" ];
-          [ "Format"; "printf" ];
-          [ "Format"; "std_formatter" ];
+          ("Stdlib", [ "print_string" ]);
+          ("Stdlib", [ "print_bytes" ]);
+          ("Stdlib", [ "print_char" ]);
+          ("Stdlib", [ "print_int" ]);
+          ("Stdlib", [ "print_float" ]);
+          ("Stdlib", [ "print_endline" ]);
+          ("Stdlib", [ "print_newline" ]);
+          ("Stdlib", [ "stdout" ]);
+          ("Unix", [ "stdout" ]);
+          ("Out_channel", [ "stdout" ]);
+          ("Printf", [ "printf" ]);
+          ("Format", [ "printf" ]);
+          ("Format", [ "std_formatter" ]);
         ];
     };
     {
       name = "stderr";
       calls =
         [
-          [ "Stdlib"; "prerr_string" ];
-          [ "Stdlib"; "prerr_bytes" ];
-          [ "Stdlib"; "prerr_char" ];
-          [ "Stdlib"; "prerr_int" ];
-          [ "Stdlib"; "prerr_float" ];
-          [ "Stdlib"; "prerr_endline" ];
-          [ "Stdlib"; "prerr_newline" ];
-          [ "Stdlib"; "stderr" ];
-          [ "Unix"; "stderr" ];
-          [ "Out_channel"; "stderr" ];
-          [ "Printf"; "eprintf" ];
-          [ "Format"; "eprintf" ];
-          [ "Format"; "err_formatter" ];
+          ("Stdlib", [ "prerr_string" ]);
+          ("Stdlib", [ "prerr_bytes" ]);
+          ("Stdlib", [ "prerr_char" ]);
+          ("Stdlib", [ "prerr_int" ]);
+          ("Stdlib", [ "prerr_float" ]);
+          ("Stdlib", [ "prerr_endline" ]);
+          ("Stdlib", [ "prerr_newline" ]);
+          ("Stdlib", [ "stderr" ]);
+          ("Unix", [ "stderr" ]);
+          ("Out_channel", [ "stderr" ]);
+          ("Printf", [ "eprintf" ]);
+          ("Format", [ "eprintf" ]);
+          ("Format", [ "err_formatter" ]);
         ];
     };
     {
       name = "fs-read";
       calls =
         [
-          [ "Stdlib"; "open_in" ];
-          [ "Stdlib"; "open_in_bin" ];
-          [ "Stdlib"; "open_in_gen" ];
-          [ "In_channel"; "open_bin" ];
-          [ "In_channel"; "open_text" ];
-          [ "In_channel"; "open_gen" ];
-          [ "In_channel"; "with_open_bin" ];
-          [ "In_channel"; "with_open_text" ];
-          [ "In_channel"; "with_open_gen" ];
-          [ "Sys"; "readdir" ];
-          [ "Unix"; "opendir" ];
+          ("Stdlib", [ "open_in" ]);
+          ("Stdlib", [ "open_in_bin" ]);
+          ("Stdlib", [ "open_in_gen" ]);
+          ("In_channel", [ "open_bin" ]);
+          ("In_channel", [ "open_text" ]);
+          ("In_channel", [ "open_gen" ]);
+          ("In_channel", [ "with_open_bin" ]);
+          ("In_channel", [ "with_open_text" ]);
+          ("In_channel", [ "with_open_gen" ]);
+          ("Sys", [ "readdir" ]);
+          ("Unix", [ "opendir" ]);
         ];
     };
     {
       name = "fs-write";
       calls =
         [
-          [ "Stdlib"; "open_out" ];
-          [ "Stdlib"; "open_out_bin" ];
-          [ "Stdlib"; "open_out_gen" ];
-          [ "Out_channel"; "open_bin" ];
-          [ "Out_channel"; "open_text" ];
-          [ "Out_channel"; "open_gen" ];
-          [ "Out_channel"; "with_open_bin" ];
-          [ "Out_channel"; "with_open_text" ];
-          [ "Out_channel"; "with_open_gen" ];
-          [ "Unix"; "openfile" ];
-          [ "Sys"; "remove" ];
-          [ "Sys"; "rename" ];
-          [ "Sys"; "mkdir" ];
-          [ "Sys"; "rmdir" ];
-          [ "Unix"; "unlink" ];
-          [ "Unix"; "rename" ];
-          [ "Unix"; "mkdir" ];
-          [ "Unix"; "rmdir" ];
-          [ "Unix"; "chmod" ];
-          [ "Unix"; "truncate" ];
-          [ "Unix"; "symlink" ];
-          [ "Unix"; "link" ];
+          ("Stdlib", [ "open_out" ]);
+          ("Stdlib", [ "open_out_bin" ]);
+          ("Stdlib", [ "open_out_gen" ]);
+          ("Out_channel", [ "open_bin" ]);
+          ("Out_channel", [ "open_text" ]);
+          ("Out_channel", [ "open_gen" ]);
+          ("Out_channel", [ "with_open_bin" ]);
+          ("Out_channel", [ "with_open_text" ]);
+          ("Out_channel", [ "with_open_gen" ]);
+          ("Unix", [ "openfile" ]);
+          ("Sys", [ "remove" ]);
+          ("Sys", [ "rename" ]);
+          ("Sys", [ "mkdir" ]);
+          ("Sys", [ "rmdir" ]);
+          ("Unix", [ "unlink" ]);
+          ("Unix", [ "rename" ]);
+          ("Unix", [ "mkdir" ]);
+          ("Unix", [ "rmdir" ]);
+          ("Unix", [ "chmod" ]);
+          ("Unix", [ "truncate" ]);
+          ("Unix", [ "symlink" ]);
+          ("Unix", [ "link" ]);
         ];
     };
     {
       name = "tmp";
       calls =
         [
-          [ "Filename"; "temp_file" ];
-          [ "Filename"; "open_temp_file" ];
-          [ "Filename"; "temp_dir" ];
+          ("Filename", [ "temp_file" ]);
+          ("Filename", [ "open_temp_file" ]);
+          ("Filename", [ "temp_dir" ]);
         ];
     };
     {
       name = "network";
       calls =
         [
-          [ "Unix"; "socket" ];
-          [ "Unix"; "socketpair" ];
-          [ "Unix"; "open_connection" ];
-          [ "Unix"; "establish_server" ];
+          ("Unix", [ "socket" ]);
+          ("Unix", [ "socketpair" ]);
+          ("Unix", [ "open_connection" ]);
+          ("Unix", [ "establish_server" ]);
         ];
     };
     {
       name = "mint";
       calls =
         [
-          [ "Ox_caps_door"; "powerbox" ];
-          [ "Ox_caps"; "Cap"; "powerbox" ];
-          [ "Cap"; "powerbox" ];
-          [ "Ox_test"; "powerbox" ];
-          [ "Ox_app"; "with_powerbox" ];
+          ("Ox_caps_door", [ "powerbox" ]);
+          ("Ox_caps", [ "Cap"; "powerbox" ]);
+          ("Cap", [ "powerbox" ]);
+          ("Ox_test", [ "powerbox" ]);
+          ("Ox_app", [ "with_powerbox" ]);
         ];
     };
-    { name = "forge"; calls = [ [ "Obj"; "magic" ] ] };
+    { name = "forge"; calls = [ ("Obj", [ "magic" ]) ] };
   ]
 
 let resolved_calls calls =
   List.concat_map
-    (fun names ->
+    (fun ((head, tail) as names) ->
       names
       ::
-      (match names with
-      | ( "Sys" | "Random" | "Scanf" | "Printf" | "Format" | "In_channel" | "Out_channel"
-        | "Filename" | "Obj" )
-        :: _ ->
-          [ "Stdlib" :: names ]
+      (match head with
+      | "Sys" | "Random" | "Scanf" | "Printf" | "Format" | "In_channel" | "Out_channel"
+      | "Filename" | "Obj" ->
+          [ ("Stdlib", head :: tail) ]
       | _ -> []))
     calls
 
@@ -217,7 +216,9 @@ let arguments args = List.filter_map (function _, Arg (e, _) -> Some e | _ -> No
 let source ~caps name emit context (base : Ast_iterator.iterator) =
   let potential_authority = ref false in
   let op = List.find (fun op -> op.name = name) operations in
-  let targets = List.map (String.concat ".") op.calls in
+  let targets =
+    List.map (fun (head, tail) -> String.concat "." (head :: tail)) op.calls
+  in
   let door id loc =
     if name = "mint" && not (door_boundary ~caps loc) then
       match Syntax.module_origin context id with
@@ -287,8 +288,8 @@ let source ~caps name emit context (base : Ast_iterator.iterator) =
 let boundary ~caps name emit =
   let operation = List.find (fun op -> op.name = name) operations in
   let targets = Paths.values ~caps (resolved_calls operation.calls) in
-  let test_mint = Paths.values ~caps [ [ "Ox_test"; "powerbox" ] ] in
-  let doors = Paths.modules ~caps [ [ "Ox_caps_door" ] ] in
+  let test_mint = Paths.values ~caps [ ("Ox_test", [ "powerbox" ]) ] in
+  let doors = Paths.modules ~caps [ ("Ox_caps_door", []) ] in
   let rec door_path en path =
     List.exists (Path.same (Env.normalize_module_path None en path)) doors
     || match path with Path.Pdot (parent, _) -> door_path en parent | _ -> false
@@ -352,7 +353,7 @@ let rec token name en ty =
          let initial = Lazy.force Env.initial in
          let path, _ =
            Env.lookup_type ~use:false ~loc:Location.none
-             (Paths.lid [ "Ox_caps"; "Cap"; "Token"; name ])
+             (Paths.lid ("Ox_caps", [ "Cap"; "Token"; name ]))
              initial
          in
          let expanded =
@@ -477,13 +478,17 @@ let signature_for ~caps ?operation emit =
   in
   let wrappers =
     Paths.modules ~caps
-      [ [ "Ox_caps"; "Cap_unix" ]; [ "Ox_caps"; "Cap_sys" ]; [ "Ox_caps"; "Cap_stdlib" ] ]
+      [
+        ("Ox_caps", [ "Cap_unix" ]);
+        ("Ox_caps", [ "Cap_sys" ]);
+        ("Ox_caps", [ "Cap_stdlib" ]);
+      ]
   in
   let tuple_projections =
-    Paths.values ~caps [ [ "Stdlib"; "fst" ]; [ "Stdlib"; "snd" ] ]
+    Paths.values ~caps [ ("Stdlib", [ "fst" ]); ("Stdlib", [ "snd" ]) ]
   in
   let result_binds =
-    Paths.values ~caps [ [ "Result"; "bind" ]; [ "Stdlib"; "Result"; "bind" ] ]
+    Paths.values ~caps [ ("Result", [ "bind" ]); ("Stdlib", [ "Result"; "bind" ]) ]
   in
   let base = Tast_iterator.default_iterator in
   let arguments_in_scope = ref [] and functions = ref [] and bind_aliases = ref [] in

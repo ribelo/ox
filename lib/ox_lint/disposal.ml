@@ -3,12 +3,14 @@ open Ocaml_common
 open Typedtree
 
 let env = Envaux.env_of_only_summary ~allow_missing_modules:false
-let lid names = Option.get (Longident.unflatten names)
+
+(* ^safe-3osb: canonical names cannot contain an empty component sequence. *)
+let lid = Paths.lid
 
 let discarded_result emit =
   let initial = Lazy.force Env.initial in
   let result, _ =
-    Env.lookup_type ~use:false ~loc:Location.none (lid [ "Stdlib"; "result" ]) initial
+    Env.lookup_type ~use:false ~loc:Location.none (lid ("Stdlib", [ "result" ])) initial
   in
   let result = Env.normalize_type_path None initial result in
   let is_result en ty =
@@ -25,16 +27,16 @@ let discarded_result emit =
   let discarders =
     List.map standard
       [
-        [ "Stdlib"; "ignore" ];
-        [ "Stdlib"; "Result"; "to_option" ];
-        [ "Stdlib"; "Result"; "iter" ];
-        [ "Stdlib"; "Result"; "value" ];
+        ("Stdlib", [ "ignore" ]);
+        ("Stdlib", [ "Result"; "to_option" ]);
+        ("Stdlib", [ "Result"; "iter" ]);
+        ("Stdlib", [ "Result"; "value" ]);
       ]
   in
   let aliases = Hashtbl.create 16 in
   let constants = Hashtbl.create 16 in
-  let apply = standard [ "Stdlib"; "@@" ] in
-  let pipe = standard [ "Stdlib"; "|>" ] in
+  let apply = standard ("Stdlib", [ "@@" ]) in
+  let pipe = standard ("Stdlib", [ "|>" ]) in
   let is_value target e =
     match e.exp_desc with
     | Texp_ident { path; _ } ->
@@ -56,10 +58,10 @@ let discarded_result emit =
   let logging =
     List.map standard
       [
-        [ "Stdlib"; "prerr_endline" ];
-        [ "Stdlib"; "prerr_string" ];
-        [ "Stdlib"; "print_endline" ];
-        [ "Stdlib"; "print_string" ];
+        ("Stdlib", [ "prerr_endline" ]);
+        ("Stdlib", [ "prerr_string" ]);
+        ("Stdlib", [ "print_endline" ]);
+        ("Stdlib", [ "print_string" ]);
       ]
   in
   let rec external_name = function
@@ -143,13 +145,14 @@ let discarded_result emit =
   let assertions =
     List.map standard
       [
-        [ "Stdlib"; "failwith" ];
-        [ "Stdlib"; "invalid_arg" ];
-        [ "Stdlib"; "raise" ];
-        [ "Stdlib"; "raise_notrace" ];
+        ("Stdlib", [ "failwith" ]);
+        ("Stdlib", [ "invalid_arg" ]);
+        ("Stdlib", [ "raise" ]);
+        ("Stdlib", [ "raise_notrace" ]);
       ]
     @ List.filter_map
-        (fun name -> try Some (standard [ "Alcotest"; name ]) with Env.Error _ -> None)
+        (fun name ->
+          try Some (standard ("Alcotest", [ name ])) with Env.Error _ -> None)
         [ "fail"; "failf" ]
   in
   let terminal e =
@@ -192,7 +195,7 @@ let discarded_result emit =
   in
   let comparisons =
     List.map
-      (fun name -> standard [ "Stdlib"; name ])
+      (fun name -> standard ("Stdlib", [ name ]))
       [ "="; "<>"; "<"; "<="; ">"; ">="; "=="; "!=" ]
   in
   let observes_error case =

@@ -6,7 +6,7 @@ let check ~caps emit =
   let targets =
     List.map
       (fun name ->
-        match Paths.value ~caps [ "Stdlib"; name ] with
+        match Paths.value ~caps ("Stdlib", [ name ]) with
         | Some path -> path
         | None -> failwith ("missing Stdlib comparison identity: " ^ name))
       [ "="; "<>"; "<"; ">"; "<="; ">="; "compare" ]

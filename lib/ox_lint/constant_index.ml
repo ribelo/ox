@@ -5,18 +5,19 @@ open Typedtree
 type collection = Array | String | Bytes
 
 let check ~caps ~emit =
-  let target names =
+  let target ((head, tail) as names) =
     match Paths.value ~caps names with
     | Some path -> [ path ]
     | None ->
-        failwith ("constant-index: unresolved standard value " ^ String.concat "." names)
+        failwith
+          ("constant-index: unresolved standard value " ^ String.concat "." (head :: tail))
   in
   let getters =
     List.map
-      (fun (kind, name) -> (kind, target [ "Stdlib"; name; "get" ]))
+      (fun (kind, name) -> (kind, target ("Stdlib", [ name; "get" ])))
       [ (Array, "Array"); (String, "String"); (Bytes, "Bytes") ]
   in
-  let of_string = target [ "Stdlib"; "Bytes"; "of_string" ] in
+  let of_string = target ("Stdlib", [ "Bytes"; "of_string" ]) in
   let bindings = Path.Tbl.create 16 in
   (* Ident stamps distinguish legitimate shadowing. Do not infer a getter from
      Longident spelling, a function type, or an arbitrary wrapper's body. *)

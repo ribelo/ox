@@ -7,7 +7,17 @@ let env ~(caps : < Cap.fs_read ; .. >) en =
   ignore caps#fs_read;
   Envaux.env_of_only_summary ~allow_missing_modules:false en
 
-let lid names = Option.get (Longident.unflatten names)
+(* ^safe-3osb: a compiler name carries its first lexical component. *)
+type name = string * string list
+
+let lid (head, tail) =
+  List.fold_left
+    (fun path name ->
+      Longident.Ldot
+        ( { Location.txt = path; loc = Location.none },
+          { Location.txt = name; loc = Location.none } ))
+    (Longident.Lident head) tail
+
 let optional f = try Some (f ()) with Not_found | Env.Error _ -> None
 
 let value ~(caps : < Cap.fs_read ; .. >) names =

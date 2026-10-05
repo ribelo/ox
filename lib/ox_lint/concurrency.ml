@@ -12,10 +12,10 @@ let catch_all ~caps emit =
   let raises =
     Paths.values ~caps
       [
-        [ "Stdlib"; "raise" ];
-        [ "Stdlib"; "raise_notrace" ];
-        [ "Printexc"; "raise_with_backtrace" ];
-        [ "Stdlib"; "Printexc"; "raise_with_backtrace" ];
+        ("Stdlib", [ "raise" ]);
+        ("Stdlib", [ "raise_notrace" ]);
+        ("Printexc", [ "raise_with_backtrace" ]);
+        ("Stdlib", [ "Printexc"; "raise_with_backtrace" ]);
       ]
   in
   let cancelled =
@@ -23,7 +23,7 @@ let catch_all ~caps emit =
       let initial = Lazy.force Env.initial in
       let description, _ =
         Env.lookup_constructor ~use:false ~loc:Location.none Env.Pattern
-          (Paths.lid [ "Eio"; "Cancel"; "Cancelled" ])
+          (Paths.lid ("Eio", [ "Cancel"; "Cancelled" ]))
           initial
       in
       match description.Data_types.cstr_tag with
@@ -286,9 +286,9 @@ let catch_all ~caps emit =
      returns or scrutinises that cell. Deferred readers and overwritten cells
      do not establish that the exception leaves this handler. *)
   let following = ref [] in
-  let assign = Paths.values ~caps [ [ "Stdlib"; ":=" ] ] in
-  let dereference = Paths.values ~caps [ [ "Stdlib"; "!" ] ] in
-  let ignored = Paths.values ~caps [ [ "Stdlib"; "ignore" ] ] in
+  let assign = Paths.values ~caps [ ("Stdlib", [ ":=" ]) ] in
+  let dereference = Paths.values ~caps [ ("Stdlib", [ "!" ]) ] in
+  let ignored = Paths.values ~caps [ ("Stdlib", [ "ignore" ]) ] in
   let cell e =
     match e.exp_desc with
     | Texp_ident { path; _ } -> Some (key !unit_name e path)
@@ -409,11 +409,11 @@ let catch_all ~caps emit =
   end) in
   let terminal = Nodes.create 16 in
   let exits =
-    Paths.values ~caps [ [ "Stdlib"; "exit" ]; [ "Ox_caps"; "Cap_stdlib"; "exit" ] ]
+    Paths.values ~caps [ ("Stdlib", [ "exit" ]); ("Ox_caps", [ "Cap_stdlib"; "exit" ]) ]
   in
   let doors =
     Paths.values ~caps
-      [ [ "Ox_app"; "run_and_exit" ]; [ "Ox_app"; "run_and_exit_with_args" ] ]
+      [ ("Ox_app", [ "run_and_exit" ]); ("Ox_app", [ "run_and_exit_with_args" ]) ]
   in
   let rec tails descend e =
     match e.exp_desc with
@@ -465,7 +465,7 @@ let catch_all ~caps emit =
   (* ^nlintc-du4v: _exit runs no handlers and returns to no caller, even in a
      fork child owned by a library. Every possible handler result must terminate. *)
   let immediate_exits =
-    Paths.values ~caps [ [ "Unix"; "_exit" ]; [ "Ox_caps"; "Cap_unix"; "_exit" ] ]
+    Paths.values ~caps [ ("Unix", [ "_exit" ]); ("Ox_caps", [ "Cap_unix"; "_exit" ]) ]
   in
   let rec immediate_exit e =
     match e.exp_desc with
@@ -568,7 +568,7 @@ let identifiers predicate emit =
   }
 
 let obj_magic ~caps emit =
-  let modules = Paths.modules ~caps [ [ "Stdlib"; "Obj" ] ] in
+  let modules = Paths.modules ~caps [ ("Stdlib", [ "Obj" ]) ] in
   identifiers
     (fun e ->
       match e.exp_desc with
@@ -579,10 +579,10 @@ let obj_magic ~caps emit =
     emit
 
 let raw_concurrency ~caps emit =
-  let fiber = Paths.modules ~caps [ [ "Eio"; "Fiber" ] ] in
-  let fiber_list = Paths.modules ~caps [ [ "Eio"; "Fiber"; "List" ] ] in
-  let switch = Paths.modules ~caps [ [ "Eio"; "Switch" ] ] in
-  let mutex = Paths.modules ~caps [ [ "Eio"; "Mutex" ] ] in
+  let fiber = Paths.modules ~caps [ ("Eio", [ "Fiber" ]) ] in
+  let fiber_list = Paths.modules ~caps [ ("Eio", [ "Fiber"; "List" ]) ] in
+  let switch = Paths.modules ~caps [ ("Eio", [ "Switch" ]) ] in
+  let mutex = Paths.modules ~caps [ ("Eio", [ "Mutex" ]) ] in
   identifiers
     (fun e ->
       match e.exp_desc with
@@ -600,52 +600,52 @@ let raw_concurrency ~caps emit =
 
 let sleep_names =
   [
-    [ "Eio"; "Time"; "sleep" ];
-    [ "Eio"; "Time"; "sleep_until" ];
-    [ "Eio"; "Time"; "Mono"; "sleep" ];
-    [ "Eio"; "Time"; "Mono"; "sleep_until" ];
-    [ "Eio"; "Time"; "Mono"; "sleep_span" ];
-    [ "Eio"; "Time"; "Timeout"; "sleep" ];
-    [ "Eio_unix"; "sleep" ];
-    [ "Ox"; "Concurrent"; "sleep" ];
+    ("Eio", [ "Time"; "sleep" ]);
+    ("Eio", [ "Time"; "sleep_until" ]);
+    ("Eio", [ "Time"; "Mono"; "sleep" ]);
+    ("Eio", [ "Time"; "Mono"; "sleep_until" ]);
+    ("Eio", [ "Time"; "Mono"; "sleep_span" ]);
+    ("Eio", [ "Time"; "Timeout"; "sleep" ]);
+    ("Eio_unix", [ "sleep" ]);
+    ("Ox", [ "Concurrent"; "sleep" ]);
   ]
 
 let suspending_names =
   sleep_names
   @ [
-      [ "Eio"; "Fiber"; "yield" ];
-      [ "Eio"; "Fiber"; "await_cancel" ];
-      [ "Eio"; "Promise"; "await" ];
-      [ "Eio"; "Promise"; "await_exn" ];
-      [ "Eio"; "Mutex"; "lock" ];
-      [ "Eio"; "Mutex"; "use_rw" ];
-      [ "Eio"; "Mutex"; "use_ro" ];
-      [ "Eio"; "Condition"; "await" ];
-      [ "Eio"; "Condition"; "await_no_mutex" ];
-      [ "Eio"; "Semaphore"; "acquire" ];
-      [ "Eio"; "Stream"; "add" ];
-      [ "Eio"; "Stream"; "take" ];
-      [ "Eio"; "Flow"; "single_read" ];
-      [ "Eio"; "Flow"; "read_exact" ];
-      [ "Eio"; "Flow"; "write" ];
-      [ "Eio"; "Flow"; "copy" ];
-      [ "Eio"; "Flow"; "copy_string" ];
-      [ "Eio"; "Buf_write"; "flush" ];
-      [ "Eio"; "Process"; "await" ];
-      [ "Eio"; "Process"; "await_exn" ];
-      [ "Eio"; "Process"; "run" ];
-      [ "Eio"; "Net"; "accept" ];
-      [ "Eio"; "Net"; "connect" ];
-      [ "Eio"; "Net"; "send" ];
-      [ "Eio"; "Net"; "recv" ];
-      [ "Eio_unix"; "await_readable" ];
-      [ "Eio_unix"; "await_writable" ];
-      [ "Eio_unix"; "run_in_systhread" ];
-      [ "Ox"; "Channel"; "send" ];
-      [ "Ox"; "Channel"; "receive" ];
-      [ "Ox"; "Select"; "select" ];
-      [ "Ox"; "Fiber"; "await" ];
-      [ "Ox"; "Scope"; "run" ];
+      ("Eio", [ "Fiber"; "yield" ]);
+      ("Eio", [ "Fiber"; "await_cancel" ]);
+      ("Eio", [ "Promise"; "await" ]);
+      ("Eio", [ "Promise"; "await_exn" ]);
+      ("Eio", [ "Mutex"; "lock" ]);
+      ("Eio", [ "Mutex"; "use_rw" ]);
+      ("Eio", [ "Mutex"; "use_ro" ]);
+      ("Eio", [ "Condition"; "await" ]);
+      ("Eio", [ "Condition"; "await_no_mutex" ]);
+      ("Eio", [ "Semaphore"; "acquire" ]);
+      ("Eio", [ "Stream"; "add" ]);
+      ("Eio", [ "Stream"; "take" ]);
+      ("Eio", [ "Flow"; "single_read" ]);
+      ("Eio", [ "Flow"; "read_exact" ]);
+      ("Eio", [ "Flow"; "write" ]);
+      ("Eio", [ "Flow"; "copy" ]);
+      ("Eio", [ "Flow"; "copy_string" ]);
+      ("Eio", [ "Buf_write"; "flush" ]);
+      ("Eio", [ "Process"; "await" ]);
+      ("Eio", [ "Process"; "await_exn" ]);
+      ("Eio", [ "Process"; "run" ]);
+      ("Eio", [ "Net"; "accept" ]);
+      ("Eio", [ "Net"; "connect" ]);
+      ("Eio", [ "Net"; "send" ]);
+      ("Eio", [ "Net"; "recv" ]);
+      ("Eio_unix", [ "await_readable" ]);
+      ("Eio_unix", [ "await_writable" ]);
+      ("Eio_unix", [ "run_in_systhread" ]);
+      ("Ox", [ "Channel"; "send" ]);
+      ("Ox", [ "Channel"; "receive" ]);
+      ("Ox", [ "Select"; "select" ]);
+      ("Ox", [ "Fiber"; "await" ]);
+      ("Ox", [ "Scope"; "run" ]);
     ]
 
 (* A lock is dangerous only while a scheduler suspension can happen. *)
@@ -653,26 +653,26 @@ let stdlib_lock ~caps emit =
   let acquire =
     Paths.values ~caps
       [
-        [ "Mutex"; "lock" ];
-        [ "Stdlib"; "Mutex"; "lock" ];
-        [ "Semaphore"; "Counting"; "acquire" ];
-        [ "Semaphore"; "Binary"; "acquire" ];
+        ("Mutex", [ "lock" ]);
+        ("Stdlib", [ "Mutex"; "lock" ]);
+        ("Semaphore", [ "Counting"; "acquire" ]);
+        ("Semaphore", [ "Binary"; "acquire" ]);
       ]
   in
   let release =
     Paths.values ~caps
       [
-        [ "Mutex"; "unlock" ];
-        [ "Stdlib"; "Mutex"; "unlock" ];
-        [ "Semaphore"; "Counting"; "release" ];
-        [ "Semaphore"; "Binary"; "release" ];
+        ("Mutex", [ "unlock" ]);
+        ("Stdlib", [ "Mutex"; "unlock" ]);
+        ("Semaphore", [ "Counting"; "release" ]);
+        ("Semaphore", [ "Binary"; "release" ]);
       ]
   in
   let suspend = Paths.values ~caps suspending_names in
   let protect =
-    Paths.values ~caps [ [ "Fun"; "protect" ]; [ "Stdlib"; "Fun"; "protect" ] ]
+    Paths.values ~caps [ ("Fun", [ "protect" ]); ("Stdlib", [ "Fun"; "protect" ]) ]
   in
-  let immediate = Paths.values ~caps [ [ "Eio"; "Cancel"; "protect" ] ] in
+  let immediate = Paths.values ~caps [ ("Eio", [ "Cancel"; "protect" ]) ] in
   (* ^nlintc-j03j: memoise execution states, not just closure identities. The
      outgoing lock set is a transfer result and must be replayed on a cache hit. *)
   let module Nodes = Hashtbl.Make (struct
@@ -869,11 +869,14 @@ let stdlib_lock ~caps emit =
 
 let suspending_finalizer ~caps emit =
   let suspend = Paths.values ~caps suspending_names in
-  let finally = Paths.values ~caps [ [ "Stdlib"; "Fun"; "protect" ] ] in
-  let protect = Paths.values ~caps [ [ "Eio"; "Cancel"; "protect" ] ] in
+  let finally = Paths.values ~caps [ ("Stdlib", [ "Fun"; "protect" ]) ] in
+  let protect = Paths.values ~caps [ ("Eio", [ "Cancel"; "protect" ]) ] in
   let releases =
     Paths.values ~caps
-      [ [ "Eio"; "Switch"; "on_release" ]; [ "Eio"; "Switch"; "on_release_cancellable" ] ]
+      [
+        ("Eio", [ "Switch"; "on_release" ]);
+        ("Eio", [ "Switch"; "on_release_cancellable" ]);
+      ]
   in
   let cleanup = ref false and protected = ref false in
   let scoped final protection f =
@@ -920,9 +923,9 @@ let race_deadline ~caps emit =
   let races =
     Paths.values ~caps
       [
-        [ "Ox"; "Concurrent"; "race" ];
-        [ "Ox"; "Concurrent"; "race_first" ];
-        [ "Eio"; "Fiber"; "any" ];
+        ("Ox", [ "Concurrent"; "race" ]);
+        ("Ox", [ "Concurrent"; "race_first" ]);
+        ("Eio", [ "Fiber"; "any" ]);
       ]
   in
   let sleeps = Paths.values ~caps sleep_names in

@@ -772,39 +772,43 @@ let line_at_offset source offset =
 (** A type group inherits its one requested mode, including unannotated members.
     Conflicting modes in the same recursive group are rejected, not partly derived. *)
 let group_of_decls ~source ~kind ~recursive ~insert_at decls =
-  let modes =
-    List.concat_map
-      (fun decl ->
-        List.filter_map
-          (fun attr ->
-            if is_deriving attr then
-              match classify_deriving_payload attr.Parsetree.attr_payload with
-              | Yojson mode -> Some mode
-              | Other name -> failf "[@@deriving %s] is not supported" name
-              | Complex ->
-                  failf
-                    "unsupported [@@deriving] payload: write one deriver per attribute"
-            else None)
-          decl.Parsetree.ptype_attributes)
-      decls
-  in
-  match modes with
+  match decls with
   | [] -> None
-  | mode :: rest ->
-      if List.exists (( <> ) mode) rest then
-        failf "a type group cannot mix [@@deriving yojson] and [@@deriving yojson_of]";
-      Some
-        {
-          decls;
-          mode;
-          kind;
-          recursive;
-          prelude = false;
-          line = line_of_decl (List.hd decls);
-          blanks = List.concat_map (blanks_of_decl ~source) decls;
-          insert_at;
-          insert_line = line_at_offset source insert_at;
-        }
+  | first :: _ -> (
+      let modes =
+        List.concat_map
+          (fun decl ->
+            List.filter_map
+              (fun attr ->
+                if is_deriving attr then
+                  match classify_deriving_payload attr.Parsetree.attr_payload with
+                  | Yojson mode -> Some mode
+                  | Other name -> failf "[@@deriving %s] is not supported" name
+                  | Complex ->
+                      failf
+                        "unsupported [@@deriving] payload: write one deriver per \
+                         attribute"
+                else None)
+              decl.Parsetree.ptype_attributes)
+          decls
+      in
+      match modes with
+      | [] -> None
+      | mode :: rest ->
+          if List.exists (( <> ) mode) rest then
+            failf "a type group cannot mix [@@deriving yojson] and [@@deriving yojson_of]";
+          Some
+            {
+              decls;
+              mode;
+              kind;
+              recursive;
+              prelude = false;
+              line = line_of_decl first;
+              blanks = List.concat_map (blanks_of_decl ~source) decls;
+              insert_at;
+              insert_line = line_at_offset source insert_at;
+            })
 
 (** The compiler iterator reaches modules in expressions as well as declarations. Ordinary
     structures/signatures are collected at their own source offsets. Unsupported module

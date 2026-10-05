@@ -40,12 +40,25 @@ let exports items =
 
 let known_export ~(caps : < Cap.fs_read ; .. >) module_ value =
   ignore caps#fs_read;
+  let text = module_ ^ "." ^ value in
+  let head, tail =
+    match String.index_opt text '.' with
+    | None -> (text, [])
+    | Some i ->
+        ( String.sub text 0 i,
+          String.split_on_char '.' (String.sub text (i + 1) (String.length text - i - 1))
+        )
+  in
+  let path =
+    List.fold_left
+      (fun path name ->
+        Longident.Ldot
+          ( { Location.txt = path; loc = Location.none },
+            { Location.txt = name; loc = Location.none } ))
+      (Longident.Lident head) tail
+  in
   try
-    ignore
-      (Env.lookup_value ~use:false ~loc:Location.none
-         (Option.get
-            (Longident.unflatten (String.split_on_char '.' (module_ ^ "." ^ value))))
-         (Lazy.force Env.initial));
+    ignore (Env.lookup_value ~use:false ~loc:Location.none path (Lazy.force Env.initial));
     true
   with Not_found | Env.Error _ -> false
 
