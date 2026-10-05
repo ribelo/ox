@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Historical logger cases ^nport-lve1, adapted to the journal contract.
    v1's pretty/logfmt and stdout/stderr routes no longer exist. *)
 open Ox_observability
@@ -18,14 +19,23 @@ let level_and_fields () =
       Logger.error logger ~fields:[ ("count", Logger.Int 7) ] "failed";
       let records = Logger.Memory.records memory in
       check_int "with_min_level" 2 (List.length records);
-      check_string "first retained" "warning" (List.hd records).msg;
-      check_string "second retained" "failed" (List.nth records 1).msg;
+      let warning, failed =
+        match records with
+        | warning :: failed :: _ -> (warning, failed)
+        | _ -> Alcotest.fail "missing retained warning/error record fixtures"
+      in
+      check_string "first retained" "warning" warning.msg;
+      check_string "second retained" "failed" failed.msg;
       check_string "user field" "alice"
         (Format.asprintf "%a" Logger.pp_value
-           (List.assoc "user" (List.hd records).fields));
+           (match List.assoc_opt "user" warning.fields with
+           | Some value -> value
+           | None -> Alcotest.fail "missing observability/v1_logger fixture: field user"));
       check_string "count field" "7"
         (Format.asprintf "%a" Logger.pp_value
-           (List.assoc "count" (List.nth records 1).fields));
+           (match List.assoc_opt "count" failed.fields with
+           | Some value -> value
+           | None -> Alcotest.fail "missing observability/v1_logger fixture: field count"));
       List.iter
         (fun (level, name) ->
           check_string "formatters" name (Logger.level_to_string level);

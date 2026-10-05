@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Tests for Logger.span's result-derived completion fields.
 
    Story IDs covered here:
@@ -58,11 +59,15 @@ let only_end memory name =
       Alcotest.failf "expected one end record for %s, found %d" name (List.length found)
 
 let start_of memory name =
-  List.find
-    (fun record ->
-      String.equal record.Logger.msg name
-      && String.equal (field_text record "event") "start")
-    (records memory)
+  match
+    List.find_opt
+      (fun record ->
+        String.equal record.Logger.msg name
+        && String.equal (field_text record "event") "start")
+      (records memory)
+  with
+  | Some value -> value
+  | None -> Alcotest.fail "missing observability/span_complete fixture: matching record"
 
 (* A counting extractor: how many times the span called it. *)
 let counting extract =
@@ -178,7 +183,12 @@ let test_not_before_completion () =
        Alcotest.(check (result int string)) "scripted span reply" (Ok 7) span_result);
       check_int "^nobs-3cck not called while the body runs" 0 !calls_inside;
       let inside =
-        List.find (fun r -> String.equal r.Logger.msg "inside") (records memory)
+        match
+          List.find_opt (fun r -> String.equal r.Logger.msg "inside") (records memory)
+        with
+        | Some value -> value
+        | None ->
+            Alcotest.fail "missing observability/span_complete fixture: matching record"
       in
       check_string "no completion field inside" "<absent>" (field_text inside "rows");
       check_bool "no completion field in the inside context" false
@@ -375,7 +385,11 @@ let test_redacted_completion () =
       let journal = Buffer.contents buffer in
       check_bool "journal: redacted" true (contains journal "\"session\":\"<redacted>\"");
       check_bool "journal: secret absent" false (contains journal "sk-live-1234");
-      let finished = List.hd !typed in
+      let finished =
+        match !typed with
+        | head :: _ -> head
+        | [] -> Alcotest.fail "missing observability/span_complete fixture: !typed"
+      in
       (match List.assoc_opt "session" finished.Logger.fields with
       | Some (Logger.Redacted _ as value) ->
           check_string "records: JSON redacted" "\"<redacted>\""
@@ -432,7 +446,14 @@ let test_isolation () =
       check_string "inner's not on outer" "<absent>" (field_text outer "inner.rows");
       check_string "outer's not on inner" "<absent>" (field_text inner "outer.rows");
       let after =
-        List.find (fun r -> String.equal r.Logger.msg "after-inner") (records memory)
+        match
+          List.find_opt
+            (fun r -> String.equal r.Logger.msg "after-inner")
+            (records memory)
+        with
+        | Some value -> value
+        | None ->
+            Alcotest.fail "missing observability/span_complete fixture: matching record"
       in
       check_string "nothing on a later log" "<absent>" (field_text after "inner.rows");
       List.iter

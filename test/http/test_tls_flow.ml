@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* nhttp-7pp8 nhttp-rs5p wsduplex-j4rn: Pie's lifecycle_soak WSS fixture pulled row 38.
    Full-duplex coverage is the parked-read alias probe and the loopback stress. *)
 module H = Ox_http
@@ -43,9 +44,12 @@ let expect_eof flow =
 let expect_failure flow =
   match Eio.Flow.single_read flow (Cstruct.create 32) with
   | _ -> Alcotest.fail "damaged TLS record accepted"
-  | exception exn when Option.is_some (H.Tls_flow.failure_message exn) ->
-      let detail = Option.get (H.Tls_flow.failure_message exn) in
-      Alcotest.(check bool) "failure carries a diagnostic" true (detail <> "")
+  (* ^safe-bguw ^safe-3osb: decode the expected TLS failure once; rethrow others. *)
+  | exception exn -> (
+      match H.Tls_flow.failure_message exn with
+      | Some detail ->
+          Alcotest.(check bool) "failure carries a diagnostic" true (detail <> "")
+      | None -> raise exn)
 
 let read_message flow expected =
   let actual = Cstruct.create (String.length expected) in

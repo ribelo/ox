@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Tests for ox_observability.
 
    Story IDs covered here, one group per story:
@@ -81,7 +82,14 @@ let test_redact_in_record () =
       Logger.info logger
         ~fields:[ ("api_key", Logger.Redacted (Redact.make "sk-live-1234")) ]
         "loaded";
-      let line = Logger.to_string (List.hd (Logger.Memory.records memory)) in
+      let line =
+        Logger.to_string
+          (match Logger.Memory.records memory with
+          | head :: _ -> head
+          | [] ->
+              Alcotest.fail
+                "missing observability/run fixture: (Logger.Memory.records memory)")
+      in
       check_bool "the field renders redacted" true
         (contains line "\"api_key\":\"<redacted>\"");
       check_bool "the secret is absent" false (contains line "sk-live-1234"))
@@ -122,12 +130,19 @@ let test_context_extent () =
       Alcotest.(check (list (pair string string)))
         "the record inherits them, sorted by name"
         [ ("owner", "rafal"); ("tab", "t-1") ]
-        (List.nth records 0).Logger.context;
+        (match records with
+        | value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 0")
+          .Logger.context;
       Alcotest.(check (list (pair string string)))
         "the fiber's own fields after the extent" []
         (Context.fields (Context.current ()));
       Alcotest.(check (list (pair string string)))
-        "the later record inherits nothing" [] (List.nth records 1).Logger.context)
+        "the later record inherits nothing" []
+        (match records with
+        | _ :: value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 1")
+          .Logger.context)
 
 (* ^nobs-2d4r: a fiber forked inside the extent inherits the fields. *)
 let test_context_fork_inheritance () =
@@ -139,7 +154,13 @@ let test_context_fork_inheritance () =
         (fun () ->
           Eio.Fiber.fork ~sw (fun () -> Logger.info logger "forked");
           Eio.Fiber.yield ());
-      let record = List.hd (Logger.Memory.records memory) in
+      let record =
+        match Logger.Memory.records memory with
+        | head :: _ -> head
+        | [] ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory)"
+      in
       check_string "the forked fiber logged" "forked" record.msg;
       Alcotest.(check (list (pair string string)))
         "with the inherited field"
@@ -163,11 +184,17 @@ let test_context_nesting () =
       Alcotest.(check (list (pair string string)))
         "the inner set wins where it speaks"
         [ ("cmd", "run"); ("owner", "inner"); ("tab", "t-1") ]
-        (List.nth records 0).Logger.context;
+        (match records with
+        | value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 0")
+          .Logger.context;
       Alcotest.(check (list (pair string string)))
         "the outer set is restored"
         [ ("owner", "outer"); ("tab", "t-1") ]
-        (List.nth records 1).Logger.context)
+        (match records with
+        | _ :: value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 1")
+          .Logger.context)
 
 (* ^nobs-2d4r: outside an Eio fiber nothing is attached, and asking does not
    abort the caller. *)
@@ -192,7 +219,13 @@ let test_log_record () =
           Logger.log logger Logger.Warn ~msg:"degraded"
             ~fields:[ ("attempt", Logger.Int 2) ]
             ());
-      let record = List.hd (Logger.Memory.records memory) in
+      let record =
+        match Logger.Memory.records memory with
+        | head :: _ -> head
+        | [] ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory)"
+      in
       check_string "service" "leash" record.service;
       check_string "message" "degraded" record.msg;
       Alcotest.(check level_testable) "level" Logger.Warn record.level;
@@ -217,7 +250,13 @@ let test_base_fields () =
           env memory
       in
       Logger.info logger ~fields:[ ("host", Logger.String "b") ] "hi";
-      let record = List.hd (Logger.Memory.records memory) in
+      let record =
+        match Logger.Memory.records memory with
+        | head :: _ -> head
+        | [] ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory)"
+      in
       Alcotest.(check (list (pair string string)))
         "merged and sorted"
         [ ("host", "b"); ("version", "1.2") ]
@@ -246,10 +285,14 @@ let test_journal_lines () =
       check_int "one line per record" 2 (List.length lines);
       check_string "first line, fixed key order"
         "{\"ts\":\"1970-01-01T00:00:00.000Z\",\"level\":\"info\",\"service\":\"leash\",\"msg\":\"listening\",\"fields\":{\"port\":8080}}"
-        (List.nth lines 0);
+        (match lines with
+        | value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: lines element 0");
       check_string "second line, fields sorted by name"
         "{\"ts\":\"1970-01-01T00:00:00.000Z\",\"level\":\"warn\",\"service\":\"leash\",\"msg\":\"flapping\",\"fields\":{\"ratio\":0.5,\"retry\":true}}"
-        (List.nth lines 1);
+        (match lines with
+        | _ :: value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: lines element 1");
       List.iter
         (fun line ->
           match Ox_json.parse line with
@@ -291,7 +334,13 @@ let test_minimum_level () =
       Logger.debug logger "dropped too";
       Logger.error logger "kept";
       check_int "only the record at or above the minimum" 1 (record_count memory);
-      check_string "the kept one" "kept" (List.hd (Logger.Memory.records memory)).msg)
+      check_string "the kept one" "kept"
+        (match Logger.Memory.records memory with
+        | head :: _ -> head
+        | [] ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory)")
+          .msg)
 
 (* ^nobs-rayu: the in-memory reporter answers by level and by field. *)
 let test_memory_find () =
@@ -352,7 +401,15 @@ let test_span_ok () =
         "the span returns what it wrapped" (Ok 42) result;
       let records = Logger.Memory.records memory in
       check_int "start and end" 2 (List.length records);
-      let started = List.nth records 0 and finished = List.nth records 1 in
+      let started =
+        match records with
+        | value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 0"
+      and finished =
+        match records with
+        | _ :: value :: _ -> value
+        | _ -> Alcotest.fail "missing observability/run fixture: records element 1"
+      in
       check_string "start event" "start" (field_text started "event");
       check_string "end event" "end" (field_text finished "event");
       check_string "outcome" "ok" (field_text finished "outcome");
@@ -371,7 +428,14 @@ let test_span_failure () =
       in
       Alcotest.(check (result int string))
         "the failure travels unchanged" (Error "boom") result;
-      let finished = List.nth (Logger.Memory.records memory) 1 in
+      let finished =
+        match Logger.Memory.records memory with
+        | _ :: value :: _ -> value
+        | _ ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory) element \
+               1"
+      in
       check_string "outcome" "failed" (field_text finished "outcome");
       check_string "cause summary" "Fail(boom)" (field_text finished "error");
       Alcotest.(check level_testable)
@@ -380,7 +444,14 @@ let test_span_failure () =
        let span_result = Logger.span logger "fetch2" (fun () -> Error "boom") in
        Alcotest.(check (result unit string))
          "scripted span reply" (Error "boom") span_result);
-      let default_summary = List.nth (Logger.Memory.records memory) 3 in
+      let default_summary =
+        match Logger.Memory.records memory with
+        | _ :: _ :: _ :: value :: _ -> value
+        | _ ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory) element \
+               3"
+      in
       check_string "without a printer the summary names the cause" "Fail(<error>)"
         (field_text default_summary "error"))
 
@@ -395,7 +466,14 @@ let test_span_defect () =
         | exception Failure message -> message
       in
       check_string "the exception propagates" "bad" raised;
-      let finished = List.nth (Logger.Memory.records memory) 1 in
+      let finished =
+        match Logger.Memory.records memory with
+        | _ :: value :: _ -> value
+        | _ ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory) element \
+               1"
+      in
       check_string "outcome" "defect" (field_text finished "outcome");
       check_string "the defect is summarized" "Die(Failure(\"bad\"))"
         (field_text finished "error");
@@ -416,7 +494,14 @@ let test_span_interrupt () =
         | exception Eio.Cancel.Cancelled _ -> true
       in
       check_bool "the interruption propagates" true cancelled;
-      let finished = List.nth (Logger.Memory.records memory) 1 in
+      let finished =
+        match Logger.Memory.records memory with
+        | _ :: value :: _ -> value
+        | _ ->
+            Alcotest.fail
+              "missing observability/run fixture: (Logger.Memory.records memory) element \
+               1"
+      in
       check_string "outcome" "interrupt" (field_text finished "outcome");
       check_bool "an interruption carries no error summary" false
         (List.mem_assoc "error" finished.fields))
@@ -467,7 +552,11 @@ let test_span_minimum_level () =
          "scripted span reply" (Error "boom") span_result);
       let records = Logger.Memory.records memory in
       check_int "only the failure record survives" 1 (List.length records);
-      let record = List.hd records in
+      let record =
+        match records with
+        | head :: _ -> head
+        | [] -> Alcotest.fail "missing observability/run fixture: records"
+      in
       check_string "and it is the end record" "end" (field_text record "event");
       check_string "with the failure outcome" "failed" (field_text record "outcome"))
 
@@ -557,9 +646,21 @@ let test_span_ids_and_records () =
        in
        Alcotest.(check (result unit string)) "scripted span reply" (Ok ()) span_result);
       let records = List.rev !records in
-      let outer = List.hd records in
-      let inner = List.find (fun r -> r.Logger.msg = "inner") records in
-      let inside = List.find (fun r -> r.Logger.msg = "inside") records in
+      let outer =
+        match records with
+        | head :: _ -> head
+        | [] -> Alcotest.fail "missing observability/run fixture: records"
+      in
+      let inner =
+        match List.find_opt (fun r -> r.Logger.msg = "inner") records with
+        | Some value -> value
+        | None -> Alcotest.fail "missing observability/run fixture: matching record"
+      in
+      let inside =
+        match List.find_opt (fun r -> r.Logger.msg = "inside") records with
+        | Some value -> value
+        | None -> Alcotest.fail "missing observability/run fixture: matching record"
+      in
       let get r key = Option.value (List.assoc_opt key r.Logger.context) ~default:"" in
       check_string "logs inherit outer trace" (get outer "trace_id")
         (get inside "trace_id");

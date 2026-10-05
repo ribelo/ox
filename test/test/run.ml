@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 let test_run_clock () =
   (* ntest-6du6 *)
   Ox_test.run (fun env _sw ->
@@ -164,7 +165,12 @@ let test_process () =
             "SIGTERM wakes child" Sys.sigterm
             (match Eio.Process.await child with `Signaled n -> n | _ -> -1);
           let _pending = Eio.Process.spawn ~sw mgr [ "cleanup" ] in
-          let first = List.hd (Ox_test.Process.spawns fake) in
+          let first =
+            match Ox_test.Process.spawns fake with
+            | head :: _ -> head
+            | [] ->
+                Alcotest.fail "missing test/run fixture: (Ox_test.Process.spawns fake)"
+          in
           Alcotest.(check (list string)) "argv" [ "fake"; "arg" ] first.argv;
           Alcotest.(check string) "executable" "/bin/fake" first.executable;
           Alcotest.(check (list string))
@@ -225,7 +231,10 @@ let test_process_output
       Alcotest.(check (list string))
         "argv recorded as before"
         [ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
-        (List.hd (Fake.spawns fake)).argv)
+        (match Fake.spawns fake with
+        | head :: _ -> head
+        | [] -> Alcotest.fail "missing test/run fixture: (Fake.spawns fake)")
+          .argv)
 
 let test_process_output_delayed
     ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =

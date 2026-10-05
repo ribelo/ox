@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 module H = Ox_http
 module W = H.Ws_client
 module C = H.Ws_codec
@@ -65,7 +66,9 @@ let with_ws ?(on_close = fun () -> ()) next write test =
                            (String.sub line (String.length prefix)
                               (String.length line - String.length prefix)))
                     else None)
-                |> Option.get
+                |> function
+                | Some key -> key
+                | None -> Alcotest.fail "missing WebSocket upgrade key fixture"
               in
               response :=
                 "HTTP/1.1 101 Switching Protocols\r\n\

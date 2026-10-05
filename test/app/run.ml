@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Story IDs covered: ^napp-ytqk ^napp-x11e ^napp-ersz ^napp-3j07 ^napp-78pf ^napp-f7d6 ^napp-qg7n
    ^napp-pn0a ^napp-kq3b ^napp-2aa6 ^napp-o6d6 ^napp-mbpr ^napp-433c
    ^napp-57qi ^napp-noiv ^napp-dnru ^nfix-j678 ^napp-deps ^napp-idii and, after
@@ -145,7 +146,10 @@ let test_derived_config () =
   let settings = decode_json {|{"models":{"api_key":"file-secret"},"port":42}|} in
   check_int "^nnoschema-5mdj a typed field decodes" 42 settings.port;
   check_string "^nnoschema-ifg0 the secret arrives wrapped" "file-secret"
-    (Ox_observability.Redact.expose (Option.get settings.models.api_key));
+    (Ox_observability.Redact.expose
+       (match settings.models.api_key with
+       | Some value -> value
+       | None -> Alcotest.fail "missing app/run fixture: settings.models.api_key"));
   let encoded = Yojson.Safe.to_string (config.yojson_of_t settings) in
   expect_part encoded "\"api_key\":\"<redacted>\"";
   Alcotest.(check bool)
@@ -282,11 +286,17 @@ let test_status_query_before_serve () =
         live := List.map render statuses;
         (counter :=
            match List.find_opt (fun status -> status.Status.name = "first") statuses with
-           | Some status -> List.assoc "counter" status.Status.details
+           | Some status -> (
+               match List.assoc_opt "counter" status.Status.details with
+               | Some value -> value
+               | None -> Alcotest.fail "missing app/run fixture: field counter")
            | None -> "");
         let reporter_status = Reporter.status reporter_service in
         reporter := render reporter_status;
-        seen := List.assoc "seen" reporter_status.Status.details;
+        (seen :=
+           match List.assoc_opt "seen" reporter_status.Status.details with
+           | Some value -> value
+           | None -> Alcotest.fail "missing app/run fixture: field seen");
         request_stop ~sw id;
         `Stop_daemon);
     serve ~sw ()
@@ -478,10 +488,18 @@ let test_default_path_absent
             match status with Ox_process.Child.Exited code -> code | _ -> -1
           in
           let printed child =
-            Eio.Flow.read_all (Option.get (Ox_process.Child.stdout child))
+            Eio.Flow.read_all
+              (match Ox_process.Child.stdout child with
+              | Some value -> value
+              | None ->
+                  Alcotest.fail "missing app/run fixture: (Ox_process.Child.stdout child)")
           in
           let errors child =
-            Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
+            Eio.Flow.read_all
+              (match Ox_process.Child.stderr child with
+              | Some value -> value
+              | None ->
+                  Alcotest.fail "missing app/run fixture: (Ox_process.Child.stderr child)")
           in
           (* No file at the default path: the program starts, as a fresh install must. *)
           let child = spawn [ fixture ] in
@@ -489,7 +507,11 @@ let test_default_path_absent
             Eio.Time.with_timeout_exn base#clock 5. (fun () ->
                 Eio.Buf_read.line
                   (Eio.Buf_read.of_flow ~max_size:1024
-                     (Option.get (Ox_process.Child.stdout child))))
+                     (match Ox_process.Child.stdout child with
+                     | Some value -> value
+                     | None ->
+                         Alcotest.fail
+                           "missing app/run fixture: (Ox_process.Child.stdout child)")))
           in
           check_string "Door ready" "ready" ready;
           Ox_process.Child.signal child Sys.sigterm;
@@ -503,7 +525,11 @@ let test_default_path_absent
             Eio.Time.with_timeout_exn base#clock 5. (fun () ->
                 Eio.Buf_read.line
                   (Eio.Buf_read.of_flow ~max_size:1024
-                     (Option.get (Ox_process.Child.stdout child))))
+                     (match Ox_process.Child.stdout child with
+                     | Some value -> value
+                     | None ->
+                         Alcotest.fail
+                           "missing app/run fixture: (Ox_process.Child.stdout child)")))
           in
           check_string "Door ready" "ready" ready;
           Ox_process.Child.signal child Sys.sigterm;
@@ -586,7 +612,10 @@ let test_env_override_and_check () =
       ~program:(fun _ (cfg : settings) _ ->
         check_int "^nnoschema-5mdj typed environment override" 73 cfg.port;
         check_string "the environment fills the optional secret" "override-secret"
-          (Ox_observability.Redact.expose (Option.get cfg.models.api_key));
+          (Ox_observability.Redact.expose
+             (match cfg.models.api_key with
+             | Some value -> value
+             | None -> Alcotest.fail "missing app/run fixture: cfg.models.api_key"));
         Ok ())
       ()
   in
@@ -1099,12 +1128,22 @@ let test_run_validates
                 "^napp-57qi run exits 2 without starting" true
                 (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
               let errors =
-                Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
+                Eio.Flow.read_all
+                  (match Ox_process.Child.stderr child with
+                  | Some value -> value
+                  | None ->
+                      Alcotest.fail
+                        "missing app/run fixture: (Ox_process.Child.stderr child)")
               in
               expect_part errors "/port";
               expect_part errors "port rejected by validator";
               let printed =
-                Eio.Flow.read_all (Option.get (Ox_process.Child.stdout child))
+                Eio.Flow.read_all
+                  (match Ox_process.Child.stdout child with
+                  | Some value -> value
+                  | None ->
+                      Alcotest.fail
+                        "missing app/run fixture: (Ox_process.Child.stdout child)")
               in
               check_string "^napp-57qi the program never printed" "" printed)))
 
@@ -1142,7 +1181,13 @@ let test_real_signal
                 | Ok child -> child
                 | Error _ -> Alcotest.fail "invalid signal fixture spawn"
               in
-              let source = Option.get (Ox_process.Child.stdout child) in
+              let source =
+                match Ox_process.Child.stdout child with
+                | Some value -> value
+                | None ->
+                    Alcotest.fail
+                      "missing app/run fixture: (Ox_process.Child.stdout child)"
+              in
               let ready =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () ->
                     Eio.Buf_read.line (Eio.Buf_read.of_flow ~max_size:1024 source))
@@ -1159,7 +1204,12 @@ let test_real_signal
               Ox_process.Child.signal child signo;
               ignore (Ox_process.Child.stop child);
               let journal =
-                Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
+                Eio.Flow.read_all
+                  (match Ox_process.Child.stderr child with
+                  | Some value -> value
+                  | None ->
+                      Alcotest.fail
+                        "missing app/run fixture: (Ox_process.Child.stderr child)")
               in
               expect_part journal "\"msg\":\"signal stopped\"")))
 
@@ -1202,7 +1252,11 @@ let test_real_signal_telemetry
               in
               let input =
                 Eio.Buf_read.of_flow ~max_size:65536
-                  (Option.get (Ox_process.Child.stdout child))
+                  (match Ox_process.Child.stdout child with
+                  | Some value -> value
+                  | None ->
+                      Alcotest.fail
+                        "missing app/run fixture: (Ox_process.Child.stdout child)")
               in
               let ready =
                 Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
@@ -1234,7 +1288,7 @@ let with_otlp_collector ?(stall = false) env sw f =
   let port =
     match Eio.Net.listening_addr listener with
     | `Tcp (_, port) -> port
-    | _ -> assert false
+    | _ -> Alcotest.fail "expected TCP listening address in app/run fixture"
   in
   let received = ref [] in
   Eio.Fiber.fork_daemon ~sw (fun () ->
@@ -1318,7 +1372,9 @@ let signal_stop_otlp ?(stall = false)
           in
           let input =
             Eio.Buf_read.of_flow ~max_size:65536
-              (Option.get (Ox_process.Child.stdout child))
+              (match Ox_process.Child.stdout child with
+              | Some source -> source
+              | None -> Alcotest.fail "missing spawned child stdout pipe fixture")
           in
           let ready =
             Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line input)
@@ -1417,7 +1473,9 @@ let test_door2_real_signal_extra
           in
           let output =
             Eio.Buf_read.of_flow ~max_size:1024
-              (Option.get (Ox_process.Child.stdout child))
+              (match Ox_process.Child.stdout child with
+              | Some source -> source
+              | None -> Alcotest.fail "missing spawned child stdout pipe fixture")
           in
           let ready =
             Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output)
@@ -1479,7 +1537,10 @@ let test_door2_production_reader
                     "reader rejects oversized file" true
                     (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
                   let errors =
-                    Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child))
+                    Eio.Flow.read_all
+                      (match Ox_process.Child.stderr child with
+                      | Some source -> source
+                      | None -> Alcotest.fail "missing spawned child stderr pipe fixture")
                   in
                   expect_part errors "file exceeds byte limit";
                   ignore (Ox_process.Child.stop child))
@@ -1590,7 +1651,11 @@ let test_door2_source_policy () =
             Ok ())
       in
       check_int "^napp-ersz default" 0 (invoke [| "demo" |]);
-      expect_part (List.hd !seen) "/demo/stt.toml";
+      expect_part
+        (match !seen with
+        | path :: _ -> path
+        | [] -> Alcotest.fail "missing observed config path fixture")
+        "/demo/stt.toml";
       check_int "^napp-ersz explicit" 0
         (invoke [| "demo"; "--config"; "/somewhere/app/override.toml" |]);
       Alcotest.(check bool)
@@ -1754,7 +1819,9 @@ let test_door3_real_signal_owned_code
           in
           let output =
             Eio.Buf_read.of_flow ~max_size:1024
-              (Option.get (Ox_process.Child.stdout child))
+              (match Ox_process.Child.stdout child with
+              | Some source -> source
+              | None -> Alcotest.fail "missing spawned child stdout pipe fixture")
           in
           check_string "^napp-izjt owned code ready" "ready"
             (Eio.Time.with_timeout_exn env#clock 5. (fun () -> Eio.Buf_read.line output));

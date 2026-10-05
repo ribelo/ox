@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* ^nwake-27rc ^nwake-y4cx: ticker gating/cadence/cleanup and a real Door stop. *)
 module Logger = Ox_observability.Logger
 
@@ -115,8 +116,22 @@ let fixture
             | Ox_process.Child.Exited code -> code
             | _ -> Alcotest.fail "fixture killed"
           in
-          let stdout = Eio.Flow.read_all (Option.get (Ox_process.Child.stdout child)) in
-          let stderr = Eio.Flow.read_all (Option.get (Ox_process.Child.stderr child)) in
+          let stdout =
+            Eio.Flow.read_all
+              (match Ox_process.Child.stdout child with
+              | Some value -> value
+              | None ->
+                  Alcotest.fail
+                    "missing app/wakeup fixture: (Ox_process.Child.stdout child)")
+          in
+          let stderr =
+            Eio.Flow.read_all
+              (match Ox_process.Child.stderr child with
+              | Some value -> value
+              | None ->
+                  Alcotest.fail
+                    "missing app/wakeup fixture: (Ox_process.Child.stderr child)")
+          in
           { code; stdout; stderr }))
 
 let check_choice expected outcome =

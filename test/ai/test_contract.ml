@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Story tests for the System One client against the fake server (^nso-hcfr).
 
    ^nso-5hom: one call decides. ^nso-jz8v: choice and score questions are encoded exactly
@@ -20,7 +21,12 @@ let test_evaluate () =
              ~questions:choice_questions)
       in
       Alcotest.(check int) "one connection" 1 (Fake_server.connections server);
-      let method_, headers, _ = Option.get (Fake_server.request server) in
+      let method_, headers, _ =
+        match Fake_server.request server with
+        | Some value -> value
+        | None ->
+            Alcotest.fail "missing ai/test_contract fixture: (Fake_server.request server)"
+      in
       Alcotest.(check string) "method" "POST" method_;
       Alcotest.(check (option string))
         "path" (Some "/v1/systemone")
@@ -153,7 +159,12 @@ let test_configurable_endpoint () =
       ignore
         (expect_ok
            (Ox_ai_systemone.Client.evaluate client ~deadline ~state ~questions:[]));
-      let _, headers, _ = Option.get (Fake_server.request server) in
+      let _, headers, _ =
+        match Fake_server.request server with
+        | Some value -> value
+        | None ->
+            Alcotest.fail "missing ai/test_contract fixture: (Fake_server.request server)"
+      in
       Alcotest.(check (option string))
         "custom path" (Some "/custom/path")
         (List.assoc_opt "host" headers))

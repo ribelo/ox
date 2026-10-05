@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 module C = Ox_http.Client
 module Ssl = Ox_http.Ox_http_tls_openssl
 module Tls = Ox_http.Tls_flow
@@ -32,7 +33,9 @@ let with_server ?(tls = false) ?(abrupt = false) ?mock_clock script test =
               let port =
                 match Eio.Net.listening_addr listener with
                 | `Tcp (_, port) -> port
-                | _ -> assert false
+                | _ ->
+                    Alcotest.fail
+                      "expected TCP listening address in http/test_client_heads fixture"
               in
               let url =
                 Printf.sprintf "%s://localhost:%d/" (if tls then "https" else "http") port
@@ -229,7 +232,13 @@ let connection_reset () =
       let admitted, resolve_admitted = Eio.Promise.create () in
       with_server ~abrupt:true
         (fun flow raw ->
-          let fd = Option.get (Eio_unix.Resource.fd_opt raw) in
+          let fd =
+            match Eio_unix.Resource.fd_opt raw with
+            | Some value -> value
+            | None ->
+                Alcotest.fail
+                  "missing http/test_client_heads fixture: (Eio_unix.Resource.fd_opt raw)"
+          in
           Eio_unix.Fd.use_exn "HTTP reset fixture" fd (fun fd ->
               Unix.setsockopt_optint fd Unix.SO_LINGER (Some 0));
           Eio.Flow.copy_string (head status "Content-Length: 2\r\n") flow;

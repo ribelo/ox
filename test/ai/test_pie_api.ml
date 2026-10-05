@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* Pie consumer regressions: ^oxpie-a4m7 ^oxpie-b6q2 ^oxpie-c8r5 ^oxpie-d3t9
    ^oxpie-e5v1 ^oxpie-f7w4. All HTTP calls target switch-owned loopback servers. *)
 module R = Ox_ai_openrouter.Responses
@@ -70,13 +71,26 @@ let test_audio_formats () =
             (H.text_of (H.member "instructions" sent));
           let messages = H.list_of (H.member "input" sent) in
           Alcotest.(check int) "one user message" 1 (List.length messages);
-          let message = List.hd messages in
+          let message =
+            match messages with
+            | head :: _ -> head
+            | [] -> Alcotest.fail "missing ai/test_pie_api fixture: messages"
+          in
           Alcotest.(check string) "role" "user" (H.text_of (H.member "role" message));
           let parts = H.list_of (H.member "content" message) in
           Alcotest.(check string)
             "input text" audio.prompt
-            (H.text_of (H.member "text" (List.hd parts)));
-          let part = H.member "input_audio" (List.nth parts 1) in
+            (H.text_of
+               (H.member "text"
+                  (match parts with
+                  | head :: _ -> head
+                  | [] -> Alcotest.fail "missing ai/test_pie_api fixture: parts")));
+          let part =
+            H.member "input_audio"
+              (match parts with
+              | _ :: value :: _ -> value
+              | _ -> Alcotest.fail "missing ai/test_pie_api fixture: parts element 1")
+          in
           Alcotest.(check string)
             "selected format" expected
             (H.text_of (H.member "format" part));
@@ -106,16 +120,25 @@ let test_text_request () =
             (H.text_of (H.member "instructions" sent));
           let messages = H.list_of (H.member "input" sent) in
           Alcotest.(check int) "one user message" 1 (List.length messages);
-          let message = List.hd messages in
+          let message =
+            match messages with
+            | head :: _ -> head
+            | [] -> Alcotest.fail "missing ai/test_pie_api fixture: messages"
+          in
           Alcotest.(check string) "user role" "user" (H.text_of (H.member "role" message));
           let parts = H.list_of (H.member "content" message) in
           Alcotest.(check int) "no audio" 1 (List.length parts);
+          let first_part =
+            match parts with
+            | first_part :: _ -> first_part
+            | [] -> Alcotest.fail "missing encoded text part fixture"
+          in
           Alcotest.(check string)
             "input_text" "input_text"
-            (H.text_of (H.member "type" (List.hd parts)));
+            (H.text_of (H.member "type" first_part));
           Alcotest.(check string)
             "user input" request.input
-            (H.text_of (H.member "text" (List.hd parts)));
+            (H.text_of (H.member "text" first_part));
           Alcotest.(check string)
             "temperature" "0.2"
             (Yojson.Safe.to_string (H.member "temperature" sent));

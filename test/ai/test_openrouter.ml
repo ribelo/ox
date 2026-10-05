@@ -1,3 +1,4 @@
+(* ^safe-7t06 ^safe-bguw ^safe-35sb ^safe-3osb: missing test fixtures fail explicitly. *)
 (* ^air2-rsp1 ^air2-emb2 ^air2-aud3 ^air2-rtm4 ^air2-tst5 ^nor-pn0b ^nor-474w *)
 module R = Ox_ai_openrouter.Responses
 module E = Ox_ai_openrouter.Embeddings
@@ -93,9 +94,21 @@ let test_responses () =
       let sent = Test_helpers.jbody server in
       let contents =
         Test_helpers.(
-          list_of (member "content" (List.hd (list_of (member "input" sent)))))
+          list_of
+            (member "content"
+               (match list_of (member "input" sent) with
+               | head :: _ -> head
+               | [] ->
+                   Alcotest.fail
+                     "missing ai/test_openrouter fixture: (list_of (member \"input\" \
+                      sent))")))
       in
-      let audio = Test_helpers.member "input_audio" (List.nth contents 1) in
+      let audio =
+        Test_helpers.member "input_audio"
+          (match contents with
+          | _ :: value :: _ -> value
+          | _ -> Alcotest.fail "missing ai/test_openrouter fixture: contents element 1")
+      in
       Alcotest.(check string)
         "wav base64" "UklGRg=="
         (Test_helpers.text_of (Test_helpers.member "data" audio));
@@ -171,10 +184,21 @@ let test_audio () =
             }
       in
       Alcotest.(check string) "transcription" "hello" (ok result);
-      let _, headers, body = Option.get (Fake_server.request server) in
+      let _, headers, body =
+        match Fake_server.request server with
+        | Some value -> value
+        | None ->
+            Alcotest.fail
+              "missing ai/test_openrouter fixture: (Fake_server.request server)"
+      in
       Alcotest.(check bool)
         "multipart header" true
-        (Test_helpers.contains (List.assoc "content-type" headers) "multipart/form-data");
+        (Test_helpers.contains
+           (match List.assoc_opt "content-type" headers with
+           | Some value -> value
+           | None ->
+               Alcotest.fail "missing ai/test_openrouter fixture: field content-type")
+           "multipart/form-data");
       Alcotest.(check bool) "wav bytes" true (Test_helpers.contains body "RIFF");
       Alcotest.(check bool) "prompt" true (Test_helpers.contains body "medical"))
 
@@ -470,7 +494,8 @@ let test_realtime_session () =
       let port =
         match Eio.Net.listening_addr listener with
         | `Tcp (_, port) -> port
-        | _ -> assert false
+        | _ ->
+            Alcotest.fail "expected TCP listening address in ai/test_openrouter fixture"
       in
       ignore
         (Eio.Fiber.fork_daemon ~sw (fun () ->
@@ -491,16 +516,30 @@ let test_realtime_session () =
              let headers = headers [] in
              Alcotest.(check string)
                "auth" "Bearer fake-key"
-               (List.assoc "authorization" headers);
+               (match List.assoc_opt "authorization" headers with
+               | Some value -> value
+               | None ->
+                   Alcotest.fail "missing ai/test_openrouter fixture: field authorization");
              Alcotest.(check string)
                "originator" "codex_cli_rs"
-               (List.assoc "originator" headers);
+               (match List.assoc_opt "originator" headers with
+               | Some value -> value
+               | None ->
+                   Alcotest.fail "missing ai/test_openrouter fixture: field originator");
              Alcotest.(check string)
                "subprotocol" "realtime"
-               (List.assoc "sec-websocket-protocol" headers);
+               (match List.assoc_opt "sec-websocket-protocol" headers with
+               | Some value -> value
+               | None ->
+                   Alcotest.fail
+                     "missing ai/test_openrouter fixture: field sec-websocket-protocol");
              let accept =
                Ox_http.Ws_codec.accept_key ~sha1:Ox_http.Ox_http_tls_openssl.sha1
-                 (List.assoc "sec-websocket-key" headers)
+                 (match List.assoc_opt "sec-websocket-key" headers with
+                 | Some value -> value
+                 | None ->
+                     Alcotest.fail
+                       "missing ai/test_openrouter fixture: field sec-websocket-key")
              in
              Eio.Flow.copy_string
                ("HTTP/1.1 101 Switching Protocols\r\n\
