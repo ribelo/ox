@@ -33,9 +33,13 @@ val check :
   undecided:(Location.t -> string -> unit) ->
   unit
 (** Inspect the checked artifact's exact arguments, source attributes and ancestor Dune
-    compiler policy. Suspension: may suspend in callbacks; synchronous filesystem work can
-    block. Cancellation: depends on callbacks; callback behavior in compiler and channel
-    helpers is delegated to their upstream implementations; exceptions propagate
+    compiler policy. Current object scope and literal/default source membership must
+    identify one exact role. A plural executable/test object scope belongs only to the
+    first literal name; explicit helper sharing requires distinct first-name roles and
+    warning-policy agreement from every sharing declaration. Recorded names alone never
+    prove a current owner. Suspension: may suspend in callbacks; synchronous filesystem
+    work can block. Cancellation: depends on callbacks; callback behavior in compiler and
+    channel helpers is delegated to their upstream implementations; exceptions propagate
     unchanged. Cancellation safety: unsafe because progress is lost; retries repeat
     callback findings. Finalizers: private read channels close on success and exceptions;
     no switch hook. Locking: no lock is acquired by the checker.

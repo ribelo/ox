@@ -61,7 +61,9 @@ empty checked Typedtree, exact generated body, matching source digest, literal
 test/executable producer and matching compiler output/unit ownership. The actual
 physical interface is parsed; its logical source identifies the owning Dune stanza.
 Stale generated bodies and unsupported producer/unit ownership remain failures,
-and recorded arguments and current owning flags are still checked.
+and recorded arguments and current owning flags are still checked. Ordinary
+producer-verified generated rule bodies retain physical parsing and digest checking;
+only their Dune ownership lookup is rebased to the verified logical target.
 
 Supported Dune OCaml fields are `flags`, `ocamlc_flags` and `ocamlopt_flags`.
 For a matching compiled library/test/executable in the source directory, literal common
@@ -81,9 +83,32 @@ consumer without changing the production root. File timestamps are never policy
 evidence. Comment or unrelated non-policy stanza edits preserve
 agreement; changed warning content cannot borrow old metadata, even with preserved
 timestamps. Templates, included flag files and unresolved ordered sets remain
-unverified. Bytecode metadata does not certify native-only settings. Literal
-library/executable names proved disjoint from the checked compiler `-o` object
-scope are ignored, including unrelated libraries with their own warning flags.
+unverified. Bytecode metadata does not certify native-only settings.
+
+Current source ownership is proved independently of the old annotation: exactly one
+local library/test/executable must match the recorded `-o` object kind/name and
+include the inspected logical module. Plural executable/test stanzas use only the
+first `names` identifier as the `.eobjs` owner, not any member: reordering unchanged
+names invalidates old metadata. The same first-owner proof applies to generated
+empty interfaces. Singular constructors require one literal `name`; plural
+constructors require literal `names`. Malformed or duplicate declarations cannot
+supply a current owner. Library source assignment must also be unique.
+A finite additional case supports helpers explicitly shared by tests/executables:
+every sharing stanza must have a distinct literal first-name role, non-overlapping
+main declarations and an explicit flat literal module list, and every sharing warning
+policy must independently reconcile with
+the checked compiler warning settings. This is not a name-based disjointness waiver: a
+weaker sharing role remains unverified. Default, unresolved and duplicate overlaps
+do not borrow the explicit-sharing proof. Supported
+membership declarations are absent/default `modules`, flat literal module names,
+and flat literal ordered sets with `:standard` and one literal exclusion operator
+(such as `(:standard \ main)`). Absent or literal-true `enabled_if` is supported;
+literal false cannot supply a current owner, and other conditions remain unresolved.
+Removed/renamed owners, moved/excluded modules, ambiguous assignments and unsupported
+membership expressions are named unverified, even when source and CMT bytes and
+timestamps are unchanged. A different owner is ignored only when its current module
+membership proves it disjoint, not merely because its name differs from old metadata.
+This preserves unrelated libraries with their own warning flags.
 Foreign C/C++ compiler/linker flag subtrees are not OCaml warning policy, including
 foreign include-based ordered sets; they cannot alter the checked OCaml settings.
 Unknown ownership, alternate or unbuilt profiles, Dune includes/subdirectory
@@ -107,8 +132,21 @@ Registration, canonical annotation dependencies, the exact module manifest and
 installed rule-page/fixture evidence are part of the ordinary lint integration.
 The registered CLI regression also covers an ancestor directory named `dune`,
 full-rule executable load paths, original-source freshness, disjoint library
-flags, generated empty-interface producer/body/owner controls, foreign compiler
-flags, and both sides of the audited Dune language-standard transition. These proofs
+flags, unchanged-source/CMT retired-owner and module-transfer controls, literal
+standard-minus membership, explicit shared-helper guard agreement and unsupported
+overlap controls, generated empty-interface producer/body/owner controls, foreign
+compiler flags, and both sides of the audited Dune language-standard transition.
+Both registered and genuine installed seams compare harness-authored literal, complete
+CLI diagnostic multisets: locations, categories/rule identifiers and exact messages,
+including duplicates and generated provenance. Only the volatile scratch prefix is
+normalized. Same-count duplicate-site and wrong-site mutants must fail the oracle.
+Declared negative source controls are actually compiled and consumed under clean
+3.21 and 3.22 effective policies, with exact floating and multi-line attached sites,
+same-line duplicate findings and named nonliteral-source uncertainty. Their restored
+and attribute-free controls stay clean. Bare legacy 3.20 default restriction is a
+separate compiler-policy control, not evidence of source-attribute inspection.
+First-name reorder controls preserve implementation/interface source and annotation
+hashes and mtimes, including generated interface bodies. These proofs
 run from the owned ordinary `runtest` alias. Direct typed-annotation negative
 controls avoid the Dune inventory query repairing deliberately corrupted generated
 bodies before the checker runs.

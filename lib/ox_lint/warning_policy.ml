@@ -394,17 +394,96 @@ let compiled_scopes artifact =
                 length > 0
                 && String.starts_with ~prefix:"." component
                 && String.ends_with ~suffix component
-              then Some (String.sub component 1 length)
+              then Some (String.sub component 1 length, suffix)
               else None)
             [ ".objs"; ".eobjs" ])
         (String.split_on_char '/' path))
     (outputs args)
 
-let stanza_names fields =
-  List.concat_map
-    (function
-      | List (Atom ("name" | "names") :: values) -> List.concat_map atoms values | _ -> [])
-    fields
+let stanza_names kind fields =
+  match
+    List.filter_map
+      (function
+        | List (Atom (("name" | "names") as field) :: values) -> Some (field, values)
+        | _ -> None)
+      fields
+  with
+  | [ (field, values) ]
+    when values <> []
+         && (if kind = "executables" || kind = "tests" then field = "names"
+             else field = "name" && List.length values = 1)
+         && List.for_all
+              (function
+                | Atom name ->
+                    name <> ""
+                    && String.for_all
+                         (function
+                           | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' -> true
+                           | _ -> false)
+                         name
+                | _ -> false)
+              values ->
+      let names = List.concat_map atoms values in
+      if List.length names = List.length (List.sort_uniq String.compare names) then names
+      else []
+  | _ -> []
+
+let literal_values values =
+  let values = match values with [ List words ] -> words | words -> words in
+  if List.for_all (function Atom _ -> true | _ -> false) values then
+    Ok (List.concat_map atoms values)
+  else Error "unsupported nested Dune ordered-set expression"
+
+let field_values name fields =
+  match
+    List.filter_map
+      (function
+        | List (Atom field :: values) when field = name -> Some values | _ -> None)
+      fields
+  with
+  | [] -> Ok None
+  | [ values ] -> Result.map Option.some (literal_values values)
+  | _ -> Error ("duplicate Dune " ^ name ^ " fields")
+
+let source_membership source fields =
+  match field_values "enabled_if" fields with
+  | Error message -> Error message
+  | Ok (Some [ "false" ]) -> Ok false
+  | Ok (Some words) when words <> [ "true" ] -> Error "unresolved Dune enabled_if"
+  | Ok _ -> (
+      match field_values "modules" fields with
+      | Error message -> Error message
+      | Ok None -> Ok true
+      | Ok (Some words) ->
+          let rec split before = function
+            | [] -> (List.rev before, [])
+            | "\\" :: after -> (List.rev before, after)
+            | word :: rest -> split (word :: before) rest
+          in
+          let before, after = split [] words in
+          let literal word =
+            String.length word > 0
+            && (match word.[0] with 'A' .. 'Z' | 'a' .. 'z' -> true | _ -> false)
+            && String.for_all
+                 (function
+                   | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '\'' -> true
+                   | _ -> false)
+                 word
+          in
+          if
+            not
+              (List.for_all (fun word -> word = ":standard" || literal word) before
+              && List.for_all literal after)
+          then Error "unsupported Dune modules ordered-set expression"
+          else
+            let name =
+              String.capitalize_ascii
+                (Filename.remove_extension (Filename.basename source))
+            in
+            let contains names =
+              List.exists (fun word -> String.capitalize_ascii word = name) names
+            in
+            Ok ((List.mem ":standard" before || contains before) && not (contains after)))
 
 let generated_empty_source ~caps artifact =
   let physical = Artifact.source artifact in
@@ -438,9 +517,9 @@ let generated_empty_source ~caps artifact =
             && List.exists
                  (function
                    | List
-                       (Atom ("test" | "tests" | "executable" | "executables") :: fields)
-                     ->
-                       let names = stanza_names fields in
+                       (Atom (("test" | "tests" | "executable" | "executables") as kind)
+                       :: fields) ->
+                       let names = stanza_names kind fields in
                        let empty =
                          List.filter_map
                            (function
@@ -450,7 +529,9 @@ let generated_empty_source ~caps artifact =
                            fields
                        in
                        List.mem name names
-                       && List.exists (fun name -> List.mem name scopes) names
+                       && (match names with
+                         | owner :: _ -> scopes = [ (owner, ".eobjs") ]
+                         | [] -> false)
                        && (empty = [] || empty = [ [ Atom "true" ] ])
                    | _ -> false)
                  (parse_dune (read_text ~caps file))
@@ -473,7 +554,16 @@ let generated_empty_source ~caps artifact =
 let check_dune ~caps ~artifact ~source ~standard ~undecided =
   let args = Array.to_list artifact.Artifact.info.cmt_args in
   let compiled_scopes = compiled_scopes artifact in
-  let compiled_scope name = List.mem name compiled_scopes in
+  let matching_scope kind names =
+    match compiled_scopes with
+    | [ (name, suffix) ] ->
+        (match names with owner :: _ -> name = owner | [] -> false)
+        && suffix = if kind = "library" then ".objs" else ".eobjs"
+    | _ -> false
+  in
+  let local_stanza = ref false in
+  let recorded_owners = ref 0 in
+  let source_owners = ref [] in
   let compiler =
     match args with compiler :: _ -> Filename.basename compiler | [] -> ""
   in
@@ -486,48 +576,41 @@ let check_dune ~caps ~artifact ~source ~standard ~undecided =
       || (field = "ocamlc_flags" && byte)
       || (field = "ocamlopt_flags" && native)
     in
-    let literal_values values =
-      let values = match values with [ List words ] -> words | words -> words in
-      if List.for_all (function Atom _ -> true | List _ -> false) values then
-        Ok (List.concat_map atoms values)
-      else Error "unsupported nested Dune ordered-set expression"
-    in
-    let field_values name fields =
-      match
-        List.filter_map
-          (function
-            | List (Atom field :: values) when field = name -> Some values | _ -> None)
-          fields
-      with
-      | [] -> Ok None
-      | [ values ] -> (
-          match literal_values values with
-          | Ok words -> Ok (Some words)
-          | Error message -> Error message)
-      | _ -> Error ("duplicate Dune " ^ name ^ " fields")
-    in
     let rec visit scope = function
       | List
           (Atom (("library" | "test" | "tests" | "executable" | "executables") as kind)
-          :: fields) ->
-          let names = stanza_names fields in
-          let selected =
-            Filename.dirname path = Filename.dirname source
-            && List.exists compiled_scope names
+          :: fields)
+        when scope = "stanza" ->
+          let names = stanza_names kind fields in
+          let local = Filename.dirname path = Filename.dirname source in
+          let matching = matching_scope kind names in
+          let membership = if local then source_membership source fields else Ok false in
+          let sharing =
+            local && kind <> "library" && names <> [] && membership = Ok true
+            &&
+            match field_values "modules" fields with
+            | Ok (Some words) ->
+                List.for_all (fun word -> word <> ":standard" && word <> "\\") words
+            | _ -> false
           in
-          let disjoint =
-            compiled_scopes <> [] && names <> []
-            && List.for_all
-                 (fun name ->
-                   name <> ""
-                   && String.for_all
-                        (function
-                          | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' -> true
-                          | _ -> false)
-                        name)
-                 names
-            && not (List.exists compiled_scope names)
-          in
+          if local then begin
+            local_stanza := true;
+            if matching then incr recorded_owners;
+            match membership with
+            | Ok false -> ()
+            | Ok true ->
+                let role =
+                  match names with
+                  | owner :: _ when sharing -> Some (owner, names)
+                  | _ -> None
+                in
+                source_owners := (matching, role) :: !source_owners
+            | Error message ->
+                source_owners := (false, None) :: !source_owners;
+                undecided loc ("unverified Dune source ownership: " ^ message)
+          end;
+          let selected = local && membership = Ok true && (matching || sharing) in
+          let disjoint = membership = Ok false && (local || not matching) in
           let scope = kind ^ " " ^ String.concat "," names in
           (if selected then
              let specific = if byte then "ocamlc_flags" else "ocamlopt_flags" in
@@ -581,7 +664,27 @@ let check_dune ~caps ~artifact ~source ~standard ~undecided =
     let parent = Filename.dirname directory in
     if (not (regular_file ~caps project)) && parent <> directory then ascend parent
   in
-  ascend (Filename.dirname source)
+  ascend (Filename.dirname source);
+  let supported_membership =
+    match !source_owners with
+    | [ (true, _) ] -> true
+    | owners ->
+        let sharing = List.filter_map snd owners in
+        let roles = List.map fst sharing in
+        let names = List.concat_map snd sharing in
+        List.length sharing = List.length owners
+        && List.length roles = List.length (List.sort_uniq String.compare roles)
+        && List.length names = List.length (List.sort_uniq String.compare names)
+  in
+  if
+    (!local_stanza || compiled_scopes <> [])
+    && not
+         (!recorded_owners = 1 && supported_membership
+         && List.length (List.filter fst !source_owners) = 1)
+  then
+    undecided (Location.in_file source)
+      "unverified Dune source ownership: no exact checked compiler scope with unique \
+       current owner/membership"
 
 let check ~caps ~artifact ~emit ~undecided =
   let source = Artifact.source artifact in
@@ -610,7 +713,20 @@ let check ~caps ~artifact ~emit ~undecided =
               | Some pair -> pair
               | None ->
                   let source = Artifact.authored_source ~caps artifact in
-                  (source, source)
+                  (* A build-tree result from authored_source has a verified current
+                     producer. Keep parsing that body, but locate its logical owner. *)
+                  let policy_source =
+                    match Artifact.workspace ~caps source with
+                    | Some root ->
+                        let prefix = root ^ "/_build/default/" in
+                        if String.starts_with ~prefix source then
+                          Filename.concat root
+                            (String.sub source (String.length prefix)
+                               (String.length source - String.length prefix))
+                        else source
+                    | None -> source
+                  in
+                  (source, policy_source)
             in
             Ok (source, policy_source, source_standard ~caps policy_source)
           with Sys_error message | Failure message -> Error message
