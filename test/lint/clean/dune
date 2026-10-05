@@ -4,6 +4,7 @@
  (name concurrency_clean)
  (modules
   assertion_effects
+  warning_policy
   io_count
   constant_index
   function_comparison

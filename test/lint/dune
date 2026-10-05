@@ -255,6 +255,8 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/constant_index.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/function_comparison.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/function_comparison.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/warning_policy.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/warning_policy.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/io_count.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/io_count.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/identity_external.cmt

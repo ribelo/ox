@@ -179,6 +179,8 @@ lib/ox_lint/function_comparison.ml lib/ox_lint/.lint_engine.objs/byte/function_c
 lib/ox_lint/function_comparison.mli lib/ox_lint/.lint_engine.objs/byte/function_comparison.cmti
 lib/ox_lint/io_count.ml lib/ox_lint/.lint_engine.objs/byte/io_count.cmt
 lib/ox_lint/io_count.mli lib/ox_lint/.lint_engine.objs/byte/io_count.cmti
+lib/ox_lint/warning_policy.ml lib/ox_lint/.lint_engine.objs/byte/warning_policy.cmt
+lib/ox_lint/warning_policy.mli lib/ox_lint/.lint_engine.objs/byte/warning_policy.cmti
 lib/ox_lint/identity_external.ml lib/ox_lint/.lint_engine.objs/byte/identity_external.cmt
 lib/ox_lint/identity_external.mli lib/ox_lint/.lint_engine.objs/byte/identity_external.cmti
 lib/ox_lint/disposal.ml lib/ox_lint/.lint_engine.objs/byte/disposal.cmt

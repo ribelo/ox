@@ -1,0 +1,5 @@
+; ^safe-zxc1: declared negative compiler evidence, not ordinary corpus.
+
+(library
+ (name warning_policy_negative)
+ (wrapped false))

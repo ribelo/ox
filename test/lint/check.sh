@@ -22,7 +22,7 @@ compile() {
   mkdir "$scratch/$kind"
   cp "$kind/discard.ml" "$scratch/$kind/discard.ml"
   chmod u+w "$scratch/$kind/discard.ml"
-  (cd "$scratch/$kind" && ocamlc -bin-annot -c discard.ml)
+  (cd "$scratch/$kind" && ocamlc -bin-annot -warn-error +a -c discard.ml)
 }
 compile violating
 compile clean
