@@ -1,0 +1,29 @@
+--- a/lib_eio/core/cancel.ml
++++ b/lib_eio/core/cancel.ml
+@@ -112 +112 @@
+-let with_cc ~ctx:fiber ~parent ~protected purpose fn =
++let with_cc ~ctx:fiber ~parent ~protected purpose (fn @ local once) =
+@@ -122 +122 @@
+-let protect fn =
++let protect (fn @ local once) =
+@@ -124 +124 @@
+-  with_cc ~ctx ~parent:ctx.cancel_context ~protected:true Protect @@ fun _ ->
++  (with_cc ~ctx ~parent:ctx.cancel_context ~protected:true Protect @@ fun _ ->
+@@ -128 +128 @@
+-  fn ()
++  fn ()) [@nontail]
+--- a/lib_eio/core/eio__core.mli
++++ b/lib_eio/core/eio__core.mli
+@@ -574 +574 @@
+-  val protect : (unit -> 'a) -> 'a
++  val protect : (unit -> 'a) @ local once -> 'a
+--- a/lib_eio/eio_mutex.ml
++++ b/lib_eio/eio_mutex.ml
+@@ -113 +113 @@
+-let use_rw ~protect t fn =
++let use_rw ~protect t (fn @ local once) =
+--- a/lib_eio/eio_mutex.mli
++++ b/lib_eio/eio_mutex.mli
+@@ -24 +24 @@
+-val use_rw : protect:bool -> t -> (unit -> 'a) -> 'a
++val use_rw : protect:bool -> t -> (unit -> 'a) @ local once -> 'a

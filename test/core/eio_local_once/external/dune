@@ -1,0 +1,6 @@
+(executable
+ (name probe)
+ (public_name eio-local-once-probe)
+ (package eio_local_once_probe)
+ (modes native)
+ (libraries eio_main))

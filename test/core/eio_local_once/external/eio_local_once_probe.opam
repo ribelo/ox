@@ -1,0 +1,13 @@
+opam-version: "2.0"
+version: "0.1"
+synopsis: "Independent native local-once provider consumer"
+maintainer: "Ox"
+authors: "Ox"
+license: "ISC"
+depends: [
+  "ocaml" {>= "5.4.0"}
+  "dune" {>= "3.21"}
+  "eio" {= "1.6+ox-local-once.1"}
+  "eio_main" {= "1.6+ox-local-once.1"}
+]
+build: [ [ "dune" "build" "-p" name "-j" jobs ] ]

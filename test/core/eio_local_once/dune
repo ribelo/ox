@@ -1,0 +1,15 @@
+; Native experimental provider controls only; never @runtest. ^nonce-lrzq ^nonce-mjpe
+(dirs cases)
+
+; The ordinary formatter is upstream OCaml, not the OxCaml mode parser.
+(env
+ (_
+  (formatting disabled)))
+
+(rule
+ (alias eio-local-once)
+ (deps check.sh provenance.py hostile.py (source_tree cases))
+ (action
+  (setenv OCAMLPATH %{env:EIO_LOCAL_ONCE_OCAMLPATH=}
+   (setenv CAML_LD_LIBRARY_PATH %{env:EIO_LOCAL_ONCE_CAML_LD_LIBRARY_PATH=}
+    (run bash %{dep:check.sh} cases %{ocamlopt})))))

@@ -101,13 +101,11 @@
           eio_linux = "1.6";
           eio_main = "1.6";
         } opam-repository-eio;
-    in
-    {
-      legacyPackages = forAllSystems (system: {
-        eioOpamRepository = eioOpamRepository system;
-      });
-
-      packages = forAllSystems (
+      eioLocalOnceRecipe = system: import ./nix/eio-local-once/recipe.nix {
+        pkgs = import nixpkgs { inherit system; };
+        inherit opam-repository-eio;
+      };
+      oxBuild =
         system:
         let
           pkgs = import nixpkgs { inherit system; };
@@ -231,6 +229,12 @@
               # Yojson 3.0.0 does not compile with this OxCaml release.
               yojson = "2.2.2+ox";
             };
+          experiment = import ./nix/eio-local-once {
+            inherit pkgs oxcamlSystemOverlay oxcamlCompiler oxSrc oxPackageNames
+              oxcaml-opam-repository opam-repository;
+            mkScope = buildOpamProjectPrime;
+            recipe = eioLocalOnceRecipe system;
+          };
           oxPackages = builtins.listToAttrs (
             map (name: {
               inherit name;
@@ -247,8 +251,28 @@
             else
               oxPackages.${builtins.head oxPackageNames};
         in
-        oxPackages // { default = defaultPackage; }
-      );
+        {
+          packages = oxPackages // {
+            default = defaultPackage;
+            eio-local-once = experiment.closure;
+          };
+          inherit experiment;
+        };
+    in
+    {
+      legacyPackages = forAllSystems (system: {
+        eioOpamRepository = eioOpamRepository system;
+        eioLocalOnceOpamRepository = (eioLocalOnceRecipe system).repository;
+        eioLocalOnceScope = (oxBuild system).experiment.scope;
+      });
+
+      packages = forAllSystems (system: (oxBuild system).packages);
+
+      checks = forAllSystems (system: {
+        eio-local-once = (oxBuild system).experiment.nativeCheck;
+        eio-local-once-external = (oxBuild system).experiment.externalCheck;
+        eio-local-once-closure = (oxBuild system).experiment.closure;
+      });
 
       devShells = forAllSystems (
         system:
@@ -839,6 +863,7 @@
             ];
         in
         {
+          eio-local-once = (oxBuild system).experiment.devShell;
           default = pkgs.mkShell {
             packages = oxCamlHostPackages;
 

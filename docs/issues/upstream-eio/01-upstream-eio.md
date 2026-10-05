@@ -35,3 +35,5 @@ Every build takes upstream Eio's own release. The shared switch pins `eio`, `eio
 ## Out of Scope
 
 p-doom and taumel (on `v1`, not ox consumers). Mode annotations in Eio.
+
+Scope note (^nonce-lrzq, ^nonce-mjpe): this completed delivery records the unchanged upstream-1.6 default. The once-forks experimental local-once provider (1.6+ox-local-once.1, exact 1.6 release plus four annotation-only source changes) is separately opt-in under ADR-0005; it does not supersede this historical completion or change default/shared-switch/consumer pins.
