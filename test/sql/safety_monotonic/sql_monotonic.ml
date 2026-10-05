@@ -48,12 +48,15 @@ let waiter ~caps ~jump ~default () =
       get
         (P.Raw.execute_script pool
            "CREATE TABLE retained (n INTEGER); INSERT INTO retained VALUES (1)");
+      let result, resolve = Eio.Promise.create () in
+      let start, start_borrower = Eio.Promise.create () in
+      Eio.Fiber.fork ~sw (fun () ->
+          Eio.Promise.await start;
+          let timeout = if default then None else Some (Ox.Duration.ms 50) in
+          Eio.Promise.resolve resolve (P.Raw.query ?timeout pool "SELECT 1" []));
       get
         (P.with_transaction ~timeout:(Ox.Duration.seconds 1) pool (fun _ ->
-             let result, resolve = Eio.Promise.create () in
-             Eio.Fiber.fork ~sw (fun () ->
-                 let timeout = if default then None else Some (Ox.Duration.ms 50) in
-                 Eio.Promise.resolve resolve (P.Raw.query ?timeout pool "SELECT 1" []));
+             Eio.Promise.resolve start_borrower ();
              Eio.Fiber.yield ();
              check_pending result;
              Clock.set_time wall jump;
