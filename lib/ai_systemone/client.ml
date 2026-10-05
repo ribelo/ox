@@ -11,24 +11,44 @@ type t =
       * string
       * Ox.Duration.t
       * int
+      * Ox_ai.Transport.replay_policy
       -> t
 
 let create ~http ~clock ~logger ?(endpoint = default_endpoint) ~api_key ~model
     ?(timeout = Ox_ai.Transport.default_timeout)
-    ?(max_request_bytes = Ox_ai.Transport.default_max_request_bytes) () =
-  T (clock, http, logger, endpoint, api_key, model, timeout, max_request_bytes)
+    ?(max_request_bytes = Ox_ai.Transport.default_max_request_bytes)
+    ?(replay_policy = Ox_ai.Transport.Never_replay) () =
+  T
+    ( clock,
+      http,
+      logger,
+      endpoint,
+      api_key,
+      model,
+      timeout,
+      max_request_bytes,
+      replay_policy )
 
 let answer name (response : Codecs.response) = List.assoc_opt name response.Codecs.answers
 
 let evaluate
-    (T (clock, http, logger, endpoint, api_key, model, timeout, max_request_bytes))
-    ~deadline ~state ~questions =
+    (T
+       ( clock,
+         http,
+         logger,
+         endpoint,
+         api_key,
+         model,
+         timeout,
+         max_request_bytes,
+         replay_policy )) ~deadline ~state ~questions =
   let body =
     Ox_ai.Transport.bytes_of_json
       (Codecs.yojson_of_request { Codecs.model; state; questions })
   in
   match
-    Ox_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes ~endpoint
+    Ox_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes
+      ~replay_policy ~endpoint
       ~authorization:(Ox_ai.Bearer.header ~api_key)
       ~body ~deadline ()
   with

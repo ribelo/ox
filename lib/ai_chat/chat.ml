@@ -9,12 +9,14 @@ type t =
       * Ox_observability.Redact.t
       * Ox.Duration.t
       * int
+      * Ox_ai.Transport.replay_policy
       -> t
 
 let create ~http ~clock ~logger ?(endpoint = default_endpoint) ~api_key
     ?(timeout = Ox_ai.Transport.default_timeout)
-    ?(max_request_bytes = Ox_ai.Transport.default_max_request_bytes) () =
-  T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes)
+    ?(max_request_bytes = Ox_ai.Transport.default_max_request_bytes)
+    ?(replay_policy = Ox_ai.Transport.Never_replay) () =
+  T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes, replay_policy)
 
 (* The caller's control, in the spelling [complete] takes, becomes the wire record: the
    two forms set different members, and the third state — the caller saying nothing — is
@@ -23,7 +25,8 @@ let wire_reasoning : [< `Disabled | `Effort of string ] -> Types.reasoning = fun
   | `Disabled -> { Types.enabled = Some false; effort = None }
   | `Effort effort -> { Types.enabled = None; effort = Some effort }
 
-let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes))
+let complete
+    (T (clock, http, logger, endpoint, api_key, timeout, max_request_bytes, replay_policy))
     ~deadline ~model ~messages ?max_tokens ?(json_object = false) ?reasoning () =
   let request =
     {
@@ -37,7 +40,8 @@ let complete (T (clock, http, logger, endpoint, api_key, timeout, max_request_by
   in
   let body = Ox_ai.Transport.bytes_of_json (Types.yojson_of_request request) in
   match
-    Ox_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes ~endpoint
+    Ox_ai.Transport.post_json ~http ~clock ~logger ~timeout ~max_request_bytes
+      ~replay_policy ~endpoint
       ~authorization:(Ox_ai.Bearer.header ~api_key)
       ~body ~deadline ()
   with

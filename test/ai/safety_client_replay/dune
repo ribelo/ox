@@ -1,0 +1,18 @@
+(copy_files ../safety_retry/retry_server.ml)
+
+(copy_files ../safety_retry/retry_server.mli)
+
+(test
+ (name test_client_replay)
+ (modules test_client_replay retry_server)
+ (libraries
+  ox
+  ox_ai
+  ox_ai_systemone
+  ox_ai_chat
+  ox_http
+  ox_observability
+  eio
+  eio.mock
+  eio_main
+  alcotest))

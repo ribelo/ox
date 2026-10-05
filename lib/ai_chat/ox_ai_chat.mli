@@ -32,9 +32,18 @@ val create :
   api_key:Ox_observability.Redact.t ->
   ?timeout:Ox.Duration.t ->
   ?max_request_bytes:int ->
+  ?replay_policy:Ox_ai.Transport.replay_policy ->
   unit ->
   t
 (** [create] is {!Chat.create}.
+
+    [replay_policy] defaults to [Ox_ai.Transport.Never_replay]. Choosing
+    [Ox_ai.Transport.Allow_duplicate_effects] permits duplicate remote execution and
+    billing after an ambiguous failure or timeout; it is not proof of idempotency or
+    provider deduplication. The policy is forwarded to every JSON POST. Attempt limits,
+    timeout, backoff and the whole-call deadline remain separate budgets, not permission.
+    This client is non-streaming; consent does not enable automatic streaming replay.
+    ^safe-o2b6 ^safe-a5mq ^safe-3o27 ^safe-s51t
 
     Suspension: never suspends; this call only constructs or reads OCaml values and
     captures dependencies without invoking them. Cancellation: not a cancellation point;
