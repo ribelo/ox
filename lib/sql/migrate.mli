@@ -127,25 +127,36 @@ val error_to_string : error -> string
 val list_applied : ?config:Config.t -> Pool.t -> (Applied_migration.t list, error) result
 
 val run :
-  caps:< Ox_caps.Cap.fs_read ; Ox_caps.Cap.time ; .. > ->
+  caps:< Ox_caps.Cap.fs_read ; .. > ->
+  clock:Eio.Time.Mono.ty Eio.Time.Mono.t ->
   ?config:Config.t ->
   Pool.t ->
   Source.t ->
   (run_report, error) result
-(** Resolves the source and times each applied migration. Internal Assert_failure checks
-    inherit Pool.with_transaction's pool-vs-transaction runner invariant; this operation
-    supplies a pool runner. Sys_error from the initial Cap_sys.readdir propagates: the
-    later exception handler surrounds only the directory-entry loop. File read failures
-    become Source_error. ^inncap-b8ts ^nlintd-truth *)
+(** Resolves the source and times each applied migration with [clock]. Native timestamps
+    are differenced before conversion to numeric milliseconds, stored as
+    [execution_time_ms] and returned as [elapsed_ms]; neither is a calendar timestamp. The
+    measured scope still includes the dirty-marker insert and migration action, but not
+    the success update. ^safe-p9cw ^safe-8peq ^safe-5a9k
+
+    Internal Assert_failure checks inherit Pool.with_transaction's pool-vs-transaction
+    runner invariant; this operation supplies a pool runner. Sys_error from the initial
+    Cap_sys.readdir propagates: the later exception handler surrounds only the
+    directory-entry loop. File read failures become Source_error. ^inncap-b8ts
+    ^nlintd-truth *)
 
 val run_to :
-  caps:< Ox_caps.Cap.fs_read ; Ox_caps.Cap.time ; .. > ->
+  caps:< Ox_caps.Cap.fs_read ; .. > ->
+  clock:Eio.Time.Mono.ty Eio.Time.Mono.t ->
   ?config:Config.t ->
   Pool.t ->
   Source.t ->
   target:Version.t ->
   (run_report, error) result
-(** Internal Assert_failure checks inherit Pool.with_transaction's pool-vs-transaction
+(** Times applied migrations with [clock], with the same elapsed-millisecond scope and
+    representation as [run]. ^safe-p9cw ^safe-8peq ^safe-5a9k
+
+    Internal Assert_failure checks inherit Pool.with_transaction's pool-vs-transaction
     runner invariant; this operation supplies a pool runner. Sys_error from the initial
     Cap_sys.readdir propagates: the later exception handler surrounds only the entry loop.
     File read failures become Source_error. ^nlintd-truth *)

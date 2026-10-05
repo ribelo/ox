@@ -9,7 +9,7 @@ type state = {
   handles : Connection.t list ref;
   mutex : Eio.Mutex.t;
   changed : Eio.Condition.t;
-  clock : [ `Clock of float ] Eio.Time.clock option;
+  clock : Eio.Time.Mono.ty Eio.Time.Mono.t option;
   default_timeout : Ox.Duration.t option;
 }
 
@@ -107,7 +107,9 @@ let apply_timeout s override f =
     (s.clock, match override with Some _ -> override | None -> s.default_timeout)
   with
   | Some clock, Some timeout ->
-      Eio.Time.with_timeout clock (Ox.Duration.to_seconds timeout) f
+      Eio.Time.Timeout.run
+        (Eio.Time.Timeout.seconds clock (Ox.Duration.to_seconds timeout))
+        f
   | _ -> f ()
 
 let use ?timeout runner f =

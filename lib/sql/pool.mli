@@ -22,12 +22,17 @@ type t = pool runner
 val create :
   caps:< Ox_caps.Cap.time ; .. > ->
   sw:Eio.Switch.t ->
-  ?clock:[`Clock of float] Eio.Time.clock ->
+  ?clock:Eio.Time.Mono.ty Eio.Time.Mono.t ->
   ?default_timeout:Ox.Duration.t ->
   ?max_size:int ->
   Sqlite.config ->
   (t, error) result
-(** Open the first connection and register switch-owned shutdown. Eio runs shutdown
+(** Open the first connection and register switch-owned shutdown. [clock] measures
+    configured deadlines with native monotonic time; [caps] retains wall-clock
+    authority for connection diagnostic timestamps. Without [clock], timeout options
+    are not enforced. ^safe-p9cw ^safe-8peq ^safe-5a9k
+
+    Eio runs shutdown
     protected if registration finds the switch already finished, then raises; the
     opened connection is closed before that raise. ^nlintd-a7oq ^nlintd-raises
 

@@ -18,7 +18,7 @@ let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
       Eio.Switch.run (fun sw ->
           let pool =
             get
-              (P.create ~caps ~sw ~clock:(Eio.Stdenv.clock env) ~max_size:1
+              (P.create ~caps ~sw ~clock:(Eio.Stdenv.mono_clock env) ~max_size:1
                  (Q.Sqlite.memory_config ()))
           in
           Fun.protect
@@ -31,7 +31,7 @@ let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
                      failure does not replace the test body outcome"]
               in
               ())
-            (fun () -> f pool)))
+            (fun () -> f pool (Eio.Stdenv.mono_clock env))))
 
 module T = struct
   module Make = Q.Table.Make (struct
@@ -46,7 +46,7 @@ end
 
 (* ^nsql-4m2q ^nsql-k3zf: consumer's typed declarations and CRUD. *)
 let test_typed ~(caps : < Ox_caps.Cap.time ; .. >) () =
-  with_pool ~caps (fun pool ->
+  with_pool ~caps (fun pool _clock ->
       let schema =
         Q.Ox_schema.(
           compile (create_table T.table [ column ~primary_key:true T.id; column T.name ]))
@@ -71,7 +71,7 @@ let test_typed ~(caps : < Ox_caps.Cap.time ; .. >) () =
 
 (* ^nsql-p8na ^nsql-k3zf: rollback before lease reuse, explicit shutdown. *)
 let test_rollback ~(caps : < Ox_caps.Cap.time ; .. >) () =
-  with_pool ~caps (fun pool ->
+  with_pool ~caps (fun pool _clock ->
       ignore (get (P.Raw.execute pool "CREATE TABLE tx (value TEXT)" []));
       (match
          P.with_transaction pool (fun tx ->
@@ -91,7 +91,7 @@ let test_rollback ~(caps : < Ox_caps.Cap.time ; .. >) () =
 
 (* ^nsql-k3zf ^nsql-p8na: timed-out waiter leaves the borrowed handle healthy. *)
 let test_timeout ~(caps : < Ox_caps.Cap.time ; .. >) () =
-  with_pool ~caps (fun pool ->
+  with_pool ~caps (fun pool _clock ->
       let result =
         P.Raw.with_connection pool (fun _ ->
             match P.Raw.query ~timeout:(Ox.Duration.ms 20) pool "SELECT 1" [] with
@@ -105,7 +105,7 @@ let test_timeout ~(caps : < Ox_caps.Cap.time ; .. >) () =
 
 (* ^nsql-v5td: ordered application, checksum rejection, reversible downgrade. *)
 let test_migrations ~(caps : < Ox_caps.Cap.time ; Ox_caps.Cap.fs_read ; .. >) () =
-  with_pool ~caps (fun pool ->
+  with_pool ~caps (fun pool clock ->
       let version = M.Version.from_int 1 |> Result.get_ok in
       let up =
         M.Migration.make ~version ~description:"create table"
@@ -116,16 +116,16 @@ let test_migrations ~(caps : < Ox_caps.Cap.time ; Ox_caps.Cap.fs_read ; .. >) ()
           ~migration_type:M.Reversible_down ~sql:"DROP TABLE demo" ()
       in
       let source = M.Source.from_migrations [ down; up ] in
-      let report = migration (M.run ~caps pool source) in
+      let report = migration (M.run ~caps ~clock pool source) in
       Alcotest.(check int) "applied" 1 (List.length report.applied);
       Alcotest.(check int)
         "already applied" 1
-        (List.length (migration (M.run ~caps pool source)).already_applied);
+        (List.length (migration (M.run ~caps ~clock pool source)).already_applied);
       let drifted =
         M.Migration.make ~version ~description:"changed" ~migration_type:M.Reversible_up
           ~sql:"CREATE TABLE demo (name TEXT)" ()
       in
-      (match M.run ~caps pool (M.Source.from_migrations [ drifted ]) with
+      (match M.run ~caps ~clock pool (M.Source.from_migrations [ drifted ]) with
       | Error (M.Version_mismatch _) -> ()
       | _ -> Alcotest.fail "checksum change was accepted");
       ignore
@@ -135,10 +135,10 @@ let test_migrations ~(caps : < Ox_caps.Cap.time ; Ox_caps.Cap.fs_read ; .. >) ()
           ~sql:"CREATE TABLE bad (" ()
       in
       let broken_source = M.Source.from_migrations [ broken ] in
-      (match M.run ~caps pool broken_source with
+      (match M.run ~caps ~clock pool broken_source with
       | Error (M.Sql_error _) -> ()
       | _ -> Alcotest.fail "invalid migration unexpectedly succeeded");
-      match M.run ~caps pool broken_source with
+      match M.run ~caps ~clock pool broken_source with
       | Error (M.Dirty version2) when M.Version.equal version version2 -> ()
       | _ -> Alcotest.fail "failed migration did not leave a dirty marker")
 
