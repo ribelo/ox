@@ -22,6 +22,8 @@ blocked_by: []
 
 Add an identity-external policy beside existing Obj.magic enforcement; reuse cast policy rather than duplicate its findings.
 
+The concrete local-callback operations in the existing Once owner are an explicit trusted-seam candidate, not a naming exemption. Their private locality primitive and affine adaptation require fresh peer interfaces, current compiler fingerprints, resolved operator identities and complete implementation verification. Only the proven declaration/expression is admitted. Candidate naming may demand that proof but cannot grant it; missing evidence stays unverified and ordinary primitive declarations retain source-level rejection (safe-4zis).
+
 ## Acceptance criteria
 
 - [ ] Cover primitive declarations, interface exposure and supported re-exports; retain existing Obj.magic restrictions without reporting one occurrence twice.

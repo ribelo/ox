@@ -16,7 +16,7 @@ A resource handed to a fiber or to a release callback can also be used by the co
 
 ## User Stories
 
-1. As a kernel maintainer, I want `Ox.Once.guard : (unit -> 'a) @ once -> (unit -> 'a) @ many` as the only place `Obj.magic_many` is called, raising `Invalid_argument` on a second call, so that the one unsafe mode cast in the tree is one audited function. ^nonce-ldtz
+1. As a kernel maintainer, I want `Ox.Once.guard : (unit -> 'a) @ once -> (unit -> 'a) @ many` as the only place `Obj.magic_many` is called, raising `Invalid_argument` on a second call, so that affine-to-many adaptation is one audited function. ^nonce-ldtz
 2. As a service author, I want `Scope.fork`, `fork_daemon`, `fork_error` and `fork_error_daemon` to take `@ once`, so that a value can be moved into exactly one fiber and a second use is a compile error. ^nonce-r7mi
 3. As a service author, I want `Scope.on_release : 'e t -> (unit -> unit) @ once -> unit`, and `Resource.use_in_scope`'s release `@ once`, so that a release can own what it frees and the body cannot also free it. ^nonce-4jzx
 4. As a service author, I want `Concurrent.par`, `both`, `all`, `race`, `race_first` and `with_background` branches `@ once`, including affine branch lists where needed; the per-item `for_each` mapper, `Actor.create ~on_stop` and `Supervisor` start functions remain `many` where they are invoked repeatedly, so that each callback's mode says how often it runs. ^nonce-nngp
@@ -32,6 +32,8 @@ let guard (f : (unit -> 'a) @ once) : unit -> 'a =
   fun () -> if Atomic.exchange used true then invalid_arg "Ox.Once" else f ()
 ```
 Verified on 5.4.0+ox (ADR-0010): moving a `unique` record into one `Ox` fork compiles; into two forks, after a release, or into raw `Eio.Fiber.fork` is refused. `docs/modes.md` gains a linearity column.
+
+The same audited owner provides concrete local-once Eio cancellation protection and protected RW mutex operations for `ox-mutex`. A private `%identity` locality adaptation may be consumed only within those operations, followed by the guarded affine-to-many adaptation; neither the conversion nor an arbitrary legacy callback runner is exported. The locality claim depends on the audited synchronous extent of those exact Eio operations, including suspension and exceptional return. Admission requires fresh implementation/interface evidence, compiler identities and the complete adapter body, not a module name or directory (safe-4zis, ncrit-oa64).
 
 ## Testing Decisions
 
