@@ -1,67 +1,64 @@
 (* ^safe-jwwj ^safe-qmcw ^safe-t50j: supported native contracts and disposal sinks. *)
-let read fd bytes = ignore (Unix.read fd bytes 0 4 [@expect_stream])
+let read fd bytes = ignore (Unix.read fd bytes 0 4)
 
 let write fd bytes =
-  let _ = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let _ = Unix.write fd bytes 0 4 in
   ()
 
 let single_write fd bytes =
-  let _count = (Unix.single_write fd bytes 0 4 [@expect_stream]) in
+  let _count = Unix.single_write fd bytes 0 4 in
   ()
 
-let recv fd bytes = ignore (Unix.recv fd bytes 0 4 [] [@expect_socket])
+let recv fd bytes = ignore (Unix.recv fd bytes 0 4 [])
 
 let send fd bytes =
-  let _count = (Unix.send fd bytes 0 4 [] [@expect_socket]) in
+  let _count = Unix.send fd bytes 0 4 [] in
   ()
 
 let recvfrom fd bytes =
-  let _, address = (Unix.recvfrom fd bytes 0 4 [] [@expect_datagram]) in
+  let _, address = Unix.recvfrom fd bytes 0 4 [] in
   address
 
 let unused_tuple fd bytes =
-  let _count, address = (Unix.recvfrom fd bytes 0 4 [] [@expect_datagram]) in
+  let _count, address = Unix.recvfrom fd bytes 0 4 [] in
   address
 
-let sendto fd bytes addr =
-  ignore (Unix.sendto fd bytes 0 4 [] addr [@expect_datagram])
+let sendto fd bytes addr = ignore (Unix.sendto fd bytes 0 4 [] addr)
 
 let input channel bytes =
-  let _ = (Stdlib.input channel bytes 0 4 [@expect_stream]) in
+  let _ = Stdlib.input channel bytes 0 4 in
   ()
 
 let shadowed_count fd bytes =
-  let _count = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let _count = Unix.write fd bytes 0 4 in
   let count = 4 in
   count
 
-let full_tuple fd bytes =
-  ignore (Unix.recvfrom fd bytes 0 4 [] [@expect_datagram])
+let full_tuple fd bytes = ignore (Unix.recvfrom fd bytes 0 4 [])
 
 module Native = Unix
 
-let module_alias fd bytes = ignore (Native.write fd bytes 0 4 [@expect_stream])
+let module_alias fd bytes = ignore (Native.write fd bytes 0 4)
 
 let local_alias fd bytes =
   let write = Unix.write in
-  ignore (write fd bytes 0 4 [@expect_stream])
+  ignore (write fd bytes 0 4)
 
 let opened fd bytes =
   let open Unix in
-  ignore (read fd bytes 0 4 [@expect_stream])
+  ignore (read fd bytes 0 4)
 
 let discard = Stdlib.ignore
-let ignore_alias fd bytes = discard (Unix.read fd bytes 0 4 [@expect_stream])
+let ignore_alias fd bytes = discard (Unix.read fd bytes 0 4)
 
 let forward ~caps:(_ : < Ox_caps.Cap.fs_read ; .. >) fd bytes offset length =
   Unix.write fd bytes offset length
 
-let wrapper ~caps fd bytes =
-  ignore (forward ~caps fd bytes 0 4 [@expect_stream])
+let wrapper ~caps fd bytes = ignore (forward ~caps fd bytes 0 4)
 
 let wrapper_alias ~caps fd bytes =
   let write = forward in
-  let _ = (write ~caps fd bytes 0 4 [@expect_stream]) in
+  let _ = write ~caps fd bytes 0 4 in
   ()
 
 let wrapped_receive ~caps:(_ : < Ox_caps.Cap.fs_read ; .. >) fd bytes offset
@@ -69,7 +66,7 @@ let wrapped_receive ~caps:(_ : < Ox_caps.Cap.fs_read ; .. >) fd bytes offset
   Unix.recvfrom fd bytes offset length flags
 
 let wrapper_tuple ~caps fd bytes =
-  let _, address = (wrapped_receive ~caps fd bytes 0 4 [] [@expect_datagram]) in
+  let _, address = wrapped_receive ~caps fd bytes 0 4 [] in
   address
 
 module Forward = struct
@@ -78,39 +75,37 @@ end
 
 module Forward_alias = Forward
 
-let module_wrapper fd bytes =
-  ignore (Forward_alias.write fd bytes 0 4 [@expect_stream])
-
-let apply_ignore fd bytes = ignore @@ (Unix.write fd bytes 0 4 [@expect_stream])
-let pipe_ignore fd bytes = (Unix.read fd bytes 0 4 [@expect_stream]) |> ignore
+let module_wrapper fd bytes = ignore (Forward_alias.write fd bytes 0 4)
+let apply_ignore fd bytes = ignore @@ Unix.write fd bytes 0 4
+let pipe_ignore fd bytes = Unix.read fd bytes 0 4 |> ignore
 
 let bound_ignore fd bytes =
-  let count = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let count = Unix.write fd bytes 0 4 in
   ignore count
 
 let result_alias fd bytes =
-  let count = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let count = Unix.write fd bytes 0 4 in
   let copy = count in
   ignore copy
 
 let local_ignore_alias fd bytes =
-  let count = (Unix.read fd bytes 0 4 [@expect_stream]) in
+  let count = Unix.read fd bytes 0 4 in
   let drop = ignore in
   drop count
 
 let tuple_ignore fd bytes =
-  let count, address = (Unix.recvfrom fd bytes 0 4 [] [@expect_datagram]) in
+  let count, address = Unix.recvfrom fd bytes 0 4 [] in
   let copy = count in
   ignore copy;
   address
 
 let whole_tuple_alias fd bytes =
-  let result = (Unix.recvfrom fd bytes 0 4 [] [@expect_datagram]) in
+  let result = Unix.recvfrom fd bytes 0 4 [] in
   let copy = result in
   ignore copy
 
 let alias_wildcard fd bytes =
-  let count = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let count = Unix.write fd bytes 0 4 in
   let copy = count in
   let _ = copy in
   ()

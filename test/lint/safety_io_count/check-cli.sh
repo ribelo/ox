@@ -106,8 +106,22 @@ python3 - "$assets" <<'PY'
 import pathlib, re, sys
 assets = pathlib.Path(sys.argv[1])
 text = pathlib.Path('findings').read_text()
-expected = (assets / 'test/lint/violating/io_count.ml').read_text().count('[@expect_')
-assert len(re.findall(r'ox-io-count:', text)) == expected, text
+# Independent harness-owned line/category oracle; installed CLI reports no columns.
+expected = [
+    (2, 'stream/descriptor'), (5, 'stream/descriptor'), (9, 'stream/descriptor'),
+    (12, 'socket'), (15, 'socket'), (19, 'datagram'), (23, 'datagram'),
+    (26, 'datagram'), (29, 'stream/descriptor'), (33, 'stream/descriptor'),
+    (37, 'datagram'), (41, 'stream/descriptor'), (45, 'stream/descriptor'),
+    (49, 'stream/descriptor'), (52, 'stream/descriptor'), (57, 'stream/descriptor'),
+    (61, 'stream/descriptor'), (69, 'datagram'), (78, 'stream/descriptor'),
+    (79, 'stream/descriptor'), (80, 'stream/descriptor'), (83, 'stream/descriptor'),
+    (87, 'stream/descriptor'), (92, 'stream/descriptor'), (97, 'datagram'),
+    (103, 'datagram'), (108, 'stream/descriptor'),
+]
+actual = [(int(line), kind) for line, kind in re.findall(
+    r'violating[.]ml:([0-9]+): ox-io-count: (stream/descriptor|socket|datagram) byte count discarded:', text)]
+assert sorted(actual) == sorted(expected), (expected, actual, text)
+assert text.count('ox-io-count:') == len(expected), text
 assert 'ox-io-count:' in text, text
 assert 'stream/descriptor byte count discarded:' in text, text
 assert 'zero progress' in text, text

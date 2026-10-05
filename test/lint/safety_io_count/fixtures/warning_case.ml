@@ -13,10 +13,10 @@ let checked_tuple fd bytes =
   address
 
 let send fd bytes =
-  let count = (Unix.send fd bytes 0 4 [] [@expect_socket]) in
+  let count = Unix.send fd bytes 0 4 [] in
   ()
 
 let shadowed_count fd bytes =
-  let count = (Unix.write fd bytes 0 4 [@expect_stream]) in
+  let count = Unix.write fd bytes 0 4 in
   let count = 4 in
   count
