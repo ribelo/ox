@@ -37,6 +37,13 @@
  (package ox_lint)
  (section share)
  (files
+  (../../docs/rules/ox-io-count.md as docs/rules/ox-io-count.md)
+  (../../test/lint/clean/io_count.ml as test/lint/clean/io_count.ml)
+  (../../test/lint/clean/io_count.mli as test/lint/clean/io_count.mli)
+  (../../test/lint/violating/io_count.ml as test/lint/violating/io_count.ml)
+  (../../test/lint/violating/io_count.mli
+   as
+   test/lint/violating/io_count.mli)
   (../../docs/rules/ox-constant-index.md as docs/rules/ox-constant-index.md)
   (../../test/lint/clean/constant_index.ml
    as

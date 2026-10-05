@@ -1,0 +1,30 @@
+(rule
+ (target clean_case.ml)
+ (deps ../../clean/io_count.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(rule
+ (target violating_case.ml)
+ (deps ../../violating/io_count.ml)
+ (action
+  (copy %{deps} %{target})))
+
+(rule
+ (target clean_case.mli)
+ (deps ../../clean/io_count.mli)
+ (action
+  (copy %{deps} %{target})))
+
+(rule
+ (target violating_case.mli)
+ (deps ../../violating/io_count.mli)
+ (action
+  (copy %{deps} %{target})))
+
+(library
+ (name io_count_fixtures)
+ (modules clean_case violating_case warning_case)
+ (flags
+  (:standard -w -5-8-26-27-32-33-34-39))
+ (libraries unix ox_caps eio))

@@ -134,6 +134,9 @@ let all ~caps =
         "unsupported structural comparison of functions; compare domain identities \
          instead"
         (Function_comparison.check ~caps);
+      evidence_rule "io-count"
+        "I/O byte count discarded; handle stream progress or preserve datagram semantics"
+        (fun ~emit ~undecided:_ artifact -> visit (Io_count.check ~caps ~emit) artifact);
       evidence_rule "constant-index"
         "proved out-of-bounds constant index; correct the index or check bounds"
         (fun ~emit ~undecided:_ artifact ->

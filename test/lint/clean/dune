@@ -3,6 +3,7 @@
 (library
  (name concurrency_clean)
  (modules
+  io_count
   constant_index
   function_comparison
   identity_external
