@@ -1,6 +1,11 @@
 module Pool = struct
   type shutdown_policy = Drain | Detach_started
-  type config = { max_threads : int; max_queued : int; shutdown_policy : shutdown_policy }
+
+  type config = {
+    max_threads : Ox.Concurrency.t;
+    max_queued : int;
+    shutdown_policy : shutdown_policy;
+  }
 
   type stats = {
     active : int;
@@ -45,14 +50,13 @@ module Pool = struct
   let add t n = ignore (Atomic.fetch_and_add t n)
 
   let create ~sw ?(name = "blocking") config =
-    if config.max_threads <= 0 || config.max_queued < 0 then
-      invalid_arg "Ox_blocking.Pool.create: invalid limits";
+    if config.max_queued < 0 then invalid_arg "Ox_blocking.Pool.create: invalid limits";
     let drained, resolve_drained = Eio.Promise.create () in
     {
       sw;
       name;
       config;
-      slots = Eio.Semaphore.make config.max_threads;
+      slots = Eio.Semaphore.make (Ox.Concurrency.to_int config.max_threads);
       queue = Eio.Semaphore.make config.max_queued;
       closed = Atomic.make false;
       held = Atomic.make 0;

@@ -1,0 +1,2 @@
+(* ^nparse-gb03: valid public interface; failure belongs to the raw integer field. *)
+val create : sw:Eio.Switch.t -> Ox_blocking.Pool.t

@@ -1,0 +1,4 @@
+(* ^nparse-gb03: only the concurrency brand constructs a worker limit. *)
+let create ~sw max_threads =
+  Ox_blocking.Pool.create ~sw
+    { max_threads; max_queued = 0; shutdown_policy = Ox_blocking.Pool.Drain }

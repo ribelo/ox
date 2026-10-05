@@ -1,8 +1,13 @@
 open Ox_blocking
 
+let concurrency value =
+  match Ox.Concurrency.of_int value with
+  | Ok bound -> bound
+  | Error `Invalid -> Alcotest.fail "invalid test worker concurrency"
+
 let pool ~sw ?(threads = 1) ?(queued = 1) ?(policy = Pool.Drain) () =
   Pool.create ~sw ~name:"test"
-    { max_threads = threads; max_queued = queued; shutdown_policy = policy }
+    { max_threads = concurrency threads; max_queued = queued; shutdown_policy = policy }
 
 let within f =
   Eio_main.run (fun env ->
