@@ -13,6 +13,8 @@
  (alias runtest)
  (deps
   check.sh
+  fixtures/forms.ml
+  fixtures/.disposal_fixtures.objs/byte/forms.cmt
   fixtures/allow.ml
   fixtures/stale.ml
   fixtures/bad.ml

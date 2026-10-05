@@ -11,9 +11,27 @@ expect () {
   if [[ "$status" != "$expected" ]]; then
     printf 'expected exit %s, got %s for %s
 ' "$expected" "$status" "$*"
+    while IFS= read -r diagnostic; do printf "%s\n" "$diagnostic"; done < out
+    while IFS= read -r diagnostic; do printf "%s\n" "$diagnostic"; done < err
     exit 1
   fi
+  printf "verified exit %s: %s\n" "$status" "$*"
 }
+expect 1 --require-typed --rules ox-discarded-result forms.ml
+# ^safe-1bc7 ^safe-s6km: the installed CLI must expose repaired negatives once.
+for site in 89 112 113 118 119 120 124 125 132 133 134 135 136 137 140; do
+  count=0
+  while IFS= read -r diagnostic; do
+    case "$diagnostic" in *"forms.ml:$site:"*) count=$((count + 1));; esac
+  done < out
+  [[ "$count" = 1 ]]
+done
+# Retained whole-value identities must stay clean at every alias-chain depth.
+for site in 127 128 129 130 131 138 139 141; do
+  while IFS= read -r diagnostic; do
+    case "$diagnostic" in *"forms.ml:$site:"*) exit 1;; esac
+  done < out
+done
 expect 0 --require-typed --rules ox-discarded-result allow.ml
 [[ ! -s out && ! -s err ]]
 expect 1 --require-typed --rules ox-discarded-result stale.ml
@@ -41,6 +59,15 @@ expect 0 --require-typed --rules ox-discarded-result --root "$scratch" "$scratch
 printf '%s\n' '(library (name disposal_control) (wrapped false) (modules allow) (preprocess (action (run bash %{dep:preprocess.sh} %{input-file}))))' > "$scratch/dune"
 printf '%s\n' 'printf "%4096s\n" ""' 'printf "# 1 \"allow.ml\"\n"' 'while IFS= read -r line || test -n "$line"; do printf "%s\n" "$line"; done < "$1"' > "$scratch/preprocess.sh"
 dune build --root "$scratch" @check > "$scratch/build-out" 2> "$scratch/build-err"
+expect 0 --require-typed --rules ox-discarded-result --root "$scratch" "$scratch/allow.ml"
+# ^safe-fr73: a checked reason cannot consume corrupt typed evidence.
+cmt="$scratch/_build/default/.disposal_control.objs/byte/allow.cmt"
+[[ -f "$cmt" ]]
+cp "$cmt" "$scratch/fresh-evidence.backup"
+printf "corrupt compiler evidence\n" > "$scratch/corrupt-evidence.bin"
+cp --remove-destination "$scratch/corrupt-evidence.bin" "${cmt:?}"
+expect 2 --require-typed --rules ox-discarded-result --root "$scratch" "$scratch/allow.ml"
+cp --remove-destination "$scratch/fresh-evidence.backup" "${cmt:?}"
 expect 0 --require-typed --rules ox-discarded-result --root "$scratch" "$scratch/allow.ml"
 printf '\n' >> "$scratch/allow.ml"
 expect 2 --require-typed --rules ox-discarded-result --root "$scratch" "$scratch/allow.ml"

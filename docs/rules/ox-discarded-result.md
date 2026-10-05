@@ -2,10 +2,16 @@
 
 Forbids discarding an expression whose inferred type is the standard two-parameter
 `result` through `Stdlib.ignore` (including module aliases, opens, `@@` and `|>`)
-or a wildcard/locally unused named binding (including destructured binders). Local
+or a wildcard/locally unused named binding (including tuple and record fields).
+A used whole-value binder anywhere in an alias chain retains the containing value,
+including `let (retained as _unused) = result in retained`; identity is compiler-based,
+so a shadowing binder cannot exempt the earlier result. Using a tuple/record sibling
+field does not retain a wildcard result, and subsequently ignoring a retained result
+is still diagnosed. All-unused aliases of the same result emit one finding, not a
+second finding for the inner wildcard. Local
 value aliases of the standard discarders are followed by compiler binding identity.
-It also rejects constant `Error` arms, including a local constant alias or logging
-followed by a constant, and standard `Result.to_option`, `Result.iter` and
+It also rejects constant `Error` arms, including a local constant alias, recognized
+unit-returning logging alone, or logging followed by a constant, and standard `Result.to_option`, `Result.iter` and
 `Result.value` conversions that erase the failure. Manifest type aliases are
 expanded; unrelated local functions named `ignore`
 and distinct types named `result` are not violations. Canonical identities come
@@ -66,12 +72,18 @@ Error arm and compiler-identified `Alcotest.fail`/`failf` or terminal
 `Stdlib.failwith`/`invalid_arg`/`raise`/`raise_notrace` on every opposite arm
 preserves the test expectation, rather than disposing of an operational failure.
 A guard comparing the actual bound error payload through a resolved standard
-comparison preserves an explicit expectation (`Error error when error = expected`).
-A bare `true` guard, an unrelated binder, or a shadowed comparison does not.
+comparison is not recovery by itself: `Error error when error = expected -> () | _ -> ()`
+still erases every outcome. The local guard exception additionally requires later
+error-compatible alternatives with nonconstant, nonlogging outcomes and an unguarded
+fallback. An effect only on the `Ok` branch does not qualify. A terminal expected-error
+assertion or a recovery fallback qualifies; an opaque call is not certified recovery.
+A bare `true` guard, an unrelated binder, or a shadowed comparison does not qualify.
+The detector requires `fs_read` authority for compiler interface and environment
+reads; unresolved required standard identities fail closed, not as a clean decision.
 An observation match followed by
 returning the same result is not disposal. Only bare constants, pure constant local
-bindings/aliases, and compiler-identified standard/Logs log calls followed by a
-constant are proven erasure; arbitrary effectful prefixes are outside this horizon.
+bindings/aliases, and compiler-identified standard/Logs unit log calls, alone or
+followed by a constant, are proven erasure; arbitrary effectful prefixes are outside this horizon.
 Ghost or unrelated-source locations cannot consume a decision, even at the same
 byte offsets; source and its known default-build spelling are canonicalized. An
 exact compiler source spelling is admitted only after `Artifact.check` validates

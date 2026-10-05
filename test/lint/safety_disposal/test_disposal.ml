@@ -5,16 +5,63 @@ let run ~caps =
   let artifact = Artifact.read ~caps "fixtures/.disposal_fixtures.objs/byte/forms.cmt" in
   Artifact.check ~caps ~source:"fixtures/forms.ml" artifact;
   Artifact.setup ~caps artifact;
-  let rule = List.hd (Rules.select ~caps [ "ox-discarded-result" ]) in
+  let rule =
+    match Rules.select ~caps [ "ox-discarded-result" ] with
+    | [ rule ] -> rule
+    | _ -> failwith "expected exactly one disposal rule"
+  in
   let sites = ref [] in
   let iterator =
-    Option.get rule.typed (fun loc -> sites := loc.Location.loc_start.pos_lnum :: !sites)
+    match rule.typed with
+    | Some visitor ->
+        visitor (fun loc -> sites := loc.Location.loc_start.pos_lnum :: !sites)
+    | None -> failwith "expected typed disposal visitor"
   in
   (match artifact.info.cmt_annots with
   | Implementation tree -> iterator.structure iterator tree
   | _ -> failwith "expected implementation");
+  List.iter
+    (fun line ->
+      if List.length (List.filter (( = ) line) !sites) <> 1 then
+        failwith
+          (Printf.sprintf "expected exactly one disposal diagnostic on line %d" line))
+    [ 118; 119; 120; 132; 133; 134; 135; 136; 137; 140 ];
   let actual = List.sort_uniq Int.compare !sites in
-  let expected = [ 3; 7; 11; 17; 20; 21; 22; 26; 30; 32; 33; 36; 94; 96; 98; 102 ] in
+  let expected =
+    [
+      3;
+      7;
+      11;
+      17;
+      20;
+      21;
+      22;
+      26;
+      30;
+      32;
+      33;
+      36;
+      89;
+      94;
+      96;
+      98;
+      102;
+      112;
+      113;
+      118;
+      119;
+      120;
+      124;
+      125;
+      132;
+      133;
+      134;
+      135;
+      136;
+      137;
+      140;
+    ]
+  in
   if actual <> expected then
     failwith
       (Printf.sprintf "expected [%s], got [%s]"

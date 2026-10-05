@@ -121,7 +121,7 @@ let all ~caps =
         clean = "test/lint/clean/discard.ml";
         documentation = "docs/rules/ox-discarded-result.md";
         source = None;
-        typed = Some discarded_result;
+        typed = Some (discarded_result ~caps);
         evidence = None;
       };
       {
