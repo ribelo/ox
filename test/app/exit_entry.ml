@@ -11,7 +11,7 @@ let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write 
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                 ~argv:[ fixture; mode ] ~grace:(Ox.Duration.ms 50)
                 ~stdout:Ox_process.Child.Pipe ~stderr:Ox_process.Child.Pipe ~fds:[] ()
             with

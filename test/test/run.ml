@@ -195,7 +195,7 @@ let fake_child
     ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)
     (env : Ox_test.env) ~sw fake =
   match
-    Child.spawn ~caps ~sw ~clock:env#clock ~mgr:(Fake.mgr fake)
+    Child.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:(Fake.mgr fake)
       ~argv:[ "/bin/sh"; "-c"; "notify-send --action done=Done" ]
       ~stdout:Child.Pipe ~stderr:Child.Pipe ~grace:Ox.Duration.zero ~fds:[] ()
   with

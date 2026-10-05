@@ -32,7 +32,7 @@ let spawn_simple
           in
           let child =
             match
-              Ox_process.Child.spawn ~caps ~sw ~clock:env#clock ~mgr:env#process_mgr
+              Ox_process.Child.spawn ~caps ~sw ~clock:env#mono_clock ~mgr:env#process_mgr
                 ~argv:[ fixture ]
                 ~env:
                   (Array.append

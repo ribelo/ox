@@ -109,7 +109,7 @@ let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write 
                            if Ox.Duration.is_zero grace then None
                            else
                              match
-                               Ox.Timeout.timeout ~clock grace (fun () ->
+                               Ox.Timeout.timeout_mono ~clock grace (fun () ->
                                    Ok (Eio.Process.await process))
                              with
                              | Ok x -> Some x
