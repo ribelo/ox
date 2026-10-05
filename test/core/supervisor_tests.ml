@@ -2,6 +2,8 @@
    is involved). Children are scripted, time is Eio_mock's clock, and ordering is forced with
    promises: nothing here sleeps on the wall clock. The shared [log] records what the
    supervisor reports (its events) and what the scripted children do, in one order. *)
+(* ^safe-1bc7 ^safe-xls8: Assert scripted outcomes instead of discarding results;
+   lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 module S = Supervisor
 
@@ -589,8 +591,7 @@ let invalid_configuration () =
   run (fun clock ->
       let log, get = make_log () in
       let refuses ?(intensity = intensity ()) children =
-        (* ^nlint-hxar: The scope reply is incidental; the existing scripted-child, restart and shutdown assertions check the supervisor effects. *)
-        let _scope_result =
+        let scope_result =
           scoped (fun scope ->
               (match
                  S.start ~scope ~clock ~intensity ~strategy:S.One_for_one children
@@ -600,7 +601,8 @@ let invalid_configuration () =
                   Alcotest.fail "the configuration must be refused");
               Ok ())
         in
-        ()
+        check_bool "owning supervisor scope completes successfully" true
+          (scope_result = Ok ())
       in
       let ok id = scripted ~log id (fun _ -> Serve) in
       refuses ~intensity:{ S.max_restarts = -1; window = Duration.seconds 1 } [ ok "a" ];
@@ -658,8 +660,7 @@ let timeout_is_not_a_kill () =
       let log, _ = make_log () in
       let gate, release = Eio.Promise.create () in
       let stopped = ref false in
-      (* ^nlint-hxar: The scope reply is incidental; the existing scripted-child, restart and shutdown assertions check the supervisor effects. *)
-      let _scope_result =
+      let scope_result =
         scoped (fun scope ->
             let sup =
               start_ok ~scope ~clock ~log ~strategy:S.One_for_one
@@ -686,7 +687,8 @@ let timeout_is_not_a_kill () =
             check_bool "and returns once it finished" true !stopped;
             Ok ())
       in
-      ())
+      check_bool "owning supervisor scope completes successfully" true
+        (scope_result = Ok ()))
 
 let parent_cancellation_in_every_mode () =
   List.iter
@@ -721,8 +723,7 @@ let simultaneous_exits () =
   run (fun clock ->
       let log, get = make_log () in
       let t = trigger () in
-      (* ^nlint-hxar: The scope reply is incidental; the existing scripted-child, restart and shutdown assertions check the supervisor effects. *)
-      let _scope_result =
+      let scope_result =
         scoped (fun scope ->
             let sup =
               start_ok ~scope ~clock ~log
@@ -750,7 +751,8 @@ let simultaneous_exits () =
             ignore (S.stop sup);
             Ok ())
       in
-      ())
+      check_bool "owning supervisor scope completes successfully" true
+        (scope_result = Ok ()))
 
 (* ---- SimpleOneForOne ------------------------------------------------------------------------ *)
 
@@ -1070,9 +1072,8 @@ let nested () =
               (last "released x#1" < last "exit group#2 normal induced");
             Ok ())
       in
-      (* ^nlint-hxar: The nested supervisor lifecycle is checked inside the scope; the enclosing scope reply is not this test observation. *)
-      let _scope_result = result in
-      ())
+      check_bool "nested supervisor owning scope completes successfully" true
+        (result = Ok ()))
 
 (* ---- republishing handles through an Agent; a fresh Agent per incarnation ---------------- *)
 
@@ -1080,8 +1081,7 @@ let republish_actor_handle () =
   run (fun clock ->
       let log, _ = make_log () in
       let seen = ref [] in
-      (* ^nlint-hxar: The scope reply is incidental; the existing scripted-child, restart and shutdown assertions check the supervisor effects. *)
-      let _scope_result =
+      let scope_result =
         scoped (fun scope ->
             let registry =
               Agent.create ~sw:(Scope.switch scope) ~init:(fun () -> None) ()
@@ -1094,11 +1094,8 @@ let republish_actor_handle () =
                         | `Get -> Ok (state, state) | `Crash -> raise (Boom "service"))
                       ()
                   in
-                  ((* ^nlint-hxar: The update publishes the scripted actor handle; the client and incarnation assertions check that publication rather than the update reply. *)
-                   let _publish_result =
-                     Agent.update registry ~fn:(fun _ -> Some actor)
-                   in
-                   ());
+                  check_bool "registry publication succeeds" true
+                    (Agent.update registry ~fn:(fun _ -> Some actor) = Ok ());
                   ctx.ready ();
                   Eio.Promise.await ctx.stop_requested;
                   Ok ())
@@ -1140,13 +1137,13 @@ let republish_actor_handle () =
             ignore (S.stop sup);
             Ok ())
       in
-      ())
+      check_bool "owning supervisor scope completes successfully" true
+        (scope_result = Ok ()))
 
 let fresh_agent_per_incarnation () =
   run (fun clock ->
       let log, get = make_log () in
-      (* ^nlint-hxar: The scope reply is incidental; the existing scripted-child, restart and shutdown assertions check the supervisor effects. *)
-      let _scope_result =
+      let scope_result =
         scoped (fun scope ->
             let registry =
               Agent.create ~sw:(Scope.switch scope) ~init:(fun () -> None) ()
@@ -1158,11 +1155,8 @@ let fresh_agent_per_incarnation () =
                       ~init:(fun () -> ctx.incarnation * 100)
                       ()
                   in
-                  ((* ^nlint-hxar: The update publishes the scripted Agent handle; current-handle and incarnation assertions check that publication rather than the update reply. *)
-                   let _publish_result =
-                     Agent.update registry ~fn:(fun _ -> Some agent)
-                   in
-                   ());
+                  check_bool "registry publication succeeds" true
+                    (Agent.update registry ~fn:(fun _ -> Some agent) = Ok ());
                   ctx.ready ();
                   Eio.Promise.await ctx.stop_requested;
                   Ok ())
@@ -1177,9 +1171,8 @@ let fresh_agent_per_incarnation () =
             check_bool "state of the first agent" true
               (Agent.get first ~fn:Fun.id = Ok 100);
             (* a callback that raises fails the agent's switch: the child's scope, supervised *)
-            ((* ^nlint-hxar: The cast injects the scripted callback defect; the restart, fresh-state and reported-defect assertions check its effect. *)
-             let _cast_result = Agent.cast first ~fn:(fun _ -> raise (Boom "callback")) in
-             ());
+            check_bool "defect-injecting cast accepted" true
+              (Agent.cast first ~fn:(fun _ -> raise (Boom "callback")) = Ok ());
             quiesce ();
             let second = current () in
             check_bool "a fresh agent, initialized again" true
@@ -1191,7 +1184,8 @@ let fresh_agent_per_incarnation () =
             ignore (S.stop sup);
             Ok ())
       in
-      ())
+      check_bool "owning supervisor scope completes successfully" true
+        (scope_result = Ok ()))
 
 let tests =
   [

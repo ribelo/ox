@@ -1,5 +1,7 @@
 (* Row 45: supervised scopes with application errors, Concurrent over Eio, Retry policy,
    Schedule vocabulary. Every case cites its story IDs (nsup IDs). *)
+(* ^safe-1bc7 ^safe-xls8: Assert scripted outcomes instead of discarding results;
+   lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
 let check_bool = Alcotest.(check bool)
@@ -162,9 +164,13 @@ let await_handle () =
                   yields 1;
                   Error "nope")
             in
-            (match Scope.await f with
+            ((match Scope.await f with
             | Error _ | Ok _ -> ()
-            | exception Eio.Cancel.Cancelled _ -> ());
+            | exception Eio.Cancel.Cancelled _ -> ())
+            [@ox.allow
+              "ox-discarded-result: safe-xls8 safe-pufa; observe scope-driven \
+               cancellation, not the join reply; outer assertions require Error nope and \
+               that the joiner never runs on"]);
             Eio.Fiber.yield ();
             after_error := true;
             Ok ())
@@ -848,11 +854,8 @@ let retry_policy () =
       check_bool "on_retry saw each failed attempt" true
         (List.rev !seen = [ (1, Error "e1"); (2, Error "e2") ]);
       seen := [];
-      ((* ^nlint-hxar: The attempts are scripted Error; only the on_retry count at schedule exhaustion is asserted here. *)
-       let _retry_result =
-         Retry.retry ~clock ~policy (Schedule.recurs 1) (fun () -> Error "e")
-       in
-       ());
+      check_bool "exhaustion returns the final attempt error" true
+        (Retry.retry ~clock ~policy (Schedule.recurs 1) (fun () -> Error "e") = Error "e");
       check_int "on_retry is not called when the schedule ends" 1 (List.length !seen);
       (* the schedule's input is the attempt's result *)
       tries := 0;

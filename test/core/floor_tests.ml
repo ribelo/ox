@@ -1,6 +1,8 @@
 (* Row 46: rate limiter, channels and select, resources, Duration at Ox's surface, the
    design documents. Every case cites its story IDs (nfloor IDs). Time is Eio_mock's
    virtual clock, which advances by itself when every fiber sleeps. *)
+(* ^safe-1bc7 ^safe-xls8: Assert scripted outcomes instead of discarding results;
+   lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
 let check_bool = Alcotest.(check bool)
@@ -190,9 +192,7 @@ let channel_basics () =
           (* a blocked send resumes when room appears, in order *)
           let sent = ref false in
           Eio.Fiber.fork ~sw (fun () ->
-              ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-               let _send_result = Channel.send c 3 in
-               ());
+              check_bool "scripted channel send succeeds" true (Channel.send c 3 = Ok ());
               sent := true);
           yield ();
           check_bool "sender blocked on capacity" false !sent;
@@ -212,9 +212,7 @@ let channel_closing () =
       Eio.Switch.run (fun sw ->
           (* done_: the buffer drains, then Done forever; senders are refused *)
           let c : (int, string) Channel.t = Channel.create () in
-          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-           let _send_result = Channel.send c 1 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send c 1 = Ok ());
           Channel.done_ c;
           check_bool "send after done" true (Channel.send c 2 = Error `Done);
           check_bool "drain" true (Channel.receive c = Ok 1);
@@ -222,9 +220,7 @@ let channel_closing () =
           check_bool "done is sticky" true (Channel.try_receive c = Error `Done);
           (* error: the buffer is dropped, both sides see the error, first error wins *)
           let c : (int, string) Channel.t = Channel.create () in
-          ((* ^nlint-hxar: The send supplies a buffered value that error closure deliberately drops; the assertions check the closure error, not this seed reply. *)
-           let _send_result = Channel.send c 1 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send c 1 = Ok ());
           Channel.error c "bad";
           Channel.error c "worse";
           Channel.done_ c;
@@ -239,9 +235,7 @@ let channel_closing () =
           yield ();
           check_bool "blocked receiver woken by done_" true (!got = Some (Error `Done));
           let c : (int, string) Channel.t = Channel.create ~capacity:1 () in
-          ((* ^nlint-hxar: The send fills the channel to block the next sender; the assertion checks that error closure wakes that sender. *)
-           let _send_result = Channel.send c 1 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send c 1 = Ok ());
           let got = ref None in
           Eio.Fiber.fork ~sw (fun () -> got := Some (Channel.send c 2));
           yield ();
@@ -252,17 +246,24 @@ let channel_closing () =
 
 type fired = A of int | B of int | Sent_c | Closed_a | Closed_b | Idle | Timed_out
 
-let recv_a c = Select.receive_clause c (function Ok v -> A v | Error _ -> Closed_a)
-let recv_b c = Select.receive_clause c (function Ok v -> B v | Error _ -> Closed_b)
+let recv_a c =
+  Select.receive_clause c (function
+    | Ok v -> A v
+    | Error `Done -> Closed_a
+    | Error (`Error error) -> Alcotest.failf "unexpected channel a failure: %s" error)
+
+let recv_b c =
+  Select.receive_clause c (function
+    | Ok v -> B v
+    | Error `Done -> Closed_b
+    | Error (`Error error) -> Alcotest.failf "unexpected channel b failure: %s" error)
 
 let select_receive () =
   Eio_main.run (fun _ ->
       Eio.Switch.run (fun sw ->
           let a : (int, string) Channel.t = Channel.create ()
           and b : (int, string) Channel.t = Channel.create () in
-          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-           let _send_result = Channel.send b 7 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send b 7 = Ok ());
           check_bool "the ready channel fires, the other is untouched" true
             (Select.select [ recv_a a; recv_b b ] = B 7);
           check_bool "a is untouched" true (Channel.try_receive a = Error `Empty);
@@ -272,15 +273,11 @@ let select_receive () =
               got := Some (Select.select [ recv_a a; recv_b b ]));
           yield ();
           check_bool "still waiting" true (!got = None);
-          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-           let _send_result = Channel.send a 5 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send a 5 = Ok ());
           yield ();
           check_bool "woken by a" true (!got = Some (A 5));
           (* Select.receive over same-typed channels *)
-          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-           let _send_result = Channel.send b 9 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send b 9 = Ok ());
           check_bool "Select.receive" true (Select.receive [ a; b ] = Ok 9)))
 
 let select_fairness () =
@@ -288,12 +285,8 @@ let select_fairness () =
       let a : (int, string) Channel.t = Channel.create ~capacity:16 ()
       and b : (int, string) Channel.t = Channel.create ~capacity:16 () in
       for i = 1 to 8 do
-        ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-         let _send_result = Channel.send a i in
-         ());
-        (* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-        let _send_result = Channel.send b i in
-        ()
+        check_bool "scripted channel send succeeds" true (Channel.send a i = Ok ());
+        check_bool "scripted channel send succeeds" true (Channel.send b i = Ok ())
       done;
       let fired = List.init 8 (fun _ -> Select.select [ recv_a a; recv_b b ]) in
       let count f = List.length (List.filter f fired) in
@@ -306,17 +299,16 @@ let select_send () =
       let c : (int, string) Channel.t = Channel.create ~capacity:1 ()
       and d : (int, string) Channel.t = Channel.create ~capacity:1 () in
       let send_c =
-        Select.send_clause c 10 (function Ok () -> Sent_c | Error _ -> Closed_a)
+        Select.send_clause c 10 (function
+          | Ok () -> Sent_c
+          | Error `Done -> Closed_a
+          | Error (`Error error) -> Alcotest.failf "unexpected send failure: %s" error)
       in
       check_bool "room in c: the send clause fires" true
         (Select.select [ send_c; recv_b d ] = Sent_c);
       check_bool "the value was sent" true (Channel.try_receive c = Ok 10);
-      ((* ^nlint-hxar: The send fills c so its select-send clause cannot fire; the receive assertions below check the selected effect. *)
-       let _send_result = Channel.send c 0 in
-       ());
-      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-       let _send_result = Channel.send d 4 in
-       ());
+      check_bool "scripted channel send succeeds" true (Channel.send c 0 = Ok ());
+      check_bool "scripted channel send succeeds" true (Channel.send d 4 = Ok ());
       check_bool "c full, d ready: the receive clause fires" true
         (Select.select [ send_c; recv_b d ] = B 4);
       check_bool "the unfired send did not happen" true (Channel.try_receive c = Ok 0))
@@ -327,9 +319,7 @@ let select_default () =
       let default = Select.default_clause (fun () -> Idle) in
       check_bool "nothing ready: default, without blocking" true
         (Select.select [ recv_a a; default ] = Idle);
-      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-       let _send_result = Channel.send a 1 in
-       ());
+      check_bool "scripted channel send succeeds" true (Channel.send a 1 = Ok ());
       check_bool "a ready clause beats the default" true
         (Select.select [ recv_a a; default ] = A 1))
 
@@ -346,16 +336,12 @@ let select_timeout () =
           check_float "after exactly the timeout" 0.1 (now clock);
           Eio.Fiber.fork ~sw (fun () ->
               Eio.Time.sleep clock 0.05;
-              (* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-              let _send_result = Channel.send a 3 in
-              ());
+              check_bool "scripted channel send succeeds" true (Channel.send a 3 = Ok ()));
           let start = now clock in
           check_bool "a value before the deadline wins" true
             (Select.select [ recv_a a; timeout 100 ] = A 3);
           check_float "at the value's time, not the deadline" (start +. 0.05) (now clock);
-          ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-           let _send_result = Channel.send a 4 in
-           ());
+          check_bool "scripted channel send succeeds" true (Channel.send a 4 = Ok ());
           check_bool "a ready clause beats a zero timeout" true
             (Select.select [ recv_a a; timeout 0 ] = A 4)))
 
@@ -378,9 +364,7 @@ let select_closed () =
       check_bool "Select.receive: Error carries the payload" true
         (Select.receive [ c ] = Error (`Error "bad"));
       (* a closed channel is ready, so the caller learns of it and drops the clause *)
-      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-       let _send_result = Channel.send b 1 in
-       ());
+      check_bool "scripted channel send succeeds" true (Channel.send b 1 = Ok ());
       let outcomes = List.init 2 (fun _ -> Select.select [ recv_a a; recv_b b ]) in
       check_bool "both fire, closure included" true
         (List.sort compare outcomes = List.sort compare [ Closed_a; B 1 ]);
@@ -388,7 +372,8 @@ let select_closed () =
         Select.send_clause a 1 (function
           | Ok () -> Sent_c
           | Error `Done -> Closed_a
-          | Error _ -> Idle)
+          | Error (`Error error) ->
+              Alcotest.failf "expected completed channel, got failure: %s" error)
       in
       check_bool "send clause on a closed channel" true
         (Select.select [ send_closed ] = Closed_a))
@@ -407,9 +392,7 @@ let select_cancellation_and_misuse () =
             `Cancelled)
       in
       check_bool "cancelling a blocked select" true (outcome = `Cancelled);
-      ((* ^nlint-hxar: The send seeds or wakes the test channel; the existing receive/select assertions check delivery rather than the send reply. *)
-       let _send_result = Channel.send a 1 in
-       ());
+      check_bool "scripted channel send succeeds" true (Channel.send a 1 = Ok ());
       check_bool "no clause fired: the element is still there" true
         (Channel.try_receive a = Ok 1);
       let invalid f =

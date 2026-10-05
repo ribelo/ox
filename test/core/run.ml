@@ -1,3 +1,5 @@
+(* ^safe-1bc7 ^safe-xls8: Assert scripted outcomes instead of discarding results;
+   lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
 let expect_success = function
@@ -237,12 +239,12 @@ let test_resource () =
       Alcotest.(check bool) "nothing acquired" false !failed_acquire;
       match
         Scope.run (fun sw ->
-            (* ^nlint-hxar: Acquisition is scripted Ok; the test asserts suppression of the release defect behind the primary body error. *)
-            let _acquire_result =
-              Support.acquire_release ~sw
-                ~acquire:(fun () -> Ok 1)
-                ~release:(fun _ -> failwith "cleanup")
-            in
+            Alcotest.(check bool)
+              "scripted resource acquisition succeeds" true
+              (Support.acquire_release ~sw
+                 ~acquire:(fun () -> Ok 1)
+                 ~release:(fun _ -> failwith "cleanup")
+              = Ok 1);
             Error "primary")
       with
       | Exit.Failure

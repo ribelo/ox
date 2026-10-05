@@ -1,6 +1,8 @@
 (* v1 behavioural ports: ^nport-v4oy ^nport-bo4a ^nport-rry6
    ^nport-ivyn ^nport-kaym ^nport-ozuw. Scenarios from the v1
    core_common suites, rewritten over Eio switches and direct-style results. *)
+(* ^safe-1bc7 ^safe-xls8: Assert scripted outcomes instead of discarding results;
+   lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
 let check_int label expected actual = Alcotest.(check int) label expected actual
@@ -62,12 +64,8 @@ let release_laws () =
                  ~acquire:(fun () -> Ok n)
                  ~release:(fun n -> add ("release" ^ string_of_int n))
              in
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result = acquire 1 in
-              ());
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result = acquire 2 in
-              ());
+             check_bool "scripted resource acquisition succeeds" true (acquire 1 = Ok 1);
+             check_bool "scripted resource acquisition succeeds" true (acquire 2 = Ok 2);
              add "body";
              Ok 7)
        with
@@ -80,27 +78,20 @@ let release_laws () =
       events := [];
       (match
          Scope.run (fun sw ->
-             ((* ^nlint-hxar: Acquisition is scripted Error; the explicit scope error and no-release assertion check the failed-acquisition path. *)
-              let _failed_acquire_result =
-                Support.acquire_release ~sw
-                  ~acquire:(fun () -> Error "acquire")
-                  ~release:(fun _ -> add "released")
-              in
-              ());
-             Error "acquire")
+             Support.acquire_release ~sw
+               ~acquire:(fun () -> Error "acquire")
+               ~release:(fun _ -> add "released"))
        with
       | Exit.Failure (Cause.Fail "acquire") -> ()
       | _ -> Alcotest.fail "acquisition failure");
       Alcotest.(check (list string)) "failed acquire has no release" [] !events;
       (match
          Scope.run (fun sw ->
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> add "released")
-              in
-              ());
+               = Ok ());
              Error "body")
        with
       | Exit.Failure (Cause.Fail "body") -> ()
@@ -109,13 +100,11 @@ let release_laws () =
       events := [];
       (match
          Scope.run (fun sw ->
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok ())
                   ~release:(fun () -> add "released")
-              in
-              ());
+               = Ok ());
              failwith "body")
        with
       | Exit.Failure (Cause.Die (Failure _, _)) -> ()
@@ -125,22 +114,18 @@ let release_laws () =
       events := [];
       (match
          Scope.run (fun sw ->
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 1)
                   ~release:(fun _ -> add "first")
-              in
-              ());
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+               = Ok 1);
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 2)
                   ~release:(fun _ ->
                     add "second";
                     failwith "cleanup")
-              in
-              ());
+               = Ok 2);
              Error "body")
        with
       | Exit.Failure
@@ -314,13 +299,11 @@ let cancellation_laws () =
                     Eio.Fiber.yield ();
                     Eio.Cancel.cancel ctx (Failure "external"));
                 Scope.run (fun sw ->
-                    ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-                     let _acquire_result =
-                       Support.acquire_release ~sw
+                    check_bool "scripted resource acquisition succeeds" true
+                      (Support.acquire_release ~sw
                          ~acquire:(fun () -> Ok ())
                          ~release:(fun () -> released := true)
-                     in
-                     ());
+                      = Ok ());
                     Fun.protect
                       (fun () -> Eio.Fiber.await_cancel ())
                       ~finally:(fun () -> exited := true))))
@@ -438,13 +421,11 @@ let resource_repeat () =
              Retry.repeat ~clock:env#clock (Schedule.recurs 3) (fun () ->
                  incr acquired;
                  Scope.run (fun inner ->
-                     ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-                      let _acquire_result =
-                        Support.acquire_release ~sw:inner
+                     check_bool "scripted resource acquisition succeeds" true
+                       (Support.acquire_release ~sw:inner
                           ~acquire:(fun () -> Ok ())
                           ~release:(fun () -> incr released)
-                      in
-                      ());
+                       = Ok ());
                      Ok ())
                  |> function
                  | Exit.Success () -> Ok ()
@@ -457,20 +438,16 @@ let resource_repeat () =
       let lifo = ref [] in
       (match
          Scope.run (fun sw ->
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 1)
                   ~release:(fun n -> lifo := n :: !lifo)
-              in
-              ());
-             ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-              let _acquire_result =
-                Support.acquire_release ~sw
+               = Ok 1);
+             check_bool "scripted resource acquisition succeeds" true
+               (Support.acquire_release ~sw
                   ~acquire:(fun () -> Ok 2)
                   ~release:(fun n -> lifo := n :: !lifo)
-              in
-              ());
+               = Ok 2);
              Ok ())
        with
       | Exit.Success () -> ()
@@ -495,13 +472,11 @@ let nested_timeouts () =
       (match
          Scope.run (fun sw ->
              Timeout.timeout ~clock (Duration.ms 10) (fun () ->
-                 ((* ^nlint-hxar: Fixture acquisition is scripted Ok; the existing scope-outcome and release-effect assertions check resource lifetime. *)
-                  let _acquire_result =
-                    Support.acquire_release ~sw
+                 check_bool "scripted resource acquisition succeeds" true
+                   (Support.acquire_release ~sw
                       ~acquire:(fun () -> Ok ())
                       ~release:(fun () -> incr calls)
-                  in
-                  ());
+                   = Ok ());
                  Eio.Time.sleep clock 1.;
                  Ok ()))
        with
