@@ -1,0 +1,7 @@
+(* ^nparse-gb03 ^safe-6ukl: no private representations or unchecked extraction. *)
+type capacity = Ox.Capacity.t
+type concurrency = Ox.Concurrency.t
+type byte_limit = Ox.Byte_limit.t
+let capacity = Ox.Capacity.of_int
+let concurrency = Ox.Concurrency.of_int
+let byte_limit = Ox.Byte_limit.of_int

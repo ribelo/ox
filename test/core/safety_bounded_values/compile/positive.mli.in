@@ -1,0 +1,7 @@
+(* ^nparse-gb03 ^safe-6ukl: abstract types retain the immediate kind. *)
+type capacity : immediate = Ox.Capacity.t
+type concurrency : immediate = Ox.Concurrency.t
+type byte_limit : immediate = Ox.Byte_limit.t
+val capacity : int -> (capacity, [> `Invalid ]) result
+val concurrency : int -> (concurrency, [> `Invalid ]) result
+val byte_limit : int -> (byte_limit, [> `Invalid ]) result

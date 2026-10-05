@@ -207,6 +207,12 @@
   ../../lib/ox/.ox.objs/byte/ox__Actor.cmti
   ../../lib/ox/.ox.objs/byte/ox__Agent.cmt
   ../../lib/ox/.ox.objs/byte/ox__Agent.cmti
+  ../../lib/ox/.ox.objs/byte/ox__Byte_limit.cmt
+  ../../lib/ox/.ox.objs/byte/ox__Byte_limit.cmti
+  ../../lib/ox/.ox.objs/byte/ox__Capacity.cmt
+  ../../lib/ox/.ox.objs/byte/ox__Capacity.cmti
+  ../../lib/ox/.ox.objs/byte/ox__Concurrency.cmt
+  ../../lib/ox/.ox.objs/byte/ox__Concurrency.cmti
   ../../lib/ox/.ox.objs/byte/ox__Cause.cmt
   ../../lib/ox/.ox.objs/byte/ox__Cause.cmti
   ../../lib/ox/.ox.objs/byte/ox__Channel.cmt

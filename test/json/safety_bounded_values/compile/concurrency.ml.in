@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl *)
+let parse (limit : Ox.Concurrency.t) raw = Ox_json.parse ~max_bytes:(limit) raw

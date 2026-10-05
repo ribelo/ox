@@ -23,19 +23,19 @@ type parse_error = [ `Malformed of string | `Too_large of too_large ]
     is not one JSON document, and [`Too_large] carries the byte bound and the input's
     actual length for input the bound refused before any JSON value was built. *)
 
-val parse : ?max_bytes:int -> string -> (t, parse_error) result @@ nonportable
+val parse :
+  ?max_bytes:Ox.Byte_limit.t -> string -> (t, parse_error) result @@ nonportable
 (** [parse raw] is [Ok json] when [raw] is one complete JSON document, and a
     {!parse_error} when it is not. Malformed input is reported as a result, never as an
     exception.
 
     [max_bytes] rejects oversized input before Yojson sees it: when
-    [String.length raw > max_bytes], [parse] is [Error (`Too_large _)] even for text that
+    [String.length raw > Ox.Byte_limit.to_int max_bytes], [parse] is
+    [Error (`Too_large _)] even for text that
     is valid JSON, and no JSON value is built. [`Too_large] is therefore only produced
-    when the bound is set.
-
-    @raise Invalid_argument
-      when [max_bytes] is negative. A negative bound is a programming defect, not a parse
-      failure. *)
+    when the bound is set. Bounds count UTF-8 bytes, not Unicode characters. Validate
+    an integer with {!Ox.Byte_limit.of_int} before calling [parse]; a negative bound
+    returns [Error `Invalid] there and cannot reach this function. ^nparse-gb03 *)
 
 val to_string : t -> string @@ nonportable
 (** [to_string json] is the compact JSON text of [json]: one line, no indentation, no

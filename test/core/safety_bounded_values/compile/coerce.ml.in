@@ -1,0 +1,2 @@
+(* ^nparse-gb03 ^safe-6ukl *)
+let value (input : int) : Ox.Capacity.t = (input :> Ox.Capacity.t)

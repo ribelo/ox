@@ -125,6 +125,12 @@ lib/ox/actor.ml lib/ox/.ox.objs/byte/ox__Actor.cmt
 lib/ox/actor.mli lib/ox/.ox.objs/byte/ox__Actor.cmti
 lib/ox/agent.ml lib/ox/.ox.objs/byte/ox__Agent.cmt
 lib/ox/agent.mli lib/ox/.ox.objs/byte/ox__Agent.cmti
+lib/ox/byte_limit.ml lib/ox/.ox.objs/byte/ox__Byte_limit.cmt
+lib/ox/byte_limit.mli lib/ox/.ox.objs/byte/ox__Byte_limit.cmti
+lib/ox/capacity.ml lib/ox/.ox.objs/byte/ox__Capacity.cmt
+lib/ox/capacity.mli lib/ox/.ox.objs/byte/ox__Capacity.cmti
+lib/ox/concurrency.ml lib/ox/.ox.objs/byte/ox__Concurrency.cmt
+lib/ox/concurrency.mli lib/ox/.ox.objs/byte/ox__Concurrency.cmti
 lib/ox/cause.ml lib/ox/.ox.objs/byte/ox__Cause.cmt
 lib/ox/cause.mli lib/ox/.ox.objs/byte/ox__Cause.cmti
 lib/ox/channel.ml lib/ox/.ox.objs/byte/ox__Channel.cmt

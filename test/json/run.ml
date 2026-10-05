@@ -75,15 +75,22 @@ let test_parse_rejects_invalid () =
 
 (* ^njson-nc66 ^njson-3ph9: the byte bound rejects oversized input before it is
    parsed, and names the bound and the length in the refusal. *)
+(* ^nparse-gb03: arbitrary bounds are validated before the parse call. *)
+let byte_limit value =
+  match Ox.Byte_limit.of_int value with
+  | Ok limit -> limit
+  | Error `Invalid -> Alcotest.failf "invalid test byte limit %d" value
+
 let test_parse_max_bytes () =
   let raw = "{\"a\": 1}" in
   let bound = String.length raw in
   Alcotest.(check json)
     "input at the bound"
     (Ox_json.object_ [ ("a", Some (Ox_json.int 1)) ])
-    (expect_ok "at the bound" (Ox_json.parse ~max_bytes:bound raw));
+    (expect_ok "at the bound" (Ox_json.parse ~max_bytes:(byte_limit bound) raw));
   let error =
-    expect_error "one byte over the bound" (Ox_json.parse ~max_bytes:(bound - 1) raw)
+    expect_error "one byte over the bound"
+      (Ox_json.parse ~max_bytes:(byte_limit (bound - 1)) raw)
   in
   (match error with
   | `Too_large { limit; length } ->
@@ -95,26 +102,15 @@ let test_parse_max_bytes () =
     "printer names the bound" "JSON input of 8 bytes exceeds max_bytes (7)"
     (Format.asprintf "%a" Ox_json.pp_parse_error error);
   (* Valid JSON over the bound is refused before any value is built. *)
-  (match Ox_json.parse ~max_bytes:1 "{}" with
+  (match Ox_json.parse ~max_bytes:Ox.Byte_limit.one "{}" with
   | Error (`Too_large { limit = 1; length = 2 }) -> ()
   | Error _ | Ok _ -> Alcotest.fail "valid JSON over the bound must be refused");
-  (match Ox_json.parse ~max_bytes:0 raw with
+  (match Ox_json.parse ~max_bytes:Ox.Byte_limit.zero raw with
   | Error (`Too_large _) -> ()
   | Error _ | Ok _ -> Alcotest.fail "a zero bound refuses any input");
-  let raised =
-    try
-      ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: The negative bound must raise Invalid_argument; any normal return makes the existing raised assertion false. *)
-       let _parse_result =
-         Ox_json.parse ~max_bytes:(-1) raw
-           [@@ox.allow
-             "ox-discarded-result: negative max_bytes must raise Invalid_argument; a \
-              normal return fails the raised assertion"]
-       in
-       ());
-      false
-    with Invalid_argument _ -> true
-  in
-  Alcotest.(check bool) "negative bound is an invalid argument" true raised
+  match Ox.Byte_limit.of_int (-1) with
+  | Error `Invalid -> ()
+  | Ok _ -> Alcotest.fail "negative byte limit must be refused before parse"
 
 (* ^njson-7pjx ^njson-3ph9: an absent field is omitted, a present field keeps
    its name and position. *)
