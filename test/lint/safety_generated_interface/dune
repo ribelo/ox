@@ -1,0 +1,12 @@
+; ^safe-y047 ^nlintcov-q6n2: real direct-generated interface evidence, not filenames.
+
+(executable
+ (name test_generated)
+ (modules test_generated)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps check.sh)
+ (action
+  (run bash check.sh %{exe:test_generated.exe})))
