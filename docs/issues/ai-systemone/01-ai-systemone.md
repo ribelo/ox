@@ -53,3 +53,7 @@ live smoke is opt-in (`ETA_AI_LIVE_SMOKE=1` with `OPENROUTER_API_KEY`) and was n
 here. Two deviations from `reference/jev.ts` are recorded rather than dropped: the 400/422
 context-overflow heuristic is not implemented (that reply is `Invalid_response`), and
 ``Unavailable`` carries the reference's two forms through `retryable`.
+
+## Replay-safety supersession (2026-10-05)
+
+The later approved [Ox safety specification](<../ox-safety-gate/01-ox-safety-gate.md>) and [retry-safety ticket](<../ox-safety-gate/19-retry-safety.md>) supersede only the automatic replay default described above (safe-o2b6, safe-a5mq, safe-3o27, safe-s51t). Ox_ai.Transport.post_json defaults to Never_replay, including ambiguous failures and 429/529 responses without a proof of non-commit. Allow_duplicate_effects is explicit permission, not proof of idempotency. Attempt budgets, response bounds, error classification and external cancellation retain their contracts; old two-attempt behaviour is available only with explicit replay permission. Existing callers are not mechanically opted in. The original story IDs remain historical anchors and are not renamed or reused.

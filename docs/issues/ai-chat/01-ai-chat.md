@@ -62,3 +62,7 @@ per call and a provider may route it, so the reply's model travels in
 fail-closed in the same breath — a reply that reports no cost reads `None` (never `0.`,
 because a chat endpoint is OpenAI-compatible and not OpenRouter) while a cost that is
 present and not a number is refused with its path (^nchat-qu3j).
+
+## Replay-safety supersession (2026-10-05)
+
+The later approved [retry-safety ticket](<../ox-safety-gate/19-retry-safety.md>) supersedes the automatic transport replay inherited by nchat-wtog (safe-o2b6, safe-a5mq, safe-3o27, safe-s51t). Shared JSON POST defaults to Never_replay; a lost reply or timeout does not prove the remote generation had no effect. Allow_duplicate_effects is explicit permission, not inferred idempotency. Chat callers retain the safe default, error classification and cancellation behaviour; historical two-attempt behaviour requires explicit replay permission.

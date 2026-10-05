@@ -1,7 +1,7 @@
 ---
 status: ready-for-agent
 category: enhancement
-package: ox_lint, ox, ox_caps, ox_blocking, ox_sql, ox_http, ox_otel, ox_json, ox_app, ox_observability
+package: ox_lint, ox, ox_caps, ox_blocking, ox_sql, ox_http, ox_otel, ox_json, ox_app, ox_observability, ox_ai
 consumer: Ox and consumers using its installed lint gate
 blocked_by: []
 ---
@@ -337,6 +337,12 @@ Shared stories are cited by each applicable ticket; no story is considered imple
 - Existing lint deliveries: [engine](<../ox-lint/01-ox-lint.md>), [concurrency rules](<../ox-lint-rules/01-ox-lint-rules.md>), [interface truth](<../ox-lint-docs/01-ox-lint-docs.md>), [capability enforcement](<../caps-on-ox-lint/01-caps-on-ox-lint.md>) and [coverage/dormancy](<../ox-lint-coverage/01-ox-lint-coverage.md>). Current implementation and verified behaviour take precedence over obsolete Semgrep-era design descriptions.
 - Activation prerequisites: [once-forks](<../once-forks/01-once-forks.md>), [owned-handles](<../owned-handles/01-owned-handles.md>), [spawner](<../spawner/01-spawner.md>), [ox-mutex](<../ox-mutex/01-ox-mutex.md>) and [validated values](<../parse-dont-validate/01-parse-dont-validate.md>). Additional [local-scope](<../local-scope/01-local-scope.md>), [suspend-token](<../suspend-token/01-suspend-token.md>) and [duplex-halves](<../duplex-halves/01-duplex-halves.md>) prerequisites are conditional on the claimed surface, not blanket blockers for all rule work.
 - [Monotonic timeout](<../monotonic-timeout/01-monotonic-timeout.md>) is reused; [adaptive retry](<../adaptive-retry/01-adaptive-retry.md>) owns budgets, not replay safety. [Usage rules](<../usage-rules/01-usage-rules.md>) and [simulation](<../simulation/01-simulation.md>) keep their existing ownership.
+
+### Integration decisions
+
+2026-10-05: implementation uses the user-requested integrate/ox-safety-gate branch with isolated per-ticket worktrees. Workers own disjoint logical files, even across worktrees; the lead owns commits, merges, shared contracts, ticket closure and final acceptance. Shared registry/CLI edits are serialized. Independent new lint modules compile through the existing lint_engine; this adds no analysis framework. Evidence-aware rules will use per-finding message and undecided callbacks so uncertainty cannot be represented as an ordinary waivable finding.
+
+The AI JSON POST operation is the concrete retry-safety slice: safe default refuses ambiguous replay, explicit duplicate-effect consent is separate from attempt limits. Native-resource lease selection remains open until a real owner/use pair is established; tests alone are not treated as a production migration. Existing ownership, Spawner, guarded-access and validated-value specifications remain external prerequisites to ticket 20; their undelivered guarantees must not be advertised as active enforcement.
 
 ### Source review findings retained as hypotheses to verify
 

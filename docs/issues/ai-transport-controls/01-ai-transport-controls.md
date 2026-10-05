@@ -28,3 +28,7 @@ consumer: nema row 31 (nemanext-l8so, nemanext-zl1v, nemanext-791b)
 - `test/ai/test_openrouter.ml` "transport controls": a 1.5 MiB embeddings reply is refused under the default bound and decoded under 4 MiB; `max_attempts:1` makes one request (default two); `Retry-After: 7` gives 7000 ms; an HTTP-date in the future gives a positive delay; an invalid value and no header give None.
 - Additive for callers; a consumer that builds `Error.unavailable` itself must add `retry_after` (no consumer outside eta-next does).
 - ^nai-8s4k (added from nema U3): "transport controls" asserts `status = Some 429` and that a 2 s-slow reply is cut at a 200 ms `?timeout` with one attempt.
+
+## Replay-safety supersession (2026-10-05)
+
+The later approved [Ox safety specification](<../ox-safety-gate/01-ox-safety-gate.md>) and [retry-safety ticket](<../ox-safety-gate/19-retry-safety.md>) supersede only the automatic replay default described above (safe-o2b6, safe-a5mq, safe-3o27, safe-s51t). Ox_ai.Transport.post_json defaults to Never_replay, including ambiguous failures and 429/529 responses without a proof of non-commit. Allow_duplicate_effects is explicit permission, not proof of idempotency. Attempt budgets, response bounds, error classification and external cancellation retain their contracts; old two-attempt behaviour is available only with explicit replay permission. Existing callers are not mechanically opted in. The original story IDs remain historical anchors and are not renamed or reused.

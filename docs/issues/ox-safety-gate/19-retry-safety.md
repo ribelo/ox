@@ -37,6 +37,10 @@ Interface-first operation-specific retry policy; no universal idempotency checke
 - [ ] Demonstrate the safe replacement, review real Ox findings, migrate the affected supported sites, and document the finite detection horizon and legitimate counterexamples. Do not activate an unsupported prohibition.
 - [ ] Run the repository build, test, formatting and capability/lint gates. Record actual verification and remaining external prerequisites; specification publication is not implementation completion.
 
+## Selected operation and implementation decision
+
+2026-10-05: the concrete operation is Ox_ai.Transport.post_json. Its current loop retries timeouts and transport failures after a POST may have committed remotely; its public contract already admits this ambiguity. The safe default will not authorize replay of ambiguous failures. A separate explicit policy may acknowledge possible duplicate remote effects; this is permission, not inferred idempotency or a deduplication guarantee. Attempt count, backoff and deadline remain separate. Definite-refusal retries require actual operation-contract evidence. Existing provider callers are not mechanically opted in to retain old test expectations.
+
 ## Story-specific verification
 
 - safe-o2b6: Verify the policy for an identified non-idempotent retry operation to state when repetition is safe; establish that partial success cannot silently duplicate an external effect.
