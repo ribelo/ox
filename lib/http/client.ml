@@ -54,8 +54,11 @@ let io ~on_error f =
   try f () with
   | End_of_file -> reject `Truncated
   | Eio.Io _ as exn -> reject (on_error (Printexc.to_string exn))
-  | exn when Option.is_some (Tls_flow.failure_message exn) ->
-      reject (`Tls (Option.get (Tls_flow.failure_message exn)))
+  | exn -> (
+      let backtrace = Printexc.get_raw_backtrace () in
+      match Tls_flow.failure_message exn with
+      | Some message -> reject (`Tls message)
+      | None -> Printexc.raise_with_backtrace exn backtrace)
 
 let header name headers =
   List.find_map

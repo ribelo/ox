@@ -270,18 +270,22 @@ let connect ~sw ~net ~clock ?ca_file ?(headers = []) ?(protocols = [])
               selected;
               max_message_bytes;
             }
-        with
-        | Failure error -> Error error
-        | exn when Option.is_some (Tls_flow.failure_message exn) ->
-            Error (`Tls (Option.get (Tls_flow.failure_message exn)))
-        | Stdlib.Failure detail when !stage = `Tls -> Error (`Tls detail)
-        | Eio.Io _ as exn ->
-            Error
-              (match !stage with
-              | `Tls -> `Tls (Printexc.to_string exn)
-              | `Connect -> `Connect (Printexc.to_string exn)
-              | `Upgrade -> `Connect (Printexc.to_string exn))
-        | End_of_file -> Error (`Closed (1006, "unexpected EOF")))
+        with exn -> (
+          let backtrace = Printexc.get_raw_backtrace () in
+          match Tls_flow.failure_message exn with
+          | Some message -> Error (`Tls message)
+          | None -> (
+              match exn with
+              | Failure error -> Error error
+              | Stdlib.Failure detail when !stage = `Tls -> Error (`Tls detail)
+              | Eio.Io _ ->
+                  Error
+                    (match !stage with
+                    | `Tls -> `Tls (Printexc.to_string exn)
+                    | `Connect -> `Connect (Printexc.to_string exn)
+                    | `Upgrade -> `Connect (Printexc.to_string exn))
+              | End_of_file -> Error (`Closed (1006, "unexpected EOF"))
+              | _ -> Printexc.raise_with_backtrace exn backtrace)))
   in
   Ox.Timeout.timeout ~clock establishment_timeout perform
 
@@ -298,10 +302,14 @@ let writing t fn =
   try
     Eio.Mutex.use_ro t.lock (fun () ->
         match t.terminal with Some error -> Error error | None -> fn ())
-  with
-  | exn when Option.is_some (Tls_flow.failure_message exn) ->
-      finish t (`Tls (Option.get (Tls_flow.failure_message exn)))
-  | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "write failed"))
+  with exn -> (
+    let backtrace = Printexc.get_raw_backtrace () in
+    match Tls_flow.failure_message exn with
+    | Some message -> finish t (`Tls message)
+    | None -> (
+        match exn with
+        | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "write failed"))
+        | _ -> Printexc.raise_with_backtrace exn backtrace))
 
 let send_frame t frame =
   writing t (fun () ->
@@ -458,8 +466,12 @@ let receive t =
           else loop (Some kind)
     in
     loop None
-  with
-  | Failure error -> finish t error
-  | exn when Option.is_some (Tls_flow.failure_message exn) ->
-      finish t (`Tls (Option.get (Tls_flow.failure_message exn)))
-  | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "read failed"))
+  with exn -> (
+    let backtrace = Printexc.get_raw_backtrace () in
+    match Tls_flow.failure_message exn with
+    | Some message -> finish t (`Tls message)
+    | None -> (
+        match exn with
+        | Failure error -> finish t error
+        | Eio.Io _ | End_of_file -> finish t (`Closed (1006, "read failed"))
+        | _ -> Printexc.raise_with_backtrace exn backtrace))

@@ -301,14 +301,17 @@ let drain t =
   settled t
 
 let begin_ending t =
-  if t.ending.deadline = None then begin
-    (* Non-suspending sealing also wakes all pre-seal admission waiters. Stop is
-       channel closure, so no caller must park while trying to enqueue it. *)
-    t.ending.deadline <- Some (t.now () +. t.ending_seconds);
-    t.closed <- true;
-    Ox.Channel.done_ t.queue;
-    Eio.Promise.resolve t.ending.begin_ ()
-  end
+  match t.ending.deadline with
+  | Some deadline -> deadline
+  | None ->
+      (* Non-suspending sealing also wakes all pre-seal admission waiters. Stop is
+         channel closure, so no caller must park while trying to enqueue it. *)
+      let deadline = t.now () +. t.ending_seconds in
+      t.ending.deadline <- Some deadline;
+      t.closed <- true;
+      Ox.Channel.done_ t.queue;
+      Eio.Promise.resolve t.ending.begin_ ();
+      deadline
 
 let record_ending t result =
   settle_controls t result;
@@ -350,8 +353,7 @@ let finish t =
       Fun.protect
         ~finally:(fun () -> t.finishing <- false)
         (fun () ->
-          begin_ending t;
-          let deadline = Option.get t.ending.deadline in
+          let deadline = begin_ending t in
           let remaining = deadline -. t.now () in
           if remaining <= 0. then expire t
           else
@@ -549,7 +551,7 @@ let meter t =
 
 let shutdown t =
   Eio.Fiber.check ();
-  begin_ending t;
+  ignore (begin_ending t);
   (* A release-hook caller cannot wait for the cancelled controller. Protect only
      the fiber taking over unfinished recovery, never a waiter joining its owner. *)
   if t.worker_done && (not t.finishing) && not (Eio.Promise.is_resolved t.ending.stop)
