@@ -24,7 +24,14 @@ let[@inline always] at router path =
   | Error e -> Error e
 
 let find router path =
-  match at router path with Ok { Match.value; _ } -> Some value | Error _ -> None
+  (* ^safe-xls8 ^safe-pufa: [find] is the optional lookup, unlike [at]. *)
+  match at router path with
+  | Ok { Match.value; _ } -> Some value
+  | Error _ ->
+      None
+      [@ox.allow
+        "ox-discarded-result: optional find reports a missing route as None; at retains \
+         the lookup error"]
 
 let remove router route = Tree.remove router (Escape.of_string route)
 let merge ~into from = Tree.merge ~into from

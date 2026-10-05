@@ -19,7 +19,8 @@ let stop t in_flight =
     | Ok request ->
         request.abandon ();
         drain ()
-    | Error _ -> ()
+    (* ^safe-xls8: empty or closed ends draining after queued requests were abandoned. *)
+    | Error (`Empty | `Done | `Error ()) -> ()
   in
   drain ()
 
@@ -31,7 +32,8 @@ let create ?(capacity = 1024) ~sw ~init () =
   let rec loop state =
     Eio.Fiber.check ();
     match Channel.receive t.mailbox with
-    | Error _ -> ()
+    (* ^safe-xls8: mailbox closure terminates the owner; [stop] settles waiters. *)
+    | Error (`Done | `Error ()) -> ()
     | Ok request ->
         in_flight := Some request;
         let state, acknowledge = Eio.Cancel.protect (fun () -> request.run state) in

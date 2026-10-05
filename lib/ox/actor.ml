@@ -80,14 +80,18 @@ type ('state, 'msg, 'reply, 'e) t = {
 let state t = t.state
 
 let enqueue t envelope =
-  match Channel.send t.mailbox envelope with Ok () -> true | Error _ -> false
+  (* ^safe-xls8: a closed mailbox rejects admission; [ask] reports Actor_stopped. *)
+  match Channel.send t.mailbox envelope with
+  | Ok () -> true
+  | Error (`Done | `Error ()) -> false
 
 let tell t msg = ignore (enqueue t { msg; reply = None })
 
 let try_tell t msg =
   match Channel.try_send t.mailbox { msg; reply = None } with
   | Ok () -> true
-  | Error _ -> false
+  (* ^safe-xls8: full or closed means the nonblocking send did not admit a message. *)
+  | Error (`Full | `Done | `Error ()) -> false
 
 let ask ?timeout (t : (_, _, _, ([> `Actor_stopped | `Timeout ] as 'e)) t) msg :
     (_, 'e) result =
@@ -123,7 +127,8 @@ let stop t in_flight =
     | Ok { reply; _ } ->
         Option.iter (fun cell -> answer cell (Error `Actor_stopped)) reply;
         drain ()
-    | Error _ -> ()
+    (* ^safe-xls8: empty or closed ends draining after all queued asks were answered. *)
+    | Error (`Empty | `Done | `Error ()) -> ()
   in
   drain ();
   let subscribers = t.subscribers in
@@ -148,7 +153,8 @@ let create ?(capacity = 1024) ?on_stop ~sw ~init
   let rec loop () =
     Eio.Fiber.check ();
     match Channel.receive t.mailbox with
-    | Error _ -> ()
+    (* ^safe-xls8: mailbox closure terminates the owner; [stop] settles waiters. *)
+    | Error (`Done | `Error ()) -> ()
     | Ok { msg; reply } ->
         in_flight := reply;
         (match Eio.Cancel.protect (fun () -> handle t.state msg) with

@@ -170,5 +170,12 @@ module Of_json = struct
     loop alternatives
 
   let try_or_none decoder json =
-    match decoder json with Ok value -> Ok (Some value) | Error _ -> Ok None
+    (* ^safe-xls8 ^safe-pufa: this combinator deliberately probes an optional shape. *)
+    match decoder json with
+    | Ok value -> Ok (Some value)
+    | Error _ ->
+        Ok None
+        [@ox.allow
+          "ox-discarded-result: try_or_none probes an optional JSON shape; rejection \
+           means absence, while the original decoder retains diagnostics"]
 end
