@@ -114,12 +114,17 @@ let self_check_root ~(caps : < Cap.fs_read ; .. >) override =
         | Some root -> root
         | None -> Option.value (evidence_root ~caps (Sys.getcwd ())) ~default:installed)
 
-let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
+let run
+    ~(caps :
+       < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.fs_write ; Cap.stdout ; Cap.stderr ; .. >)
+    =
   let ids, paths, self_check, require_typed = (ref [], ref [], ref false, ref false) in
   (* ^nlint-r01u ^ncapslint-x3gi: the repository gate selects every registered rule. *)
   let repo_gate, allows = (ref false, ref []) in
   let root_override = ref None in
   let inventory = ref false in
+  (* ^nlintcov-8g4p: the gate census consumes this scan without changing normal output. *)
+  let inventory_file = ref None in
   let options =
     [
       ( "--repo-gate",
@@ -141,6 +146,9 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
       ( "--inventory",
         Arg.Set inventory,
         " Print PATH\tDECISION\tREASON; findings remain on stderr" );
+      ( "--inventory-file",
+        Arg.String (fun path -> inventory_file := Some path),
+        "FILE Write the same inventory to FILE without changing normal output" );
       ( "--self-check",
         Arg.Set self_check,
         " Check every rule's replacement, fixtures and documentation" );
@@ -169,7 +177,7 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
       in
       let decisions = Hashtbl.create 128 in
       let record path decision reason =
-        if !inventory then
+        if !inventory || Option.is_some !inventory_file then
           match Hashtbl.find_opt decisions path with
           | Some ("undecided", previous) ->
               if decision = "undecided" && previous <> reason then
@@ -524,16 +532,41 @@ let run ~(caps : < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ;
               directory cycles skipped\n"
              !empty_paths !ignored_paths !directory_cycles
        with ex -> fail "ox-lint" ex);
-      if !inventory then
+      (* ^nlintcov-8g4p: both inventory destinations share exactly the same records. *)
+      let entries =
         Hashtbl.to_seq decisions |> List.of_seq
         |> List.sort (fun (a, _) (b, _) -> String.compare a b)
-        |> List.iter (fun (path, (decision, reason)) ->
-            Cap_stdlib.printf ~caps "%s\t%s\t%s\n" path decision reason);
+      in
+      if !inventory then
+        List.iter
+          (fun (path, (decision, reason)) ->
+            Cap_stdlib.printf ~caps "%s\t%s\t%s\n" path decision reason)
+          entries;
+      Option.iter
+        (fun path ->
+          try
+            let channel = Cap_stdlib.open_out ~caps path in
+            Fun.protect
+              ~finally:(fun () -> close_out channel)
+              (fun () ->
+                List.iter
+                  (fun (source, (decision, reason)) ->
+                    Printf.fprintf channel "%s\t%s\t%s\n" source decision reason)
+                  entries)
+          with ex -> fail ~fatal:true path ex)
+        !inventory_file;
       if !failures > 0 then 2 else if !findings > 0 then 1 else 0
 
 let main
     ~(caps :
-       < Cap.fork ; Cap.exec ; Cap.fs_read ; Cap.stdout ; Cap.stderr ; Cap.exit ; .. >) =
+       < Cap.fork
+       ; Cap.exec
+       ; Cap.fs_read
+       ; Cap.fs_write
+       ; Cap.stdout
+       ; Cap.stderr
+       ; Cap.exit
+       ; .. >) =
   Cap_stdlib.exit ~caps (run ~caps)
 
 let () = main ~caps:(Ox_caps_door.powerbox ())

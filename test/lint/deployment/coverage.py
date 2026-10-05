@@ -9,6 +9,7 @@ Exit 0: complete strict coverage; 1: coverage/scan failed; 2: setup/usage error.
 import argparse
 import collections
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -20,7 +21,13 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("engine", help="built ox-lint executable")
 parser.add_argument("workspace", help="directory inside the Git workspace to scan")
+# ^nlintcov-8g4p: reuse the gate's actual decisions without a second scan/rebuild.
+parser.add_argument("--inventory", help="read the just-completed engine inventory from FILE",
+                    metavar="FILE")
+parser.add_argument("--scan-exit", type=int, help="exit code of that inventory-producing scan")
 args = parser.parse_args()
+if (args.inventory is None) != (args.scan_exit is None):
+    parser.error("--inventory and --scan-exit must be supplied together")
 try:
     engine = str(Path(args.engine).resolve())
     root = Path(subprocess.check_output(
@@ -30,10 +37,15 @@ try:
         ["git", "-C", str(root), "ls-files", "-z", "--", "*.ml", "*.mli"]
     ).decode().split("\0")
     tracked = {path for path in tracked if path}
-    scan = subprocess.run(
-        [engine, "--caps-gate", "--require-typed", "--inventory"],
-        cwd=root, text=True, capture_output=True,
-    )
+    if args.inventory is not None:
+        inventory = Path(args.inventory).read_text()
+        scan_exit, scan_stderr = args.scan_exit, ""
+    else:
+        scan = subprocess.run(
+            [engine, "--caps-gate", "--require-typed", "--inventory"],
+            cwd=root, text=True, capture_output=True,
+        )
+        inventory, scan_exit, scan_stderr = scan.stdout, scan.returncode, scan.stderr
 except (OSError, subprocess.CalledProcessError) as error:
     print("coverage setup failed: " + str(error), file=sys.stderr)
     sys.exit(2)
@@ -46,13 +58,15 @@ files = {}
 directories = []
 seen = set()
 errors = []
-for line in scan.stdout.splitlines():
+for line in inventory.splitlines():
     fields = line.split("\t")
     if len(fields) != 3:
         errors.append("non-inventory output: " + line)
         continue
     path, decision, reason = fields
-    if not path or not reason:
+    # ^nlintcov-8g4p: a successful decision has no diagnostic reason.
+    # Exclusions and undecided evidence must still explain themselves.
+    if not path or (decision != "decided" and not reason):
         errors.append("empty inventory path/reason: " + line)
         continue
     inventory_path = key(path) + ("/" if path.endswith("/") else "")
@@ -94,8 +108,12 @@ for path in sorted(tracked):
             errors.append("unreviewed documentation source: " + path)
         if any((root / "docs").rglob("dune")):
             errors.append("documentation evidence gained a Dune build stanza: " + path)
-        if entry != ("excluded", "not-built"):
-            errors.append("documentation evidence must be excluded as not-built: "
+        # ^nlintcov-8g4p: these sources are also declared data dependencies now.
+        if entry == ("excluded", "data-only") and not re.search(
+                r"(?m)^\(data_only_dirs\s+docs\s*\)\s*$", (root / "dune").read_text()):
+            errors.append("documentation data-only exclusion lacks root Dune declaration: " + path)
+        if entry not in {("excluded", "not-built"), ("excluded", "data-only")}:
+            errors.append("documentation evidence must be structurally excluded: "
                           + path + ": " + ": ".join(entry))
             if entry[0] == "undecided":
                 counts["undecided"] += 1
@@ -120,8 +138,8 @@ for path in sorted(tracked):
         # A tracked OCaml source is not an empty directory or ignored mirror.
         errors.append("unjustified tracked-source exclusion: " + path + ": " + reason)
 
-if scan.returncode != 0:
-    errors.append("strict inventory exit=" + str(scan.returncode))
+if scan_exit != 0:
+    errors.append("strict inventory exit=" + str(scan_exit))
 print("tracked-source coverage: " + str(len(tracked)) + " tracked; "
       + "; ".join(str(count) + " " + name for name, count in sorted(counts.items())
                   if name not in {"coverage-holes", "undecided"})
@@ -129,5 +147,6 @@ print("tracked-source coverage: " + str(len(tracked)) + " tracked; "
       + str(counts["undecided"]) + " undecided")
 if errors:
     print("\n".join(errors), file=sys.stderr)
-    print(scan.stderr, file=sys.stderr)
+    if scan_stderr:
+        print(scan_stderr, file=sys.stderr)
     sys.exit(1)

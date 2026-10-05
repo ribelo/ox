@@ -23,7 +23,7 @@ The Door, tests and build tools follow this same structural rule. CLI-owning ent
 
 ## Gate and installation
 
-The checkout [caps-gate](<../scripts/caps-gate>) execs the built engine with `--caps-gate --require-typed`.
+The checkout [caps-gate](<../scripts/caps-gate>) runs the built engine with `--caps-gate --require-typed`, then cross-checks its actual inventory against every Git-tracked OCaml source using the independent [coverage census](<../test/lint/deployment/coverage.py>) (^nlintcov-8g4p). The census runs outside Dune, reuses the same scan (no second rebuild), reports decisions and named structural exclusions, and fails on holes, undecided evidence or malformed records. The engine's normal output and failure code are preserved; census failure makes an otherwise clean gate fail. Help keeps its existing non-scanning behaviour; `--self-check` in gate mode also scans and is cross-checked.
 
 ```sh
 nix develop -c dune build @install
@@ -44,7 +44,7 @@ Compiled negative evidence belongs to nested directories with their own `dune-pr
 
 Repository `dune test` explicitly scans every declared compiled negative fixture and verifies its exact finding sites using fresh typed evidence. Expectations live in the test harness, not in source attributes. Installed `--self-check` audits the rule/replacement/fixture/page bundle structurally because installations ship source fixtures without compiler annotations. The raw-concurrency rule stays deliberately dormant until rows 61, 64 and 65 land.
 
-`--inventory` emits one tab-separated `PATH`, `DECISION`, `REASON` record per inventoried path on stdout. Decisions are `decided`, `undecided`, or `excluded`; structural exclusions name `data-only`, `not-built`, `ignored`, `nested-project`, `directory-cycle` or `no-ocaml` (directory records ending `/` cover their subtree). Findings and diagnostics stay on stderr. Compiled generated inputs join directory scans and name their producing Dune rule or stanza; unresolved provenance is undecided, never an exclusion.
+`--inventory` emits one tab-separated `PATH`, `DECISION`, `REASON` record per inventoried path on stdout. Decisions are `decided`, `undecided`, or `excluded`; structural exclusions name `data-only`, `not-built`, `ignored`, `nested-project`, `directory-cycle` or `no-ocaml` (directory records ending `/` cover their subtree). A `decided` record may have an empty reason; exclusions and undecided records require one. `--inventory-file FILE` writes these same records to a file while preserving ordinary stdout/stderr (^nlintcov-8g4p). Findings and diagnostics stay on stderr in `--inventory` mode. Compiled generated inputs join directory scans and name their producing Dune rule or stanza; unresolved provenance is undecided, never an exclusion.
 
 ## Rules
 

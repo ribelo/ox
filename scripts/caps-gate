@@ -5,4 +5,28 @@ set -euo pipefail
 cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 # Fresh typed evidence is required in this checkout.
-exec _build/default/lib/ox_lint/main.exe --caps-gate --require-typed "$@"
+engine=_build/default/lib/ox_lint/main.exe
+# Help exits before scanning; a help-looking option value is not help.
+option_value=false
+for argument in "$@"; do
+  if "$option_value"; then option_value=false; continue; fi
+  case "$argument" in
+    -help|--help) exec "$engine" --caps-gate --require-typed "$@" ;;
+    --) break ;;
+    --repo-gate|--caps-gate|--require-typed|--inventory|--self-check) ;;
+    -*) option_value=true ;;
+  esac
+done
+
+# ^nlintcov-8g4p: cross-check the actual scan once, outside the Dune builder.
+inventory=$(realpath "$(mktemp "${TMPDIR:-/tmp}/ox-lint-inventory.XXXXXX")")
+case "$inventory" in /*/ox-lint-inventory.*) ;; *) exit 2 ;; esac
+trap 'rm -f -- "$inventory"' EXIT
+scan_rc=0
+"$engine" --caps-gate --require-typed --inventory-file "$inventory" "$@" || scan_rc=$?
+coverage_rc=0
+python3 test/lint/deployment/coverage.py "$engine" . \
+  --inventory "$inventory" --scan-exit "$scan_rc" || coverage_rc=$?
+# Keep the engine's failure code; census failure turns an otherwise clean gate red.
+if (( scan_rc != 0 )); then exit "$scan_rc"; fi
+exit "$coverage_rc"
