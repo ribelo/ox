@@ -37,6 +37,19 @@
  (package ox_lint)
  (section share)
  (files
+  (../../docs/rules/ox-warning-policy.md as docs/rules/ox-warning-policy.md)
+  (../../test/lint/clean/warning_policy.ml
+   as
+   test/lint/clean/warning_policy.ml)
+  (../../test/lint/clean/warning_policy.mli
+   as
+   test/lint/clean/warning_policy.mli)
+  (../../test/lint/violating/warning_policy.ml
+   as
+   test/lint/violating/warning_policy.ml)
+  (../../test/lint/violating/warning_policy.mli
+   as
+   test/lint/violating/warning_policy.mli)
   (../../docs/rules/ox-io-count.md as docs/rules/ox-io-count.md)
   (../../test/lint/clean/io_count.ml as test/lint/clean/io_count.ml)
   (../../test/lint/clean/io_count.mli as test/lint/clean/io_count.mli)

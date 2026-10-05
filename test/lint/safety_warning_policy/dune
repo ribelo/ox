@@ -1,0 +1,17 @@
+; ^safe-tpzm ^safe-zxc1: pure typed predicate seam, outside negative project.
+
+(test
+ (name test_warning_policy)
+ (libraries lint_engine))
+
+; ^safe-tpzm ^safe-zxc1: genuine external compile/registered CLI regressions.
+
+(rule
+ (alias runtest)
+ (deps
+  registered.sh
+  (source_tree ../../../docs/rules)
+  (source_tree ../clean)
+  (source_tree ../violating))
+ (action
+  (run bash %{dep:registered.sh} %{bin:ox-lint} %{workspace_root})))
