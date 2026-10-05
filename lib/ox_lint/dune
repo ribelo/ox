@@ -3,15 +3,9 @@
 (library
  (name lint_engine)
  (wrapped false)
+ ; ^safe-fr73 ^safe-tlyw: rule modules stay independent; only the CLI is excluded.
  (modules
-  syntax
-  artifact
-  paths
-  concurrency
-  caps
-  caps_policy
-  interface_docs
-  rules)
+  (:standard \ main))
  (libraries ocaml-compiler-libs.common unix ox_caps))
 
 (executable
