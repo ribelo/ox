@@ -1,0 +1,23 @@
+; ^safe-pcom ^safe-28t6: compile the actual caller sources with their interfaces.
+
+(rule
+ (target callback.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "module Catch_helper = struct")
+    (cat ../../clean/catch_helper.ml)
+    (echo "end")
+    (cat ../../clean/catch_all.ml)
+    (cat ../callback_tail.inc)))))
+
+(rule
+ (target callback.mli)
+ (action
+  (copy ../../clean/catch_all.mli %{target})))
+
+(executable
+ (name callback)
+ (modules callback)
+ (libraries concurrency_clean))

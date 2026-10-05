@@ -1,3 +1,4 @@
+(* ^safe-pcom ^safe-28t6: evidence checks execute and reject invalid evidence under -noassert. *)
 open Ocaml_common
 open Ox_caps
 
@@ -44,7 +45,8 @@ let run ~(caps : < Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
       });
   assert (!docs = 1);
   let rule = List.hd (Rules.select ~caps [ "ox-discarded-result" ]) in
-  assert (Rules.self_check ~caps ~root:"../.." [ rule ] = []);
+  if Rules.self_check ~caps ~root:"../.." [ rule ] <> [] then
+    failwith "valid rule evidence rejected";
   let mutations =
     [
       { rule with message = "" };
@@ -54,7 +56,9 @@ let run ~(caps : < Cap.fs_read ; Cap.stdout ; Cap.stderr ; .. >) =
     ]
   in
   List.iter
-    (fun rule -> assert (Rules.self_check ~caps ~root:"../.." [ rule ] <> []))
+    (fun rule ->
+      if Rules.self_check ~caps ~root:"../.." [ rule ] = [] then
+        failwith "invalid rule evidence accepted")
     mutations;
   Cap_stdlib.print_endline ~caps
     "syntax scopes, attached docs and all four evidence fields: pass"

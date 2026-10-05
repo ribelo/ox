@@ -1,0 +1,75 @@
+; ^safe-pcom ^safe-28t6: compile the actual caller sources with their interfaces.
+
+(env
+ (_
+  (flags
+   (:standard -noassert))))
+
+(rule
+ (target engine.ml)
+ (action
+  (copy ../../test_engine.ml %{target})))
+
+(rule
+ (target engine.mli)
+ (action
+  (copy ../../test_engine.mli %{target})))
+
+(executable
+ (name engine)
+ (modules engine)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (target concurrency.ml)
+ (action
+  (copy ../../test_concurrency.ml %{target})))
+
+(rule
+ (target concurrency.mli)
+ (action
+  (copy ../../test_concurrency.mli %{target})))
+
+(executable
+ (name concurrency)
+ (modules concurrency)
+ (libraries lint_engine ox_test))
+
+(rule
+ (target caps.ml)
+ (action
+  (copy ../../../caps/rules/test_caps.ml %{target})))
+
+(rule
+ (target caps.mli)
+ (action
+  (write-file
+   %{target}
+   "(* ^safe-28t6: executable witness; no public API. *)\n")))
+
+(executable
+ (name caps)
+ (modules caps)
+ (libraries lint_engine ox_test))
+
+(rule
+ (target callback.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "module Catch_helper = struct")
+    (cat ../../clean/catch_helper.ml)
+    (echo "end")
+    (cat ../../clean/catch_all.ml)
+    (cat ../callback_tail.inc)))))
+
+(rule
+ (target callback.mli)
+ (action
+  (copy ../../clean/catch_all.mli %{target})))
+
+(executable
+ (name callback)
+ (modules callback)
+ (libraries concurrency_clean))

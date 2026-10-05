@@ -1,4 +1,5 @@
 (* ^ncapslint-w2tq ^ncapslint-8jcy ^ncapslint-snhg ^ncapslint-t4c6: each tier independently. *)
+(* ^safe-pcom ^safe-28t6: source/typed/filesystem validation is not removable. *)
 open Ocaml_common
 
 let sites make source =
@@ -48,7 +49,8 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       let rule = rule ~caps name in
       let file = String.map (function '-' -> '_' | c -> c) name ^ ".ml" in
       let clean, violating = ("clean/" ^ file, "violating/" ^ file) in
-      assert (source_sites ~caps rule clean = []);
+      if source_sites ~caps rule clean <> [] then
+        failwith ("source clean-site regression: " ^ name);
       let expected =
         match name with
         | "stdin" | "stdout" | "stderr" -> [ 3; 6; 7 ]
@@ -61,14 +63,17 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       in
       if name <> "signature" && source_sites ~caps rule violating <> source_expected then
         failwith ("source exact-site regression: " ^ name);
-      assert (typed_sites ~caps rule clean = []);
-      if name <> "mint" && name <> "forge" then
-        assert (typed_sites ~caps rule "clean/signature.ml" = []);
+      if typed_sites ~caps rule clean <> [] then
+        failwith ("typed clean-site regression: " ^ name);
+      if
+        name <> "mint" && name <> "forge"
+        && typed_sites ~caps rule "clean/signature.ml" <> []
+      then failwith ("typed clean-signature regression: " ^ name);
       if typed_sites ~caps rule violating <> expected then
         failwith ("typed exact-site regression: " ^ name))
     names;
-  assert (
-    typed_sites ~caps (rule ~caps "signature") "violating/signature.ml" = [ 4; 6; 10 ]);
+  if typed_sites ~caps (rule ~caps "signature") "violating/signature.ml" <> [ 4; 6; 10 ]
+  then failwith "typed signature exact-site regression";
   List.iter
     (fun (name, expected) ->
       let actual = source_sites ~caps (rule ~caps name) "source_identity.ml" in
@@ -92,18 +97,20 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
     String.split_on_char '\n' launcher
     |> List.filter (fun line -> not (String.starts_with ~prefix:"#" (String.trim line)))
   in
-  assert (
-    not
-      (List.exists
-         (fun line ->
-           let n = String.length line in
-           let rec contains i =
-             i + 7 <= n && (String.sub line i 7 = "--allow" || contains (i + 1))
-           in
-           contains 0)
-         commands));
+  if
+    List.exists
+      (fun line ->
+        let n = String.length line in
+        let rec contains i =
+          i + 7 <= n && (String.sub line i 7 = "--allow" || contains (i + 1))
+        in
+        contains 0)
+      commands
+  then failwith "caps launcher contains an allowance flag";
   List.iter
-    (fun (path, expected) -> assert (Caps_policy.declares_door ~caps path = expected))
+    (fun (path, expected) ->
+      if Caps_policy.declares_door ~caps path <> expected then
+        failwith ("door declaration regression: " ^ path))
     [
       ("boundaries/mixed/allowed.ml", true);
       ("boundaries/mixed/denied.ml", false);
@@ -113,17 +120,23 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       ("boundaries/included/sub/entry.ml", true);
     ];
   let public = List.hd (Rules.select ~caps [ "ox-public-exception" ]) in
-  assert (source_sites ~caps public "boundaries/private/holder.mli" = []);
-  assert (source_sites ~caps public "boundaries/private/public.mli" = [ 2 ]);
+  if source_sites ~caps public "boundaries/private/holder.mli" <> [] then
+    failwith "private holder exposes an exception";
+  if source_sites ~caps public "boundaries/private/public.mli" <> [ 2 ] then
+    failwith "public exception exact-site regression";
   assert (Caps_policy.allowances = []);
   assert (Rules.allowances = []);
-  assert (
+  if
     Rules.self_check ~caps ~root:"../../.."
       (Rules.select ~caps (List.map (fun n -> "ox-caps-" ^ n) names))
-    = []);
-  assert (Caps_policy.self_check ~caps "../../.." = []);
+    <> []
+  then failwith "capability rule evidence rejected";
+  if Caps_policy.self_check ~caps "../../.." <> [] then
+    failwith "capability policy evidence rejected";
   List.iter
-    (fun (pattern, path, want) -> assert (Caps_policy.excluded [ pattern ] path = want))
+    (fun (pattern, path, want) ->
+      if Caps_policy.excluded [ pattern ] path <> want then
+        failwith ("capability exclusion regression: " ^ pattern ^ ": " ^ path))
     [
       ("lib/a", "lib/a/b.ml", true);
       ("lib/a", "lib/ab.ml", false);

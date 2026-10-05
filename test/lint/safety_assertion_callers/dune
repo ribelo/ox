@@ -1,0 +1,77 @@
+; ^safe-pcom ^safe-28t6: isolated actual-caller witness; shared test stanzas untouched.
+
+(rule
+ (alias runtest)
+ (deps
+  runtime-check.sh
+  (source_tree ../../../docs)
+  (source_tree ../../../scripts)
+  (source_tree ../clean)
+  (source_tree ../violating)
+  (source_tree ../entry)
+  (source_tree ../../caps/rules)
+  ../syntax_fixture.ml
+  ../syntax_fixture.mli
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Catch_all.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Suspending_finalizer.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Stdlib_lock.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_concurrency.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Obj_magic.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Race_deadline.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Catch_all.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Suspending_finalizer.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Stdlib_lock.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_concurrency.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Obj_magic.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Race_deadline.cmt
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Catch_helper.cmt
+  ../entry/.exit_entry.eobjs/byte/dune__exe__Exit_entry.cmt
+  ../entry/.exit_entry.eobjs/byte/dune__exe__App_entry.cmt
+  ../entry/.exit_entry.eobjs/byte/dune__exe__Exit_utility.cmt
+  ../entry/.entry_library.objs/byte/entry_library.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Chdir.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Signal.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Env.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Signature.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Forge.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Stderr.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Exec.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Random.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Mint.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Fork.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Stdin.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Time.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Fs_write.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Exit.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Network.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Tmp.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Stdout.cmt
+  ../../caps/rules/clean/.caps_clean.objs/byte/caps_clean__Fs_read.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Chdir.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Signal.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Env.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Signature.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Forge.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Stderr.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Exec.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Random.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Mint.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Fork.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Stdin.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Time.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Fs_write.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Exit.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Network.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Tmp.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Stdout.cmt
+  ../../caps/rules/violating/.caps_violating.objs/byte/caps_violating__Fs_read.cmt
+  normal/callback.exe
+  ../test_engine.exe
+  ../test_concurrency.exe
+  ../../caps/rules/test_caps.exe
+  noassert/callback.exe
+  noassert/engine.exe
+  noassert/concurrency.exe
+  noassert/caps.exe)
+ (action
+  (run bash %{dep:runtime-check.sh} ../../..)))

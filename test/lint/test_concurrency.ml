@@ -1,4 +1,5 @@
 (* ^nlintc-du4v ^nlintc-g6k3 ^nlintc-j03j ^nlintc-7be1 ^nlintc-4gjw ^nlintc-kdcl. *)
+(* ^safe-pcom ^safe-28t6: dormant-policy and evidence validation survive -noassert. *)
 open Ocaml_common
 
 let count ~caps (rule : Rules.t) dir =
@@ -95,9 +96,12 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   assert (Rules.allowances = []);
   let raw = List.hd (Rules.select ~caps [ "ox-raw-concurrency" ]) in
   List.iter
-    (fun source -> assert (not (Rules.applies ~root ~source raw)))
+    (fun source ->
+      if Rules.applies ~root ~source raw then
+        failwith ("dormant raw policy applies: " ^ source))
     [ "lib/ox/core.ml"; "lib/http/client.ml"; "/tmp/consumer.ml" ];
-  assert (Rules.self_check ~caps ~root:"../.." (Rules.all ~caps) = []);
+  if Rules.self_check ~caps ~root:"../.." (Rules.all ~caps) <> [] then
+    failwith "concurrency rule evidence rejected";
   Ox_caps.Cap_stdlib.print_endline ~caps
     "seven concurrency rules: exact violating sites, clean fixtures, allowances and \
      dormant raw policy: pass"

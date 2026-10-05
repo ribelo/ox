@@ -89,7 +89,10 @@ let sibling_helper f = try f () with exn -> Catch_helper.propagate exn
 let stored_ref f =
   let raised = ref None in
   (try f () with exn -> raised := Some exn);
-  assert (!raised <> None)
+  (* ^safe-28t6: callback validation must still fail with assertions disabled. *)
+  match !raised with
+  | Some _ -> ()
+  | None -> raise (Assert_failure (__FILE__, __LINE__, 0))
 
 let returned_ref f =
   let raised = ref None in
