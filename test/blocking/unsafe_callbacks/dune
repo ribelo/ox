@@ -1,0 +1,5 @@
+; Uses public workspace libraries, never a production-installed test library.
+
+(executable
+ (name run)
+ (libraries ox_blocking eio_main alcotest ox))
