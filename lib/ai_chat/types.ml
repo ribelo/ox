@@ -19,11 +19,80 @@ type role =
   | Assistant [@json.name "assistant"]
 [@@deriving yojson]
 
-type message = { role : role; content : string }
+(** Ordered request content; image URLs are passed through without fetching. ^nimg-4k7p *)
+type content_part = Text of string | Image_url of string
+
+(* Only the string-or-array choice needs a custom codec. The part objects stay derived
+   wire records (ADR-0008), so required members and their types remain fail-closed.
+   The all-text string form follows v1's pure chat_content_json. ^nimg-r6w1 ^nimg-t9q3 *)
+module Content = struct
+  type t = content_part list
+  type text_kind = Text_kind [@json.name "text"] [@@deriving yojson]
+  type image_kind = Image_kind [@json.name "image_url"] [@@deriving yojson]
+
+  type text_part = { kind : text_kind; [@json.key "type"] text : string }
+  [@@deriving yojson]
+
+  type image_url = { url : string } [@@deriving yojson]
+
+  type image_part = { kind : image_kind; [@json.key "type"] image_url : image_url }
+  [@@deriving yojson]
+
+  let yojson_of_part = function
+    | Text text -> yojson_of_text_part { kind = Text_kind; text }
+    | Image_url url -> yojson_of_image_part { kind = Image_kind; image_url = { url } }
+
+  let yojson_of_t parts =
+    if List.exists (function Image_url _ -> true | Text _ -> false) parts then
+      `List (List.map yojson_of_part parts)
+    else
+      `String
+        (String.concat ""
+           (List.filter_map
+              (function Text text -> Some text | Image_url _ -> None)
+              parts))
+
+  let part_of_yojson = function
+    | `Assoc fields as json -> (
+        match List.assoc_opt "type" fields with
+        | Some (`String "text") ->
+            Result.map (fun part -> Text part.text) (text_part_of_yojson json)
+        | Some (`String "image_url") ->
+            Result.map
+              (fun part -> Image_url part.image_url.url)
+              (image_part_of_yojson json)
+        | _ -> Error "type: expected text or image_url")
+    | _ -> Error "expected a content-part object"
+
+  let t_of_yojson = function
+    | `String text -> Ok [ Text text ]
+    | `List parts ->
+        let rec decode index acc = function
+          | [] -> Ok (List.rev acc)
+          | json :: rest -> (
+              match part_of_yojson json with
+              | Ok part -> decode (index + 1) (part :: acc) rest
+              | Error message -> Error (Printf.sprintf "[%d].%s" index message))
+        in
+        decode 0 [] parts
+    | _ -> Error "expected a string or content-part array"
+end
+
+type message = { role : role; content : Content.t }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
-(** One message: its speaker and its text. `content` is required and a string — a reply
-    whose content is `null` or absent is an [`Invalid_response], never an empty string
-    (^nchat-wtog). *)
+(** A request message carries parts; all-text content still writes a string. ^nimg-4k7p *)
+
+let text_message role text : message = { role; content = [ Text text ] }
+
+let png_data_url png =
+  "data:image/png;base64," ^ Ox_http.Ws_base64.encode_string (Bytes.to_string png)
+
+let image_png png = Image_url (png_data_url png)
+
+type reply_message = { role : role; content : string }
+[@@deriving yojson] [@@yojson.allow_extra_fields]
+(** Reply content stays a required string: null, missing or array content is refused,
+    never defaulted or flattened. ^nchat-wtog ^nimg-c8v5 *)
 
 type usage = {
   prompt_tokens : int;
@@ -64,7 +133,7 @@ type request = {
 (** The request body, exactly as `POST /chat/completions` documents it: the model, the
     messages, and the optional cap, format and reasoning control. *)
 
-type choice = { message : message; finish_reason : string option }
+type choice = { message : reply_message; finish_reason : string option }
 [@@deriving yojson] [@@yojson.allow_extra_fields]
 (** One completion: its message and why generation stopped (`null` reads as [None]). *)
 

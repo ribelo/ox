@@ -1,4 +1,4 @@
-(** One OpenAI-compatible chat completion, with a JSON-object reply.
+(** One OpenAI-compatible chat completion, with text and image-URL request parts.
 
     [Ox_ai_chat.complete] is {!Chat.complete} under the name Leash's drive spec uses
     (drive-ls3c) and [Ox_ai_chat.Chat.complete] is the same call under the name {!Chat}
@@ -54,4 +54,16 @@ val complete :
   unit ->
   (Codecs.completion, Ox_ai.Error.t) result
 (** [complete] is {!Chat.complete}: one non-streaming chat completion with the caller's
-    response format and reasoning control, decoded fail-closed. *)
+    response format and reasoning control, decoded fail-closed. Messages carry ordered
+    text/image-URL parts; replies retain required string content. Use
+    {!Types.text_message} or {!Types.image_png}, and configure {!create} for a larger
+    image request bound.
+
+    Suspension: may suspend in Ox_ai.Transport.post_json for HTTP, deadlines and backoff,
+    and in Ox_observability.Logger.debug through the caller's sink. Cancellation:
+    propagates Eio.Cancel.Cancelled from transport or logger suspension; deadline expiry
+    returns [Error `Timeout]. Finalizers: this call registers none; Ox_http.Client.request
+    owns and closes each attempt's socket on return, failure or cancellation. Locking: no
+    lock is acquired here; transport and logger synchronization is delegated to those
+    dependencies. Cancellation safety: unsafe because progress is lost; a transmitted
+    request may already have remote effects and restarting can repeat them. ^nimg-c8v5 *)

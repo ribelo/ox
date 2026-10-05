@@ -61,12 +61,15 @@ val complete :
     POSTs one chat completion and returns its first choice with the usage the reply
     reported.
 
-    [messages] are the system and user messages in order. [json_object] (default [false])
-    sends [response_format: {"type": "json_object"}], so the reply's content is required
-    to be JSON by the endpoint (^nchat-02vr). [reasoning] sends OpenRouter's
-    [{"enabled": false}] for [`Disabled] and [{"effort": e}] for [`Effort e], and omits
-    the member entirely when the caller says nothing (^nchat-6kd8). [max_tokens] is sent
-    when given and omitted when not.
+    [messages] carry ordered text and image-URL parts; use {!Types.text_message} for a
+    text-only message or {!Types.image_png} for PNG bytes. All-text content stays a plain
+    string on the wire. To allow large images, configure [max_request_bytes] on {!create}
+    (for example, 8 MiB); reply content remains strictly a string (^nimg-c8v5).
+    [json_object] (default [false]) sends [response_format: {"type": "json_object"}], so
+    the reply's content is required to be JSON by the endpoint (^nchat-02vr). [reasoning]
+    sends OpenRouter's [{"enabled": false}] for [`Disabled] and [{"effort": e}] for
+    [`Effort e], and omits the member entirely when the caller says nothing (^nchat-6kd8).
+    [max_tokens] is sent when given and omitted when not.
 
     The states of failure, all inside [deadline], all under the two-attempt policy of
     {!Ox_ai.Transport}:
@@ -88,4 +91,13 @@ val complete :
     A successful call logs `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`
     and `request_id` at debug under the message ["chat"], and the provider's own `cost`
     when the reply reports one (^nchat-96zw ^nchat-qu3j). A reply that reports no cost
-    logs no `cost` field: nothing is not zero. *)
+    logs no `cost` field: nothing is not zero.
+
+    Suspension: may suspend in Ox_ai.Transport.post_json for HTTP, deadlines and backoff,
+    and in Ox_observability.Logger.debug through the caller's sink. Cancellation:
+    propagates Eio.Cancel.Cancelled from transport or logger suspension; deadline expiry
+    returns [Error `Timeout]. Finalizers: this call registers none; Ox_http.Client.request
+    owns and closes each attempt's socket on return, failure or cancellation. Locking: no
+    lock is acquired here; transport and logger synchronization is delegated to those
+    dependencies. Cancellation safety: unsafe because progress is lost; a transmitted
+    request may already have remote effects and restarting can repeat them. ^nimg-c8v5 *)

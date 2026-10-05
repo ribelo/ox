@@ -507,6 +507,215 @@ let test_key_never_logged () =
            (fun line -> contains line (Ox_observability.Redact.expose chat_key))
            lines))
 
+(* ^nimg-4k7p: images select a part array without changing text/image order. *)
+let image_message : Types.message =
+  {
+    role = Types.User;
+    content =
+      [
+        Types.Text "Describe the first image.";
+        Types.Image_url "https://example.test/first.png";
+        Types.Text "Compare it with this screenshot.";
+        Types.image_png (Bytes.of_string "\137PNG\r\n\026\n");
+      ];
+  }
+
+let test_image_wire () =
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw [ Chat_server.reply () ]
+      in
+      let client = client ~sw env server () in
+      ignore
+        (expect_ok
+           (complete client ~messages:[ system; image_message ] ~max_tokens:32
+              ~json_object:true ~reasoning:`Disabled ()));
+      Alcotest.(check string)
+        "exact compact image request, preserving all four parts"
+        {|{"model":"inception/mercury-2.5","messages":[{"role":"system","content":"Answer with one JSON object."},{"role":"user","content":[{"type":"text","text":"Describe the first image."},{"type":"image_url","image_url":{"url":"https://example.test/first.png"}},{"type":"text","text":"Compare it with this screenshot."},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]}],"max_tokens":32,"response_format":{"type":"json_object"},"reasoning":{"enabled":false}}|}
+        (Chat_server.last_body server))
+
+let test_png_data_url () =
+  (* ^nimg-b2u8: exact binary base64, including zero, one and two padding characters. *)
+  List.iter
+    (fun (input, base64) ->
+      let png = Bytes.of_string input in
+      let expected = "data:image/png;base64," ^ base64 in
+      Alcotest.(check string) "exact data URL" expected (Types.png_data_url png);
+      (match Types.image_png png with
+      | Types.Image_url url -> Alcotest.(check string) "PNG image part" expected url
+      | Types.Text _ -> Alcotest.fail "PNG constructor returned a text part");
+      Alcotest.(check string) "input bytes untouched" input (Bytes.to_string png))
+    [
+      ("", "");
+      ("\000", "AA==");
+      ("\000\255", "AP8=");
+      ("\000\255\128", "AP+A");
+      ("\137PNG\r\n\026\n", "iVBORw0KGgo=");
+    ]
+
+let test_text_wire_unchanged () =
+  (* ^nimg-t9q3: a text builder and adjacent text parts send the old exact bytes. *)
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw
+          [ Chat_server.reply (); Chat_server.reply (); Chat_server.reply () ]
+      in
+      let client = client ~sw env server () in
+      let expected =
+        {|{"model":"inception/mercury-2.5","messages":[{"role":"system","content":"Answer with one JSON object."},{"role":"user","content":"{\"goal\":\"type ada\"}"}]}|}
+      in
+      ignore (expect_ok (complete client ()));
+      Alcotest.(check string)
+        "the old text request bytes" expected
+        (Chat_server.last_body server);
+      let split : Types.message =
+        {
+          role = Types.User;
+          content = [ Types.Text {|{"goal":|}; Types.Text {|"type ada"}|} ];
+        }
+      in
+      ignore (expect_ok (complete client ~messages:[ system; split ] ()));
+      Alcotest.(check string)
+        "adjacent text concatenates" expected
+        (Chat_server.last_body server);
+      let empty : Types.message = { role = Types.User; content = [] } in
+      ignore (expect_ok (complete client ~messages:[ empty ] ()));
+      Alcotest.(check string)
+        "no parts means an empty string"
+        {|{"model":"inception/mercury-2.5","messages":[{"role":"user","content":""}]}|}
+        (Chat_server.last_body server))
+
+let test_content_round_trip () =
+  (* ^nimg-r6w1: request decoding supports both wire forms, never a reply codec. *)
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw
+          [ Chat_server.reply (); Chat_server.reply () ]
+      in
+      let client = client ~sw env server () in
+      List.iter
+        (fun messages ->
+          ignore
+            (expect_ok
+               (complete client ~messages ~max_tokens:32 ~json_object:true
+                  ~reasoning:(`Effort "low") ()));
+          match
+            Types.request_of_yojson
+              (Yojson.Safe.from_string (Chat_server.last_body server))
+          with
+          | Error message -> Alcotest.failf "request does not decode: %s" message
+          | Ok request ->
+              Alcotest.(check bool)
+                "parts preserved" true
+                (request.Types.messages = messages);
+              Alcotest.(check string)
+                "decoded request encodes to exactly the original wire"
+                (Chat_server.last_body server)
+                (Yojson.Safe.to_string (Types.yojson_of_request request)))
+        [ chat_messages; [ system; image_message ] ]);
+  let request content =
+    Yojson.Safe.from_string
+      (Printf.sprintf {|{"model":"test","messages":[{"role":"user","content":%s}]}|}
+         content)
+  in
+  (match
+     Types.request_of_yojson
+       (request {|[{"type":"text","text":"a"},{"type":"text","text":"b"}]|})
+   with
+  | Ok { messages = [ { content = [ Types.Text "a"; Types.Text "b" ]; _ } ]; _ } -> ()
+  | _ -> Alcotest.fail "text-array decoding lost its part boundaries");
+  List.iter
+    (fun content ->
+      match Types.request_of_yojson (request content) with
+      | Ok _ -> Alcotest.failf "malformed content decoded: %s" content
+      | Error message ->
+          Alcotest.(check bool) "error names content" true (contains message "content"))
+    [
+      "null";
+      "42";
+      {|["text"]|};
+      {|[{}]|};
+      {|[{"type":"audio"}]|};
+      {|[{"type":"text"}]|};
+      {|[{"type":"text","text":null}]|};
+      {|[{"type":"image_url"}]|};
+      {|[{"type":"image_url","image_url":{}}]|};
+      {|[{"type":"image_url","image_url":{"url":42}}]|};
+      {|[{"type":"image_url","image_url":{"url":"https://example.test/a.png","detail":"low"}}]|};
+    ]
+
+let test_image_complete () =
+  (* ^nimg-c8v5: one completion call, existing configured bound, string-only replies. *)
+  let messages = [ system; image_message ] in
+  let bad_content content =
+    Printf.sprintf
+      {|{"model":"inception/mercury-2.5","choices":[{"message":%s}],"usage":{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14}}|}
+      content
+  in
+  run (fun ~sw env ->
+      let server =
+        Chat_server.serve ~net:env#net ~clock:env#clock ~sw
+          [
+            Chat_server.reply ~content:"A screenshot." ();
+            bad_content {|{"role":"assistant","content":[{"type":"text","text":"no"}]}|};
+            bad_content {|{"role":"assistant","content":null}|};
+            bad_content {|{"role":"assistant"}|};
+            Chat_server.reply ~content:"A large screenshot." ();
+          ]
+      in
+      let configured = client ~sw env server ~max_request_bytes:(8 * 1024 * 1024) () in
+      let completion = expect_ok (complete configured ~messages ()) in
+      expect_content "A screenshot." completion;
+      Alcotest.(check int) "image completion usage" 14 completion.usage.total_tokens;
+      Alcotest.(check string) "image completion model" chat_model completion.model;
+      Alcotest.(check (option string)) "request id" (Some "gen-chat-1") completion.id;
+      List.iter
+        (fun count ->
+          let error = expect_error (complete configured ~messages ()) in
+          expect_message "content" error;
+          Alcotest.(check bool)
+            "bad reply is not retryable" false (Ox_ai.Error.retryable error);
+          Alcotest.(check int)
+            "one attempt per reply" count
+            (Chat_server.connections server))
+        [ 2; 3; 4 ];
+      let wire_length = String.length (Chat_server.last_body server) in
+      let bounded = client ~sw env server ~max_request_bytes:(wire_length - 1) () in
+      (match complete bounded ~messages () with
+      | Error (`Input_too_large { limit; length }) ->
+          Alcotest.(check int) "configured image bound" (wire_length - 1) limit;
+          Alcotest.(check int) "serialized image length" wire_length length
+      | _ -> Alcotest.fail "image request bypassed the configured byte bound");
+      Alcotest.(check int)
+        "over-bound image opens no socket" 4
+        (Chat_server.connections server);
+      (* Base64 expands 3 MiB of input to 4 MiB, before JSON and the data-URL prefix. *)
+      let large : Types.message =
+        {
+          role = Types.User;
+          content =
+            [
+              Types.Text "Describe this PNG.";
+              Types.image_png (Bytes.make (3 * 1024 * 1024) '\000');
+            ];
+        }
+      in
+      let defaults = client ~sw env server () in
+      (match complete defaults ~messages:[ large ] () with
+      | Error (`Input_too_large { limit; length }) ->
+          Alcotest.(check int) "default stays 4 MiB" (4 * 1024 * 1024) limit;
+          Alcotest.(check bool) "image request exceeds default" true (length > limit)
+      | _ -> Alcotest.fail "large image unexpectedly passed the default bound");
+      Alcotest.(check int)
+        "default refusal opens no socket" 4
+        (Chat_server.connections server);
+      let large_reply = expect_ok (complete configured ~messages:[ large ] ()) in
+      expect_content "A large screenshot." large_reply;
+      Alcotest.(check int)
+        "8 MiB configuration admits the image" 5
+        (Chat_server.connections server))
+
 let () =
   let caps = (Ox_test.powerbox () :> < Ox_caps.Cap.env >) in
   let model = Test_chat_live.model ~caps () in
@@ -530,6 +739,19 @@ let () =
             test_usage_cost;
           Alcotest.test_case "^nchat-qu3j no reported cost reads None" `Quick
             test_usage_cost_absent;
+        ] );
+      ( "images",
+        [
+          Alcotest.test_case "^nimg-4k7p exact ordered image request JSON" `Quick
+            test_image_wire;
+          Alcotest.test_case "^nimg-b2u8 pure PNG data URL and image part" `Quick
+            test_png_data_url;
+          Alcotest.test_case "^nimg-t9q3 text-only request bytes unchanged" `Quick
+            test_text_wire_unchanged;
+          Alcotest.test_case "^nimg-r6w1 both content forms round-trip fail-closed" `Quick
+            test_content_round_trip;
+          Alcotest.test_case "^nimg-c8v5 image completion and strict string replies"
+            `Quick test_image_complete;
         ] );
       ( "fail-closed",
         [

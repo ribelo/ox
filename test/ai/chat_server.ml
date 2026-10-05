@@ -16,6 +16,12 @@ let connections = Fake_server.connections
 let requests = Fake_server.requests
 let request server = Fake_server.request server
 let body server = Fake_server.body server
+
+(* Multiple calls in one story inspect the newest request, not the first one.
+   ^nimg-t9q3 ^nimg-r6w1 *)
+let last_body server =
+  match List.rev (requests server) with (_, _, body) :: _ -> body | [] -> ""
+
 let ok = Fake_server.ok
 let after = Fake_server.after
 

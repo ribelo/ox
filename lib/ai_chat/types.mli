@@ -6,18 +6,49 @@
     members this client does not model, because the endpoint is OpenAI-compatible and not
     OpenAI; the members the client acts on are required (^nchat-wtog).
 
-    Cancellation and finalizers: every type here is plain data and every derived codec is
-    pure and synchronous. Decoding suspends on nothing, forks no fiber and registers no
-    finalizer.
+    Cancellation and finalizers: every type here is plain data and every codec and
+    constructor is pure and synchronous. Suspension: never suspends; only constructs,
+    encodes or decodes OCaml values. Cancellation: not a cancellation point; no Eio
+    operation is performed. Finalizers: none are registered; no resource is owned.
+    Locking: no lock is acquired.
 
-    ^nchat-dys0 ^nchat-6kd8 ^nchat-02vr *)
+    ^nchat-dys0 ^nchat-6kd8 ^nchat-02vr ^nimg-4k7p ^nimg-r6w1 *)
 
 (** Who speaks a message: the API's `system`, `user` and `assistant`, written as the
     lowercase word the endpoint expects. *)
 type role = System | User | Assistant
 
-type message = { role : role; content : string }
-(** One message: its speaker and its text. `content` is required and a string. *)
+(** Request content in order. [Image_url url] carries an HTTPS or data URL as supplied;
+    this client neither fetches nor validates it. ^nimg-4k7p *)
+type content_part = Text of string | Image_url of string
+
+type message = { role : role; content : content_part list }
+(** A request message. All-text parts concatenate without separators into the original
+    string wire form (the empty list writes [""]). Any image selects an ordered array of
+    text and image-URL objects instead. ^nimg-4k7p ^nimg-t9q3 *)
+
+val text_message : role -> string -> message
+(** [text_message role text] is [{ role; content = [Text text] }], the one-line builder
+    for a text-only caller. Suspension: never suspends; only constructs plain data.
+    Cancellation: not a cancellation point; no Eio operation is performed. Finalizers:
+    none are registered; no resource is owned. Locking: no lock is acquired. ^nimg-t9q3 *)
+
+val png_data_url : bytes -> string
+(** [png_data_url png] prefixes the RFC 4648 basic base64 of [png] with
+    ["data:image/png;base64,"]. Bytes are copied, not modified, and PNG headers are not
+    inspected. Suspension: never suspends; byte encoding is synchronous. Cancellation: not
+    a cancellation point; no Eio operation is performed. Finalizers: none are registered;
+    no resource is owned. Locking: no lock is acquired. ^nimg-b2u8 *)
+
+val image_png : bytes -> content_part
+(** [image_png png] is [Image_url (png_data_url png)]. Suspension: never suspends; only
+    encodes bytes and constructs plain data. Cancellation: not a cancellation point; no
+    Eio operation is performed. Finalizers: none are registered; no resource is owned.
+    Locking: no lock is acquired. ^nimg-b2u8 *)
+
+type reply_message = { role : role; content : string }
+(** A reply message: [content] is required and a string. Missing, null or array content is
+    refused rather than flattened or defaulted. ^nchat-wtog ^nimg-c8v5 *)
 
 type usage = {
   prompt_tokens : int;
@@ -49,7 +80,7 @@ type request = {
 }
 (** The request body. An absent option is an absent member. *)
 
-type choice = { message : message; finish_reason : string option }
+type choice = { message : reply_message; finish_reason : string option }
 (** One completion. *)
 
 type response = {
@@ -62,11 +93,16 @@ type response = {
 
 val yojson_of_request : request -> Yojson.Safe.t
 (** [yojson_of_request request] is the compact-encodable JSON object the client sends: an
-    absent [max_tokens], [response_format] or [reasoning] is an absent member. Pure. *)
+    absent [max_tokens], [response_format] or [reasoning] is an absent member. Each
+    message uses the string-or-array content form described by {!message}. ^nimg-4k7p
+    ^nimg-t9q3 *)
 
 val request_of_yojson : Yojson.Safe.t -> (request, string) result
-(** [request_of_yojson json] reads a request back. An unknown member, a missing required
-    member and a wrongly typed one are refused with the path of the offending value. *)
+(** [request_of_yojson json] reads a request back. String content becomes one [Text] part;
+    array content preserves part order and boundaries. All-text lists therefore round-trip
+    as their concatenated string, not their original segmentation. Unknown request or part
+    members, missing required members and wrong types are refused with the offending path;
+    message-level extra members remain ignored. ^nimg-r6w1 *)
 
 val response_of_yojson : Yojson.Safe.t -> (response, string) result
 (** [response_of_yojson json] reads a reply fail-closed: `model`, `choices` and `usage`

@@ -44,6 +44,7 @@ The drive loop's text helper is one non-streaming chat completion with `response
 ## Out of Scope
 
 Streaming, tool calls, multimodal, provider-specific parameters beyond reasoning.
+Image request parts are delivered separately in [ai-chat-images](../ai-chat-images/01-ai-chat-images.md).
 
 ## Verified
 

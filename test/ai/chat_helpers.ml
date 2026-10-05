@@ -14,8 +14,8 @@ let chat_deadline = Ox.Duration.seconds 5
 
 (* One attempt's read cap, when a test wants an attempt to time out quickly. *)
 let attempt_timeout = Ox.Duration.ms 50
-let system = Ox_ai_chat.Types.{ role = System; content = "Answer with one JSON object." }
-let user content = Ox_ai_chat.Types.{ role = User; content }
+let system = Ox_ai_chat.Types.text_message System "Answer with one JSON object."
+let user content = Ox_ai_chat.Types.text_message User content
 let chat_messages = [ system; user {|{"goal":"type ada"}|} ]
 
 (* The helpers `test_helpers.ml` keeps for both AI clients. *)
@@ -34,7 +34,7 @@ let member_opt name json =
 
 let has_member name json = Option.is_some (member_opt name json)
 
-let client ~sw env server ?endpoint ?logger ?timeout () =
+let client ~sw env server ?endpoint ?logger ?timeout ?max_request_bytes () =
   let http = Ox_http.Client.create ~sw ~net:env#net ~clock:env#clock () in
   let logger =
     match logger with Some logger -> logger | None -> fst (memory_logger env)
@@ -43,7 +43,7 @@ let client ~sw env server ?endpoint ?logger ?timeout () =
     match endpoint with Some endpoint -> endpoint | None -> Chat_server.url server
   in
   Ox_ai_chat.Chat.create ~http ~clock:env#clock ~logger ~endpoint ~api_key:chat_key
-    ?timeout ()
+    ?timeout ?max_request_bytes ()
 
 (* One call with the story's defaults filled in, so a test says only what it tests. *)
 let complete client ?(model = chat_model) ?(deadline = chat_deadline)
