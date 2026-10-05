@@ -1,0 +1,12 @@
+; ^safe-y047 ^nlintcov-q6n2: installed evidence retains source and import checks.
+
+(executable
+ (name test_installed)
+ (modules test_installed)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps check.sh)
+ (action
+  (run bash check.sh %{exe:test_installed.exe})))
