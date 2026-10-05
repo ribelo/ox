@@ -39,14 +39,16 @@ let same_exception expected f =
 let run () =
   let state, destination = sink Scripted_sink.[ Count 2; Count 1; Count 3 ] in
   Eio.Flow.write destination [ Cstruct.of_string "abc"; Cstruct.of_string "def" ];
-  assert (Buffer.contents state.output = "abcdef");
+  let output = Buffer.contents state.output in
+  assert (output = "abcdef");
   assert (state.calls = 3);
   with_flows
     [ `Return "a"; `Return "bc"; `Return "def"; `Raise End_of_file ]
     (fun source ->
       let buffer = Cstruct.create 6 in
       Eio.Flow.read_exact source buffer;
-      assert (Cstruct.to_string buffer = "abcdef");
+      let output = Cstruct.to_string buffer in
+      assert (output = "abcdef");
       match Eio.Flow.single_read source (Cstruct.create 1) with
       | _ -> failwith "expected EOF"
       | exception End_of_file -> ());
@@ -55,13 +57,15 @@ let run () =
     (fun source ->
       let buffer = Cstruct.create 4 in
       same_exception End_of_file (fun () -> Eio.Flow.read_exact source buffer);
-      assert (Cstruct.to_string (Cstruct.sub buffer 0 2) = "ab"));
+      let output = Cstruct.to_string (Cstruct.sub buffer 0 2) in
+      assert (output = "ab"));
   with_flows
     [ `Return "a"; `Return "bc"; `Raise End_of_file ]
     (fun source ->
       let state, destination = sink Scripted_sink.[ Count 1; Count 1; Count 1 ] in
       Eio.Flow.copy source destination;
-      assert (Buffer.contents state.output = "abc");
+      let output = Buffer.contents state.output in
+      assert (output = "abc");
       assert (state.calls = 3));
   let error = Failure "transfer sentinel" in
   with_flows
@@ -74,15 +78,18 @@ let run () =
     (fun source ->
       let state, destination = sink Scripted_sink.[ Count 1 ] in
       same_exception error (fun () -> Eio.Flow.copy source destination);
-      assert (Buffer.contents state.output = "a"));
+      let output = Buffer.contents state.output in
+      assert (output = "a"));
   let state, destination = sink Scripted_sink.[ Count 1; Raise error ] in
   same_exception error (fun () -> Eio.Flow.write destination [ Cstruct.of_string "abc" ]);
-  assert (Buffer.contents state.output = "a");
+  let output = Buffer.contents state.output in
+  assert (output = "a");
   let os_error = Unix.Unix_error (Unix.ENOSPC, "write", "short-io fixture") in
   let state, destination = sink Scripted_sink.[ Count 1; Raise os_error ] in
   same_exception os_error (fun () ->
       Eio.Flow.write destination [ Cstruct.of_string "abc" ]);
-  assert (Buffer.contents state.output = "a");
+  let output = Buffer.contents state.output in
+  assert (output = "a");
   (* A zero read violates the Eio provider contract; it is not EOF. *)
   with_flows
     [ `Return "" ]
@@ -94,6 +101,7 @@ let run () =
   let state, destination = sink Scripted_sink.[ Count 0; Raise error ] in
   same_exception error (fun () -> Eio.Flow.write destination [ Cstruct.of_string "abc" ]);
   assert (state.calls = 2);
-  assert (Buffer.contents state.output = "")
+  let output = Buffer.contents state.output in
+  assert (output = "")
 
 let () = run ()

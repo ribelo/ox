@@ -1,0 +1,3 @@
+(lang dune 3.22)
+(name assertion_negative_evidence)
+; Deliberate violations/unknowns: not ordinary repository corpus (^safe-pcom).

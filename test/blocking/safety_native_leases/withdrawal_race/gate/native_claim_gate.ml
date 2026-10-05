@@ -10,7 +10,7 @@ type t = {
 let next = ref None
 
 let arm () =
-  assert (!next = None);
+  assert (match !next with None -> true | Some _ -> false);
   let submitted, submit = Eio.Promise.create () in
   let returned, return = Eio.Promise.create () in
   let t = { gate = Semaphore.Counting.make 0; submitted; submit; returned; return } in
