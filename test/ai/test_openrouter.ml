@@ -250,9 +250,10 @@ let test_transport_controls () =
         "^nai-337c one attempt, one request" 1
         (Fake_server.connections server);
       let server = throttled [ ("Retry-After", "7") ] in
-      ((* ^nlint-hxar: The provider error is incidental here; the connection count below asserts safe default replay refusal (^safe-s51t). *)
-       let _attempt_result = embed server in
-       ());
+      (* ^safe-xls8 ^safe-s51t: default-budget refusal retains the throttling error. *)
+      (match embed server with
+      | Error (`Unavailable { status = Some 429; _ }) -> ()
+      | _ -> Alcotest.fail "expected default-budget throttling error");
       Alcotest.(check int)
         "^safe-s51t default budget does not authorize replay" 1
         (Fake_server.connections server);

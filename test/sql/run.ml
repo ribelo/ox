@@ -23,8 +23,13 @@ let with_pool ~(caps : < Ox_caps.Cap.time ; .. >) f =
           in
           Fun.protect
             ~finally:(fun () ->
-              (* ^nlint-hxar: Shutdown is best effort in fixture cleanup so its typed error does not replace the test body outcome. *)
-              let _shutdown_result = P.shutdown pool in
+              (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Shutdown is best effort in fixture cleanup so its typed error does not replace the test body outcome. *)
+              let _shutdown_result =
+                P.shutdown pool
+                  [@@ox.allow
+                    "ox-discarded-result: fixture shutdown is best effort so a cleanup \
+                     failure does not replace the test body outcome"]
+              in
               ())
             (fun () -> f pool)))
 

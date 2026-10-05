@@ -268,13 +268,17 @@ let deterministic_responses corpus =
       match response bytes with
       | Error _ -> ()
       | Ok _ -> failwith "accepted truncated response");
-  List.iter
-    (fun length ->
-      match response (decimal_response length) with
-      | Ok parsed ->
-          check (length = "0" && parsed.body.len = 0) "accepted absent advertised body"
-      | Error _ -> ())
-    lengths;
+  (* ^safe-xls8 ^safe-pufa: advertised-length probes permit refusal and validate accepted empty bodies. *)
+  let check_advertised_length length =
+    match response (decimal_response length) with
+    | Ok parsed ->
+        check (length = "0" && parsed.body.len = 0) "accepted absent advertised body"
+    | Error _ -> ()
+      [@@ox.allow
+        "ox-discarded-result: advertised-length probe deliberately accepts refusal; \
+         accepted bodies must have zero advertised length and empty payload"]
+  in
+  List.iter check_advertised_length lengths;
   let oversized =
     Bytes.of_string ("HTTP/1.1 200 OK\r\nX-Fuzz: " ^ String.make 4096 'a' ^ "\r\n\r\n")
   in
@@ -331,8 +335,13 @@ let deterministic_ws corpus =
       every_prefix
         [ ("WS 64-bit length", bytes) ]
         (fun prefix ->
-          (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
-          let _parse_result = websocket ~masked:false prefix in
+          (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+          let _parse_result =
+            websocket ~masked:false prefix
+              [@@ox.allow
+                "ox-discarded-result: arbitrary or truncated bytes may parse or be \
+                 refused; fuzz probe observes exceptions hangs and parser invariants"]
+          in
           ());
       match websocket ~masked:false bytes with
       | Error _ -> ()
@@ -561,25 +570,47 @@ let run ~(caps : < Ox_caps.Cap.env ; Ox_caps.Cap.stdout ; .. >) () =
                   exchange ~expected bytes);
               run_property ~caps random "h1 response: mutated corpus and arbitrary bytes"
                 3000 (fuzz_gen responses) (fun bytes ->
-                  (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
-                  let _parse_result = response bytes in
+                  (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+                  let _parse_result =
+                    response bytes
+                      [@@ox.allow
+                        "ox-discarded-result: arbitrary or truncated bytes may parse or \
+                         be refused; fuzz probe observes exceptions hangs and parser \
+                         invariants"]
+                  in
                   ());
               run_property ~caps random
                 "ws: mutated corpus and arbitrary bytes, both masking modes" 3000
                 (fuzz_gen ws) (fun bytes ->
-                  ((* ^nlint-hxar: Arbitrary bytes may parse or be rejected; the unmasked fuzz property checks exceptions and parser invariants rather than acceptance. *)
-                   let _unmasked_parse_result = websocket ~masked:false bytes in
+                  ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: Arbitrary bytes may parse or be rejected; the unmasked fuzz property checks exceptions and parser invariants rather than acceptance. *)
+                   let _unmasked_parse_result =
+                     websocket ~masked:false bytes
+                       [@@ox.allow
+                         "ox-discarded-result: arbitrary unmasked bytes may parse or be \
+                          refused; fuzz probe observes exceptions and parser invariants"]
+                   in
                    ());
-                  (* ^nlint-hxar: Arbitrary bytes may parse or be rejected; the masked fuzz property checks exceptions and parser invariants rather than acceptance. *)
-                  let _masked_parse_result = websocket ~masked:true bytes in
+                  (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Arbitrary bytes may parse or be rejected; the masked fuzz property checks exceptions and parser invariants rather than acceptance. *)
+                  let _masked_parse_result =
+                    websocket ~masked:true bytes
+                      [@@ox.allow
+                        "ox-discarded-result: arbitrary masked bytes may parse or be \
+                         refused; fuzz probe observes exceptions and parser invariants"]
+                  in
                   ());
               run_property ~caps random "h1 request: mutated corpus and arbitrary bytes"
                 800 (fuzz_gen requests) (fun bytes -> ignore (exchange bytes));
               run_property ~caps random "h1 response: advertised lengths" 300
                 (G.map decimal_response (G.oneof_list lengths))
                 (fun bytes ->
-                  (* ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
-                  let _parse_result = response bytes in
+                  (* ^safe-xls8 ^safe-pufa ^nlint-hxar: Arbitrary or truncated bytes may parse or be rejected; this fuzz property fails only on exceptions, hangs or violated parser invariants. *)
+                  let _parse_result =
+                    response bytes
+                      [@@ox.allow
+                        "ox-discarded-result: arbitrary or truncated bytes may parse or \
+                         be refused; fuzz probe observes exceptions hangs and parser \
+                         invariants"]
+                  in
                   ());
               run_property ~caps random "h1 request: advertised lengths" 100
                 (G.map decimal_request (G.oneof_list lengths))

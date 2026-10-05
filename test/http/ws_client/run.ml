@@ -393,8 +393,13 @@ let test_cancel_upgrade () =
       let winner =
         Eio.Fiber.first
           (fun () ->
-            ((* ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
-             let _connect_result = W.connect ~sw ~net:env#net ~clock:env#clock url in
+            ((* ^safe-xls8 ^safe-pufa ^nlint-hxar: A normal reply loses this cancellation probe; the winner and peer socket-close assertions decide the outcome. *)
+             let _connect_result =
+               W.connect ~sw ~net:env#net ~clock:env#clock url
+                 [@@ox.allow
+                   "ox-discarded-result: losing upgrade is cancelled; winner and peer \
+                    socket closure are the asserted observations"]
+             in
              ());
             false)
           (fun () ->

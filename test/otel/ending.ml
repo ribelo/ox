@@ -285,9 +285,11 @@ let accounting ~caps () =
       ignore (Eio.Stream.take arrivals : string * string);
       (* ^notel-od2q: the body returns Ok; the queued trace is checked below in
          abandoned-work accounting rather than through the span return value. *)
-      let _queued_span_result =
+      let queued_span_result =
         (L.span log "queued span" (fun () -> Ok ()) : (unit, string) result)
       in
+      Alcotest.(check (result unit string))
+        "scripted span reply" (Ok ()) queued_span_result;
       O.Meter.add (O.Meter.counter (O.meter exporter) ~name:"queued metric" ()) 9.;
       let flush = fork_result ~sw (fun () -> O.flush exporter) in
       Eio.Fiber.yield ();
@@ -342,9 +344,11 @@ let queued_controls_recovery ~caps () =
       let _, first_body = Eio.Stream.take arrivals in
       (* ^notel-opp7: the body returns Ok; recovery is checked below through
          settled Flush controls and the recovered trace request. *)
-      let _recovered_span_result =
+      let recovered_span_result =
         (L.span log "recovered span" (fun () -> Ok ()) : (unit, string) result)
       in
+      Alcotest.(check (result unit string))
+        "scripted span reply" (Ok ()) recovered_span_result;
       O.Meter.add (O.Meter.counter (O.meter exporter) ~name:"recovered metric" ()) 4.;
       let queued = fork_result ~sw (fun () -> O.flush exporter) in
       Eio.Fiber.yield ();

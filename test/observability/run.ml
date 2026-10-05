@@ -376,9 +376,10 @@ let test_span_failure () =
       check_string "cause summary" "Fail(boom)" (field_text finished "error");
       Alcotest.(check level_testable)
         "a failure is an error-level record" Logger.Error finished.level;
-      ((* ^nlint-hxar: The span body is scripted; the existing reporter-record assertions check logging rather than its reply. *)
-       let _span_result = Logger.span logger "fetch2" (fun () -> Error "boom") in
-       ());
+      ((* ^safe-xls8: assert the scripted span reply as well as the reporter records. *)
+       let span_result = Logger.span logger "fetch2" (fun () -> Error "boom") in
+       Alcotest.(check (result unit string))
+         "scripted span reply" (Error "boom") span_result);
       let default_summary = List.nth (Logger.Memory.records memory) 3 in
       check_string "without a printer the summary names the cause" "Fail(<error>)"
         (field_text default_summary "error"))
@@ -429,14 +430,14 @@ let test_span_fields_and_context () =
       Context.with_fields
         [ ("tab", "t-1") ]
         (fun () ->
-          (* ^nlint-hxar: The span body is scripted; the existing reporter-record assertions check logging rather than its reply. *)
-          let _span_result =
+          (* ^safe-xls8: assert the scripted span reply as well as the reporter records. *)
+          let span_result =
             Logger.span logger
               ~fields:[ ("url", Logger.String "https://example.test") ]
               "fetch"
               (fun () -> Ok ())
           in
-          ());
+          Alcotest.(check (result unit string)) "scripted span reply" (Ok ()) span_result);
       let records = Logger.Memory.records memory in
       check_int "start and end" 2 (List.length records);
       List.iter
@@ -458,11 +459,12 @@ let test_span_minimum_level () =
       Alcotest.(check (result int string))
         "the span still returns its value" (Ok 1) result;
       check_int "a success below the minimum writes nothing" 0 (record_count memory);
-      ((* ^nlint-hxar: The span body is scripted; the existing reporter-record assertions check logging rather than its reply. *)
-       let _span_result =
+      ((* ^safe-xls8: assert the scripted span reply as well as the reporter records. *)
+       let span_result =
          Logger.span ~pp_err:Format.pp_print_string logger "loud" (fun () -> Error "boom")
        in
-       ());
+       Alcotest.(check (result unit string))
+         "scripted span reply" (Error "boom") span_result);
       let records = Logger.Memory.records memory in
       check_int "only the failure record survives" 1 (List.length records);
       let record = List.hd records in
@@ -540,19 +542,20 @@ let test_span_ids_and_records () =
             (Logger.Reporter.records (fun record -> records := record :: !records))
           ()
       in
-      ((* ^nlint-hxar: The span body is scripted; the existing reporter-record assertions check logging rather than its reply. *)
-       let _span_result =
+      ((* ^safe-xls8: assert the scripted span reply as well as the reporter records. *)
+       let span_result =
          (Logger.span logger "outer" (fun () ->
               Logger.info logger "inside";
-              ((* ^nlint-hxar: The span body is scripted; the existing reporter-record assertions check logging rather than its reply. *)
-               let _span_result =
+              ((* ^safe-xls8: assert the scripted span reply as well as the reporter records. *)
+               let span_result =
                  (Logger.span logger "inner" (fun () -> Ok ()) : (unit, string) result)
                in
-               ());
+               Alcotest.(check (result unit string))
+                 "scripted span reply" (Ok ()) span_result);
               Ok ())
            : (unit, string) result)
        in
-       ());
+       Alcotest.(check (result unit string)) "scripted span reply" (Ok ()) span_result);
       let records = List.rev !records in
       let outer = List.hd records in
       let inner = List.find (fun r -> r.Logger.msg = "inner") records in

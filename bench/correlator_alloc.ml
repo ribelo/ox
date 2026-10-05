@@ -32,9 +32,10 @@ let () =
               ()
           in
           let request = { id = None; payload = 42 } in
-          (* ^nlint-hxar: the warm-up call's outcome is irrelevant; the loop below
-             asserts every reply. *)
-          let _warmup : (message, _) result = Ox_rpc.Correlator.call correlator request in
+          (* ^safe-xls8: warm-up must complete the same scripted exchange as the loop. *)
+          (match Ox_rpc.Correlator.call correlator request with
+          | Ok reply when reply.payload = 42 -> ()
+          | _ -> failwith "correlator warm-up reply mismatch");
           Gc.full_major ();
           let before = Gc.quick_stat () in
           for _ = 1 to iterations do
