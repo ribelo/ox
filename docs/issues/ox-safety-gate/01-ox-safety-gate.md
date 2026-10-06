@@ -10,7 +10,7 @@ blocked_by: []
 
 ## Problem statement
 
-Agents produce transaction escapes, fiber-blocking calls, Eio calls on native workers, wall-clock elapsed arithmetic, cancellation masks around indefinite work, and dynamic SQL text. The gate must catch those failures, not import a catalogue of language style rules. The architect reduced this delivery on 2026-10-06 after the real consumer audit found no defects in the rejected ports.
+Agents produce transaction escapes, fiber-blocking calls, Eio calls on native workers, wall-clock elapsed arithmetic and dynamic SQL text. The gate must catch those failures, not import a catalogue of language style rules. The architect reduced this delivery on 2026-10-06 after the real consumer audit found no defects in the rejected ports.
 
 ## Stories
 
@@ -29,12 +29,9 @@ Agents produce transaction escapes, fiber-blocking calls, Eio calls on native wo
 13. As a Service author, I want wall-clock values used in paired subtraction/comparison or sleep/timeout arguments reported, so that clock corrections cannot distort elapsed-time decisions. ^safe-p9cw
 14. As a maintainer, I want a small typed local-flow check rather than a general provenance framework, so that calendar timestamps and monotonic values remain legal. ^safe-8peq
 15. As an agent, I want Mono and Mtime.span used for elapsed time, so that the replacement matches the real clock failures already repaired in Ox. ^safe-5a9k
-16. As a Service author, I want known indefinite waits and no-stop servers inside cancellation protection reported, so that shutdown is not masked for the service lifetime. ^safe-ctc4
-17. As a maintainer, I want bounded cleanup and effective inner deadlines accepted, so that teardown remains cancellation-safe. ^safe-vj9b
-18. As a reviewer, I want this concrete catalogue distinguished from a termination or settlement proof, so that unrelated opaque work is not labelled unverified. ^safe-tcqo
-19. As a database caller, I want dynamic concatenation/formatting reaching raw SQL sinks reported, so that values use parameters rather than SQL text. ^safe-8pmk
-20. As a maintainer, I want static migrations, compiled query generation and parameter binding accepted, so that this rule does not impose a new SQL API design. ^safe-p1m1
-21. As a reviewer, I want the finding to claim dynamic unparameterized construction rather than proven injection, so that the diagnostic is truthful. ^safe-iq5u
+16. As a database caller, I want dynamic concatenation/formatting reaching raw SQL sinks reported, so that values use parameters rather than SQL text. ^safe-8pmk
+17. As a maintainer, I want static migrations, compiled query generation and parameter binding accepted, so that this rule does not impose a new SQL API design. ^safe-p1m1
+18. As a reviewer, I want the finding to claim dynamic unparameterized construction rather than proven injection, so that the diagnostic is truthful. ^safe-iq5u
 
 ## Delivery
 
@@ -46,43 +43,39 @@ Agents produce transaction escapes, fiber-blocking calls, Eio calls on native wo
 | [13](<13-callback-contracts.md>) | Committed callback fixes only; no extension |
 | [14](<14-transaction-runner.md>) | Originating pool used instead of transaction runner |
 | [15](<15-monotonic-elapsed-time.md>) | Small wall-clock elapsed-use check |
-| [16](<16-cancel-mask-scope.md>) | Protection around known long-lived work |
 | [17](<17-raw-sql-construction.md>) | Dynamic text reaching raw SQL |
 
 Identity_external may remain as the existing twelve-line check without a ticket. Partial-access ports are discarded; behaviour-preserving derive/compiler replay fixes already landed stay. Native leases, retry safety and API-bypass closure are not this delivery; they belong to their resource, once-forks, spawner and adaptive-retry specs.
 
 ## Activation and completion
 
-Prevention decision (2026-10-06): weigh failure cost, silent propagation and what types already prevent. Activate elapsed time and transaction runners. Execution context activates only with zero ordinary production unknowns across Pie/Exergy/Nema; otherwise name blockers and keep it dormant. Activate raw SQL only after the migration/DSL seam’s compiler-resolved trusted contract removes its three false positives. Remove cancellation masks. Probe adjacent same-base-type positional parameters, unbounded reads, missing release paths and wire float conversion before further construction; classify counts in one-screen tickets. Open retry-effect safety as a separate type spec, without implementing it. No file-length/style rules. Exact scoped compiler admission, strict digests and separate isolated controls remain mandatory evidence requirements, not a universal activation veto.
+Prevention decision (2026-10-06): weigh failure cost, silent propagation and what types already prevent. Activate elapsed time and transaction runners. Execution context activates only with zero ordinary production unknowns across Pie/Exergy/Nema; otherwise name blockers and keep it dormant. Activate raw SQL only after the migration/DSL seam’s compiler-resolved trusted contract removes its three false positives. Remove cancellation masks: lower severity, rare exposure and zero consumer production findings do not justify their maintenance cost. Probe adjacent same-base-type positional parameters, unbounded reads, missing release paths and wire float conversion before further construction; classify counts in one-screen tickets. Open retry-effect safety as a separate type spec, without implementing it. No file-length/style rules. Exact scoped compiler admission, strict digests and separate isolated controls remain mandatory evidence requirements, not a universal activation veto.
 
 Each ticket stays one screen and cites an Ox commit or concrete failure, not another linter. Keep only necessary clean/violating consumer-style controls. Commit each deletion and surviving slice separately with these still-existing story IDs. Finish master green for install, tests, formatting and caps; remove resolved safety worktrees/branches and report the measured survivors briefly.
 
 ## Measured delivery (2026-10-06)
 
-All15 fresh audits use SHA256 `558783c1c933c4f812ae3e7bd4f80dd76a0acbd29f703e4978e15584cd19a8a7`; all30 before/after hashes and final seals match. [Complete source-read report](</var/tmp/ox-retained-final-consumer-measurements.md>), [exact ledger](</var/tmp/ox-retained-final-counts.tsv>), [diagnostic tuples](</var/tmp/ox-retained-final-sites.tsv>) and [structured raw index](</var/tmp/ox-retained-final-data.json>) retain full messages and reasons. Selections are Pie packages, Nema lib/bin and Exergy lib/bin. Existing authenticated annotations were reused; admission exits are historical, not fresh builds. Exact compiler rules and strict source/import digests remain required. No consumer repair, global consumer gate, freshness waiver or exclusion was used.
+The historical fifteen-audit campaign used SHA256 `558783c1c933c4f812ae3e7bd4f80dd76a0acbd29f703e4978e15584cd19a8a7`; all30 before/after hashes and final seals match. [Complete source-read report](</var/tmp/ox-retained-final-consumer-measurements.md>), [exact ledger](</var/tmp/ox-retained-final-counts.tsv>), [diagnostic tuples](</var/tmp/ox-retained-final-sites.tsv>) and [structured raw index](</var/tmp/ox-retained-final-data.json>) retain full messages and reasons. Selections are Pie packages, Nema lib/bin and Exergy lib/bin. Existing authenticated annotations were reused; admission exits are historical, not fresh builds. Exact compiler rules and strict source/import digests remain required. No consumer repair, global consumer gate, freshness waiver or exclusion was used.
 
 | Consumer / tickets | Decided P/T | Undecided P/T | Excluded P/T | Findings P/T | Nonfile unknown |
 | --- | --- | --- | --- | --- | --- |
 | pie / 14 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
 | pie / 15 | 82/99 | 3/0 | 0/0 | 3/11 | 0 |
 | pie / 11+12 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
-| pie / 16 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
 | pie / 17 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
 | nema / 14 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
 | nema / 15 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
 | nema / 11+12 | 135/72 | 0/4 | 0/0 | 0/1 | 0 |
-| nema / 16 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
 | nema / 17 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
 | exergy / 14 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
 | exergy / 15 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
 | exergy / 11+12 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
-| exergy / 16 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
 | exergy / 17 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
 
 The selected universe is693 files (463P/230T), including3 isolated compiler controls; the ordinary subset is690. All37 formerly omitted Nema tests are restored. Exact sets match the preceding complete24d8 census:0 added/omitted/excluded/disposition changes. Unique unknowns are65 ordinary (57P/8T),3 isolated controls(T) and1 nonfile inventory failure. Pie retains a stale generated source, an orphan interface and the elapsed-flow opacity; Nema retains one ordinary recursive horizon and the three isolated controls; Exergy retains54P/7T ordinary PPX/syntax/stale-or-missing annotation failures and the scoped inventory failure. Every audit exits2; none proves activation readiness.
 
 All consumer production findings are [Pie clipboard confirmation:216](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L216>), [222](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L222>) and [227](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L227>):3 true occurrences of one wall-clock deadline defect,0 FP; the same file is opaque at225. Eleven elapsed test findings and one intentional Nema owner wait are test-only. The native category has0 emitted findings, not universal safety evidence.
 
-The [Root SQL audit](</var/tmp/ox-retained-final-root-sql-inventory.tsv>) decides all20 sources and reports3 production FP at [migrate:403](<../../../lib/sql/migrate.ml#L403>), [406](<../../../lib/sql/migrate.ml#L406>) and [408](<../../../lib/sql/migrate.ml#L408>): generic raw forwarding with safely escaped [structural identifiers](<../../../lib/sql/migrate.ml#L396>) and separately supplied values. No safe migration was changed. Zero-consumer-finding slices remain because their compact corpora reproduce real failures: originating-pool reborrow timeout124; owner semaphore wait timeout124; native Eio yield Effect.Unhandled; protected indefinite wait timeout124; concatenated SQL2 rows versus bound0. Four Root gates passed with34 registered/28 active/6 dormant,0 findings/typed unknowns and0 coverage holes. This completes retained dormant delivery, not activation.
+The [Root SQL audit](</var/tmp/ox-retained-final-root-sql-inventory.tsv>) decides all20 sources and reports3 production FP at [migrate:403](<../../../lib/sql/migrate.ml#L403>), [406](<../../../lib/sql/migrate.ml#L406>) and [408](<../../../lib/sql/migrate.ml#L408>): generic raw forwarding with safely escaped [structural identifiers](<../../../lib/sql/migrate.ml#L396>) and separately supplied values. No safe migration was changed. Zero-consumer-finding slices remain because their compact corpora reproduce real failures: originating-pool reborrow timeout124; owner semaphore wait timeout124; native Eio yield Effect.Unhandled; concatenated SQL2 rows versus bound0. Four Root gates passed with34 registered/28 active/6 dormant,0 findings/typed unknowns and0 coverage holes. This completes retained dormant delivery, not activation.
 
-Committed slices: pruning/restoration f1c4f127; transaction8fa19d0c; elapsed845b906 (runtime repairsab84940/e55ac0e preserved); exact inventory1273687; shared owner/nativeef0efd0; cancellationa560b52; SQL1610439. Independent SPEC and Standards accepted the code delta; final ledger/gate acceptance is recorded at landing. Candidate safety branches/worktrees are removed; unrelated detached work is untouched.
+Committed slices: pruning/restoration f1c4f127; transaction8fa19d0c; elapsed845b906 (runtime repairsab84940/e55ac0e preserved); exact inventory1273687; shared owner/nativeef0efd0; SQL1610439. Independent SPEC and Standards accepted the code delta; final ledger/gate acceptance is recorded at landing. Candidate safety branches/worktrees are removed; unrelated detached work is untouched.

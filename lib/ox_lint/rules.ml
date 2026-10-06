@@ -142,15 +142,6 @@ let all ~caps =
         "known operation executes in the wrong Eio/native context"
         (fun ~emit ~undecided artifact ->
           visit (Execution_context.check ~caps ~emit ~undecided) artifact);
-      {
-        (evidence_rule "cancel-mask-scope"
-           "known indefinite wait executes inside cancellation protection"
-           (fun ~emit ~undecided artifact ->
-             visit (Cancel_mask.check ~caps ~emit ~undecided) artifact))
-        with
-        clean = "test/lint/clean/cancel_mask.ml";
-        violating = "test/lint/violating/cancel_mask.ml";
-      };
       evidence_rule "raw-sql-construction" Raw_sql.message
         (fun ~emit ~undecided artifact ->
           visit (Raw_sql.check ~caps ~emit ~undecided) artifact);
@@ -213,8 +204,7 @@ let allowances = []
 let dormant ?(audit = false) rule =
   rule.id = "ox-raw-concurrency"
   || (not audit)
-     && List.mem rule.id
-          [ "ox-execution-context"; "ox-cancel-mask-scope"; "ox-raw-sql-construction" ]
+     && List.mem rule.id [ "ox-execution-context"; "ox-raw-sql-construction" ]
 
 let applies ?(audit = false) ~root ~source rule =
   let absolute path =

@@ -6,7 +6,6 @@
   transaction_runner
   monotonic_elapsed_time
   execution_context
-  cancel_mask
   raw_sql_construction
   identity_external
   catch_all
