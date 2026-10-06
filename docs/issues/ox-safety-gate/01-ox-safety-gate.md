@@ -53,29 +53,36 @@ Prevention decision (2026-10-06): weigh failure cost, silent propagation and wha
 
 Each ticket stays one screen and cites an Ox commit or concrete failure, not another linter. Keep only necessary clean/violating consumer-style controls. Commit each deletion and surviving slice separately with these still-existing story IDs. Finish master green for install, tests, formatting and caps; remove resolved safety worktrees/branches and report the measured survivors briefly.
 
-## Measured delivery (2026-10-06)
+## Current measured admission (2026-10-06)
 
-The historical fifteen-audit campaign used SHA256 `558783c1c933c4f812ae3e7bd4f80dd76a0acbd29f703e4978e15584cd19a8a7`; all30 before/after hashes and final seals match. [Complete source-read report](</var/tmp/ox-retained-final-consumer-measurements.md>), [exact ledger](</var/tmp/ox-retained-final-counts.tsv>), [diagnostic tuples](</var/tmp/ox-retained-final-sites.tsv>) and [structured raw index](</var/tmp/ox-retained-final-data.json>) retain full messages and reasons. Selections are Pie packages, Nema lib/bin and Exergy lib/bin. Existing authenticated annotations were reused; admission exits are historical, not fresh builds. Exact compiler rules and strict source/import digests remain required. No consumer repair, global consumer gate, freshness waiver or exclusion was used.
+Elapsed time, transaction runners and raw SQL are active. Cancellation-mask code, fixtures and ticket are deleted. Shared execution context (native Eio and owner blocking) remains dormant. Root's four serial gates pass with 33 registered rules, 31 active, 2 dormant, zero findings/typed unknowns and zero coverage holes. Commits: elapsed 468a6fe2, transactions 6bcfa142, cancellation retirement 7ad691a5, SQL 8a8a9a96. The SQL trust contract uses the genuine private producer's compiler UID; private migration helpers retain nominal table names until assembly. Three former migration false positives are gone without changing generated SQL or exempting any path/module name.
 
-| Consumer / tickets | Decided P/T | Undecided P/T | Excluded P/T | Findings P/T | Nonfile unknown |
-| --- | --- | --- | --- | --- | --- |
-| pie / 14 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
-| pie / 15 | 82/99 | 3/0 | 0/0 | 3/11 | 0 |
-| pie / 11+12 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
-| pie / 17 | 83/99 | 2/0 | 0/0 | 0/0 | 0 |
-| nema / 14 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
-| nema / 15 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
-| nema / 11+12 | 135/72 | 0/4 | 0/0 | 0/1 | 0 |
-| nema / 17 | 135/73 | 0/3 | 0/0 | 0/0 | 0 |
-| exergy / 14 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
-| exergy / 15 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
-| exergy / 11+12 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
-| exergy / 17 | 189/48 | 54/7 | 0/0 | 0/0 | 1 |
+### Execution-context admission
 
-The selected universe is693 files (463P/230T), including3 isolated compiler controls; the ordinary subset is690. All37 formerly omitted Nema tests are restored. Exact sets match the preceding complete24d8 census:0 added/omitted/excluded/disposition changes. Unique unknowns are65 ordinary (57P/8T),3 isolated controls(T) and1 nonfile inventory failure. Pie retains a stale generated source, an orphan interface and the elapsed-flow opacity; Nema retains one ordinary recursive horizon and the three isolated controls; Exergy retains54P/7T ordinary PPX/syntax/stale-or-missing annotation failures and the scoped inventory failure. Every audit exits2; none proves activation readiness.
+Fresh authenticated scan: 693 selected sources (463 production, 230 tests), no exclusions. [Probe](</var/tmp/ox_prevention_probe.ml>), [complete output](</var/tmp/ox-prevention-probe-final-output.tsv>) and [structured rows](</var/tmp/ox-prevention-probe-final-data.json>) supersede the historical 5587-engine dispositions, not its retained failure witnesses. Every API count below is a resolved value-UID reference, including aliases, rather than a spelling match.
 
-All consumer production findings are [Pie clipboard confirmation:216](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L216>), [222](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L222>) and [227](</home/ribelo/projects/ribelo/pie/packages/pie/input/text_injection.ml#L227>):3 true occurrences of one wall-clock deadline defect,0 FP; the same file is opaque at225. Eleven elapsed test findings and one intentional Nema owner wait are test-only. The native category has0 emitted findings, not universal safety evidence.
+| Consumer | Decided P/T | File unknown P/T | Execution findings P/T | Visitor unknown P/T |
+| --- | --- | --- | --- | --- |
+| Pie | 83/99 | 2/0 | 0/0 | 0/0 |
+| Nema | 135/73 | 0/3 | 0/1 | 0/1 |
+| Exergy | 242/48 | 1/7 | 0/0 | 0/0 |
 
-The [Root SQL audit](</var/tmp/ox-retained-final-root-sql-inventory.tsv>) decides all20 sources and reports3 production FP at [migrate:403](<../../../lib/sql/migrate.ml#L403>), [406](<../../../lib/sql/migrate.ml#L406>) and [408](<../../../lib/sql/migrate.ml#L408>): generic raw forwarding with safely escaped [structural identifiers](<../../../lib/sql/migrate.ml#L396>) and separately supplied values. No safe migration was changed. Zero-consumer-finding slices remain because their compact corpora reproduce real failures: originating-pool reborrow timeout124; owner semaphore wait timeout124; native Eio yield Effect.Unhandled; concatenated SQL2 rows versus bound0. Four Root gates passed with34 registered/28 active/6 dormant,0 findings/typed unknowns and0 coverage holes. This completes retained dormant delivery, not activation.
+Production blockers: [Pie generated build identity](</home/ribelo/projects/ribelo/pie/_build/default/packages/pie/build_identity.ml>) has a stale source digest; [Pie skill_cli interface](</home/ribelo/projects/ribelo/pie/packages/pie/bin/skill_cli.mli>) has no typed annotation; [Exergy executable](</home/ribelo/projects/exergy/bin/exergy/main.ml>) has no typed annotation. Exergy's generated-source ownership inventory is also unavailable (targeted nonrecursive check aliases), so its unverified generated production surface is not zero. Nema has zero production unknowns. There are no production findings, but these three ordinary unknown files and the Exergy inventory failure prohibit activation.
 
-Committed slices: pruning/restoration f1c4f127; transaction8fa19d0c; elapsed845b906 (runtime repairsab84940/e55ac0e preserved); exact inventory1273687; shared owner/nativeef0efd0; SQL1610439. Independent SPEC and Standards accepted the code delta; final ledger/gate acceptance is recorded at landing. Candidate safety branches/worktrees are removed; unrelated detached work is untouched.
+Nema's three file unknowns are isolated Ladybug identity controls. Its ordinary [audit lifecycle:22](</home/ribelo/projects/ribelo/nema/lib/nema/test/test_audit_lifecycle.ml#L22>) is an unresolved recursive execution-context horizon; the adjacent owner wait is intentional test evidence. Exergy's seven test unknowns comprise six missing annotations and a test-support CMT reported as not a compiled interface; complete names/reasons remain in the linked rows. None is reclassified as production or silently excluded.
+
+### Four requested probes (production / test counts)
+
+| Consumer | Adjacent same-base positional pairs | Read API references | Acquisition API references | Float conversion references |
+| --- | --- | --- | --- | --- |
+| Pie | 41/142 | 4/19 | 7/13 | 0/0 |
+| Nema | 92/143 | 0/2 | 8/4 | 2/1 |
+| Exergy | 146/64 | 0/1 | 0/0 | 10/1 |
+| Total | 279/349 | 4/22 | 15/17 | 12/2 |
+
+- **Positional pairs:** 628 candidates, not 628 bugs or proven false positives. The expression-level probe covers adjacent unlabelled float/int/string or manifest-alias parameters, not complete interfaces, higher-order flows or semantic interchangeability. No swapped-argument defect was demonstrated; no checker/API redesign is admitted by counts alone.
+- **Reads:** three production unbounded-output risks: [Pie shell:67](</home/ribelo/projects/ribelo/pie/packages/pie/sh.ml#L67>) and [archive:200](</home/ribelo/projects/ribelo/pie/packages/pie/recording/audio_archive.ml#L200>)/[278](</home/ribelo/projects/ribelo/pie/packages/pie/recording/audio_archive.ml#L278>) pass take_all to Eio.Process.parse_out, whose max_size is max_int and whose interface supplies no bound. [Pie assistant reader:19](</home/ribelo/projects/ribelo/pie/packages/pie/assistant_service/client.ml#L19>) has an explicit bound: false positive for an unbounded-read rule. of_flow's max_size is already mandatory in Eio's type; missing it is not a compilable defect. The 22 test references are test-only controls. No direct read_all or Yojson float-decoder reference was found. Ox HTTP response acquisition already enforces its default payload bound through Byte_limit; the probe does not claim exhaustive higher-order/body-alias coverage. No read checker is implemented in this delivery.
+- **Acquisition:** 32 resolved references, including three openfile_write references omitted by the first coarse probe. One concrete exceptional cleanup gap: [Pie history:902–918](</home/ribelo/projects/ribelo/pie/packages/pie/history.ml#L902-L918>) acquires fd, then unprotected fstat can raise into handlers that return Error without closing it. This is a structural leak risk, not a run-time leak reproduction. Other production references use protection/manual close or intentionally hand ownership to a caller/provider, so a same-function-only rule would produce false positives. For example [archive:91–105](</home/ribelo/projects/ribelo/pie/packages/pie/recording/audio_archive.ml#L91-L105>) closes on both paths; Nema's lifecycle closes manually and its lock providers transfer ownership. The 17 test references exercise ownership/provenance; they are not production defects. No acquisition checker or consumer repair is implemented.
+- **Floats:** 14 references, zero demonstrated money/quantity wire-order defects. Exergy's ten production references convert Decimal/Money to reporting/modelling floats, round finite report output, or parse finite guarded market data; [runtime:7–8](</home/ribelo/projects/exergy/lib/facade_core/exergy_runtime.ml#L7-L8>) and [candle:55](</home/ribelo/projects/exergy/lib/facade_core/exergy_yahoo_signal_snapshot.ml#L55>) are Decimal-to-model conversions, not raw order parsing. Nema's [request contract:48](</home/ribelo/projects/ribelo/nema/lib/nema/request_contract.ml#L48>)/[65](</home/ribelo/projects/ribelo/nema/lib/nema/request_contract.ml#L65>) are generic database-number fallback after Int64, not a demonstrated money boundary. These are false positives for a blanket wire-money ban, not a claim that float modelling is exact. No Decimal/Money issue or checker is justified by this evidence.
+
+Pie clipboard confirmation remains an issue-only consumer change. Retry-effect safety is a separate type spec, not an implemented retry API or checker. The retained witnesses still distinguish real failures: pool reborrow timeout 124, owner semaphore timeout 124, native yield Effect.Unhandled, and injected SQL two rows versus bound zero.
