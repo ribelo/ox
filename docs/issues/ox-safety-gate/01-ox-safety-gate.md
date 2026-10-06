@@ -44,8 +44,9 @@ Agents produce transaction escapes, fiber-blocking calls, Eio calls on native wo
 | [14](<14-transaction-runner.md>) | Originating pool used instead of transaction runner |
 | [15](<15-monotonic-elapsed-time.md>) | Small wall-clock elapsed-use check |
 | [17](<17-raw-sql-construction.md>) | Dynamic text reaching raw SQL |
+| [19](<19-no-duplicate-external-effect-on-retry.md>) | No duplicate external effect on retry: type spec only |
 
-Identity_external may remain as the existing twelve-line check without a ticket. Partial-access ports are discarded; behaviour-preserving derive/compiler replay fixes already landed stay. Native leases, retry safety and API-bypass closure are not this delivery; they belong to their resource, once-forks, spawner and adaptive-retry specs.
+Identity_external may remain as the existing twelve-line check without a ticket. Partial-access ports are discarded; behaviour-preserving derive/compiler replay fixes already landed stay. Native leases and API-bypass closure are not this delivery; they belong to their resource, once-forks and spawner specs. Retry-effect safety is the one new type spec in ticket19, with no implementation. ^safe-z76e
 
 ## Activation and completion
 
