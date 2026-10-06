@@ -324,4 +324,97 @@ let run ~caps =
     "documentation truth: package reachability, relevant qualifications, raises, masking \
      and cancellation-path cleanup: pass"
 
-let () = run ~caps:(Ox_caps_door.powerbox ())
+(* ^nlintd-k036 *)
+let check_exports ~caps =
+  let findings, unknown = check ~caps ~name:"docs_exports" "clean" in
+  if findings <> [] || unknown <> [] then
+    failwith
+      ("alias/include bodies: " ^ String.concat "\n" (List.map snd findings @ unknown));
+  let findings, unknown = check ~caps ~name:"docs_exports" "violating" in
+  List.iter
+    (fun name ->
+      List.iter
+        (fun claim ->
+          if
+            not
+              (List.exists
+                 (fun (_, message) -> contains message name && contains message claim)
+                 findings)
+          then
+            failwith
+              ("alias/include lost callback effect: " ^ name ^ " " ^ claim ^ "\n"
+              ^ String.concat "\n" (List.map snd findings @ unknown)))
+        [ "never suspends"; "no cancellation point"; "Eio.Cancel.Cancelled" ])
+    [ "Docs_exports.Alias.noop"; "Docs_exports.Included.noop"; "Docs_exports.noop" ];
+  Cap_stdlib.print_endline ~caps "compiler-resolved module aliases and includes: pass"
+
+(* ^nlintd-7x5n ^nlintd-b362 ^nlintd-2tmh *)
+let check_stdlib ~caps =
+  let findings, unknown = check ~caps ~name:"docs_stdlib" "clean" in
+  if findings <> [] || unknown <> [] then
+    failwith
+      ("total Stdlib contracts: " ^ String.concat "\n" (List.map snd findings @ unknown));
+  let findings, unknown = check ~caps ~name:"docs_stdlib" "violating" in
+
+  List.iter
+    (fun name ->
+      if
+        not
+          (List.exists
+             (fun (_, message) -> contains message name && contains message "Failure")
+             findings)
+      then
+        failwith
+          ("Stdlib callback/shadow lost its raise: " ^ name ^ "\n"
+          ^ String.concat "\n" (List.map snd findings @ unknown)))
+    [
+      "result_map";
+      "result_map_error";
+      "result_bind";
+      "result_syntax";
+      "partial_map";
+      "option_map";
+      "option_bind";
+      "option_iter";
+      "option_fold";
+      "option_equal";
+      "option_compare";
+      "shadowed";
+    ];
+  if
+    not
+      (List.exists
+         (fun (_, message) ->
+           contains message "callback_yield" && contains message "never suspends")
+         findings)
+  then failwith "Stdlib callback lost its suspension";
+  if
+    not
+      (List.exists
+         (fun (_, message) ->
+           contains message "callback_yield" && contains message "no cancellation point")
+         findings)
+  then failwith "Stdlib callback lost its cancellation check";
+  List.iter
+    (fun name ->
+      if
+        not
+          (List.exists
+             (fun message -> contains message name && contains message "opaque call")
+             unknown)
+      then failwith ("unsafe Stdlib invocation was trusted: " ^ name))
+    [
+      "functional_equal";
+      "functional_list_equal";
+      "option_get";
+      "returned_callback";
+      "forged_format";
+    ];
+  Cap_stdlib.print_endline ~caps
+    "finite typed Stdlib contracts and callback effects: pass"
+
+let () =
+  let caps = Ox_caps_door.powerbox () in
+  run ~caps;
+  check_stdlib ~caps;
+  check_exports ~caps

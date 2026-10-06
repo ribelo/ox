@@ -342,6 +342,10 @@
   (source_tree violating)
   (alias clean/check)
   (alias violating/check)
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_exports.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_exports.cmt
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_stdlib.cmti
+  clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_stdlib.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmti
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_truth.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_dependency.cmt
@@ -350,6 +354,10 @@
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_generated_dependency.cmt
   clean/docs_generated.ml
   clean/docs_generated_dependency.ml
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_exports.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_exports.cmt
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_stdlib.cmti
+  violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_stdlib.cmt
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmti
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_truth.cmt
   violating/.concurrency_violating.objs/byte/concurrency_violating__Docs_dependency.cmt)

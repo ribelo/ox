@@ -432,6 +432,28 @@ type evidence = {
   mutable builders : (unit -> unit) list;
 }
 
+(* ^nlintd-k036: compiler module aliases and include-bound identifiers share the value export
+   graph. Resolve the longest visible prefix, retaining local identifier stamps. *)
+let export_key evidence name =
+  let rec resolve seen name =
+    if Names.mem name seen then name
+    else
+      let rec prefix candidate suffix =
+        match Hashtbl.find_opt evidence.exports candidate with
+        | Some target -> Some (target ^ suffix)
+        | None -> (
+            match String.rindex_opt candidate '.' with
+            | None -> None
+            | Some at ->
+                prefix (String.sub candidate 0 at)
+                  (String.sub candidate at (String.length candidate - at) ^ suffix))
+      in
+      match prefix name "" with
+      | Some target -> resolve (Names.add name seen) target
+      | None -> name
+  in
+  resolve Names.empty name
+
 let empty_effects =
   {
     suspension = Names.empty;
@@ -635,110 +657,165 @@ let contains text needle = Option.is_some (index text (String.lowercase_ascii ne
 (* These are semantic leaves, resolved through compiler paths (including aliases), not
    spelling tests. Other external values remain opaque. Each leaf's suspension/check
    distinction follows Eio's implementation; an on_release hook is deferred. *)
-let semantic_leaves =
+(* ^nlintd-7x5n: installed 5.4.0+ox stdlib.ml:246-247, fun.ml, list.ml,
+   option.ml:23-47 and result.ml:23-44. These values do not invoke arguments.
+   Arity matters: applying a returned function is not a total-leaf call. *)
+let stdlib_totals =
   [
-    ("Eio.Fiber.yield", true, true, []);
-    ("Eio.Fiber.await_cancel", true, true, []);
-    ("Eio.Fiber.check", false, true, []);
-    (* Source-verified allocation leaves, not a blanket Eio exemption. ^nlintd-truth *)
-    ("Eio.Promise.create", false, false, []);
-    ("Eio.Promise.create_resolved", false, false, []);
-    ("Eio.Condition.create", false, false, []);
-    ("Eio.Mutex.create", false, false, []);
-    ("Eio.Semaphore.make", false, false, [ "Invalid_argument" ]);
-    ("Eio.Promise.await", true, true, []);
-    ("Eio.Promise.await_exn", true, true, []);
-    ("Eio.Stream.add", true, true, []);
-    ("Eio.Stream.take", true, true, []);
-    ("Eio.Condition.await", true, true, [ "Eio.Mutex.Poisoned" ]);
-    ("Eio.Condition.await_no_mutex", true, true, []);
-    ("Eio.Mutex.lock", true, true, []);
-    ("Eio.Semaphore.acquire", true, true, []);
-    ("Eio.Time.sleep", true, true, []);
-    ("Eio.Time.Mono.sleep", true, true, []);
-    ("Eio.Time.Mono.sleep_until", true, true, []);
-    ("Eio.Switch.check", false, true, [ "Invalid_argument" ]);
-    ("Eio.Cancel.check", false, true, [ "Invalid_argument" ]);
-    ("Eio.Switch.on_release", false, false, [ "Invalid_argument" ]);
-    ("Eio.Switch.on_release_cancellable", false, false, [ "Invalid_argument" ]);
-    (* ^nlintd-truth: installed 5.4.0+ox stdlib.mli:729, option.mli:38,
-       string.mli:251 and result.mli:64 specify these synchronous total leaves. *)
-    ("Stdlib.int_of_string_opt", false, false, []);
-    (* ^nlintd-truth: installed stdlib.ml:279 fixes the decimal format;
-       filename.ml:303 guards the only indexed access before concatenation. *)
-    ("Stdlib.string_of_int", false, false, []);
-    ("Stdlib.Filename.concat", false, false, []);
-    ("Stdlib.Option.value", false, false, []);
-    ("Stdlib.String.trim", false, false, []);
-    ("Stdlib.Result.bind", false, false, []);
-    (* ^nlintd-truth: installed result.ml:62 is exactly an alias of bind. *)
-    ("Stdlib.Result.Syntax.let*", false, false, []);
+    ("Stdlib.fst", 1);
+    ("Stdlib.snd", 1);
+    ("Stdlib.Fun.id", 1);
+    ("Stdlib.List.length", 1);
+    ("Stdlib.Option.some", 1);
+    ("Stdlib.Option.value", 2);
+    ("Stdlib.Option.join", 1);
+    ("Stdlib.Option.is_none", 1);
+    ("Stdlib.Option.is_some", 1);
+    ("Stdlib.Option.to_result", 2);
+    ("Stdlib.Option.to_list", 1);
+    ("Stdlib.Result.ok", 1);
+    ("Stdlib.Result.error", 1);
+    ("Stdlib.Result.value", 2);
+    ("Stdlib.Result.join", 1);
+    ("Stdlib.Result.is_ok", 1);
+    ("Stdlib.Result.is_error", 1);
+    ("Stdlib.Result.to_option", 1);
   ]
 
-let special_names =
+(* Only the combinator itself is total. The immediate-callback models below
+   retain callback suspension, cancellation and exceptions. No Option.get,
+   Result.get_ok, List.hd, bounds-sensitive access or general comparison. *)
+let stdlib_callback_contracts =
   [
-    "Stdlib.raise";
-    "Stdlib.raise_notrace";
-    "Printexc.raise_with_backtrace";
-    "Stdlib.invalid_arg";
-    "Stdlib.failwith";
-    "Fun.protect";
-    "Eio.Cancel.protect";
-    "Eio.Switch.on_release";
-    "Eio.Switch.on_release_cancellable";
-    "Thread.create";
-    "Domain.spawn";
-    (* ^nlintd-truth: source-verified ownership/storage boundaries. *)
-    "Eio.Fiber.fork";
-    "Eio.Fiber.fork_daemon";
-    "Eio.Fiber.fork_promise";
-    "Eio.Domain_manager.run";
-    "Eio_main.run";
-    "Eio.Switch.run";
-    "Eio.Time.with_timeout";
-    "Eio.Time.with_timeout_exn";
-    "Eio.Time.Timeout.run";
-    "Eio.Time.Timeout.run_exn";
-    "Eio.Mutex.use_ro";
-    "Eio.Mutex.use_rw";
-    "Eio.Pool.use";
-    "Ox_json.Of_json.list";
-    "Ox_json.Of_json.option";
-    "Ox_json.Of_json.field";
-    "Ox_sql_dsl.transaction";
-    "Stdlib.Hashtbl.replace";
-    "Stdlib.Hashtbl.add";
-    "Stdlib.List.iter";
-    "Stdlib.List.map";
-    "Stdlib.List.filter_map";
-    "Stdlib.List.fold_left";
-    "Stdlib.List.fold_right";
-    "Stdlib.Array.iter";
-    "Stdlib.Array.map";
-    "Stdlib.Option.iter";
-    "Stdlib.Option.map";
-    "Stdlib.List.mapi";
-    "Stdlib.List.filter";
-    "Stdlib.List.concat_map";
-    "Stdlib.List.find";
-    "Stdlib.List.find_opt";
-    "Stdlib.List.find_map";
-    "Stdlib.List.exists";
-    "Stdlib.List.for_all";
-    "Stdlib.List.sort";
-    "Stdlib.List.sort_uniq";
-    "Stdlib.Array.find_opt";
-    "Stdlib.String.iter";
-    "Stdlib.String.map";
-    "Stdlib.String.for_all";
-    "Stdlib.Hashtbl.iter";
-    "Stdlib.Option.bind";
-    "Stdlib.Option.fold";
-    "Stdlib.Result.map";
-    "Stdlib.Result.map_error";
-    "Stdlib.|>";
-    "Stdlib.@@";
+    ("Stdlib.Option.iter", 2);
+    ("Stdlib.Option.map", 2);
+    ("Stdlib.Option.bind", 2);
+    ("Stdlib.Option.fold", 3);
+    ("Stdlib.Option.equal", 3);
+    ("Stdlib.Option.compare", 3);
+    ("Stdlib.Result.map", 2);
+    ("Stdlib.Result.map_error", 2);
+    ("Stdlib.Result.bind", 2);
+    ("Stdlib.Result.Syntax.let*", 2);
   ]
+
+let stdlib_callback_totals = List.map fst stdlib_callback_contracts
+
+let semantic_leaves =
+  List.map
+    (fun name -> (name, false, false, []))
+    (List.map fst stdlib_totals @ stdlib_callback_totals)
+  @ [
+      ("Eio.Fiber.yield", true, true, []);
+      ("Eio.Fiber.await_cancel", true, true, []);
+      ("Eio.Fiber.check", false, true, []);
+      (* Source-verified allocation leaves, not a blanket Eio exemption. ^nlintd-truth *)
+      ("Eio.Promise.create", false, false, []);
+      ("Eio.Promise.create_resolved", false, false, []);
+      ("Eio.Condition.create", false, false, []);
+      ("Eio.Mutex.create", false, false, []);
+      ("Eio.Semaphore.make", false, false, [ "Invalid_argument" ]);
+      ("Eio.Promise.await", true, true, []);
+      ("Eio.Promise.await_exn", true, true, []);
+      ("Eio.Stream.add", true, true, []);
+      ("Eio.Stream.take", true, true, []);
+      ("Eio.Condition.await", true, true, [ "Eio.Mutex.Poisoned" ]);
+      ("Eio.Condition.await_no_mutex", true, true, []);
+      ("Eio.Mutex.lock", true, true, []);
+      ("Eio.Semaphore.acquire", true, true, []);
+      ("Eio.Time.sleep", true, true, []);
+      ("Eio.Time.Mono.sleep", true, true, []);
+      ("Eio.Time.Mono.sleep_until", true, true, []);
+      ("Eio.Switch.check", false, true, [ "Invalid_argument" ]);
+      ("Eio.Cancel.check", false, true, [ "Invalid_argument" ]);
+      ("Eio.Switch.on_release", false, false, [ "Invalid_argument" ]);
+      ("Eio.Switch.on_release_cancellable", false, false, [ "Invalid_argument" ]);
+      (* ^nlintd-truth: installed 5.4.0+ox stdlib.mli:729, option.mli:38,
+       string.mli:251 and result.mli:64 specify these synchronous total leaves. *)
+      ("Stdlib.int_of_string_opt", false, false, []);
+      (* ^nlintd-truth: installed stdlib.ml:279 fixes the decimal format;
+       filename.ml:303 guards the only indexed access before concatenation. *)
+      ("Stdlib.string_of_int", false, false, []);
+      ("Stdlib.Filename.concat", false, false, []);
+      ("Stdlib.Option.value", false, false, []);
+      ("Stdlib.String.trim", false, false, []);
+      ("Stdlib.Result.bind", false, false, []);
+      (* ^nlintd-truth: installed result.ml:62 is exactly an alias of bind. *)
+      ("Stdlib.Result.Syntax.let*", false, false, []);
+    ]
+
+let special_names =
+  List.map fst stdlib_totals
+  @ [
+      "Stdlib.Printf.sprintf";
+      "Stdlib.Option.equal";
+      "Stdlib.Option.compare";
+      "Stdlib.Result.bind";
+      "Stdlib.Result.Syntax.let*";
+    ]
+  @ [
+      "Stdlib.raise";
+      "Stdlib.raise_notrace";
+      "Printexc.raise_with_backtrace";
+      "Stdlib.invalid_arg";
+      "Stdlib.failwith";
+      "Fun.protect";
+      "Eio.Cancel.protect";
+      "Eio.Switch.on_release";
+      "Eio.Switch.on_release_cancellable";
+      "Thread.create";
+      "Domain.spawn";
+      (* ^nlintd-truth: source-verified ownership/storage boundaries. *)
+      "Eio.Fiber.fork";
+      "Eio.Fiber.fork_daemon";
+      "Eio.Fiber.fork_promise";
+      "Eio.Domain_manager.run";
+      "Eio_main.run";
+      "Eio.Switch.run";
+      "Eio.Time.with_timeout";
+      "Eio.Time.with_timeout_exn";
+      "Eio.Time.Timeout.run";
+      "Eio.Time.Timeout.run_exn";
+      "Eio.Mutex.use_ro";
+      "Eio.Mutex.use_rw";
+      "Eio.Pool.use";
+      "Ox_json.Of_json.list";
+      "Ox_json.Of_json.option";
+      "Ox_json.Of_json.field";
+      "Ox_sql_dsl.transaction";
+      "Stdlib.Hashtbl.replace";
+      "Stdlib.Hashtbl.add";
+      "Stdlib.List.iter";
+      "Stdlib.List.map";
+      "Stdlib.List.filter_map";
+      "Stdlib.List.fold_left";
+      "Stdlib.List.fold_right";
+      "Stdlib.Array.iter";
+      "Stdlib.Array.map";
+      "Stdlib.Option.iter";
+      "Stdlib.Option.map";
+      "Stdlib.List.mapi";
+      "Stdlib.List.filter";
+      "Stdlib.List.concat_map";
+      "Stdlib.List.find";
+      "Stdlib.List.find_opt";
+      "Stdlib.List.find_map";
+      "Stdlib.List.exists";
+      "Stdlib.List.for_all";
+      "Stdlib.List.sort";
+      "Stdlib.List.sort_uniq";
+      "Stdlib.Array.find_opt";
+      "Stdlib.String.iter";
+      "Stdlib.String.map";
+      "Stdlib.String.for_all";
+      "Stdlib.Hashtbl.iter";
+      "Stdlib.Option.bind";
+      "Stdlib.Option.fold";
+      "Stdlib.Result.map";
+      "Stdlib.Result.map_error";
+      "Stdlib.|>";
+      "Stdlib.@@";
+    ]
 
 let leaf_origins ~caps =
   List.filter_map
@@ -908,6 +985,16 @@ let add_unit ~caps evidence artifact =
         end)
       (Typedtree.pat_bound_idents vb.vb_pat)
   in
+  let rec module_path expression =
+    match expression.mod_desc with
+    | Tmod_ident (path, _) ->
+        Some
+          (named_path
+             (Env.normalize_module_path None (Paths.env ~caps expression.mod_env) path))
+    | Tmod_constraint (body, _, _, _) -> module_path body
+    | _ -> None
+  in
+  let public_prefix () = String.concat "." (unit_name :: !modules) in
   let collect =
     {
       base with
@@ -922,6 +1009,13 @@ let add_unit ~caps evidence artifact =
               | None, Some id -> local_key unit_name id
               | Some parent, _ -> parent ^ "." ^ name
               | _ -> unit_name ^ "." ^ name);
+          Option.iter
+            (fun target ->
+              Hashtbl.replace evidence.exports (public_prefix ()) target;
+              Option.iter
+                (fun identity -> Hashtbl.replace evidence.exports identity target)
+                !module_identity)
+            (module_path binding.mb_expr);
           base.module_binding self binding;
           modules := saved;
           module_identity := saved_identity);
@@ -929,6 +1023,24 @@ let add_unit ~caps evidence artifact =
         (fun self item ->
           (match item.str_desc with
           | Tstr_value (_, bindings) -> List.iter (declare ~export:true) bindings
+          | Tstr_include included ->
+              Option.iter
+                (fun target ->
+                  List.iter
+                    (fun item ->
+                      let id = Types.signature_item_id item in
+                      let name = Ident.name id in
+                      let target = target ^ "." ^ name in
+                      Hashtbl.replace evidence.exports
+                        (public_prefix () ^ "." ^ name)
+                        target;
+                      Hashtbl.replace evidence.exports (local_key unit_name id) target;
+                      Option.iter
+                        (fun identity ->
+                          Hashtbl.replace evidence.exports (identity ^ "." ^ name) target)
+                        !module_identity)
+                    included.incl_type)
+                (module_path included.incl_mod)
           | _ -> ());
           base.structure_item self item);
       value_binding =
@@ -962,12 +1074,93 @@ let add_unit ~caps evidence artifact =
   let function_typed e =
     match Types.get_desc e.exp_type with Tarrow _ -> true | _ -> false
   in
+  let empty_list e =
+    match e.exp_desc with
+    | Texp_construct (_, description, _, [], _) -> (
+        description.cstr_name = "[]"
+        &&
+        match Types.get_desc e.exp_type with
+        | Tconstr (path, _, _) -> Path.same path Predef.path_list
+        | _ -> false)
+    | _ -> false
+  in
+  (* ^nlintd-7x5n ^nlintd-2tmh: only a bounded, constant scalar format AST
+     is total. The display string alone cannot authenticate its GADT program.
+     Dynamic widths, string arguments, substitutions and callback formats remain opaque. *)
+  let scalar_format e =
+    let constructors =
+      [
+        "Format";
+        "Int";
+        "Int32";
+        "Int64";
+        "Nativeint";
+        "Char";
+        "Caml_char";
+        "Bool";
+        "String_literal";
+        "Char_literal";
+        "End_of_format";
+        "Int_d";
+        "Int_pd";
+        "Int_sd";
+        "Int_i";
+        "Int_pi";
+        "Int_si";
+        "Int_x";
+        "Int_Cx";
+        "Int_X";
+        "Int_CX";
+        "Int_o";
+        "Int_Co";
+        "Int_u";
+        "No_padding";
+        "Lit_padding";
+        "No_precision";
+        "Lit_precision";
+        "Left";
+        "Right";
+        "Zeros";
+      ]
+    in
+    let rec size e =
+      match e.exp_desc with
+      | Texp_construct (_, description, _, fields, _)
+        when List.mem description.cstr_name constructors ->
+          List.fold_left
+            (fun total (_, field) ->
+              Option.bind total (fun total ->
+                  Option.bind (size field) (fun count ->
+                      if total + count <= 65536 then Some (total + count) else None)))
+            (Some 64) fields
+      | Texp_constant (Const_string (text, _, _)) when String.length text <= 1024 ->
+          Some (String.length text)
+      | Texp_constant (Const_char _) -> Some 1
+      | Texp_constant (Const_int number) when number >= 0 && number <= 1024 -> Some number
+      | _ -> None
+    in
+    Option.is_some (size e)
+  in
   let pure_callee args e =
     let argument =
       match args with (_, first) :: _ -> Some first.exp_type | [] -> None
     in
     match e.exp_desc with
-    | Texp_ident { desc; _ } -> primitive_is_pure ?argument e desc
+    | Texp_ident { desc; _ } -> (
+        primitive_is_pure ?argument e desc
+        || (special e = Some "Stdlib.Printf.sprintf"
+           && match args with (_, format) :: _ -> scalar_format format | [] -> false)
+        ||
+        match (desc.val_kind, args) with
+        | Val_prim primitive, [ (_, left); (_, right) ]
+          when List.mem primitive.prim_name [ "%equal"; "%notequal" ] -> (
+            (* Empty-list tags are compared before any element is visited.
+                  Polymorphic and functional elements therefore cannot be reached. *)
+            match Types.get_desc left.exp_type with
+            | Tconstr (path, [ _ ], _) when Path.same path Predef.path_list ->
+                empty_list left || empty_list right
+            | _ -> false)
+        | _ -> false)
     | _ -> false
   in
   (* ^nlintd-truth: invoking an exported alias has the same leaf semantics as
@@ -992,12 +1185,12 @@ let add_unit ~caps evidence artifact =
   in
   let local_definition e =
     match e.exp_desc with
-    | Texp_ident { path; _ } ->
+    | Texp_ident { path; _ } -> (
         let name = key e path in
-        let name = Option.value (Hashtbl.find_opt evidence.exports name) ~default:name in
-        Option.map
-          (fun definition -> (name, definition))
-          (Hashtbl.find_opt evidence.definitions name)
+        let name = export_key evidence name in
+        match Hashtbl.find_opt evidence.definitions name with
+        | Some definition -> Some (name, definition)
+        | _ -> None)
     | _ -> None
   in
   let rec parameters e =
@@ -1053,7 +1246,13 @@ let add_unit ~caps evidence artifact =
                 calls = [ { target = key e path; filters = []; bindings = [] } ];
               })
     | Texp_apply (callee, args, _, _, _) when function_typed e ->
-        join (expression e) (application [] false callee (arguments args))
+        let call =
+          match special callee with
+          | Some name when List.mem_assoc name stdlib_totals ->
+              unknown ("callback returned by " ^ name)
+          | _ -> application [] false callee (arguments args)
+        in
+        join (expression e) call
     | Texp_let (_, bindings, body) when function_typed e ->
         join (joins (List.map (fun vb -> expression vb.vb_expr) bindings)) (invokes body)
     | Texp_sequence (first, _, last) when function_typed e ->
@@ -1061,6 +1260,27 @@ let add_unit ~caps evidence artifact =
     | Texp_ifthenelse (condition, yes, no) when function_typed e ->
         joins (expression condition :: invokes yes :: List.map invokes (Option.to_list no))
     | _ -> expression e
+  and total_call name callee args =
+    if List.length args > List.assoc name stdlib_totals then
+      unknown ("callback returned by " ^ name)
+    else invokes callee
+  and stdlib_callback_call name callee args =
+    let callbacks =
+      match (name, args) with
+      | ( ("Stdlib.Option.bind" | "Stdlib.Result.bind" | "Stdlib.Result.Syntax.let*"),
+          _ :: (_, callback) :: _ ) ->
+          [ callback ]
+      | "Stdlib.Option.fold", _ ->
+          List.filter_map
+            (fun (label, arg) ->
+              if label = Typedtree.Labelled "some" then Some arg else None)
+            args
+      | _, (_, callback) :: _ -> [ callback ]
+      | _ -> []
+    in
+    join (invokes callee)
+      (if callbacks = [] then unknown ("missing immediate callback for " ^ name)
+       else joins (List.map invokes callbacks))
   and bindings definition actuals =
     let rec select label prefix = function
       | [] -> (None, List.rev prefix)
@@ -1200,11 +1420,17 @@ let add_unit ~caps evidence artifact =
             edge name (Hashtbl.find evidence.definitions name)
         | _ when partial -> unknown (origin callee ^ " partial application")
         | _ when pure_callee actuals callee -> empty_summary
-        | _ ->
-            let invocation = invokes callee in
-            if List.exists (fun (_, actual) -> function_typed actual) actuals then
-              join invocation (unknown ("callback invocation by " ^ origin callee))
-            else invocation)
+        | _ -> (
+            match special callee with
+            | Some name when List.mem_assoc name stdlib_totals ->
+                total_call name callee actuals
+            | Some name when List.mem name stdlib_callback_totals ->
+                stdlib_callback_call name callee actuals
+            | _ ->
+                let invocation = invokes callee in
+                if List.exists (fun (_, actual) -> function_typed actual) actuals then
+                  join invocation (unknown ("callback invocation by " ^ origin callee))
+                else invocation))
   and expression e =
     match Expressions.find_opt evidence.expressions e with
     | Some summary -> summary
@@ -1231,6 +1457,12 @@ let add_unit ~caps evidence artifact =
                   | Some name -> thrown name
                   | None -> unknown_raise "dynamic exception re-raise")
               | [] -> unknown "raise without exception evidence")
+          | Some name when List.mem_assoc name stdlib_totals ->
+              total_call name callee args
+          | Some name when List.mem name stdlib_callback_totals ->
+              if List.length args < List.assoc name stdlib_callback_contracts then
+                empty_summary
+              else stdlib_callback_call name callee args
           | Some "Stdlib.invalid_arg" -> thrown "Invalid_argument"
           | Some "Stdlib.failwith" -> thrown "Failure"
           (* ^nlintd-truth: native thread/domain creation does not invoke its
@@ -1347,7 +1579,9 @@ let add_unit ~caps evidence artifact =
               (* Values, including closures, are stored, not invoked. Hash/equality
                  remain external evidence, not a blanket purity assumption. *)
               invokes callee
-          | Some ("Stdlib.Option.bind" | "Stdlib.|>") ->
+          | Some
+              ( "Stdlib.Option.bind" | "Stdlib.Result.bind" | "Stdlib.Result.Syntax.let*"
+              | "Stdlib.|>" ) ->
               join (invokes callee)
                 (match List.filter (fun (label, _) -> label = Typedtree.Nolabel) args with
                 | _ :: (_, callback) :: _ -> invokes callback
@@ -1364,12 +1598,13 @@ let add_unit ~caps evidence artifact =
               ( "Stdlib.List.iter" | "Stdlib.List.map" | "Stdlib.List.filter_map"
               | "Stdlib.List.fold_left" | "Stdlib.List.fold_right" | "Stdlib.Array.iter"
               | "Stdlib.Array.map" | "Stdlib.Option.iter" | "Stdlib.Option.map"
-              | "Stdlib.List.mapi" | "Stdlib.List.filter" | "Stdlib.List.concat_map"
-              | "Stdlib.List.find" | "Stdlib.List.find_opt" | "Stdlib.List.find_map"
-              | "Stdlib.List.exists" | "Stdlib.List.for_all" | "Stdlib.List.sort"
-              | "Stdlib.List.sort_uniq" | "Stdlib.Array.find_opt" | "Stdlib.String.iter"
-              | "Stdlib.String.map" | "Stdlib.String.for_all" | "Stdlib.Hashtbl.iter"
-              | "Stdlib.Result.map" | "Stdlib.Result.map_error" | "Stdlib.@@" ) ->
+              | "Stdlib.Option.equal" | "Stdlib.Option.compare" | "Stdlib.List.mapi"
+              | "Stdlib.List.filter" | "Stdlib.List.concat_map" | "Stdlib.List.find"
+              | "Stdlib.List.find_opt" | "Stdlib.List.find_map" | "Stdlib.List.exists"
+              | "Stdlib.List.for_all" | "Stdlib.List.sort" | "Stdlib.List.sort_uniq"
+              | "Stdlib.Array.find_opt" | "Stdlib.String.iter" | "Stdlib.String.map"
+              | "Stdlib.String.for_all" | "Stdlib.Hashtbl.iter" | "Stdlib.Result.map"
+              | "Stdlib.Result.map_error" | "Stdlib.@@" ) ->
               join (invokes callee)
                 (match args with
                 | (_, callback) :: _ -> invokes callback
@@ -1567,6 +1802,7 @@ let add_unit ~caps evidence artifact =
   evidence.builders <-
     (fun () ->
       Artifact.setup ~caps artifact;
+      Hashtbl.clear applications;
       Hashtbl.to_seq_values evidence.definitions
       |> List.of_seq
       |> List.iter (fun definition ->
@@ -1583,9 +1819,7 @@ let rec summary_effects evidence summary =
     summary.effects summary.calls
 
 and edge_effects evidence edge =
-  let key =
-    Option.value (Hashtbl.find_opt evidence.exports edge.target) ~default:edge.target
-  in
+  let key = export_key evidence edge.target in
   let callee =
     Option.value
       (Hashtbl.find_opt evidence.resolved key)
@@ -1615,10 +1849,10 @@ and edge_effects evidence edge =
   apply_filters edge.filters substituted
 
 let resolve evidence =
+  Expressions.clear evidence.expressions;
   List.iter (fun build -> build ()) (List.rev evidence.builders);
-  evidence.builders <- [];
   let reverse = Hashtbl.create 128 in
-  let target key = Option.value (Hashtbl.find_opt evidence.exports key) ~default:key in
+  let target key = export_key evidence key in
   let rec depend name summary =
     List.iter
       (fun edge ->
@@ -1679,6 +1913,11 @@ let package_evidence ~caps (implementation : Artifact.t) =
           builders = [];
         }
       in
+      let add artifact =
+        let source = Artifact.authored_source ~caps artifact in
+        Artifact.check ~caps ~source artifact;
+        add_unit ~caps evidence artifact
+      in
       Cap_sys.readdir ~caps directory
       |> Array.to_list |> List.sort String.compare
       |> List.filter (fun name -> Filename.check_suffix name ".cmt")
@@ -1719,9 +1958,7 @@ let package_evidence ~caps (implementation : Artifact.t) =
           else begin
             (* ^nlintd-truth ^nlintcov-q6n2: generated siblings have no source-tree
                counterpart; Artifact verifies their declared producer instead. *)
-            let source = Artifact.authored_source ~caps artifact in
-            Artifact.check ~caps ~source artifact;
-            add_unit ~caps evidence artifact
+            add artifact
           end);
       resolve evidence;
       Hashtbl.add evidence_cache directory evidence;
@@ -2209,14 +2446,16 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                 Compilation_unit.name_as_string implementation.info.cmt_modname
                 ^ "." ^ value.name
               in
-              match Hashtbl.find_opt evidence.exports qualified with
+              let key = export_key evidence qualified in
+              let effects = Hashtbl.find_opt evidence.resolved key in
+              Artifact.setup ~caps implementation;
+              match effects with
               | None ->
                   undecided value.loc
                     (qualified
                    ^ ": implementation binding not visible (include, functor or abstract \
                       module)")
-              | Some key ->
-                  let effects = Hashtbl.find evidence.resolved key in
+              | Some effects ->
                   let docs = value.documentation in
                   let claims = fields docs in
                   let no_suspend = valid claims "suspension" [ "never suspends" ] in

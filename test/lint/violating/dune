@@ -20,6 +20,8 @@
   val_behaviour
   cancel_safety
   docs_dependency
+  docs_stdlib
+  docs_exports
   docs_truth)
  (modules_without_implementation public_exception)
  (libraries eio eio_main ox ox_blocking ox_caps ox_http ox_sql yojson unix threads))
