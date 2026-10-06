@@ -10,7 +10,10 @@ Sources are compiler-resolved `Eio.Time.now`, `Unix.gettimeofday`, and
 `Ox_caps.Cap_unix.gettimeofday`. Local aliases and ordinary arithmetic or
 numeric conversions preserve wall origin. Same-spelled local modules do not.
 
-Scalar-minus-wall is a civil delay and stays clean. Logging, formatting, metadata
+Scalar-minus-wall is a civil delay and stays clean. Exact `stamp -. floor stamp`
+with authenticated Stdlib floor and the same bound value extracts fractional
+seconds, not elapsed time. A shadow floor or a second wall read stays unresolved.
+Logging, formatting, metadata
 and opaque calls are not elapsed sinks. A wall value passed through an opaque
 transformation is named undecided only at a checked subtraction/comparison or
 sleep/timeout use. Duration and Schedule are not independent sink roots.

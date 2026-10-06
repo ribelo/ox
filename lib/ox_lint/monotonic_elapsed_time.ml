@@ -26,6 +26,7 @@ let check ~caps ~emit ~undecided =
         ("Eio", [ "Time"; "Mono"; "sleep" ]);
       ]
   in
+  let floor = roots [ ("Stdlib", [ "floor" ]); ("Stdlib", [ "Float"; "floor" ]) ] in
   let subtraction =
     roots [ ("Stdlib", [ "-." ]); ("Stdlib", [ "-" ]); ("Stdlib", [ "Int64"; "sub" ]) ]
   in
@@ -120,6 +121,24 @@ let check ~caps ~emit ~undecided =
     | _ -> e
   in
   let is targets fn = Paths.is_value ~caps targets (resolve [] fn) in
+  let fractional args =
+    match args with
+    | [ (_, left); (_, right) ] -> (
+        match (resolve [] right).exp_desc with
+        | Texp_apply (fn, args, _, _, _) when is floor fn -> (
+            match arguments args with
+            | [ (_, value) ] -> (
+                let left = resolve [] left and value = resolve [] value in
+                left == value
+                ||
+                match (left.exp_desc, value.exp_desc) with
+                | Texp_ident { path = left; _ }, Texp_ident { path = value; _ } ->
+                    Path.same left value
+                | _ -> false)
+            | _ -> false)
+        | _ -> false)
+    | _ -> false
+  in
   (* Only wall reads, local aliases, and expressions fed by them are relevant.
      Opaque calls are not sinks: uncertainty is reported only at a checked use. *)
   let join left right =
@@ -135,6 +154,7 @@ let check ~caps ~emit ~undecided =
     | Texp_apply (fn, _, _, _, _) when is wall fn -> Some Wall
     | Texp_apply (fn, args, _, _, _) when is subtraction fn -> (
         match arguments args with
+        | values when fractional values -> None
         | [ (_, left); (_, right) ] -> (
             match (origin seen left, origin seen right) with
             | None, Some Wall -> None
@@ -197,7 +217,10 @@ let check ~caps ~emit ~undecided =
                   | Some Opaque -> opaque e.exp_loc
                   | None -> ())
               | _ -> ()
-            else if is subtraction fn || is comparison fn then
+            else if
+              (is subtraction fn || is comparison fn)
+              && not (is subtraction fn && fractional args)
+            then
               match args with
               | [ (_, left); (_, right) ] when numeric left && numeric right -> (
                   match (origin [] left, origin [] right) with

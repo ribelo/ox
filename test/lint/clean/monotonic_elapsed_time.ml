@@ -9,6 +9,12 @@ let metadata clock =
   let format (a, b) = Printf.sprintf "%g/%g" a b in
   ignore (format (stamp, stamp))
 
+let calendar_fraction clock =
+  let truncate = floor in
+  let stamp = Eio.Time.now clock in
+  let seconds = truncate stamp in
+  int_of_float ((stamp -. seconds) *. 1000.)
+
 module Eio = struct
   module Time = struct
     let now () = 7.

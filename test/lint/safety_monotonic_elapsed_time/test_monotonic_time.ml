@@ -55,7 +55,12 @@ let wall =
   ]
 
 let unknown =
-  [ ("unknown.ml", 3, 26, 3, 77, Unverified); ("unknown.ml", 7, 2, 7, 40, Unverified) ]
+  [
+    ("unknown.ml", 3, 26, 3, 77, Unverified);
+    ("unknown.ml", 7, 2, 7, 40, Unverified);
+    ("unknown.ml", 11, 2, 11, 22, Unverified);
+    ("unknown.ml", 13, 28, 13, 76, Unverified);
+  ]
 
 let wrong_site_red label actual =
   match actual with
