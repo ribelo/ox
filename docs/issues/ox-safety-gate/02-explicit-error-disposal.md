@@ -1,5 +1,5 @@
 ---
-status: implementing
+status: done
 category: enhancement
 blocked_by: []
 ---
@@ -12,4 +12,4 @@ blocked_by: []
 
 **Scope:** Keep the original bare ignore/wildcard failure check. Accept commented named best-effort bindings and result-to-option/unit matches. Remove the new local allowance interpreter; do not change evaluation or failure behaviour.
 
-**Checks:** Pin the historical clean/violating boundary and one named release plus result-to-option consumer control. Fresh three-consumer counts and production-finding classification are required before activation; the parent defines the compact completion test.
+**Checks:** Pin the historical clean/violating boundary and one named release plus result-to-option consumer control. The active historical rule is restored in f1c4f127; no new rule or activation decision remains.

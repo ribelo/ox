@@ -1,5 +1,5 @@
 ---
-status: implementing
+status: done
 category: enhancement
 blocked_by: []
 ---
@@ -12,4 +12,4 @@ blocked_by: []
 
 **Scope:** Retain that committed behaviour only. Do not land the uncommitted callback-contract checker, new inference, source-digest certificates, SQLite catalogue or lease fixture expansion.
 
-**Checks:** Existing tests continue to check the committed callback observations and owner assertions. No new activation is claimed. Fresh three-consumer counts and production-finding classification are required before activation; the parent defines the compact completion test.
+**Checks:** Existing tests continue to check the committed callback observations and owner assertions. No new activation is claimed. No checker, consumer finding or activation census belongs to this runtime-only slice.
