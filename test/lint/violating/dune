@@ -4,6 +4,7 @@
  (name concurrency_violating)
  (modules
   transaction_runner
+  monotonic_elapsed_time
   identity_external
   catch_all
   suspending_finalizer

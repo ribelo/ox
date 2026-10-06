@@ -1,0 +1,82 @@
+; ^safe-p9cw ^safe-8peq ^safe-5a9k: exact clean, violating and unknown wall-clock controls.
+
+(data_only_dirs fixtures)
+
+(executable
+ (name test_monotonic_time)
+ (modules test_monotonic_time)
+ (libraries lint_engine ox_caps.door))
+
+(rule
+ (alias runtest)
+ (deps
+  source-check.sh
+  (source_tree fixtures)
+  (source_tree ../clean)
+  (source_tree ../violating)
+  (package ox)
+  (package ox_caps)
+  (package ox_process)
+  (package ox_sql)
+  (package ox_http)
+  (package ox_otel))
+ (action
+  (run
+   bash
+   %{dep:source-check.sh}
+   %{exe:test_monotonic_time.exe}
+   %{exe:../../../lib/ox_lint/main.exe}
+   fixtures
+   ../clean
+   ../violating
+   %{workspace_root}/../install/default)))
+
+(rule
+ (alias runtest)
+ (deps
+  ../../../lib/ox/retry.ml
+  ../../../lib/ox/.ox.objs/byte/ox__Retry.cmt
+  ../../../lib/sql/connection.ml
+  ../../../lib/sql/.ox_sql.objs/byte/ox_sql__Connection.cmt
+  ../../../lib/sql/pool.ml
+  ../../../lib/sql/.ox_sql.objs/byte/ox_sql__Pool.cmt
+  ../../../lib/otel/ox_otel.ml
+  ../../../lib/otel/.ox_otel.objs/byte/ox_otel.cmt
+  ../../../lib/observability/logger.ml
+  ../../../lib/observability/.ox_observability.objs/byte/ox_observability__Logger.cmt
+  ../../../lib/ai/transport.ml
+  ../../../lib/ai/.ox_ai.objs/byte/ox_ai__Transport.cmt)
+ (action
+  (chdir
+   %{workspace_root}
+   (progn
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/ox/retry.ml
+     lib/ox/.ox.objs/byte/ox__Retry.cmt)
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/sql/connection.ml
+     lib/sql/.ox_sql.objs/byte/ox_sql__Connection.cmt)
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/sql/pool.ml
+     lib/sql/.ox_sql.objs/byte/ox_sql__Pool.cmt)
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/otel/ox_otel.ml
+     lib/otel/.ox_otel.objs/byte/ox_otel.cmt)
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/observability/logger.ml
+     lib/observability/.ox_observability.objs/byte/ox_observability__Logger.cmt)
+    (run
+     %{exe:test_monotonic_time.exe}
+     --clean
+     lib/ai/transport.ml
+     lib/ai/.ox_ai.objs/byte/ox_ai__Transport.cmt)))))

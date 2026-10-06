@@ -134,6 +134,10 @@ let all ~caps =
         "operation uses the originating pool; use the callback transaction runner"
         (fun ~emit ~undecided artifact ->
           visit (Transaction_runner.check ~caps ~emit ~undecided) artifact);
+      evidence_rule "monotonic-elapsed-time"
+        "wall-clock value reaches an elapsed contract; use a monotonic clock"
+        (fun ~emit ~undecided artifact ->
+          visit (Monotonic_elapsed_time.check ~caps ~emit ~undecided) artifact);
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"

@@ -1,0 +1,7 @@
+(library
+ (name monotonic_fixtures)
+ (public_name monotonic_probe)
+ (wrapped false)
+ (modes native)
+ (modules wall clean unknown)
+ (libraries ox_caps eio mtime unix))

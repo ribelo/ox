@@ -4,6 +4,7 @@
  (name concurrency_clean)
  (modules
   transaction_runner
+  monotonic_elapsed_time
   identity_external
   catch_helper
   catch_all

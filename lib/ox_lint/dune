@@ -275,3 +275,25 @@
   (../../test/caps/rules/clean/signature.ml
    as
    test/caps/rules/clean/signature.ml)))
+
+; ^safe-p9cw ^safe-8peq ^safe-5a9k: direct wall-clock audit resources.
+
+(install
+ (package ox_lint)
+ (section share)
+ (files
+  (../../docs/rules/ox-monotonic-elapsed-time.md
+   as
+   docs/rules/ox-monotonic-elapsed-time.md)
+  (../../test/lint/clean/monotonic_elapsed_time.ml
+   as
+   test/lint/clean/monotonic_elapsed_time.ml)
+  (../../test/lint/clean/monotonic_elapsed_time.mli
+   as
+   test/lint/clean/monotonic_elapsed_time.mli)
+  (../../test/lint/violating/monotonic_elapsed_time.ml
+   as
+   test/lint/violating/monotonic_elapsed_time.ml)
+  (../../test/lint/violating/monotonic_elapsed_time.mli
+   as
+   test/lint/violating/monotonic_elapsed_time.mli)))
