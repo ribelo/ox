@@ -729,8 +729,30 @@ let cache_empty_interfaces ~caps root rules =
   in
   Hashtbl.replace empty_interfaces root proofs
 
-let rule_modules ~caps root resolve =
-  let rules = describe ~caps root "rules --recursive @check" |> parse_rules in
+let rule_modules ~caps root resolve owners =
+  let targets =
+    owners
+    |> List.map (fun path ->
+        if path <> root && not (String.starts_with ~prefix:(root ^ "/") path) then
+          failwith "Dune inventory owner is outside the workspace";
+        let directory = relative ~root path in
+        let prefix = "_build/default/" in
+        let directory =
+          if directory = "_build/default" || directory = "" then "."
+          else if String.starts_with ~prefix directory then
+            String.sub directory (String.length prefix)
+              (String.length directory - String.length prefix)
+          else directory
+        in
+        Filename.quote ("@@" ^ directory ^ "/check"))
+    |> List.sort_uniq String.compare
+  in
+  let rules =
+    if targets = [] then []
+    else
+      describe ~caps root ("rules --recursive " ^ String.concat " " targets)
+      |> parse_rules
+  in
   let modules =
     rules
     |> List.concat_map (fun rule ->
@@ -799,19 +821,22 @@ let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
               (if Filename.is_relative path then Filename.concat root path else path)
           in
           let modules kind fields =
-            match field "modules" fields with
-            | Some (List modules) ->
-                List.concat_map
-                  (fun fields ->
-                    List.filter_map
-                      (fun key ->
-                        match field key fields with
-                        | Some (List [ Atom path ]) -> Some (resolve path, kind)
-                        | Some (List []) -> None
-                        | _ -> failwith "Dune inventory has an invalid source field")
-                      [ "impl"; "intf" ])
-                  modules
-            | _ -> failwith "Dune inventory has no module list"
+            let inputs =
+              match field "modules" fields with
+              | Some (List modules) ->
+                  List.concat_map
+                    (fun fields ->
+                      List.filter_map
+                        (fun key ->
+                          match field key fields with
+                          | Some (List [ Atom path ]) -> Some (resolve path, kind)
+                          | Some (List []) -> None
+                          | _ -> failwith "Dune inventory has an invalid source field")
+                        [ "impl"; "intf" ])
+                    modules
+              | _ -> failwith "Dune inventory has no module list"
+            in
+            inputs
           in
           (match field "root" description with
           | Some (Atom described) when canonical ~caps described = root -> ()
@@ -837,29 +862,129 @@ let inventory ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) root =
       Hashtbl.add inventory_cache root value;
       value
 
+(* Workspace omits test stanzas. Only selected sources nominate compilation
+   ancestors; Dune compiler rules, never existing annotations, prove membership. *)
+let check_owners ~caps ~root sources =
+  let rec stanzas seen path =
+    let path = canonical ~caps path in
+    if List.mem path seen then []
+    else
+      Cap_stdlib.In_channel.with_open_bin ~caps path In_channel.input_all
+      |> parse_rules
+      |> List.concat_map (function
+        | List [ Atom "include"; Atom name ] ->
+            stanzas (path :: seen) (Filename.concat (Filename.dirname path) name)
+        | stanza -> [ stanza ])
+  in
+  let rec owners directory = function
+    | List (Atom ("library" | "executable" | "executables" | "test" | "tests") :: _) ->
+        [ directory ]
+    | List (Atom "subdir" :: Atom name :: entries) ->
+        List.concat_map (owners (Filename.concat directory name)) entries
+    | _ -> []
+  in
+  let rec data_directory path directory =
+    let rec declared directory = function
+      | List (Atom "data_only_dirs" :: names)
+        when List.for_all
+               (function
+                 | Atom name ->
+                     name <> ""
+                     && String.for_all
+                          (function
+                            | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.' | ' '
+                              ->
+                                true
+                            | _ -> false)
+                          name
+                 | _ -> false)
+               names ->
+          List.exists
+            (function
+              | Atom name ->
+                  String.starts_with ~prefix:(Filename.concat directory name ^ "/") path
+              | _ -> false)
+            names
+      | List (Atom "subdir" :: Atom name :: entries) ->
+          List.exists (declared (Filename.concat directory name)) entries
+      | _ -> false
+    in
+    let dune = Filename.concat directory "dune" in
+    (Sys.file_exists dune && List.exists (declared directory) (stanzas [] dune))
+    || (directory <> root && data_directory path (Filename.dirname directory))
+  in
+  sources
+  |> List.filter (fun path ->
+      Filename.basename path = "dune"
+      || Filename.check_suffix path ".ml"
+      || Filename.check_suffix path ".mli")
+  |> List.concat_map (fun path ->
+      let path = original (absolute ~caps path) in
+      let build = Filename.concat root "_build/default" in
+      let path =
+        if String.starts_with ~prefix:(build ^ "/") path then
+          Filename.concat root (relative ~root:build path)
+        else path
+      in
+      let rec locate directory =
+        if directory <> root && not (String.starts_with ~prefix:(root ^ "/") directory)
+        then []
+        else
+          let dune = Filename.concat directory "dune" in
+          let found =
+            if Sys.file_exists dune then
+              stanzas [] dune
+              |> List.concat_map (owners directory)
+              |> List.filter (fun owner -> String.starts_with ~prefix:(owner ^ "/") path)
+            else []
+          in
+          if found <> [] || directory = root then found
+          else locate (Filename.dirname directory)
+      in
+      if not (String.starts_with ~prefix:(root ^ "/") path) then []
+      else if data_directory path (Filename.dirname path) then []
+      else if Filename.basename path = "dune" then
+        stanzas [] path |> List.concat_map (owners (Filename.dirname path))
+      else locate (Filename.dirname path))
+  |> List.sort_uniq String.compare
+
 let rule_inventory_cache = Hashtbl.create 8
 
-let rule_inventory ~caps root =
-  match Hashtbl.find_opt rule_inventory_cache root with
-  | Some value -> value
-  | None ->
-      let value =
-        try
-          let resolve path =
-            canonical ~caps
-              (if Filename.is_relative path then Filename.concat root path else path)
-          in
-          let inputs = rule_modules ~caps root resolve in
-          Hashtbl.replace rule_inputs root (List.map fst inputs);
-          Some (List.map (fun (path, kind) -> (original path, kind)) inputs)
-        with
-        | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
-        | Unix.Unix_error _
-        ->
-          None
-      in
-      Hashtbl.add rule_inventory_cache root value;
-      value
+let rule_inventory ~caps ~sources root =
+  try
+    let owners = check_owners ~caps ~root sources in
+    let key = (root, owners) in
+    match Hashtbl.find_opt rule_inventory_cache key with
+    | Some value -> value
+    | None ->
+        let value =
+          try
+            let resolve path =
+              canonical ~caps
+                (if Filename.is_relative path then Filename.concat root path else path)
+            in
+            (match inventory ~caps root with
+            | Some _ -> ()
+            | None -> failwith "Dune workspace inventory unavailable");
+            let inputs = rule_modules ~caps root resolve owners in
+            Hashtbl.replace rule_inputs root
+              (List.sort_uniq String.compare
+                 (List.map fst inputs
+                 @ Option.value (Hashtbl.find_opt rule_inputs root) ~default:[]));
+            Some (List.map (fun (path, kind) -> (original path, kind)) inputs)
+          with
+          | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
+          | Unix.Unix_error _
+          ->
+            None
+        in
+        Hashtbl.add rule_inventory_cache key value;
+        value
+  with
+  | Failure _ | Invalid_argument _ | Scanf.Scan_failure _ | Sys_error _
+  | Unix.Unix_error _
+  ->
+    None
 
 (* Alias actions are absent from [describe rules] on Dune 3.22. Read their
    declared data dependencies, but let the compiler inventories take precedence. *)
@@ -952,7 +1077,7 @@ let membership ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) input =
           match List.assoc_opt expected modules with
           | Some kind -> Built kind
           | None -> (
-              match rule_inventory ~caps root with
+              match rule_inventory ~caps ~sources:[ input ] root with
               | None -> Unknown
               | Some modules -> (
                   match List.assoc_opt expected modules with
@@ -1054,12 +1179,15 @@ let generated_producer ~caps ~root source =
   try locate (Filename.dirname source)
   with Failure _ | Invalid_argument _ | Sys_error _ | Unix.Unix_error _ -> None
 
-let generated_sources ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~root =
+let generated_sources ~(caps : < Cap.fs_read ; Cap.fork ; Cap.exec ; .. >) ~root ~sources
+    =
   let root = canonical ~caps root in
   let build = Filename.concat root "_build/default" in
   let producer = generated_producer ~caps ~root in
-  match (inventory ~caps root, rule_inventory ~caps root) with
-  | _, None -> Error "Dune generated-source inventory unavailable: describe rules @check"
+  match (inventory ~caps root, rule_inventory ~caps ~sources root) with
+  | _, None ->
+      Error
+        "Dune generated-source inventory unavailable: targeted nonrecursive check aliases"
   | None, _ -> Error "Dune generated-source inventory unavailable: describe workspace"
   | Some _, Some _ ->
       let inputs =

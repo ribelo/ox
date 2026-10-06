@@ -5,18 +5,29 @@ let run ~caps =
       let artifact = Artifact.read ~caps annotation in
       Artifact.check ~caps ~source artifact;
       Artifact.setup ~caps artifact
-  | [ _; "generated"; root ] -> (
-      match Artifact.generated_sources ~caps ~root with
+  | [ _; "generated"; root ] | [ _; "generated"; root; _ ] -> (
+      let scope = if Array.length Sys.argv = 4 then Sys.argv.(3) else "" in
+      match
+        Artifact.generated_sources ~caps ~root
+          ~sources:
+            (Filename.concat (Filename.concat root scope) "dune"
+            :: (if scope = "" then [] else [ Filename.concat root "fixtures/dune" ]))
+      with
       | Error message -> failwith message
       | Ok entries ->
           if
             not
               (List.exists
                  (fun (entry : Artifact.generated) ->
-                   entry.path = Filename.concat root "_build/default/generated.ml"
+                   entry.path
+                   = Filename.concat
+                       (Filename.concat root "_build/default")
+                       (Filename.concat scope "generated.ml")
                    && Option.is_some entry.producer)
                  entries)
-          then failwith "recursive inventory lost the declared generated test module")
+          then
+            failwith
+              "scoped nonrecursive inventory lost the declared generated test module")
   | _ :: expected :: sources when sources <> [] ->
       List.iter
         (fun source ->

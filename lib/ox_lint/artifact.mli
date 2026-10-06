@@ -55,12 +55,12 @@ type membership = Built of target | Data_only | Not_built | Unknown
 
 val membership : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> membership
 (** Query Dune declarations, cached per build workspace. [describe workspace] answers for
-    libraries/executables; [describe rules --recursive @check] supplies compilation
-    sources omitted by workspace (notably [test]/[tests] on Dune 3.22). Dune resolves
-    module sets and includes; existing annotations are never membership evidence. Absent
-    compilation, a declared literal file, [source_tree] or [glob_files] dependency yields
-    [Data_only]; [Not_built] means neither compiled nor consumed as data. Compilation
-    always wins. Alias data declarations are read from Dune stanzas because
+    libraries/executables; explicit nonrecursive check aliases for selected sources supply
+    compilation sources omitted by workspace (notably [test]/[tests] on Dune 3.22). Dune
+    resolves module sets and includes; existing annotations are never membership evidence.
+    Absent compilation, a declared literal file, [source_tree] or [glob_files] dependency
+    yields [Data_only]; [Not_built] means neither compiled nor consumed as data.
+    Compilation always wins. Alias data declarations are read from Dune stanzas because
     [describe rules] omits alias actions. Data traversal stops at nested Dune projects and
     Git-ignored directories. A failed query or unrecognised format returns [Unknown],
     never an exclusion. *)
@@ -70,12 +70,16 @@ type generated = { path : string; producer : string option }
 val generated_sources :
   caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > ->
   root:string ->
+  sources:string list ->
   (generated list, string) result
-(** Declared compiled inputs without a checked-in counterpart. PP duplicates, Dune
-    wrappers and nested projects are not returned. [producer] names the generating
-    rule/copy stanza or executable/test empty-interface stanza and its source Dune file;
-    [None] must be reported undecided. [Error] means the compilation inventory was
-    unavailable, never an exclusion. *)
+(** Query explicit nonrecursive aliases from selected [sources] compilation-stanza
+    ancestors and selected Dune files, including generated-only tests omitted by workspace
+    metadata. Traverse only these aliases’ compiler dependency closure, not descendant
+    aliases. Dune compiler rules establish membership. Return declared compiled inputs
+    without a checked-in counterpart. PP duplicates, Dune wrappers and nested projects are
+    not returned. [producer] names the generating rule/copy stanza or executable/test
+    empty-interface stanza and its source Dune file; [None] must be reported undecided.
+    [Error] means the compilation inventory was unavailable, never an exclusion. *)
 
 val find : caps:< Cap.fs_read ; Cap.fork ; Cap.exec ; .. > -> string -> t
 (** Match the recorded source identity in local and enclosing build object directories,

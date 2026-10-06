@@ -16,7 +16,9 @@ let () =
         | _ -> (None, rest)
       in
       (if mode <> "uncached" then
-         match Artifact.generated_sources ~caps ~root with
+         match
+           Artifact.generated_sources ~caps ~root ~sources:[ Filename.concat root "dune" ]
+         with
          | Ok _ -> ()
          | Error message -> failwith (root ^ ": " ^ message));
       Option.iter (mutate ~caps) mutation;

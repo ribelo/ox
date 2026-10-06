@@ -80,7 +80,7 @@ dune build --root "$project/lib/nested" @check
 # ^nlint-r01u: both repository spellings select non-capability rules by default.
 expect 1 "$engine" --repo-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
-contains "$scratch/err" "32 registered rules selected (28 active, 4 dormant)"
+contains "$scratch/err" "34 registered rules selected (28 active, 6 dormant)"
 expect 1 "$engine" --caps-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
 # ^nlintcov-q6n2: inventory forces the universe producer; the default gate rebuilds after it.
@@ -194,7 +194,7 @@ chmod +x "$scratch/no-rules/dune"
 expect 2 env DUNE_REAL="$(command -v dune)" PATH="$scratch/no-rules:$PATH" "$engine" --caps-gate "${cap_rules[@]}" --require-typed "$project/test/entry.ml"
 contains "$scratch/err" '1 modules with typed rules undecided'
 expect 2 env DUNE_REAL="$(command -v dune)" PATH="$scratch/no-rules:$PATH" "$engine" --caps-gate "${cap_rules[@]}" --require-typed "$project"
-contains "$scratch/err" 'Dune generated-source inventory unavailable: describe rules @check'
+contains "$scratch/err" 'Dune generated-source inventory unavailable: targeted nonrecursive check aliases'
 mv "$scratch/test.cmt.saved" "$test_cmt"
 # ^nlintcov-q6n2: default scope includes the test tree and explicitly reports its rebuild.
 (cd "$project"; expect 0 "$engine" --caps-gate "${cap_rules[@]}" --require-typed)

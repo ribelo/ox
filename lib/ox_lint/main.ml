@@ -52,8 +52,10 @@ let rec files ~caps ~default_scan ~scan_root ~record ~ignored_paths ~directory_c
             files ~caps ~default_scan ~scan_root ~record ~ignored_paths ~directory_cycles
               ~seen (Filename.concat path name))
         names
-  else if List.exists (Filename.check_suffix path) [ ".ml"; ".mli"; ".cmt"; ".cmti" ] then
-    [ path ]
+  else if
+    Filename.basename path = "dune"
+    || List.exists (Filename.check_suffix path) [ ".ml"; ".mli"; ".cmt"; ".cmti" ]
+  then [ path ]
   else []
 
 let absolute path =
@@ -261,6 +263,40 @@ let run
                  fail ~typed:typed_requested ~fatal:true input ex;
                  None)
          in
+         let ocaml_input path =
+           List.exists (Filename.check_suffix path) [ ".ml"; ".mli"; ".cmt"; ".cmti" ]
+         in
+         let metadata_only = ref [] in
+         let generated_scopes = Hashtbl.create 8 in
+         let sources =
+           List.concat_map
+             (fun path ->
+               let entry = Unix.lstat path in
+               if
+                 entry.Unix.st_kind = Unix.S_DIR
+                 && Artifact.ignored ~caps ~directory:(Filename.dirname path)
+                      [ Filename.basename path ]
+                    <> []
+               then begin
+                 incr ignored_paths;
+                 record (path ^ "/") "excluded" "ignored";
+                 []
+               end
+               else begin
+                 let xs =
+                   files ~caps ~default_scan ~scan_root ~record ~ignored_paths
+                     ~directory_cycles ~seen:[] path
+                 in
+                 if xs = [] then begin
+                   incr empty_paths;
+                   record (path ^ "/") "excluded" "no-ocaml"
+                 end
+                 else if not (List.exists ocaml_input xs) then
+                   metadata_only := path :: !metadata_only;
+                 xs
+               end)
+             (List.map (fun (input, _, _) -> input) selections)
+         in
          let unresolved = Hashtbl.create 16 in
          let generated =
            if
@@ -296,7 +332,11 @@ let run
                      if directory || generated then Some root else None))
              |> List.map absolute |> List.sort_uniq String.compare
              |> List.concat_map (fun root ->
-                 match Artifact.generated_sources ~caps ~root with
+                 match
+                   Artifact.generated_sources ~caps ~root
+                     ~sources:
+                       (sources @ List.map (fun (_, _, source) -> source) selections)
+                 with
                  | Error message ->
                      fail ~typed:true
                        (Filename.concat root "(generated sources)")
@@ -322,7 +362,12 @@ let run
                              selections
                          in
                          if matches = [] then None
-                         else
+                         else begin
+                           List.iter
+                             (fun (input, directory, _) ->
+                               if directory then
+                                 Hashtbl.replace generated_scopes (absolute input) ())
+                             matches;
                            match entry.producer with
                            | None ->
                                Hashtbl.replace unresolved (absolute entry.path) ();
@@ -344,9 +389,17 @@ let run
                                  matches;
                                if List.exists (fun (_, directory, _) -> directory) matches
                                then Some entry.path
-                               else None)
+                               else None
+                         end)
                        entries)
          in
+         List.iter
+           (fun path ->
+             if not (Hashtbl.mem generated_scopes (absolute path)) then begin
+               incr empty_paths;
+               record (path ^ "/") "excluded" "no-ocaml"
+             end)
+           !metadata_only;
          let rebuilt = ref 0 in
          (* ^nlintcov-q6n2 ^nlint-r01u: finish mutating inventory before rebuilding.
              An explicit scan must still expose missing/stale supplied annotations. *)
@@ -360,33 +413,7 @@ let run
              (List.map (fun (_, _, workspace) -> workspace) selections
              |> List.sort_uniq String.compare);
          let inputs =
-           List.concat_map
-             (fun path ->
-               let entry = Unix.lstat path in
-               if
-                 entry.Unix.st_kind = Unix.S_DIR
-                 && Artifact.ignored ~caps ~directory:(Filename.dirname path)
-                      [ Filename.basename path ]
-                    <> []
-               then begin
-                 incr ignored_paths;
-                 record (path ^ "/") "excluded" "ignored";
-                 []
-               end
-               else begin
-                 let xs =
-                   files ~caps ~default_scan ~scan_root ~record ~ignored_paths
-                     ~directory_cycles ~seen:[] path
-                 in
-                 if xs = [] then begin
-                   incr empty_paths;
-                   record (path ^ "/") "excluded" "no-ocaml"
-                 end;
-                 xs
-               end)
-             (List.map (fun (input, _, _) -> input) selections)
-           |> fun sources ->
-           sources @ generated |> List.sort_uniq String.compare
+           sources @ generated |> List.filter ocaml_input |> List.sort_uniq String.compare
            |> List.filter (fun path -> not (Hashtbl.mem unresolved (absolute path)))
            |> List.filter (fun path ->
                if !repo_gate && Caps_policy.excluded !allows path then begin
