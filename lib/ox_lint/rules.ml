@@ -214,12 +214,7 @@ let dormant ?(audit = false) rule =
   rule.id = "ox-raw-concurrency"
   || (not audit)
      && List.mem rule.id
-          [
-            "ox-transaction-runner";
-            "ox-execution-context";
-            "ox-cancel-mask-scope";
-            "ox-raw-sql-construction";
-          ]
+          [ "ox-execution-context"; "ox-cancel-mask-scope"; "ox-raw-sql-construction" ]
 
 let applies ?(audit = false) ~root ~source rule =
   let absolute path =

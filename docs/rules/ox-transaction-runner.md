@@ -1,6 +1,6 @@
 # ox-transaction-runner
 
-**Dormant:** explicit audit only; ordinary consumer unknowns prevent activation. ^safe-ldtb ^safe-j6t8 ^safe-r1xw
+**Active:** ordinary repository gates prevent originating-pool reborrows; the architect’s prevention decision does not require complete consumer admission for this rule. ^safe-ldtb ^safe-j6t8 ^safe-r1xw
 
 Report authentic originating-pool operations inside its transaction callback; use the supplied transaction runner. Local aliases/helpers preserve runner identity. The callback runner and proven independent pools remain legal; unresolved transmitted/captured runners are named undecided, not a general lifetime certificate. Compiler UIDs and imported interface evidence authenticate the APIs.
 

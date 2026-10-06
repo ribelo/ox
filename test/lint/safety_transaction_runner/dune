@@ -6,6 +6,25 @@
  (libraries lint_engine ox_test eio_main ox_sql))
 
 (rule
+ (targets transaction_witness.exe)
+ (deps
+  ../fixtures/transaction_witness.ml
+  ../fixtures/transaction_witness.mli)
+ (action
+  (run
+   ocamlfind
+   ocamlopt
+   -package
+   ox_sql,ox_test,eio_main
+   -linkpkg
+   -I
+   ../fixtures
+   -o
+   transaction_witness.exe
+   ../fixtures/transaction_witness.mli
+   ../fixtures/transaction_witness.ml)))
+
+(rule
  (alias runtest)
  (deps
   ../clean/transaction_runner.ml
@@ -29,5 +48,8 @@
     ../clean/transaction_runner.ml
     ../violating/.concurrency_violating.objs/byte/concurrency_violating__Transaction_runner.cmt
     ../violating/transaction_runner.ml)
-   (run bash -c "timeout 2 ./corpus.exe --wrong-runner; test $? -eq 124")
-   (run ./corpus.exe --witness))))
+   (run
+    bash
+    -c
+    "timeout 2 ./transaction_witness.exe --wrong-runner; test $? -eq 124")
+   (run ./transaction_witness.exe --witness))))

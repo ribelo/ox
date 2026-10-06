@@ -115,12 +115,12 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
       if Rules.applies ~root ~source raw then
         failwith ("dormant raw policy applies: " ^ source))
     [ "lib/ox/core.ml"; "lib/http/client.ml"; "/tmp/consumer.ml" ];
-  (* ^safe-j6t8: explicit audit is not default activation. *)
+  (* ^safe-j6t8: prevention activates transactions in ordinary and audit scans. *)
   let transaction = List.hd (Rules.select ~caps [ "ox-transaction-runner" ]) in
-  if (not (Rules.dormant transaction)) || Rules.dormant ~audit:true transaction then
-    failwith "transaction audit policy disagrees with dormancy";
+  if Rules.dormant transaction || Rules.dormant ~audit:true transaction then
+    failwith "transaction prevention policy is dormant";
   if
-    Rules.applies ~root ~source:"/tmp/consumer.ml" transaction
+    (not (Rules.applies ~root ~source:"/tmp/consumer.ml" transaction))
     || (not (Rules.applies ~audit:true ~root ~source:"/tmp/consumer.ml" transaction))
     || Rules.applies ~audit:true ~root ~source:"/tmp/consumer.ml" raw
   then failwith "explicit audit policy disagrees with applicability";
