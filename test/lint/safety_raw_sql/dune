@@ -1,0 +1,32 @@
+; ^safe-8pmk ^safe-p1m1 ^safe-iq5u: one MI-first fixture/progress corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test eio_main ox ox_blocking ox_sql threads))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/raw_sql_construction.ml
+  ../clean/raw_sql_construction.mli
+  ../violating/raw_sql_construction.ml
+  ../violating/raw_sql_construction.mli
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_sql_construction.cmti
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_sql_construction.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_sql_construction.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_sql_construction.cmt)
+ (action
+  (progn
+   (run
+    ./corpus.exe
+    --fixtures
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_sql_construction.cmti
+    ../clean/raw_sql_construction.mli
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_sql_construction.cmti
+    ../violating/raw_sql_construction.mli
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Raw_sql_construction.cmt
+    ../clean/raw_sql_construction.ml
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Raw_sql_construction.cmt
+    ../violating/raw_sql_construction.ml)
+   (run ./corpus.exe --witness))))

@@ -300,6 +300,21 @@
   (../../test/lint/violating/cancel_mask.mli
    as
    test/lint/violating/cancel_mask.mli)
+  (../../test/lint/clean/raw_sql_construction.ml
+   as
+   test/lint/clean/raw_sql_construction.ml)
+  (../../test/lint/clean/raw_sql_construction.mli
+   as
+   test/lint/clean/raw_sql_construction.mli)
+  (../../test/lint/violating/raw_sql_construction.ml
+   as
+   test/lint/violating/raw_sql_construction.ml)
+  (../../test/lint/violating/raw_sql_construction.mli
+   as
+   test/lint/violating/raw_sql_construction.mli)
   (../../docs/rules/ox-cancel-mask-scope.md
    as
-   docs/rules/ox-cancel-mask-scope.md)))
+   docs/rules/ox-cancel-mask-scope.md)
+  (../../docs/rules/ox-raw-sql-construction.md
+   as
+   docs/rules/ox-raw-sql-construction.md)))

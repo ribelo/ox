@@ -257,6 +257,8 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/disposal.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/cancel_mask.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/cancel_mask.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/raw_sql.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/raw_sql.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/execution_context.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/execution_context.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/monotonic_elapsed_time.cmt

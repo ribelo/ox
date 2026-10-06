@@ -151,6 +151,9 @@ let all ~caps =
         clean = "test/lint/clean/cancel_mask.ml";
         violating = "test/lint/violating/cancel_mask.ml";
       };
+      evidence_rule "raw-sql-construction" Raw_sql.message
+        (fun ~emit ~undecided artifact ->
+          visit (Raw_sql.check ~caps ~emit ~undecided) artifact);
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"
