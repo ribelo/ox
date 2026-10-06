@@ -5,6 +5,8 @@
  (modules
   transaction_runner
   monotonic_elapsed_time
+  execution_context
+  fiber_blocking
   identity_external
   catch_helper
   catch_all
@@ -21,7 +23,17 @@
   docs_generated
   docs_generated_dependency)
  (modules_without_implementation public_exception)
- (libraries eio ox ox_caps ox_http ox_sql yojson unix threads))
+ (libraries
+  eio
+  eio_main
+  ox
+  ox_blocking
+  ox_caps
+  ox_http
+  ox_sql
+  yojson
+  unix
+  threads))
 
 ; ^nlintd-truth ^nlintcov-q6n2: no checked-in implementation sibling exists.
 

@@ -1,0 +1,10 @@
+(library
+ (name leased_consumer)
+ (wrapped false)
+ (modules leased)
+ (libraries eio_main ox_blocking unix threads))
+
+(executable
+ (name progress)
+ (modules progress)
+ (libraries eio_main ox ox_blocking threads))

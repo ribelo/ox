@@ -1,0 +1,5 @@
+(* ^safe-9ved ^safe-r5ye: finite exact native wait identities. *)
+let fractional () = Eio_main.run (fun _ -> Unix.sleepf 0.001)
+let integer () = Eio_main.run (fun _ -> Unix.sleep 1)
+let thread () = Eio_main.run (fun _ -> Thread.delay 0.001)
+let counting semaphore () = Eio_main.run (fun _ -> Semaphore.Counting.acquire semaphore)

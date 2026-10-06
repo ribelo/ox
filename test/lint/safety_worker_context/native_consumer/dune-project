@@ -1,0 +1,4 @@
+(lang dune 3.21)
+; ^safe-fr73 ^safe-y047: data-only native paired source; no canonical provider.
+(name execution_context_native_data)
+(formatting disabled)

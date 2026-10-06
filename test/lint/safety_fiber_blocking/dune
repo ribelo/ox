@@ -1,0 +1,59 @@
+; ^safe-r5ye ^safe-ohen: compiled only externally against the genuine producer prefix.
+
+(data_only_dirs leased_consumer)
+
+(executable
+ (name test_fiber_blocking)
+ (modules test_fiber_blocking)
+ (libraries lint_engine ox_test))
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test))
+
+(test
+ (name runtime)
+ (modules runtime)
+ (libraries eio_main ox ox_blocking unix threads))
+
+(rule
+ (alias runtest)
+ (deps
+  fixtures/waits.ml
+  fixtures/.fiber_blocking_fixture.objs/byte/waits.cmt
+  fixtures/direct.ml
+  fixtures/native.ml
+  fixtures/.fiber_blocking_fixture.objs/byte/native.cmt
+  fixtures/.fiber_blocking_fixture.objs/byte/direct.cmt
+  fixtures/aliases.ml
+  fixtures/controls.ml
+  fixtures/.fiber_blocking_fixture.objs/byte/aliases.cmt
+  fixtures/.fiber_blocking_fixture.objs/byte/controls.cmt
+  fixtures/unresolved.ml
+  fixtures/.fiber_blocking_fixture.objs/byte/unresolved.cmt
+  fixtures/hooks.ml
+  fixtures/.fiber_blocking_fixture.objs/byte/hooks.cmt)
+ (action
+  (run ./test_fiber_blocking.exe)))
+
+; ^safe-r5ye ^safe-ohen: actual installed/no-Git status and sibling-progress evidence.
+
+(rule
+ (alias runtest)
+ (deps
+  installed.sh
+  leased.sh
+  (source_tree leased_consumer)
+  (package ox_blocking)
+  (package ox_lint))
+ (action
+  (run
+   bash
+   -c
+   "set -euo pipefail; prefix=$(realpath \"$1\"); export OCAMLPATH=\"$prefix/lib${OCAMLPATH:+:$OCAMLPATH}\"; bash \"$2\" \"$prefix/bin/ox-lint\" \"$prefix/share/ox_lint\"; bash \"$3\" \"$prefix\" \"$(realpath \"$4\")\""
+   --
+   %{workspace_root}/../install/default
+   %{dep:installed.sh}
+   %{dep:leased.sh}
+   %{exe:corpus.exe})))

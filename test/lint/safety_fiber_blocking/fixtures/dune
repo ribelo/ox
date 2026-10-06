@@ -1,0 +1,5 @@
+(library
+ (name fiber_blocking_fixture)
+ (wrapped false)
+ (modules direct aliases controls unresolved hooks native waits)
+ (libraries eio_main unix threads ox_blocking ox_sql ox_test))

@@ -5,6 +5,8 @@
  (modules
   transaction_runner
   monotonic_elapsed_time
+  execution_context
+  fiber_blocking
   identity_external
   catch_all
   suspending_finalizer
@@ -18,4 +20,4 @@
   docs_dependency
   docs_truth)
  (modules_without_implementation public_exception)
- (libraries eio ox ox_caps ox_http ox_sql yojson unix threads))
+ (libraries eio eio_main ox ox_blocking ox_caps ox_http ox_sql yojson unix threads))

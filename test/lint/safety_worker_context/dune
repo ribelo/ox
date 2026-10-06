@@ -1,0 +1,26 @@
+; ^safe-sr6e ^safe-9hbm ^safe-eftp: only actual worker/Eio candidate controls.
+
+(data_only_dirs native_consumer)
+
+(executable
+ (name test_worker_context)
+ (modules test_worker_context)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  check-native.sh
+  native_consumer/catalogue_pairs.ml
+  native_consumer/catalogue_pairs.mli
+  native_consumer/boundary_pairs.ml
+  native_consumer/boundary_pairs.mli
+  ../../../lib/blocking/.ox_blocking.objs/byte/ox_blocking.cmi
+  ../../../lib/ox/.ox.objs/byte/ox.cmi)
+ (action
+  (run
+   bash
+   %{dep:check-native.sh}
+   %{exe:test_worker_context.exe}
+   ../../../lib/blocking/.ox_blocking.objs/byte
+   ../../../lib/ox/.ox.objs/byte)))
