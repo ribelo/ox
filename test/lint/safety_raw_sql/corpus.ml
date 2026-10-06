@@ -27,7 +27,10 @@ let scan ~caps annotation source =
   | _ -> failwith "implementation or interface evidence required");
   (Option.value ~default:source artifact.info.cmt_sourcefile, !observations)
 
-let expected file = [ (file, 5, 21, 5, 24, "finding", Raw_sql.message) ]
+let expected file =
+  List.map
+    (fun line -> (file, line, 21, line, 24, "finding", Raw_sql.message))
+    [ 5; 11; 15; 19; 23; 27; 32; 36 ]
 
 let fixtures ~caps clean_i clean_is bad_i bad_is clean clean_s bad bad_s =
   List.iter

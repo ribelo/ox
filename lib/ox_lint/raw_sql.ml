@@ -2,7 +2,15 @@
 open Ocaml_common
 open Typedtree
 
-type text = Literal | Other | Dynamic
+type text =
+  | Literal
+  | Fragment of string
+  | Identifier
+  | Trusted of text list
+  | Pieces of text list
+  | Other
+  | Dynamic
+
 type actual = { value : expression; captured : (Path.t * actual) list }
 
 let message =
@@ -26,6 +34,7 @@ let check ~(caps : < Ox_caps.Cap.fs_read ; .. >) ~emit ~undecided =
       names
   in
   let std name = identities [ ("Stdlib", name) ] in
+  let quote_ident = identities [ ("Ox_sql__Dsl", [ "quote_ident" ]) ] in
   let concat = std [ "^" ] in
   let join = std [ "String"; "concat" ] in
   let format = std [ "Printf"; "sprintf" ] @ std [ "Format"; "asprintf" ] in
@@ -122,7 +131,58 @@ let check ~(caps : < Ox_caps.Cap.fs_read ; .. >) ~emit ~undecided =
         parameters substitutions params actuals
     | _ -> None
   in
-  let combine items = if List.for_all (( = ) Literal) items then Literal else Dynamic in
+  let literal = function Literal | Fragment _ -> true | _ -> false in
+  (* The identifier contract applies only to intact quoted tokens. A string
+     literal, quoted identifier, bracket/backtick or comment can change context. *)
+  let plain value =
+    (not (String.exists (fun c -> List.mem c [ '\''; '"'; '['; ']'; '`'; '\000' ]) value))
+    && not
+         (List.exists
+            (fun token ->
+              let rec at i =
+                i + String.length token <= String.length value
+                && (String.sub value i (String.length token) = token || at (i + 1))
+              in
+              at 0)
+            [ "--"; "/*"; "*/" ])
+  in
+  let combine items =
+    let rec flatten = function
+      | Trusted items -> List.concat_map flatten items
+      | x -> [ x ]
+    in
+    let rec merge = function
+      | Fragment a :: Fragment b :: rest -> merge (Fragment (a ^ b) :: rest)
+      | x :: rest -> x :: merge rest
+      | [] -> []
+    in
+    let items = merge (List.concat_map flatten items) in
+    if List.for_all literal items then
+      match items with [ (Fragment _ as x) ] -> x | _ -> Literal
+    else if
+      List.for_all
+        (function Identifier -> true | Fragment s -> plain s | _ -> false)
+        items
+    then Trusted items
+    else Dynamic
+  in
+  let formatted format arguments =
+    let rec loop start i arguments acc =
+      if i = String.length format then
+        if arguments = [] then
+          combine (List.rev (Fragment (String.sub format start (i - start)) :: acc))
+        else Dynamic
+      else if format.[i] <> '%' then loop start (i + 1) arguments acc
+      else if i + 1 = String.length format then Dynamic
+      else
+        let acc = Fragment (String.sub format start (i - start)) :: acc in
+        match (format.[i + 1], arguments) with
+        | '%', _ -> loop (i + 2) (i + 2) arguments (Fragment "%" :: acc)
+        | 's', argument :: rest -> loop (i + 2) (i + 2) rest (argument :: acc)
+        | _ -> Dynamic
+    in
+    loop 0 0 arguments []
+  in
   let source_fuel = ref 256 in
   let rec text budget substitutions expression =
     if budget = 0 || !source_fuel = 0 then (
@@ -133,27 +193,55 @@ let check ~(caps : < Ox_caps.Cap.fs_read ; .. >) ~emit ~undecided =
       let substitutions, e = origin 32 substitutions expression in
       let next = text (budget - 1) substitutions in
       match e.exp_desc with
+      | Texp_constant (Const_string (value, _, _)) -> Fragment value
+      | Texp_constant (Const_char value) -> Fragment (String.make 1 value)
       | Texp_constant _ -> Literal
-      | Texp_construct (_, _, _, children, _) ->
-          if List.for_all (fun (_, child) -> next child = Literal) children then Literal
-          else Other
+      | Texp_construct (_, _, _, children, _) -> (
+          let kind = Ctype.expand_head e.exp_env e.exp_type in
+          match
+            (Types.get_desc kind, List.map (fun (_, child) -> next child) children)
+          with
+          | Tconstr (path, _, _), [] when Path.same path Predef.path_list -> Pieces []
+          | Tconstr (path, _, _), [ head; Pieces tail ]
+            when Path.same path Predef.path_list ->
+              Pieces (head :: tail)
+          | _, items when List.for_all literal items -> Literal
+          | _ -> Other)
       | Texp_let (_, _, body) | Texp_sequence (_, _, body) -> next body
       | Texp_ifthenelse (_, yes, Some no) -> (
           match (next yes, next no) with
-          | Literal, Literal -> Literal
+          | left, right when literal left && literal right -> Literal
           | Dynamic, _ | _, Dynamic -> Dynamic
           | _ -> Other)
       | Texp_apply (fn, arguments, _, _, _) -> (
           let scope, fn, actuals = application 32 substitutions fn (args arguments) in
           let values = List.map snd actuals in
           let classify = text (budget - 1) scope in
-          if is concat fn || is join fn then combine (List.map classify values)
+          if is quote_ident fn && List.length values = 1 then Identifier
+          else if is concat fn then combine (List.map classify values)
+          else if is join fn then
+            match List.map classify values with
+            | [ separator; Pieces elements ] ->
+                let rec interleave = function
+                  | [] -> []
+                  | [ x ] -> [ x ]
+                  | x :: xs -> x :: separator :: interleave xs
+                in
+                combine (interleave elements)
+            | items -> combine items
           else if is format fn then
-            match values with
-            | { exp_desc = Texp_construct (_, _, _, [ _; (_, literal) ], _); _ } :: values
-              ->
-                combine (classify literal :: List.map classify values)
-            | _ -> combine (List.map classify values)
+            let items =
+              match values with
+              | { exp_desc = Texp_construct (_, _, _, [ _; (_, format) ], _); _ } :: rest
+                ->
+                  classify format :: List.map classify rest
+              | _ -> List.map classify values
+            in
+            if List.for_all literal items then Literal
+            else
+              match items with
+              | Fragment format :: rest -> formatted format rest
+              | _ -> Dynamic
           else if is buffer_contents fn then buffer_text budget scope e values
           else
             match transfer scope fn actuals with
@@ -176,7 +264,7 @@ let check ~(caps : < Ox_caps.Cap.fs_read ; .. >) ~emit ~undecided =
                     && loc.Location.loc_start.pos_cnum < before
                   then Some added
                   else None)
-                !mutations
+                (List.rev !mutations)
             in
             (* Clearing or resetting invalidates this small append-only proof. *)
             if List.exists Option.is_none events then Other

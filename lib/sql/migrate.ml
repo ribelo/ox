@@ -393,7 +393,10 @@ let error_to_string = function
       ^ Types.show_error error
 
 let ( let* ) = Result.bind
-let table_name config = Dsl.quote_ident (Table_name.to_string config.Config.table_name)
+
+(* ^safe-p1m1: preserve nominal table names until each SQL assembly boundary. *)
+let table_name config = config.Config.table_name
+let quote_table table = Dsl.quote_ident (Table_name.to_string table)
 
 let pool_error = function
   | `Ox_sql err -> Sql_error err
@@ -408,6 +411,7 @@ let execute pool sql params =
 let script pool sql = Pool.Raw.execute_script pool sql |> Result.map_error pool_error
 
 let create_table pool table =
+  let table = quote_table table in
   script pool
     ("CREATE TABLE IF NOT EXISTS " ^ table
    ^ " (version INTEGER PRIMARY KEY, description TEXT NOT NULL, checksum TEXT NOT NULL, \
@@ -416,6 +420,7 @@ let create_table pool table =
 
 let read_states pool table =
   let* () = create_table pool table in
+  let table = quote_table table in
   let* rows =
     query pool
       ("SELECT version, checksum, success FROM " ^ table ^ " ORDER BY version")
@@ -480,6 +485,7 @@ let validate config migrations states =
   loop [] states
 
 let apply_migration ~clock pool table migration =
+  let table = quote_table table in
   let version = migration.Migration.version in
   let start = Eio.Time.Mono.now clock in
   let* _ =
@@ -570,7 +576,7 @@ let undo ~caps ?(config = Config.default) pool source ~target =
             let* () = script pool m.sql in
             let* _ =
               execute pool
-                ("DELETE FROM " ^ table ^ " WHERE version=?")
+                ("DELETE FROM " ^ quote_table table ^ " WHERE version=?")
                 [ Value.Int64 version ]
             in
             loop ({ migration = m; elapsed_ms = 0 } :: acc) rest)

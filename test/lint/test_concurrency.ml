@@ -119,6 +119,10 @@ let run ~(caps : < Ox_caps.Cap.fs_read ; Ox_caps.Cap.stdout ; .. >) () =
   let transaction = List.hd (Rules.select ~caps [ "ox-transaction-runner" ]) in
   if Rules.dormant transaction || Rules.dormant ~audit:true transaction then
     failwith "transaction prevention policy is dormant";
+  (* ^safe-p1m1: authenticated identifier provenance admits prevention. *)
+  let sql = List.hd (Rules.select ~caps [ "ox-raw-sql-construction" ]) in
+  if Rules.dormant sql || Rules.dormant ~audit:true sql then
+    failwith "SQL prevention policy is dormant";
   if
     (not (Rules.applies ~root ~source:"/tmp/consumer.ml" transaction))
     || (not (Rules.applies ~audit:true ~root ~source:"/tmp/consumer.ml" transaction))

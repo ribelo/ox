@@ -203,8 +203,7 @@ let allowances = []
 (* ^nlintcov-r3k8 ^nlint-r01u: summary and applicability share the dormant policy. *)
 let dormant ?(audit = false) rule =
   rule.id = "ox-raw-concurrency"
-  || (not audit)
-     && List.mem rule.id [ "ox-execution-context"; "ox-raw-sql-construction" ]
+  || ((not audit) && List.mem rule.id [ "ox-execution-context" ])
 
 let applies ?(audit = false) ~root ~source rule =
   let absolute path =
