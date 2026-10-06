@@ -142,6 +142,15 @@ let all ~caps =
         "known operation executes in the wrong Eio/native context"
         (fun ~emit ~undecided artifact ->
           visit (Execution_context.check ~caps ~emit ~undecided) artifact);
+      {
+        (evidence_rule "cancel-mask-scope"
+           "known indefinite wait executes inside cancellation protection"
+           (fun ~emit ~undecided artifact ->
+             visit (Cancel_mask.check ~caps ~emit ~undecided) artifact))
+        with
+        clean = "test/lint/clean/cancel_mask.ml";
+        violating = "test/lint/violating/cancel_mask.ml";
+      };
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"

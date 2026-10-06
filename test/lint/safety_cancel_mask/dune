@@ -1,0 +1,32 @@
+; ^safe-ctc4 ^safe-vj9b ^safe-tcqo: one MI-first fixture/progress corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test eio_main ox ox_blocking threads))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/cancel_mask.ml
+  ../clean/cancel_mask.mli
+  ../violating/cancel_mask.ml
+  ../violating/cancel_mask.mli
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_mask.cmti
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_mask.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_mask.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_mask.cmt)
+ (action
+  (progn
+   (run
+    ./corpus.exe
+    --fixtures
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_mask.cmti
+    ../clean/cancel_mask.mli
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_mask.cmti
+    ../violating/cancel_mask.mli
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Cancel_mask.cmt
+    ../clean/cancel_mask.ml
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Cancel_mask.cmt
+    ../violating/cancel_mask.ml)
+   (run bash -c "timeout 2 ./corpus.exe --witness; test $? -eq 124"))))

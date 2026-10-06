@@ -6,6 +6,7 @@
   transaction_runner
   monotonic_elapsed_time
   execution_context
+  cancel_mask
   identity_external
   catch_all
   suspending_finalizer

@@ -291,4 +291,15 @@
    test/lint/violating/execution_context.ml)
   (../../test/lint/violating/execution_context.mli
    as
-   test/lint/violating/execution_context.mli)))
+   test/lint/violating/execution_context.mli)
+  (../../test/lint/clean/cancel_mask.ml as test/lint/clean/cancel_mask.ml)
+  (../../test/lint/clean/cancel_mask.mli as test/lint/clean/cancel_mask.mli)
+  (../../test/lint/violating/cancel_mask.ml
+   as
+   test/lint/violating/cancel_mask.ml)
+  (../../test/lint/violating/cancel_mask.mli
+   as
+   test/lint/violating/cancel_mask.mli)
+  (../../docs/rules/ox-cancel-mask-scope.md
+   as
+   docs/rules/ox-cancel-mask-scope.md)))
