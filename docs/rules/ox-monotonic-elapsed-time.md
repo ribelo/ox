@@ -1,29 +1,7 @@
 # ox-monotonic-elapsed-time
 
-Wall time describes civil dates and protocol timestamps, not elapsed budgets.
+Dormant typed audit of subtraction/comparison between wall-origin values and wall-origin sleeps/timeouts. Authenticated Eio.Time.now, Unix.gettimeofday and Ox_caps.Cap_unix.gettimeofday are sources; use Eio.Time.Mono.now and Mtime.span for elapsed budgets.
 
-The typed rule checks numeric subtraction/comparison of two wall-origin values,
-and wall-origin delay arguments to `Eio.Time.sleep`, `Eio.Time.with_timeout` and
-`Eio.Time.Mono.sleep`. Use `Eio.Time.Mono.now` with `Mtime.span` for elapsed time.
+Local aliases and ordinary numeric conversions preserve origin. Scalar-minus-wall civil delay and exact same-bound-value stamp -. Stdlib.floor stamp are clean. Metadata, formatting and opaque calls are not elapsed sinks. A known wall value through an unsupported transformation is undecided only at a checked elapsed sink; generic scalars and unrelated recursion stay outside scope. No generic-helper instantiation or interprocedural summaries.
 
-Sources are compiler-resolved `Eio.Time.now`, `Unix.gettimeofday`, and
-`Ox_caps.Cap_unix.gettimeofday`. Local aliases and ordinary arithmetic or
-numeric conversions preserve wall origin. Same-spelled local modules do not.
-
-Scalar-minus-wall is a civil delay and stays clean. Exact `stamp -. floor stamp`
-with authenticated Stdlib floor and the same bound value extracts fractional
-seconds, not elapsed time. A shadow floor or a second wall read stays unresolved.
-Logging, formatting, metadata
-and opaque calls are not elapsed sinks. A wall value passed through an opaque
-transformation is named undecided only at a checked subtraction/comparison or
-sleep/timeout use. Duration and Schedule are not independent sink roots.
-
-The rule does not instantiate generic local helpers, infer callback effects, or
-build interprocedural summaries. Generic scalars and unrelated recursion stay
-clean; unsupported values with no known wall source are outside this rule.
-
-The default gate leaves this candidate dormant; explicit `--rules
-ox-monotonic-elapsed-time` runs the audit, not consumer activation.
-
-Native controls compile interfaces first against real Eio/Mtime/Unix/Ox_caps,
-assert exact physical diagnostic sites, and check a relocated installed CLI.
+One violating/clean pair and one compact native corpus assert the exact observations. Explicit --rules selects an audit, not activation; measured production findings and admission gaps are classified in the parent ticket.
