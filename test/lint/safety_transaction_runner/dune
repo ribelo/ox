@@ -1,36 +1,33 @@
-; ^safe-y047: deliberate violations are nested/data-only, never corpus waivers.
-
-(data_only_dirs evidence)
+; ^safe-ldtb ^safe-j6t8 ^safe-r1xw: compact exact fixture and physical defect corpus.
 
 (executable
- (name test_runner)
- (modules test_runner)
- (libraries lint_engine ox_caps.door))
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test eio_main ox_sql))
 
 (rule
  (alias runtest)
  (deps
-  source-check.sh
-  (source_tree evidence)
-  (package ox_sql)
-  (package ox_sql_dsl)
-  (package ox_caps)
-  (package ox)
-  (package ox_test)
   ../clean/transaction_runner.ml
   ../clean/transaction_runner.mli
   ../violating/transaction_runner.ml
   ../violating/transaction_runner.mli
-  ../../../lib/sql/migrate.ml
-  ../../../lib/sql/.ox_sql.objs/byte/ox_sql__Migrate.cmt)
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Transaction_runner.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Transaction_runner.cmti
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Transaction_runner.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Transaction_runner.cmt)
  (action
-  (run
-   bash
-   %{dep:source-check.sh}
-   %{exe:test_runner.exe}
-   evidence
-   %{workspace_root}/../install/default/lib
-   %{dep:../clean/transaction_runner.ml}
-   %{dep:../violating/transaction_runner.ml}
-   %{dep:../../../lib/sql/migrate.ml}
-   %{dep:../../../lib/sql/.ox_sql.objs/byte/ox_sql__Migrate.cmt})))
+  (progn
+   (run
+    ./corpus.exe
+    --fixtures
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Transaction_runner.cmti
+    ../clean/transaction_runner.mli
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Transaction_runner.cmti
+    ../violating/transaction_runner.mli
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Transaction_runner.cmt
+    ../clean/transaction_runner.ml
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Transaction_runner.cmt
+    ../violating/transaction_runner.ml)
+   (run bash -c "timeout 2 ./corpus.exe --wrong-runner; test $? -eq 124")
+   (run ./corpus.exe --witness))))

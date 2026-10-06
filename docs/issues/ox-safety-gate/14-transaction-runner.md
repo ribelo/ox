@@ -12,4 +12,4 @@ blocked_by: []
 
 **Scope:** Keep the built typed rule for originating-pool operations inside its transaction callback; follow local aliases. The runner and distinct pools remain legal.
 
-**Checks:** Keep public commit/rollback tests. Add one clean/violating consumer-style pair only if the existing fixtures lack it. Fresh three-consumer counts and production-finding classification are required before activation; the parent defines the compact completion test.
+**Checks:** One clean/violating pair and one MI-first exact corpus. A real size-one SQLite pool blocks when its transaction callback re-borrows the originating pool (bounded subprocess requires timeout124); using the callback runner preserves the committed row, returns the primary error, and rolls back the second insertion. Fresh three-consumer counts and production-finding classification are required before activation; the parent defines the compact completion test.

@@ -1,3 +1,0 @@
-(lang dune 3.22)
-(name transaction_runner_evidence)
-; ^safe-ldtb ^safe-y047: deliberately bad/unverified code, explicitly compiled fresh.

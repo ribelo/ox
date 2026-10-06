@@ -52,33 +52,6 @@
   (../../test/lint/violating/transaction_runner.mli
    as
    test/lint/violating/transaction_runner.mli)
-  (../../test/lint/safety_transaction_runner/evidence/undecided.ml
-   as
-   test/lint/safety_transaction_runner/evidence/undecided.ml)
-  (../../test/lint/safety_transaction_runner/evidence/undecided.mli
-   as
-   test/lint/safety_transaction_runner/evidence/undecided.mli)
-  (../../test/lint/safety_transaction_runner/evidence/wrapper_bad.ml
-   as
-   test/lint/safety_transaction_runner/evidence/wrapper_bad.ml)
-  (../../test/lint/safety_transaction_runner/evidence/wrapper_bad.mli
-   as
-   test/lint/safety_transaction_runner/evidence/wrapper_bad.mli)
-  (../../test/lint/safety_transaction_runner/evidence/wrapper_clean.ml
-   as
-   test/lint/safety_transaction_runner/evidence/wrapper_clean.ml)
-  (../../test/lint/safety_transaction_runner/evidence/wrapper_clean.mli
-   as
-   test/lint/safety_transaction_runner/evidence/wrapper_clean.mli)
-  (../../test/lint/safety_transaction_runner/evidence/eager_results.ml
-   as
-   test/lint/safety_transaction_runner/evidence/eager_results.ml)
-  (../../test/lint/safety_transaction_runner/evidence/eager_results.mli
-   as
-   test/lint/safety_transaction_runner/evidence/eager_results.mli)
-  (../../test/lint/safety_transaction_runner/check-installed.sh
-   as
-   test/lint/safety_transaction_runner/check-installed.sh)
   (../../docs/rules/ox-identity-external.md
    as
    docs/rules/ox-identity-external.md)
