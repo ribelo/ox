@@ -1,0 +1,22 @@
+; ^safe-cank: fixtures and read-only authenticated consumer corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/resource_without_release_path.ml
+  ../violating/resource_without_release_path.ml
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Resource_without_release_path.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Resource_without_release_path.cmt)
+ (action
+  (run
+   ./corpus.exe
+   --fixtures
+   ../clean/.concurrency_clean.objs/byte/concurrency_clean__Resource_without_release_path.cmt
+   ../clean/resource_without_release_path.ml
+   ../violating/.concurrency_violating.objs/byte/concurrency_violating__Resource_without_release_path.cmt
+   ../violating/resource_without_release_path.ml)))

@@ -147,7 +147,7 @@ let validate_host raw host_kind start finish =
   | Reg_name -> validate_reg_name raw "host" start finish
   | Ip_literal -> validate_ip_literal raw "host" start finish
 
-let find_from raw start stop char =
+let find_from raw ~start ~stop char =
   let rec loop index =
     if index >= stop then None
     else if Char.equal raw.[index] char then Some index
@@ -174,7 +174,7 @@ let[@zero_alloc] equal_ascii_case_insensitive_prefix raw token len =
   len = String.length token && equal_ascii_case_insensitive_slice_loop raw token len 0
 
 let parse_scheme raw =
-  match find_from raw 0 (String.length raw) ':' with
+  match find_from raw ~start:0 ~stop:(String.length raw) ':' with
   | None -> Error Missing_scheme
   | Some 0 -> Error Missing_scheme
   | Some colon ->
@@ -203,12 +203,12 @@ let parse_port raw start finish =
 let parse_authority raw start finish =
   if start >= finish then Error Missing_authority
   else
-    match find_from raw start finish '@' with
+    match find_from raw ~start ~stop:finish '@' with
     | Some _ -> Error Userinfo_not_supported
     | None -> (
         match raw.[start] with
         | '[' -> (
-            match find_from raw (start + 1) finish ']' with
+            match find_from raw ~start:(start + 1) ~stop:finish ']' with
             | None -> Error Missing_host
             | Some close when close = start + 1 -> Error Missing_host
             | Some close ->
@@ -220,7 +220,7 @@ let parse_authority raw start finish =
                 else
                   Error (Invalid_port (String.sub raw (close + 1) (finish - close - 1))))
         | _ -> (
-            let colon = find_from raw start finish ':' in
+            let colon = find_from raw ~start ~stop:finish ':' in
             let host_finish = Option.value ~default:finish colon in
             if host_finish = start then Error Missing_host
             else
@@ -234,9 +234,9 @@ let parse_authority raw start finish =
 let parse_path_query_fragment raw start =
   let len = String.length raw in
   let path_start = if start < len && Char.equal raw.[start] '/' then start else len in
-  let fragment_mark = find_from raw start len '#' in
+  let fragment_mark = find_from raw ~start ~stop:len '#' in
   let query_end = Option.value ~default:len fragment_mark in
-  let query_mark = find_from raw start query_end '?' in
+  let query_mark = find_from raw ~start ~stop:query_end '?' in
   let path_end =
     match (query_mark, fragment_mark) with
     | Some query, Some fragment -> min query fragment

@@ -1,0 +1,41 @@
+sample	consumer	source	typed_source	line	type	ordinal	classification	reason
+1	exergy	/home/ribelo/projects/exergy/lib/facade_core/exergy_degiro_annual_report.ml	lib/facade_core/exergy_degiro_annual_report.ml	293	string	1	harmless	suffix and value have different roles
+2	nema	/home/ribelo/projects/ribelo/nema/lib/nema/service.ml	lib/nema/service.ml	793	string	1	harmless	path and diagnostic message differ
+3	pie	/home/ribelo/projects/ribelo/pie/packages/pie/desktop/notification.ml	packages/pie/desktop/notification.ml	36	string	1	harmless	title and message differ
+4	exergy	/home/ribelo/projects/exergy/lib/quant/redp.ml	lib/quant/redp.pp.ml	96	float	1	harmless	risk-free rate and maximum drawdown differ
+5	pie	/home/ribelo/projects/ribelo/pie/packages/pie/commands/record.ml	packages/pie/commands/record.ml	51	string	1	swap-prone	source and destination paths are ordered
+6	nema	/home/ribelo/projects/ribelo/nema/bin/nema/main.ml	bin/nema/main.ml	148	string	1	harmless	URL and body differ
+7	exergy	/home/ribelo/projects/exergy/lib/vocab/vocab.ml	lib/vocab/vocab.pp.ml	442	int	1	harmless	count and divisor differ
+8	nema	/home/ribelo/projects/ribelo/nema/lib/ladybug/nema_ladybug.ml	lib/ladybug/nema_ladybug.ml	44	string	1	harmless	OR is commutative
+9	nema	/home/ribelo/projects/ribelo/nema/lib/nema/parser_inline.ml	lib/nema/parser_inline.ml	138	int	1	harmless	count and index differ
+10	exergy	/home/ribelo/projects/exergy/lib/exergy/exergy_script_fs.ml	lib/exergy/exergy_script_fs.ml	77	string	1	harmless	function and path differ
+11	exergy	/home/ribelo/projects/exergy/lib/exergy/exergy_script_fs.ml	lib/exergy/exergy_script_fs.ml	19	string	1	harmless	function and option differ
+12	nema	/home/ribelo/projects/ribelo/nema/lib/nema/collection_page.ml	lib/nema/collection_page.ml	336	int	1	harmless	count and bytes differ
+13	nema	/home/ribelo/projects/ribelo/nema/lib/nema/output.ml	lib/nema/output.ml	267	string	1	harmless	log level and message differ
+14	nema	/home/ribelo/projects/ribelo/nema/lib/nema/resolve.ml	lib/nema/resolve.ml	163	string	1	harmless	edit distance is symmetric
+15	pie	/home/ribelo/projects/ribelo/pie/packages/pie/recording/audio_archive.ml	packages/pie/recording/audio_archive.ml	81	int	1	harmless	Stdlib offset/length convention
+16	exergy	/home/ribelo/projects/exergy/lib/quant/simulator.ml	lib/quant/simulator.ml	134	string	1	swap-prone	left/right comparison dates can reverse ordering
+17	exergy	/home/ribelo/projects/exergy/lib/quant/quote_candles.ml	lib/quant/quote_candles.pp.ml	33	int	1	harmless	index and taken count differ
+18	exergy	/home/ribelo/projects/exergy/lib/quant/autopilot.ml	lib/quant/autopilot.pp.ml	130	string	1	swap-prone	start/stop months are interval endpoints
+19	nema	/home/ribelo/projects/ribelo/nema/lib/nema/parser_inline.ml	lib/nema/parser_inline.ml	505	int	1	swap-prone	start/stop byte endpoints can reverse the range
+20	nema	/home/ribelo/projects/ribelo/nema/lib/nema/parser_inline.ml	lib/nema/parser_inline.ml	446	int	1	swap-prone	index/close byte positions can reverse the range
+21	exergy	/home/ribelo/projects/exergy/lib/quant/portfolio_mechanics.ml	lib/quant/portfolio_mechanics.ml	240	float	1	harmless	total money and unit price differ
+22	exergy	/home/ribelo/projects/exergy/lib/quant/return_metrics.ml	lib/quant/return_metrics.pp.ml	84	string	1	swap-prone	start/end dates are interval endpoints
+23	pie	/home/ribelo/projects/ribelo/pie/packages/pie/pulse/client.ml	packages/pie/pulse/client.ml	144	string	1	harmless	request context and diagnostic differ
+24	exergy	/home/ribelo/projects/exergy/lib/ingest/ingest_accounts.ml	lib/ingest/ingest_accounts.ml	465	string	1	harmless	fact and value differ
+25	exergy	/home/ribelo/projects/exergy/lib/quant/portfolio_mechanics.ml	lib/quant/portfolio_mechanics.ml	187	float	1	harmless	quantity and unit price differ
+26	nema	/home/ribelo/projects/ribelo/nema/lib/nema/parser_rich.ml	lib/nema/parser_rich.ml	61	int	1	harmless	text and node indices differ
+27	exergy	/home/ribelo/projects/exergy/lib/quant/redp_portfolio.ml	lib/quant/redp_portfolio.ml	158	float	1	harmless	Stdlib accumulator/element convention
+28	nema	/home/ribelo/projects/ribelo/nema/lib/ladybug/nema_ladybug.ml	lib/ladybug/nema_ladybug.ml	42	string	1	harmless	operator and expression differ
+29	exergy	/home/ribelo/projects/exergy/lib/quant/drawdown.ml	lib/quant/drawdown.pp.ml	139	float	1	swap-prone	wealth and peak are same-unit monetary measures
+30	exergy	/home/ribelo/projects/exergy/lib/quant/money_weighted.ml	lib/quant/money_weighted.pp.ml	61	float	1	swap-prone	low/high rate bounds are ordered
+31	exergy	/home/ribelo/projects/exergy/lib/quant/portfolio_mechanics.ml	lib/quant/portfolio_mechanics.ml	248	float	1	harmless	quantity and monetary value differ
+32	nema	/home/ribelo/projects/ribelo/nema/lib/nema/job_store.ml	lib/nema/job_store.ml	31	string	1	harmless	operation and message differ
+33	exergy	/home/ribelo/projects/exergy/lib/quant/optimizer.ml	lib/quant/optimizer.pp.ml	87	float	1	swap-prone	starting margin and base floor are same-unit money
+34	exergy	/home/ribelo/projects/exergy/lib/quant/dates.ml	lib/quant/dates.pp.ml	37	string	1	swap-prone	start/end dates are interval endpoints
+35	exergy	/home/ribelo/projects/exergy/lib/citrini/citrini.ml	lib/citrini/citrini.ml	217	string	1	harmless	field and error differ
+36	pie	/home/ribelo/projects/ribelo/pie/packages/pie/stt/codex_realtime.ml	packages/pie/stt/codex_realtime.ml	93	string	1	harmless	scheme prefix and URL differ
+37	nema	/home/ribelo/projects/ribelo/nema/lib/ladybug/nema_ladybug_data.ml	lib/ladybug/nema_ladybug_data.ml	96	string	1	harmless	field and type descriptor differ
+38	exergy	/home/ribelo/projects/exergy/lib/vocab/vocab.ml	lib/vocab/vocab.pp.ml	357	int	2	harmless	right index and borrow differ
+39	nema	/home/ribelo/projects/ribelo/nema/lib/nema/parser_inline.ml	lib/nema/parser_inline.ml	814	int	1	swap-prone	index/text-start byte offsets can reverse the range
+40	exergy	/home/ribelo/projects/exergy/lib/quant/distribution.ml	lib/quant/distribution.pp.ml	50	float	3	harmless	distinct Cornish-Fisher moments

@@ -1,0 +1,22 @@
+; ^safe-pwlt: fixtures and read-only authenticated consumer corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/adjacent_same_type.ml
+  ../violating/adjacent_same_type.ml
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Adjacent_same_type.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Adjacent_same_type.cmt)
+ (action
+  (run
+   ./corpus.exe
+   --fixtures
+   ../clean/.concurrency_clean.objs/byte/concurrency_clean__Adjacent_same_type.cmt
+   ../clean/adjacent_same_type.ml
+   ../violating/.concurrency_violating.objs/byte/concurrency_violating__Adjacent_same_type.cmt
+   ../violating/adjacent_same_type.ml)))

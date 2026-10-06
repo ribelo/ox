@@ -86,8 +86,9 @@ let ownership
               | _ -> fail "symlink followed");
           Ox_caps.Cap_unix.unlink ~caps path;
           let fd = Ox_caps.Cap_unix.socket ~caps Unix.PF_UNIX Unix.SOCK_STREAM 0 in
-          Unix.bind fd (Unix.ADDR_UNIX path);
-          Unix.close fd;
+          Fun.protect
+            ~finally:(fun () -> Unix.close fd)
+            (fun () -> Unix.bind fd (Unix.ADDR_UNIX path));
           Eio.Switch.run (fun sw ->
               check_ok (start ~caps env sw path);
               Alcotest.(check string)
@@ -874,15 +875,19 @@ let main
        ; Ox_caps.Cap.network
        ; Ox_caps.Cap.exit
        ; .. >) () =
-  if Array.length Sys.argv = 3 && Sys.argv.(1) = "--check-lock" then (
-    let fd = Ox_caps.Cap_unix.openfile ~caps (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0 in
-    let exit_code =
-      match Unix.lockf fd Unix.F_TLOCK 0 with
-      | () -> 2
-      | exception Unix.Unix_error ((Unix.EACCES | Unix.EAGAIN), _, _) -> 0
-    in
-    Unix.close fd;
-    Ox_caps.Cap_stdlib.exit ~caps exit_code);
+  (if Array.length Sys.argv = 3 && Sys.argv.(1) = "--check-lock" then
+     let fd =
+       Ox_caps.Cap_unix.openfile ~caps (Sys.argv.(2) ^ ".lock") [ Unix.O_RDWR ] 0
+     in
+     let exit_code =
+       Fun.protect
+         ~finally:(fun () -> Unix.close fd)
+         (fun () ->
+           match Unix.lockf fd Unix.F_TLOCK 0 with
+           | () -> 2
+           | exception Unix.Unix_error ((Unix.EACCES | Unix.EAGAIN), _, _) -> 0)
+     in
+     Ox_caps.Cap_stdlib.exit ~caps exit_code);
 
   Alcotest.run "ox_ipc"
     [

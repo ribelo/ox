@@ -191,6 +191,10 @@ lib/ox_lint/rules.ml lib/ox_lint/.lint_engine.objs/byte/rules.cmt
 lib/ox_lint/rules.mli lib/ox_lint/.lint_engine.objs/byte/rules.cmti
 lib/ox_lint/transaction_runner.ml lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmt
 lib/ox_lint/transaction_runner.mli lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmti
+lib/ox_lint/resource_release.ml lib/ox_lint/.lint_engine.objs/byte/resource_release.cmt
+lib/ox_lint/resource_release.mli lib/ox_lint/.lint_engine.objs/byte/resource_release.cmti
+lib/ox_lint/adjacent_same_type.ml lib/ox_lint/.lint_engine.objs/byte/adjacent_same_type.cmt
+lib/ox_lint/adjacent_same_type.mli lib/ox_lint/.lint_engine.objs/byte/adjacent_same_type.cmti
 lib/ox_lint/unbounded_read.ml lib/ox_lint/.lint_engine.objs/byte/unbounded_read.cmt
 lib/ox_lint/unbounded_read.mli lib/ox_lint/.lint_engine.objs/byte/unbounded_read.cmti
 lib/ox_lint/syntax.ml lib/ox_lint/.lint_engine.objs/byte/syntax.cmt

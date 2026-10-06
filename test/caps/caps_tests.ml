@@ -87,14 +87,11 @@ let wrappers_are_the_raw_calls
   check_string "fs_read sees what fs_write wrote" "written through Cap.fs_write" read;
   (* ^pcaps-pdn5: a listener lockfile needs write-only access for lockf, not fs_read. *)
   let fd = Cap_unix.openfile_write ~caps path [ Unix.O_CLOEXEC ] 0 in
-  Unix.lockf fd Unix.F_TLOCK 0;
-  Unix.close fd;
+  Fun.protect ~finally:(fun () -> Unix.close fd) (fun () -> Unix.lockf fd Unix.F_TLOCK 0);
   check_bool "write-only openfile refuses read modes" true
     (match Cap_unix.openfile_write ~caps path [ Unix.O_RDWR ] 0 with
     | exception Invalid_argument _ -> true
-    | fd ->
-        Unix.close fd;
-        false);
+    | fd -> Fun.protect ~finally:(fun () -> Unix.close fd) (fun () -> false));
   let dir = Filename.dirname path in
   check_bool "readdir lists it" true
     (Array.mem (Filename.basename path) (Cap_sys.readdir ~caps dir));

@@ -130,6 +130,13 @@ let all ~caps =
         with
         source = Some Identity_external.source;
       };
+      evidence_rule "resource-without-release-path"
+        "acquired handle needs a local release path" (fun ~emit ~undecided artifact ->
+          visit (Resource_release.check ~caps ~emit ~undecided) artifact);
+      evidence_rule "adjacent-same-type"
+        "ordered same-type endpoints need distinct labels"
+        (fun ~emit ~undecided artifact ->
+          visit (Adjacent_same_type.check ~caps ~emit ~undecided) artifact);
       evidence_rule "unbounded-read" "whole-stream read needs a finite budget"
         (fun ~emit ~undecided artifact ->
           visit (Unbounded_read.check ~caps ~emit ~undecided) artifact);

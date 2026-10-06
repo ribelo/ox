@@ -37,6 +37,24 @@
  (package ox_lint)
  (section share)
  (files
+  (../../docs/rules/ox-resource-without-release-path.md
+   as
+   docs/rules/ox-resource-without-release-path.md)
+  (../../test/lint/clean/resource_without_release_path.ml
+   as
+   test/lint/clean/resource_without_release_path.ml)
+  (../../test/lint/violating/resource_without_release_path.ml
+   as
+   test/lint/violating/resource_without_release_path.ml)
+  (../../docs/rules/ox-adjacent-same-type.md
+   as
+   docs/rules/ox-adjacent-same-type.md)
+  (../../test/lint/clean/adjacent_same_type.ml
+   as
+   test/lint/clean/adjacent_same_type.ml)
+  (../../test/lint/violating/adjacent_same_type.ml
+   as
+   test/lint/violating/adjacent_same_type.ml)
   (../../docs/rules/ox-unbounded-read.md as docs/rules/ox-unbounded-read.md)
   (../../test/lint/clean/unbounded_read.ml
    as

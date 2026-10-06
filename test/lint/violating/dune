@@ -3,6 +3,8 @@
 (library
  (name concurrency_violating)
  (modules
+  resource_without_release_path
+  adjacent_same_type
   unbounded_read
   transaction_runner
   monotonic_elapsed_time

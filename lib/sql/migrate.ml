@@ -62,7 +62,7 @@ module Table_name = struct
     | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' -> true
     | _ -> false
 
-  let valid_part value start stop =
+  let valid_part value ~start ~stop =
     start < stop
     && is_ident_start (String.unsafe_get value start)
     &&
@@ -71,11 +71,11 @@ module Table_name = struct
     in
     loop (start + 1)
 
-  let valid_parts value start stop =
+  let valid_parts value ~start ~stop =
     let rec loop part_start index =
-      if index = stop then valid_part value part_start stop
+      if index = stop then valid_part value ~start:part_start ~stop
       else if Char.equal (String.unsafe_get value index) '.' then
-        valid_part value part_start index && loop (index + 1) (index + 1)
+        valid_part value ~start:part_start ~stop:index && loop (index + 1) (index + 1)
       else loop part_start (index + 1)
     in
     loop start start
@@ -83,7 +83,7 @@ module Table_name = struct
   let from_string value =
     let start, stop = String_helpers.trim_bounds value in
     if start = stop then Result.Error Empty
-    else if valid_parts value start stop then
+    else if valid_parts value ~start ~stop then
       Ok
         (if start = 0 && stop = String.length value then value
          else String.sub value start (stop - start))

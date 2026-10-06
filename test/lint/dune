@@ -263,6 +263,10 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/monotonic_elapsed_time.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/transaction_runner.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/resource_release.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/resource_release.cmti
+  ../../lib/ox_lint/.lint_engine.objs/byte/adjacent_same_type.cmt
+  ../../lib/ox_lint/.lint_engine.objs/byte/adjacent_same_type.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/unbounded_read.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/unbounded_read.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/paths.cmt
