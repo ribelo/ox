@@ -130,6 +130,9 @@ let all ~caps =
         with
         source = Some Identity_external.source;
       };
+      evidence_rule "unbounded-read" "whole-stream read needs a finite budget"
+        (fun ~emit ~undecided artifact ->
+          visit (Unbounded_read.check ~caps ~emit ~undecided) artifact);
       evidence_rule "transaction-runner"
         "operation uses the originating pool; use the callback transaction runner"
         (fun ~emit ~undecided artifact ->

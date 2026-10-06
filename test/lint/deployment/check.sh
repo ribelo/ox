@@ -80,7 +80,7 @@ dune build --root "$project/lib/nested" @check
 # ^nlint-r01u: both repository spellings select non-capability rules by default.
 expect 1 "$engine" --repo-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
-contains "$scratch/err" "33 registered rules selected (31 active, 2 dormant)"
+contains "$scratch/err" "34 registered rules selected (32 active, 2 dormant)"
 expect 1 "$engine" --caps-gate --require-typed "$project/test/entry.ml"
 contains "$scratch/out" "ox-discarded-result:"
 # ^nlintcov-q6n2: inventory forces the universe producer; the default gate rebuilds after it.

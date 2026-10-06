@@ -227,13 +227,17 @@ let test_fd_and_output
               Eio.Resource.close write4;
               Eio.Flow.copy_string "hello\n" write3;
               Eio.Resource.close write3;
-              Alcotest.(check string) "fd 4" "reply:hello\n" (Eio.Flow.read_all read4);
+              Alcotest.(check string)
+                "fd 4" "reply:hello\n"
+                (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576) read4);
               Alcotest.(check string)
                 "stdout" "stdout\n"
-                (Eio.Flow.read_all (some (C.stdout child)));
+                (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+                   (some (C.stdout child)));
               Alcotest.(check string)
                 "stderr" "stderr\n"
-                (Eio.Flow.read_all (some (C.stderr child)));
+                (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+                   (some (C.stderr child)));
               check_exit (C.Exited 3) (C.await child);
               check_exit (C.Exited 3) (C.stop child))))
 
@@ -262,7 +266,8 @@ let test_mapped_fds_blocking
                      ())
               in
               let flags =
-                Eio.Flow.read_all (some (C.stderr child))
+                Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+                  (some (C.stderr child))
                 |> String.split_on_char '\n'
                 |> List.filter (( <> ) "")
               in
@@ -295,10 +300,12 @@ let test_retired_output_eof
               check_exit (C.Exited 0) (C.stop child);
               Alcotest.(check string)
                 "stdout buffered through retirement then EOF" "output"
-                (Eio.Flow.read_all (some (C.stdout child)));
+                (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+                   (some (C.stdout child)));
               Alcotest.(check string)
                 "stderr buffered through retirement then EOF" "error"
-                (Eio.Flow.read_all (some (C.stderr child))))))
+                (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+                   (some (C.stderr child))))))
 
 let wait_ready clock marker =
   match

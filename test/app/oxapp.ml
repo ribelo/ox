@@ -68,7 +68,7 @@ let spawn_simple
             | _ -> Alcotest.fail "simple fixture did not exit"
           in
           let stdout = Eio.Buf_read.take_all reader in
-          let stderr = Eio.Flow.read_all stderr in
+          let stderr = Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576) stderr in
           { code; stdout; stderr }))
 
 (* OxApp.Simple: run(using Ox): Unit — no config, no arguments, the root scope in hand. *)

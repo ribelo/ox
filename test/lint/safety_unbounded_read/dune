@@ -1,0 +1,22 @@
+; ^safe-sx2y: fixtures and read-only authenticated consumer corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/unbounded_read.ml
+  ../violating/unbounded_read.ml
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Unbounded_read.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Unbounded_read.cmt)
+ (action
+  (run
+   ./corpus.exe
+   --fixtures
+   ../clean/.concurrency_clean.objs/byte/concurrency_clean__Unbounded_read.cmt
+   ../clean/unbounded_read.ml
+   ../violating/.concurrency_violating.objs/byte/concurrency_violating__Unbounded_read.cmt
+   ../violating/unbounded_read.ml)))

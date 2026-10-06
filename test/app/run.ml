@@ -488,14 +488,14 @@ let test_default_path_absent
             match status with Ox_process.Child.Exited code -> code | _ -> -1
           in
           let printed child =
-            Eio.Flow.read_all
+            Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
               (match Ox_process.Child.stdout child with
               | Some value -> value
               | None ->
                   Alcotest.fail "missing app/run fixture: (Ox_process.Child.stdout child)")
           in
           let errors child =
-            Eio.Flow.read_all
+            Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
               (match Ox_process.Child.stderr child with
               | Some value -> value
               | None ->
@@ -1129,7 +1129,7 @@ let test_run_validates
                 "^napp-57qi run exits 2 without starting" true
                 (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
               let errors =
-                Eio.Flow.read_all
+                Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
                   (match Ox_process.Child.stderr child with
                   | Some value -> value
                   | None ->
@@ -1139,7 +1139,7 @@ let test_run_validates
               expect_part errors "/port";
               expect_part errors "port rejected by validator";
               let printed =
-                Eio.Flow.read_all
+                Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
                   (match Ox_process.Child.stdout child with
                   | Some value -> value
                   | None ->
@@ -1206,7 +1206,7 @@ let test_real_signal
               Ox_process.Child.signal child signo;
               ignore (Ox_process.Child.stop child);
               let journal =
-                Eio.Flow.read_all
+                Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
                   (match Ox_process.Child.stderr child with
                   | Some value -> value
                   | None ->
@@ -1540,7 +1540,7 @@ let test_door2_production_reader
                     "reader rejects oversized file" true
                     (match status with Ox_process.Child.Exited 2 -> true | _ -> false);
                   let errors =
-                    Eio.Flow.read_all
+                    Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
                       (match Ox_process.Child.stderr child with
                       | Some source -> source
                       | None -> Alcotest.fail "missing spawned child stderr pipe fixture")

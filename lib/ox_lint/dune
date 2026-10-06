@@ -37,6 +37,13 @@
  (package ox_lint)
  (section share)
  (files
+  (../../docs/rules/ox-unbounded-read.md as docs/rules/ox-unbounded-read.md)
+  (../../test/lint/clean/unbounded_read.ml
+   as
+   test/lint/clean/unbounded_read.ml)
+  (../../test/lint/violating/unbounded_read.ml
+   as
+   test/lint/violating/unbounded_read.ml)
   (../../docs/rules/ox-transaction-runner.md
    as
    docs/rules/ox-transaction-runner.md)

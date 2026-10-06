@@ -3,6 +3,7 @@
 (library
  (name concurrency_clean)
  (modules
+  unbounded_read
   transaction_runner
   monotonic_elapsed_time
   execution_context

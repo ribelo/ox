@@ -117,7 +117,7 @@ let fixture
             | _ -> Alcotest.fail "fixture killed"
           in
           let stdout =
-            Eio.Flow.read_all
+            Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
               (match Ox_process.Child.stdout child with
               | Some value -> value
               | None ->
@@ -125,7 +125,7 @@ let fixture
                     "missing app/wakeup fixture: (Ox_process.Child.stdout child)")
           in
           let stderr =
-            Eio.Flow.read_all
+            Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
               (match Ox_process.Child.stderr child with
               | Some value -> value
               | None ->

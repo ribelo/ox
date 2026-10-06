@@ -43,7 +43,7 @@ let spawn ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write 
             | _ -> Alcotest.fail "exit fixture did not exit"
           in
           let stdout = Eio.Buf_read.take_all reader in
-          let stderr = Eio.Flow.read_all stderr in
+          let stderr = Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576) stderr in
           { code; stdout; stderr }))
 
 let parity ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >)

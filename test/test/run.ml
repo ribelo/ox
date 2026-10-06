@@ -223,10 +223,12 @@ let test_process_output
       let child = fake_child ~caps env ~sw fake in
       Alcotest.(check string)
         "stdout read through the real Child path" "done\nagain\n"
-        (Eio.Flow.read_all (some (Child.stdout child)));
+        (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+           (some (Child.stdout child)));
       Alcotest.(check string)
         "stderr read through the real Child path" "warn\n"
-        (Eio.Flow.read_all (some (Child.stderr child)));
+        (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576)
+           (some (Child.stderr child)));
       check_child_exit (Child.Exited 0) (Child.await child);
       Alcotest.(check (list string))
         "argv recorded as before"
@@ -264,7 +266,8 @@ let test_process_output_delayed
       Alcotest.(check string) "chunk bytes" "done\n" (Cstruct.to_string buffer);
       check_child_exit (Child.Signaled Sys.sigterm) (Child.stop child);
       Alcotest.(check string)
-        "EOF when the child is stopped" "" (Eio.Flow.read_all source))
+        "EOF when the child is stopped" ""
+        (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576) source))
 
 let test_process_output_stopped
     ~(caps : < Ox_caps.Cap.fork ; Ox_caps.Cap.exec ; Ox_caps.Cap.fs_write ; .. >) () =
@@ -280,7 +283,9 @@ let test_process_output_stopped
       let child = fake_child ~caps env ~sw fake in
       let source = some (Child.stdout child) in
       check_child_exit (Child.Signaled Sys.sigterm) (Child.stop child);
-      Alcotest.(check string) "EOF, not the pending chunk" "" (Eio.Flow.read_all source);
+      Alcotest.(check string)
+        "EOF, not the pending chunk" ""
+        (Eio.Buf_read.(parse_exn take_all ~max_size:1_048_576) source);
       Alcotest.(check (list int)) "TERM only" [ Sys.sigterm ] (Fake.signals fake);
       Alcotest.(check bool)
         "clock never advanced" true
