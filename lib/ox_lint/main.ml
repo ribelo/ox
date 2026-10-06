@@ -437,7 +437,9 @@ let run
                      (data_root ~caps (Filename.dirname source))
                      ~default:(Sys.getcwd ())
                  in
-                 let rules = List.filter (Rules.applies ~root ~source) rules in
+                 let rules =
+                   List.filter (Rules.applies ~audit:(!ids <> []) ~root ~source) rules
+                 in
                  let decided = ref true in
                  let emit_diagnostic id loc message =
                    let key =
@@ -531,7 +533,9 @@ let run
            inputs;
          if !repo_gate then begin
            let selected = List.length rules in
-           let dormant = List.length (List.filter Rules.dormant rules) in
+           let dormant =
+             List.length (List.filter (Rules.dormant ~audit:(!ids <> [])) rules)
+           in
            Cap_stdlib.eprintf ~caps
              "repo-gate: %d registered rules selected (%d active, %d dormant); %d \
               findings; %d modules with typed rules undecided; %d data-only files out of \

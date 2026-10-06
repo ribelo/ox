@@ -44,12 +44,14 @@ val allowances : (string * string * string) list
 (** The path-wide allow-list stays empty; named best-effort discards are ordinary
     bindings. ^safe-s6km *)
 
-val dormant : t -> bool
-(** Registered but deliberately inactive; ^nlintcov-r3k8 ^nlint-r01u. *)
+val dormant : ?audit:bool -> t -> bool
+(** Registered but deliberately inactive. Explicit rule selection audits the safety
+    candidates; raw concurrency stays dormant. ^nlintcov-r3k8 ^nlint-r01u ^safe-j6t8 *)
 
-val applies : root:string -> source:string -> t -> bool
-(** Raw concurrency is dormant on every path. Other rules apply to all implementations or,
-    for interface rules, all interfaces; direct decider tests do not apply this policy. *)
+val applies : ?audit:bool -> root:string -> source:string -> t -> bool
+(** Safety candidates need explicit rule selection until consumer activation evidence is
+    complete. Interface rules apply only to interfaces; direct decider tests do not apply
+    this policy. *)
 
 val select : caps:< Ox_caps.Cap.fs_read ; .. > -> string list -> t list
 (** Unknown ids raise [Invalid_argument]; empty selects all. *)

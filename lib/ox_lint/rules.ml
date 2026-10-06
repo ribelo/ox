@@ -190,9 +190,19 @@ let all ~caps =
 let allowances = []
 
 (* ^nlintcov-r3k8 ^nlint-r01u: summary and applicability share the dormant policy. *)
-let dormant rule = rule.id = "ox-raw-concurrency"
+let dormant ?(audit = false) rule =
+  rule.id = "ox-raw-concurrency"
+  || (not audit)
+     && List.mem rule.id
+          [
+            "ox-transaction-runner";
+            "ox-monotonic-elapsed-time";
+            "ox-execution-context";
+            "ox-cancel-mask-scope";
+            "ox-raw-sql-construction";
+          ]
 
-let applies ~root ~source rule =
+let applies ?(audit = false) ~root ~source rule =
   let absolute path =
     if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path
   in
@@ -205,7 +215,7 @@ let applies ~root ~source rule =
         (String.length source - String.length root - 1)
     else source
   in
-  (not (dormant rule))
+  (not (dormant ~audit rule))
   && (not (List.exists (fun (id, path, _) -> id = rule.id && path = relative) allowances))
   && ((not
          (List.mem rule.id
