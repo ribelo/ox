@@ -342,6 +342,8 @@
   (source_tree violating)
   (alias clean/check)
   (alias violating/check)
+  clean/exports_dependency/.concurrency_clean_export_dependency.objs/byte/concurrency_clean_export_dependency__Helper.cmt
+  violating/exports_dependency/.concurrency_violating_export_dependency.objs/byte/concurrency_violating_export_dependency__Helper.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_exports.cmti
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_exports.cmt
   clean/.concurrency_clean.objs/byte/concurrency_clean__Docs_stdlib.cmti

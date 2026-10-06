@@ -28,6 +28,7 @@
   docs_generated_dependency)
  (modules_without_implementation public_exception)
  (libraries
+  concurrency_clean_export_dependency
   eio
   eio_main
   ox

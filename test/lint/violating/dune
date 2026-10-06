@@ -24,4 +24,4 @@
   docs_exports
   docs_truth)
  (modules_without_implementation public_exception)
- (libraries eio eio_main ox ox_blocking ox_caps ox_http ox_sql yojson unix threads))
+ (libraries concurrency_violating_export_dependency eio eio_main ox ox_blocking ox_caps ox_http ox_sql yojson unix threads))

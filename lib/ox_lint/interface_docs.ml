@@ -430,6 +430,9 @@ type evidence = {
   exports : (string, string) Hashtbl.t;
   resolved : (string, effects) Hashtbl.t;
   mutable builders : (unit -> unit) list;
+  mutable load_dependency : string -> bool;
+  imported_units : (string, unit) Hashtbl.t;
+  mutable boundary : string -> string -> bool;
 }
 
 (* ^nlintd-k036: compiler module aliases and include-bound identifiers share the value export
@@ -1189,7 +1192,8 @@ let add_unit ~caps evidence artifact =
         let name = key e path in
         let name = export_key evidence name in
         match Hashtbl.find_opt evidence.definitions name with
-        | Some definition -> Some (name, definition)
+        | Some definition when not (evidence.boundary definition.unit_name (origin e)) ->
+            Some (name, definition)
         | _ -> None)
     | _ -> None
   in
@@ -1240,11 +1244,18 @@ let add_unit ~caps evidence artifact =
           match List.assoc_opt (origin e) leaves with
           | Some (name, suspends, checks, exceptions) ->
               leaf name suspends checks exceptions
-          | None ->
-              {
-                empty_summary with
-                calls = [ { target = key e path; filters = []; bindings = [] } ];
-              })
+          | None -> (
+              let target = key e path in
+              match
+                Hashtbl.find_opt evidence.definitions (export_key evidence target)
+              with
+              | Some definition when evidence.boundary definition.unit_name (origin e) ->
+                  unknown_call (origin e)
+              | _ ->
+                  {
+                    empty_summary with
+                    calls = [ { target; filters = []; bindings = [] } ];
+                  }))
     | Texp_apply (callee, args, _, _, _) when function_typed e ->
         let call =
           match special callee with
@@ -1911,13 +1922,93 @@ let package_evidence ~caps (implementation : Artifact.t) =
           exports = Hashtbl.create 128;
           resolved = Hashtbl.create 128;
           builders = [];
+          load_dependency = (fun _ -> false);
+          imported_units = Hashtbl.create 16;
+          boundary = (fun _ _ -> false);
         }
+      in
+      let dependencies = Hashtbl.create 32 and loaded = Hashtbl.create 32 in
+      let register artifact =
+        Artifact.setup ~caps artifact;
+        Array.iter
+          (fun imported ->
+            let unit = Import_info.name imported in
+            match Import_info.crc imported with
+            | None -> ()
+            | Some crc -> (
+                let name = Compilation_unit.Name.to_string unit in
+                try
+                  let cmi = Load_path.find (String.uncapitalize_ascii name ^ ".cmi") in
+                  let adjacent = Filename.chop_suffix cmi ".cmi" ^ ".cmt" in
+                  let candidates =
+                    if Filename.basename (Filename.dirname cmi) = "public_cmi" then
+                      [
+                        adjacent;
+                        Filename.concat
+                          (Filename.concat
+                             (Filename.dirname (Filename.dirname cmi))
+                             "byte")
+                          (Filename.basename adjacent);
+                      ]
+                    else [ adjacent ]
+                  in
+                  let build_path =
+                    if Filename.is_relative artifact.Artifact.path then
+                      Filename.concat (Sys.getcwd ()) artifact.path
+                    else artifact.path
+                  in
+                  let workspace_build =
+                    match index build_path "/_build/" 0 with
+                    | Some at ->
+                        let stop =
+                          Option.value
+                            (String.index_from_opt build_path (at + 8) '/')
+                            ~default:(String.length build_path)
+                        in
+                        String.sub build_path 0 stop ^ "/"
+                    | None -> build_path ^ "/"
+                  in
+                  List.find_opt
+                    (fun cmt ->
+                      String.starts_with ~prefix:workspace_build cmt
+                      && Sys.file_exists cmt)
+                    candidates
+                  |> Option.iter (fun cmt -> Hashtbl.replace dependencies name (cmt, crc))
+                with Not_found -> ()))
+          artifact.info.cmt_imports
       in
       let add artifact =
         let source = Artifact.authored_source ~caps artifact in
         Artifact.check ~caps ~source artifact;
-        add_unit ~caps evidence artifact
+        add_unit ~caps evidence artifact;
+        register artifact
       in
+      (* ^nlintd-k036: follow authenticated imported CMIs to their workspace CMTs
+         only when a public proof needs an unqualified callee. Named delegated
+         boundaries retain their existing meaning; unavailable bodies stay opaque. *)
+      evidence.load_dependency <-
+        (fun target ->
+          let name = List.hd (String.split_on_char '.' target) in
+          match Hashtbl.find_opt dependencies name with
+          | None -> false
+          | Some (path, crc) when Hashtbl.mem loaded path -> false
+          | Some (path, crc) ->
+              Hashtbl.add loaded path ();
+              let artifact = Artifact.read ~caps path in
+              let own_crc =
+                Array.to_list artifact.info.cmt_imports
+                |> List.find_map (fun imported ->
+                    if Compilation_unit.Name.to_string (Import_info.name imported) = name
+                    then Import_info.crc imported
+                    else None)
+              in
+              if artifact.info.cmt_interface_digest <> Some crc && own_crc <> Some crc
+              then failwith (path ^ ": imported CMI fingerprint does not match CMT");
+              Hashtbl.replace evidence.imported_units
+                (Compilation_unit.name_as_string artifact.info.cmt_modname)
+                ();
+              add artifact;
+              true);
       Cap_sys.readdir ~caps directory
       |> Array.to_list |> List.sort String.compare
       |> List.filter (fun name -> Filename.check_suffix name ".cmt")
@@ -1958,6 +2049,7 @@ let package_evidence ~caps (implementation : Artifact.t) =
           else begin
             (* ^nlintd-truth ^nlintcov-q6n2: generated siblings have no source-tree
                counterpart; Artifact verifies their declared producer instead. *)
+            Hashtbl.replace loaded artifact.path ();
             add artifact
           end);
       resolve evidence;
@@ -2073,6 +2165,43 @@ let delegated_raise docs tag target =
          || contains clause " when ")
           && opaque_qualified [ "delegated " ^ clause ] target)
     docs
+
+(* ^nlintd-k036 ^nlintd-raises: keep a named callee's opaque boundary when its
+   authenticated body is visible. This qualifies only the current val's clause;
+   a total callee and an unreached callback cannot justify a raise claim. *)
+let delegated_reachable_raise evidence docs tag key effects =
+  let key = export_key evidence key in
+  let opaque = Names.union effects.opaque effects.opaque_raises in
+  let rec reaches unit_name seen edge =
+    let target = export_key evidence edge.target in
+    let actual = edge_effects evidence edge in
+    if
+      Names.mem target seen
+      || Names.is_empty
+           (Names.inter opaque (Names.union actual.opaque actual.opaque_raises))
+    then false
+    else
+      match Hashtbl.find_opt evidence.definitions target with
+      | None -> false
+      | Some definition ->
+          let source_unit =
+            match index definition.unit_name "__" 0 with
+            | None -> definition.unit_name
+            | Some at ->
+                String.sub definition.unit_name (at + 2)
+                  (String.length definition.unit_name - at - 2)
+          in
+          (definition.unit_name <> unit_name && delegated_raise docs tag source_unit)
+          || List.exists
+               (reaches unit_name (Names.add target seen))
+               definition.summary.calls
+  in
+  match Hashtbl.find_opt evidence.definitions key with
+  | None -> false
+  | Some definition ->
+      List.exists
+        (reaches definition.unit_name (Names.singleton key))
+        definition.summary.calls
 
 (* ^nlintd-cleanup: cleanup requires a cancellation-path witness for the same resource.
    A success-only close, or a hook that merely mentions the handle, is not a witness. *)
@@ -2446,9 +2575,35 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                 Compilation_unit.name_as_string implementation.info.cmt_modname
                 ^ "." ^ value.name
               in
-              let key = export_key evidence qualified in
-              let effects = Hashtbl.find_opt evidence.resolved key in
+              evidence.boundary <-
+                (fun unit_name target ->
+                  Hashtbl.mem evidence.imported_units unit_name
+                  && opaque_qualified value.documentation target);
+              if Hashtbl.length evidence.imported_units > 0 then resolve evidence;
+              let rec proof () =
+                let key = export_key evidence qualified in
+                let effects = Hashtbl.find_opt evidence.resolved key in
+                let needed =
+                  match effects with
+                  | None -> Names.singleton key
+                  | Some effects ->
+                      Names.filter
+                        (fun target -> not (opaque_qualified value.documentation target))
+                        effects.opaque
+                in
+                let loaded =
+                  Names.fold
+                    (fun target loaded -> evidence.load_dependency target || loaded)
+                    needed false
+                in
+                if loaded then (
+                  resolve evidence;
+                  proof ())
+                else effects
+              in
+              let effects = proof () in
               Artifact.setup ~caps implementation;
+              let key = export_key evidence qualified in
               match effects with
               | None ->
                   undecided value.loc
@@ -2523,9 +2678,10 @@ let truth ~caps ~source ~artifact ~rules ~emit ~undecided =
                                 String.lowercase_ascii name = tag
                                 || String.lowercase_ascii (last_component name) = tag)
                               effects.exceptions))
-                        && not
-                             (Names.exists (delegated_raise docs tag)
-                                (Names.union effects.opaque effects.opaque_raises))
+                        && (not
+                              (Names.exists (delegated_raise docs tag)
+                                 (Names.union effects.opaque effects.opaque_raises)))
+                        && not (delegated_reachable_raise evidence docs tag key effects)
                       then
                         if
                           Names.is_empty effects.opaque

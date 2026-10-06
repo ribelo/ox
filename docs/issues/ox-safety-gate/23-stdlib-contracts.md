@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 category: bug
 package: ox_lint
 consumer: Exergy, Ox, Pie, Nema
@@ -42,7 +42,51 @@ No exemption is based on call spelling. Exergy's motivating signatures are
 
 No Exergy source or documentation changes are part of the fix.
 Each commit requires all four Ox gates. Full acceptance additionally requires zero
-undecided results on Exergy lib/bin; the two Ingest public values remain pending
-until the cross-library commit is verified.
+undecided results on Exergy lib/bin. Both motivating Ingest public values are
+now decided by the verified cross-library slice.
 Retain same-artifact Exergy, Pie and Nema before/after counts here; full-rule consumer
 totals are distinct from the architect's focused public-contract counts.
+
+## Verified delivery
+
+The finite Stdlib and alias/include slice landed as
+`be3df2531d1662caff1368799dadc4d709d93048`, with all four serial Ox gates green.
+The second slice authenticates on-demand workspace imports against their CMI
+fingerprints and authored sources, including public-CMI/byte-CMT layouts.
+
+The remaining Ingest opacity was not a failed `Vocab.Interval.to_string` lookup.
+Its reachable `Ingest_assets_quotes` body delegates through an opaque observability
+span. A clause-scoped proof now recognizes a named authenticated reachable callee
+only when its substituted, filtered effects contribute to the current opacity.
+Total callees, unrelated opacity and the canonical exported caller
+(including its local helpers and synthetic application nodes) cannot witness
+delegation. This qualifies only the authored current-val clause; it does not
+manufacture an exception summary for callers. Positive and negative typed
+regressions cover these cases.
+
+### Matched consumer measurements
+
+Explicit `--repo-gate --require-typed` scans used the pre-Stdlib checker and the
+new checker on the same available consumer evidence, with no consumer rebuild
+or source/documentation workaround by this slice. These are all-rule totals,
+not focused documentation-contract counts. Every scan reported zero rebuilt
+workspaces.
+
+| Consumer and scope | Before findings / undecided modules | After findings / undecided modules | Checker exit before / after |
+| --- | --- | --- | --- |
+| Exergy `lib bin` | 0 / 1 | 0 / 0 | 2 / 0 |
+| Pie `packages/pie` | 0 / 24 | 0 / 24 | 2 / 2 |
+| Nema `lib bin` | 22 / 3 | 22 / 3 | 2 / 2 |
+
+The final engine also passed Exergy at `de7ffd4`: zero findings and zero undecided
+modules, after its independent identity-only commit, with runtime sources
+unchanged. Pie retains stale generated `build_identity` evidence and missing
+executable annotations; this measurement does not re-establish the historical
+focused seven-to-zero result. Nema retains missing annotations for three
+`ladybug_identity_components` test modules. Neither matched comparison increased
+findings or undecided counts.
+
+Both slices passed `dune build @install`, `dune test`, `dune build @fmt` and
+`scripts/caps-gate` in that serial order. The final staged inventory includes
+the new helper libraries; the aggregate safety-gate delivery row remains open
+for its other work.

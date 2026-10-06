@@ -1,0 +1,5 @@
+; ^nlintd-k036
+(library
+ (name concurrency_violating_export_dependency)
+ (modules helper)
+ (libraries eio))

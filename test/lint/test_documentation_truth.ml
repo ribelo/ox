@@ -346,6 +346,30 @@ let check_exports ~caps =
               ^ String.concat "\n" (List.map snd findings @ unknown)))
         [ "never suspends"; "no cancellation point"; "Eio.Cancel.Cancelled" ])
     [ "Docs_exports.Alias.noop"; "Docs_exports.Included.noop"; "Docs_exports.noop" ];
+  if
+    not
+      (List.exists
+         (fun (_, message) ->
+           contains message "false_delegated_raise"
+           && contains message "@raise failure has no reachable raise")
+         findings)
+  then failwith "a total callee justified a delegated raise";
+  if
+    not
+      (List.exists
+         (fun message ->
+           contains message "unrelated_raise"
+           && contains message "@raise failure cannot be established")
+         unknown)
+  then failwith "unrelated opacity qualified a total named callee";
+  if
+    not
+      (List.exists
+         (fun message ->
+           contains message "Docs_exports.Alias.unknown_raise"
+           && contains message "@raise failure cannot be established")
+         unknown)
+  then failwith "an exported caller qualified its own unit as delegation";
   Cap_stdlib.print_endline ~caps "compiler-resolved module aliases and includes: pass"
 
 (* ^nlintd-7x5n ^nlintd-b362 ^nlintd-2tmh *)
