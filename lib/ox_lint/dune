@@ -302,21 +302,6 @@
  (package ox_lint)
  (section share)
  (files
-  (../../docs/rules/ox-execution-context.md
-   as
-   docs/rules/ox-execution-context.md)
-  (../../test/lint/clean/execution_context.ml
-   as
-   test/lint/clean/execution_context.ml)
-  (../../test/lint/clean/execution_context.mli
-   as
-   test/lint/clean/execution_context.mli)
-  (../../test/lint/violating/execution_context.ml
-   as
-   test/lint/violating/execution_context.ml)
-  (../../test/lint/violating/execution_context.mli
-   as
-   test/lint/violating/execution_context.mli)
   (../../test/lint/clean/raw_sql_construction.ml
    as
    test/lint/clean/raw_sql_construction.ml)

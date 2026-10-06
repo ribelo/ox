@@ -148,10 +148,6 @@ let all ~caps =
         "wall-clock value reaches an elapsed contract; use a monotonic clock"
         (fun ~emit ~undecided artifact ->
           visit (Monotonic_elapsed_time.check ~caps ~emit ~undecided) artifact);
-      evidence_rule "execution-context"
-        "known operation executes in the wrong Eio/native context"
-        (fun ~emit ~undecided artifact ->
-          visit (Execution_context.check ~caps ~emit ~undecided) artifact);
       evidence_rule "raw-sql-construction" Raw_sql.message
         (fun ~emit ~undecided artifact ->
           visit (Raw_sql.check ~caps ~emit ~undecided) artifact);
@@ -211,9 +207,7 @@ let all ~caps =
 let allowances = []
 
 (* ^nlintcov-r3k8 ^nlint-r01u: summary and applicability share the dormant policy. *)
-let dormant ?(audit = false) rule =
-  rule.id = "ox-raw-concurrency"
-  || ((not audit) && List.mem rule.id [ "ox-execution-context" ])
+let dormant ?audit:(_ = false) rule = rule.id = "ox-raw-concurrency"
 
 let applies ?(audit = false) ~root ~source rule =
   let absolute path =

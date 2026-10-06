@@ -177,8 +177,6 @@ lib/ox_lint/disposal.ml lib/ox_lint/.lint_engine.objs/byte/disposal.cmt
 lib/ox_lint/disposal.mli lib/ox_lint/.lint_engine.objs/byte/disposal.cmti
 lib/ox_lint/raw_sql.ml lib/ox_lint/.lint_engine.objs/byte/raw_sql.cmt
 lib/ox_lint/raw_sql.mli lib/ox_lint/.lint_engine.objs/byte/raw_sql.cmti
-lib/ox_lint/execution_context.ml lib/ox_lint/.lint_engine.objs/byte/execution_context.cmt
-lib/ox_lint/execution_context.mli lib/ox_lint/.lint_engine.objs/byte/execution_context.cmti
 lib/ox_lint/monotonic_elapsed_time.ml lib/ox_lint/.lint_engine.objs/byte/monotonic_elapsed_time.cmt
 lib/ox_lint/monotonic_elapsed_time.mli lib/ox_lint/.lint_engine.objs/byte/monotonic_elapsed_time.cmti
 lib/ox_lint/paths.ml lib/ox_lint/.lint_engine.objs/byte/paths.cmt
