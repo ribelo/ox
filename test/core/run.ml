@@ -2,6 +2,10 @@
    lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let expect_success = function
   | Exit.Success _ -> ()
   | Exit.Failure c ->
@@ -256,7 +260,7 @@ let test_resource () =
 let test_timeout_mock () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       let cleaned = ref false in
       let result =
         Timeout.timeout ~clock (Duration.ms 250) (fun () ->
@@ -271,7 +275,7 @@ let test_timeout_mock () =
       Alcotest.(check bool) "timed out body finalizer awaited" true !cleaned;
       Alcotest.(check (float 0.00001))
         "virtual deadline" 0.25
-        (Eio.Time.now clock -. start);
+        (elapsed env#mono_clock start);
       let finished = ref false in
       let result =
         Timeout.timeout ~clock (Duration.ms 10) (fun () ->
@@ -283,8 +287,7 @@ let test_timeout_mock () =
 
 let test_retry_repeat_mock () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       let calls = ref 0 in
       let result =
         Retry.retry ~clock:env#mono_clock
@@ -297,7 +300,7 @@ let test_retry_repeat_mock () =
       Alcotest.(check int) "three attempts" 3 !calls;
       Alcotest.(check (float 0.00001))
         "retry virtual clock" 0.06
-        (Eio.Time.now clock -. start);
+        (elapsed env#mono_clock start);
       let last = ref 0 in
       let result =
         Retry.retry ~clock:env#mono_clock (Schedule.recurs 2) (fun () ->
@@ -307,7 +310,7 @@ let test_retry_repeat_mock () =
       Alcotest.(check (result int string)) "retry last typed error" (Error "last") result;
       Alcotest.(check int) "retry stops at policy" 3 !last;
       let repeats = ref 0 in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       let result =
         Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 40)))
@@ -319,7 +322,7 @@ let test_retry_repeat_mock () =
       Alcotest.(check int) "repeat three iterations" 3 !repeats;
       Alcotest.(check (float 0.00001))
         "repeat virtual clock" 0.08
-        (Eio.Time.now clock -. start);
+        (elapsed env#mono_clock start);
       let failures = ref 0 in
       let result =
         Retry.repeat ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
@@ -334,7 +337,7 @@ let test_loop_cancel_mock () =
       let clock = env#clock in
       let verify label loop =
         let finished = ref false in
-        let start = Eio.Time.now clock in
+        let start = Eio.Time.Mono.now env#mono_clock in
         let winner =
           Eio.Fiber.first
             (fun () ->
@@ -351,7 +354,7 @@ let test_loop_cancel_mock () =
         Alcotest.(check bool) "sleeping fiber awaited" true !finished;
         Alcotest.(check (float 0.00001))
           "no full backoff" 0.01
-          (Eio.Time.now clock -. start)
+          (elapsed env#mono_clock start)
       in
       verify "retry interrupted" (fun () ->
           Retry.retry ~clock:env#mono_clock

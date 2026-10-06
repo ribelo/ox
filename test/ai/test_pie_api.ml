@@ -5,6 +5,10 @@ module R = Ox_ai_openrouter.Responses
 module A = Ox_ai_openrouter.Audio
 module H = Test_helpers
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let key = Ox_observability.Redact.make "pie-fake-key"
 let deadline = Ox.Duration.seconds 3
 let ok = H.expect_ok
@@ -369,19 +373,19 @@ let test_idle_policy ?(text_only = true) ~transcribe () =
                ~response_idle ~deadline audio)
           |> Result.map (fun response -> response.R.text)
       in
-      let started = Eio.Time.now env#clock in
+      let started = Eio.Time.Mono.now env#mono_clock in
       check_timeout
         (call ~deadline ~response_idle:(Ox.Duration.ms 60)
            (Fake_server.after (Ox.Duration.seconds 2)
               (Fake_server.Response (Fake_server.http_response body))));
       Alcotest.(check bool)
         "headers stall cut before total deadline" true
-        (Eio.Time.now env#clock -. started < 1.5);
+        (elapsed env#mono_clock started < 1.5);
       let head =
         Printf.sprintf "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n"
           (String.length body)
       in
-      let started = Eio.Time.now env#clock in
+      let started = Eio.Time.Mono.now env#mono_clock in
       check_timeout
         (call ~deadline ~response_idle:(Ox.Duration.ms 60)
            [
@@ -393,14 +397,14 @@ let test_idle_policy ?(text_only = true) ~transcribe () =
            ]);
       Alcotest.(check bool)
         "body stall cut before total deadline" true
-        (Eio.Time.now env#clock -. started < 1.5);
-      let started = Eio.Time.now env#clock in
+        (elapsed env#mono_clock started < 1.5);
+      let started = Eio.Time.Mono.now env#mono_clock in
       Alcotest.(check string)
         "progress resets idle timer" "hello world"
         (ok (call ~deadline ~response_idle:(Ox.Duration.ms 120) (fragmented body)));
       Alcotest.(check bool)
         "progress survives longer than one idle window" true
-        (Eio.Time.now env#clock -. started > 0.16);
+        (elapsed env#mono_clock started > 0.16);
       check_timeout
         (call ~deadline:(Ox.Duration.ms 90) ~response_idle:(Ox.Duration.ms 120)
            (fragmented body)))

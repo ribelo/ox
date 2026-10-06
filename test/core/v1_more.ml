@@ -1,14 +1,17 @@
 open Ox
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let check_int = Alcotest.(check int)
 let check_bool = Alcotest.(check bool)
 let check_float = Alcotest.(check (float 0.00001))
 
 let schedule_variants () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock in
       let check name schedule expected_time =
-        let start = Eio.Time.now clock and tries = ref 0 in
+        let start = Eio.Time.Mono.now env#mono_clock and tries = ref 0 in
         let result =
           Retry.retry ~clock:env#mono_clock
             (Schedule.both (Schedule.recurs 3) schedule)
@@ -18,7 +21,8 @@ let schedule_variants () =
         in
         check_bool (name ^ " terminal failure") true (result = Error 4);
         check_int (name ^ " attempts") 4 !tries;
-        check_float (name ^ " virtual delays") expected_time (Eio.Time.now clock -. start)
+        check_float (name ^ " virtual delays") expected_time
+          (elapsed env#mono_clock start)
       in
       check "retry uses fibonacci virtual delays"
         (Schedule.fibonacci (Duration.ms 10))

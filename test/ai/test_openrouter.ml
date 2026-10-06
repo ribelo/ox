@@ -4,6 +4,10 @@ module R = Ox_ai_openrouter.Responses
 module E = Ox_ai_openrouter.Embeddings
 module A = Ox_ai_openrouter.Audio
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let key = Ox_observability.Redact.make "fake-key"
 let deadline = Ox.Duration.seconds 3
 
@@ -299,7 +303,7 @@ let test_transport_controls () =
           (Fake_server.after (Ox.Duration.seconds 2)
              (Fake_server.Response (Fake_server.http_response "{}")))
       in
-      let started = Eio.Time.now env#clock in
+      let started = Eio.Time.Mono.now env#mono_clock in
       (match
          E.create ~http:(http ()) ~clock:env#clock ~logger ~api_key:key
            ~endpoint:(Fake_server.url slow "/embeddings")
@@ -309,7 +313,7 @@ let test_transport_controls () =
       | Error `Timeout ->
           Alcotest.(check bool)
             "^nai-8s4k attempt cut at the caller's timeout" true
-            (Eio.Time.now env#clock -. started < 1.5)
+            (elapsed env#mono_clock started < 1.5)
       | _ -> Alcotest.fail "expected the attempt timeout");
       match embed ~max_attempts:1 (throttled []) with
       | Error (`Unavailable { retry_after = None; _ }) -> ()

@@ -330,16 +330,18 @@ let blocked_tell_released_by_stop () =
 (* ---- nactor-tc19: ask with a timeout --------------------------------------------------- *)
 
 let ask_timeout () =
-  run (fun clock ->
+  Eio_mock.Backend.run_full (fun env ->
+      let clock = env#clock in
       Eio.Switch.run (fun sw ->
           let gate, release = Eio.Promise.create () in
           let actor = Actor.create ~sw ~init:0 ~handle () in
-          let start = Eio.Time.now clock in
+          let start = Eio.Time.Mono.now env#mono_clock in
           let reply = Actor.ask ~timeout:(clock, Duration.ms 50) actor (Slow (5, gate)) in
           check_bool "the wait is bounded" true (reply = Error `Timeout);
           Alcotest.(check (float 0.00001))
             "virtual time" 0.05
-            (Eio.Time.now clock -. start);
+            (Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now env#mono_clock))
+            /. 1e9);
           Eio.Promise.resolve release ();
           check_bool "the actor is undisturbed: the message is still handled" true
             (Actor.ask actor Get = Ok 5);

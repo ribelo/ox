@@ -268,52 +268,57 @@ let process_cpu_seconds () =
   t.Unix.tms_utime +. t.tms_stime +. t.tms_cutime +. t.tms_cstime
 
 let test_sqlite_backup_waits_without_busy_spinning
-    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; Ox_caps.Cap.time ; .. >) () =
-  let source_path =
-    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-source-" ".db"
-  in
-  let backup_path =
-    Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-backup-" ".db"
-  in
-  Fun.protect
-    ~finally:(fun () ->
-      if Sys.file_exists source_path then Ox_caps.Cap_sys.remove ~caps source_path;
-      if Sys.file_exists backup_path then Ox_caps.Cap_sys.remove ~caps backup_path)
-    (fun () ->
-      let setup = S.open_ source_path in
-      Fun.protect
-        ~finally:(fun () -> ignore (S.close setup))
-        (fun () ->
-          S.exec setup "CREATE TABLE items (id INTEGER PRIMARY KEY)";
-          S.exec setup "INSERT INTO items (id) VALUES (1)");
-      let locker = S.open_ source_path in
-      let source = S.open_ source_path in
+    ~(caps : < Ox_caps.Cap.tmp ; Ox_caps.Cap.fs_write ; .. >) () =
+  Eio_main.run (fun env ->
+      let source_path =
+        Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-source-" ".db"
+      in
+      let backup_path =
+        Ox_caps.Cap_stdlib.Filename.temp_file ~caps "ox-sqlite-backup-" ".db"
+      in
       Fun.protect
         ~finally:(fun () ->
-          ignore (S.close source);
-          ignore (S.close locker))
+          if Sys.file_exists source_path then Ox_caps.Cap_sys.remove ~caps source_path;
+          if Sys.file_exists backup_path then Ox_caps.Cap_sys.remove ~caps backup_path)
         (fun () ->
-          S.exec locker "BEGIN EXCLUSIVE";
-          S.exec locker "INSERT INTO items (id) VALUES (2)";
-          let releaser =
-            Thread.create
-              (fun () ->
-                Thread.delay 0.15;
-                S.exec locker "COMMIT")
-              ()
-          in
-          let cpu_before = process_cpu_seconds () in
-          let wall_before = Ox_caps.Cap_unix.gettimeofday ~caps () in
-          let result = S.backup_to_path_result source backup_path in
-          let wall_elapsed = Ox_caps.Cap_unix.gettimeofday ~caps () -. wall_before in
-          let cpu_elapsed = process_cpu_seconds () -. cpu_before in
-          Thread.join releaser;
-          (match result with
-          | Ok () -> ()
-          | Error err ->
-              Alcotest.failf "backup failed while waiting for lock: %a" S.pp_error err);
-          Alcotest.(check bool) "backup waited for the lock" true (wall_elapsed >= 0.10);
-          Alcotest.(check bool) "backup did not busy spin" true (cpu_elapsed < 0.06)))
+          let setup = S.open_ source_path in
+          Fun.protect
+            ~finally:(fun () -> ignore (S.close setup))
+            (fun () ->
+              S.exec setup "CREATE TABLE items (id INTEGER PRIMARY KEY)";
+              S.exec setup "INSERT INTO items (id) VALUES (1)");
+          let locker = S.open_ source_path in
+          let source = S.open_ source_path in
+          Fun.protect
+            ~finally:(fun () ->
+              ignore (S.close source);
+              ignore (S.close locker))
+            (fun () ->
+              S.exec locker "BEGIN EXCLUSIVE";
+              S.exec locker "INSERT INTO items (id) VALUES (2)";
+              let releaser =
+                Thread.create
+                  (fun () ->
+                    Thread.delay 0.15;
+                    S.exec locker "COMMIT")
+                  ()
+              in
+              let cpu_before = process_cpu_seconds () in
+              let mono_before = Eio.Time.Mono.now env#mono_clock in
+              let result = S.backup_to_path_result source backup_path in
+              let elapsed =
+                Mtime.Span.to_float_ns
+                  (Mtime.span mono_before (Eio.Time.Mono.now env#mono_clock))
+                /. 1e9
+              in
+              let cpu_elapsed = process_cpu_seconds () -. cpu_before in
+              Thread.join releaser;
+              (match result with
+              | Ok () -> ()
+              | Error err ->
+                  Alcotest.failf "backup failed while waiting for lock: %a" S.pp_error err);
+              Alcotest.(check bool) "backup waited for the lock" true (elapsed >= 0.10);
+              Alcotest.(check bool) "backup did not busy spin" true (cpu_elapsed < 0.06))))
 
 let test_sqlite_load_extension_toggle () =
   with_db @@ fun db ->

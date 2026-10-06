@@ -5,6 +5,10 @@
    lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let check_int label expected actual = Alcotest.(check int) label expected actual
 let check_bool label expected actual = Alcotest.(check bool) label expected actual
 let check_string label expected actual = Alcotest.(check string) label expected actual
@@ -139,7 +143,7 @@ let release_laws () =
 let timeout_laws () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       let seen = ref [] in
       let result =
         Timeout.timeout ~clock (Duration.ms 25) (fun () ->
@@ -150,7 +154,7 @@ let timeout_laws () =
       in
       check_bool "timeout uses virtual clock" true (result = Error `Timeout);
       Alcotest.(check (list string)) "release settled before timeout" [ "release" ] !seen;
-      Alcotest.(check (float 0.00001)) "virtual time" 0.025 (Eio.Time.now clock -. start);
+      Alcotest.(check (float 0.00001)) "virtual time" 0.025 (elapsed env#mono_clock start);
       let result = Timeout.timeout ~clock (Duration.ms 25) (fun () -> Ok 2) in
       check_bool "timeout allows fast success" true (result = Ok 2);
       let result = Timeout.timeout ~clock (Duration.ms 25) (fun () -> Error `Timeout) in
@@ -160,17 +164,19 @@ let timeout_laws () =
 
 let retry_repeat_laws () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock and calls = ref 0 in
+      let calls = ref 0 in
       let attempt () =
         incr calls;
         if !calls < 3 then Error !calls else Ok 9
       in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       check_bool "retry schedule until success" true
         (Retry.retry ~clock:env#mono_clock (Schedule.spaced (Duration.ms 10)) attempt
         = Ok 9);
       check_int "one initial plus two retries" 3 !calls;
-      Alcotest.(check (float 0.00001)) "virtual retries" 0.02 (Eio.Time.now clock -. start);
+      Alcotest.(check (float 0.00001))
+        "virtual retries" 0.02
+        (elapsed env#mono_clock start);
       calls := 0;
       check_bool "retry does nothing on initial success" true
         (Retry.retry ~clock:env#mono_clock (Schedule.recurs 5) (fun () ->
@@ -201,7 +207,7 @@ let retry_repeat_laws () =
         = Ok 0);
       check_int "one body for recurs zero" 1 !calls;
       calls := 0;
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       check_bool "successful values drive schedule" true
         (Retry.repeat ~clock:env#mono_clock
            (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 5)))
@@ -212,7 +218,7 @@ let retry_repeat_laws () =
       check_int "two continuations" 3 !calls;
       Alcotest.(check (float 0.00001))
         "repeat schedule uses virtual delays" 0.01
-        (Eio.Time.now clock -. start);
+        (elapsed env#mono_clock start);
       (match
          Scope.run (fun _ ->
              Retry.retry ~clock:env#mono_clock (Schedule.recurs 3) (fun () ->
@@ -487,12 +493,12 @@ let nested_timeouts () =
 
 let retry_bounds () =
   Eio_mock.Backend.run_full (fun env ->
-      let clock = env#clock and calls = ref 0 in
+      let calls = ref 0 in
       let attempt () =
         incr calls;
         Error !calls
       in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       let result =
         Retry.retry ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 3) (Schedule.spaced (Duration.ms 7)))
@@ -502,7 +508,7 @@ let retry_bounds () =
       check_int "retry schedule uses virtual delays" 4 !calls;
       Alcotest.(check (float 0.00001))
         "retry delayed 3 times" 0.021
-        (Eio.Time.now clock -. start);
+        (elapsed env#mono_clock start);
       ())
 
 let tests =

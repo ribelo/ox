@@ -2,6 +2,10 @@
 module C = Ox_http.Ws_codec
 module W = Ox_http.Ws_client
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let fail fmt = Printf.ksprintf failwith fmt
 let check label condition = if not condition then fail "%s" label
 
@@ -145,7 +149,7 @@ let quiet ~(caps : < Ox_caps.Cap.stderr ; .. >) env =
 
 let flood ~(caps : < Ox_caps.Cap.stderr ; .. >) env opcode interleaved =
   let processed = ref 0 and pongs = ref 0 in
-  let started = Eio.Time.now env#clock in
+  let started = Eio.Time.Mono.now env#mono_clock in
   with_pair ~caps env (fun sw ws _ server input ->
       let payload = "flood" in
       let packet =
@@ -171,7 +175,7 @@ let flood ~(caps : < Ox_caps.Cap.stderr ; .. >) env opcode interleaved =
         | _ -> fail "live control flood did not return row-57 budget error"
       in
       receive ();
-      let elapsed = max 0. (Eio.Time.now env#clock -. started) in
+      let elapsed = max 0. (elapsed env#mono_clock started) in
       let bound = 32 + int_of_float (ceil (32. *. elapsed)) in
       check "receive-call boundaries reset the timed control budget" (!processed <= bound);
       check "flood receiver did no work" ((not interleaved) || !processed > 0);
@@ -238,9 +242,14 @@ let run
       let before = fd_count ~caps () in
       let rounds = ref 0 in
       Eio.Time.with_timeout_exn env#clock 50. (fun () ->
-          let deadline = Eio.Time.now env#clock +. 30. in
+          let deadline =
+            Mtime.add_span
+              (Eio.Time.Mono.now env#mono_clock)
+              (Mtime.Span.of_uint64_ns 30_000_000_000L)
+            |> Option.get
+          in
           quiet ~caps env;
-          while Eio.Time.now env#clock < deadline do
+          while Mtime.is_earlier (Eio.Time.Mono.now env#mono_clock) ~than:deadline do
             ignore (flood ~caps env C.Ping (Random.State.bool random));
             ignore (flood ~caps env C.Pong true);
             half_close ~caps env random;

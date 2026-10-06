@@ -2,6 +2,10 @@
    lifetime, cancellation and failure observations remain independently checked. *)
 open Ox
 
+(* ^safe-p9cw: elapsed assertions share the operation’s monotonic clock. *)
+let elapsed clock start =
+  Mtime.Span.to_float_ns (Mtime.span start (Eio.Time.Mono.now clock)) /. 1e9
+
 let check_int = Alcotest.(check int)
 let check_bool = Alcotest.(check bool)
 let check_float = Alcotest.(check (float 0.00001))
@@ -9,11 +13,11 @@ let check_float = Alcotest.(check (float 0.00001))
 let clock_cases () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
-      let start = Eio.Time.now clock in
+      let start = Eio.Time.Mono.now env#mono_clock in
       Eio.Time.sleep clock 0.;
-      check_float "sleep without wall time" start (Eio.Time.now clock);
+      check_float "sleep without wall time" 0. (elapsed env#mono_clock start);
       Eio.Time.sleep clock 0.013;
-      check_float "sleep delays until adjusted" 0.013 (Eio.Time.now clock -. start);
+      check_float "sleep delays until adjusted" 0.013 (elapsed env#mono_clock start);
       let completed = ref [] in
       Eio.Switch.run (fun sw ->
           Eio.Fiber.fork ~sw (fun () ->
@@ -24,7 +28,7 @@ let clock_cases () =
               completed := 10 :: !completed));
       Alcotest.(check (list int)) "multiple sleeps" [ 30; 10 ] !completed;
       check_float "set_time wakes due sleepers (auto-advance mock)" 0.043
-        (Eio.Time.now clock -. start))
+        (elapsed env#mono_clock start))
 
 let retry_resource_cases () =
   Eio_mock.Backend.run_full (fun env ->
@@ -290,7 +294,7 @@ let concurrent_cases () =
 let cadence_cases () =
   Eio_mock.Backend.run_full (fun env ->
       let clock = env#clock in
-      let start = Eio.Time.now clock and attempts = ref 0 in
+      let start = Eio.Time.Mono.now env#mono_clock and attempts = ref 0 in
       let outcome =
         Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.fixed (Duration.ms 10)))
@@ -303,9 +307,9 @@ let cadence_cases () =
       | Ok (2, _) -> ()
       | _ -> Alcotest.fail "repeat fixed cadence differs from spaced");
       check_int "repeat fixed overrun iterations" 3 !attempts;
-      let fixed_elapsed = Eio.Time.now clock -. start in
+      let fixed_elapsed = elapsed env#mono_clock start in
       check_float "repeat fixed overrun has no pileup" 0.07 fixed_elapsed;
-      let spaced_start = Eio.Time.now clock in
+      let spaced_start = Eio.Time.Mono.now env#mono_clock in
       let spaced =
         Retry.repeat ~clock:env#mono_clock
           (Schedule.both (Schedule.recurs 2) (Schedule.spaced (Duration.ms 10)))
@@ -317,8 +321,8 @@ let cadence_cases () =
       | Ok (2, _) -> ()
       | _ -> Alcotest.fail "spaced repeat exhausted unexpectedly");
       check_bool "repeat fixed cadence differs from spaced" true
-        (Eio.Time.now clock -. spaced_start > fixed_elapsed);
-      let start = Eio.Time.now clock in
+        (elapsed env#mono_clock spaced_start > fixed_elapsed);
+      let start = Eio.Time.Mono.now env#mono_clock in
       attempts := 0;
       let outcome =
         Retry.retry ~clock:env#mono_clock
@@ -330,8 +334,9 @@ let cadence_cases () =
             Error !attempts)
       in
       check_bool "retry during schedule bounds elapsed" true (outcome = Error 3);
-      check_float "retry during bounds virtual elapsed" 0.02 (Eio.Time.now clock -. start);
-      let start = Eio.Time.now clock in
+      check_float "retry during bounds virtual elapsed" 0.02
+        (elapsed env#mono_clock start);
+      let start = Eio.Time.Mono.now env#mono_clock in
       attempts := 0;
       let result =
         Retry.retry ~clock:env#mono_clock
@@ -342,7 +347,7 @@ let cadence_cases () =
             incr attempts;
             Error !attempts)
       in
-      let elapsed = Eio.Time.now clock -. start in
+      let elapsed = elapsed env#mono_clock start in
       check_bool "retry jittered schedule stays inside the supplied range" true
         (result = Error 5 && !attempts = 5 && elapsed >= 0.02 && elapsed <= 0.06))
 

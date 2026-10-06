@@ -216,7 +216,6 @@ let dormant ?(audit = false) rule =
      && List.mem rule.id
           [
             "ox-transaction-runner";
-            "ox-monotonic-elapsed-time";
             "ox-execution-context";
             "ox-cancel-mask-scope";
             "ox-raw-sql-construction";

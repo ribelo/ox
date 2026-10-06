@@ -1,5 +1,5 @@
 ---
-status: done
+status: implementing
 category: enhancement
 package: ox_lint
 consumer: Ox, Pie, Exergy, Nema
@@ -53,7 +53,7 @@ Identity_external may remain as the existing twelve-line check without a ticket.
 
 ## Activation and completion
 
-For each surviving rule, refresh exact declared CMT/CMTI producers in Pie (packages), Exergy (lib bin) and Nema (lib bin), then run the current Ox engine with --root <consumer> --rules <rule> --inventory <dirs>. Discover generated-source membership only through explicitly named nonrecursive check aliases derived from selected sources’ compilation-stanza ancestors (including test/tests and includes), with Dune compiler rules proving membership, never a global recursive @check. Virtual compiler wrapper sources are not alias directories. Record decided/undecided file counts and production/test findings; inspect every production finding and classify it as defect or false positive. Ordinary consumer-file unverified evidence prevents activation. A zero-defect rule needs a concrete Eio/Ox failure scenario or is deleted. Genuine isolated compiler-rejection fixtures are identified separately, never counted as decided. Until this evidence is complete, the six detector slices are dormant in the default gate and run only through explicit --rules selection; that audit selection is not activation.
+Prevention decision (2026-10-06): weigh failure cost, silent propagation and what types already prevent. Activate elapsed time and transaction runners. Execution context activates only with zero ordinary production unknowns across Pie/Exergy/Nema; otherwise name blockers and keep it dormant. Activate raw SQL only after the migration/DSL seam’s compiler-resolved trusted contract removes its three false positives. Remove cancellation masks. Probe adjacent same-base-type positional parameters, unbounded reads, missing release paths and wire float conversion before further construction; classify counts in one-screen tickets. Open retry-effect safety as a separate type spec, without implementing it. No file-length/style rules. Exact scoped compiler admission, strict digests and separate isolated controls remain mandatory evidence requirements, not a universal activation veto.
 
 Each ticket stays one screen and cites an Ox commit or concrete failure, not another linter. Keep only necessary clean/violating consumer-style controls. Commit each deletion and surviving slice separately with these still-existing story IDs. Finish master green for install, tests, formatting and caps; remove resolved safety worktrees/branches and report the measured survivors briefly.
 

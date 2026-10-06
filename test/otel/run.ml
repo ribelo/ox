@@ -960,9 +960,14 @@ let metrics_export_under_load ~(caps : < Ox_caps.Cap.random ; .. >) () =
           let meter = O.meter exporter in
           let counter = O.Meter.counter meter ~name:"busy.total" () in
           O.Meter.add counter 1.0;
-          let deadline = Eio.Time.now env#clock +. 0.3 in
+          let deadline =
+            Mtime.add_span
+              (Eio.Time.Mono.now env#mono_clock)
+              (Mtime.Span.of_uint64_ns 300_000_000L)
+            |> Option.get
+          in
           let exported_during_load = ref false in
-          while Eio.Time.now env#clock < deadline do
+          while Mtime.is_earlier (Eio.Time.Mono.now env#mono_clock) ~than:deadline do
             L.info logger "busy";
             if metric_rows !received <> [] then exported_during_load := true;
             Eio.Time.sleep env#clock 0.005
