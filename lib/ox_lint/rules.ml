@@ -141,8 +141,7 @@ let all ~caps =
       evidence_rule "execution-context"
         "known operation executes in the wrong Eio/native context"
         (fun ~emit ~undecided artifact ->
-          visit (Execution_context.check ~caps ~emit ~undecided) artifact;
-          visit (Fiber_blocking.check ~caps ~emit ~undecided) artifact);
+          visit (Execution_context.check ~caps ~emit ~undecided) artifact);
       concurrency_rule "catch-all"
         "cancellation propagation unproven; re-raise or reify the original exception; \
          unresolved helpers and stores without a visible use remain findings"

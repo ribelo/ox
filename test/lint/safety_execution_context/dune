@@ -1,0 +1,33 @@
+; ^safe-ohen ^safe-eftp: one MI-first fixture/progress corpus.
+
+(executable
+ (name corpus)
+ (modules corpus)
+ (libraries lint_engine ox_test eio_main ox ox_blocking threads))
+
+(rule
+ (alias runtest)
+ (deps
+  ../clean/execution_context.ml
+  ../clean/execution_context.mli
+  ../violating/execution_context.ml
+  ../violating/execution_context.mli
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Execution_context.cmti
+  ../clean/.concurrency_clean.objs/byte/concurrency_clean__Execution_context.cmt
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Execution_context.cmti
+  ../violating/.concurrency_violating.objs/byte/concurrency_violating__Execution_context.cmt)
+ (action
+  (progn
+   (run
+    ./corpus.exe
+    --fixtures
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Execution_context.cmti
+    ../clean/execution_context.mli
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Execution_context.cmti
+    ../violating/execution_context.mli
+    ../clean/.concurrency_clean.objs/byte/concurrency_clean__Execution_context.cmt
+    ../clean/execution_context.ml
+    ../violating/.concurrency_violating.objs/byte/concurrency_violating__Execution_context.cmt
+    ../violating/execution_context.ml)
+   (run bash -c "timeout 2 ./corpus.exe --owner-block; test $? -eq 124")
+   (run ./corpus.exe --witness))))

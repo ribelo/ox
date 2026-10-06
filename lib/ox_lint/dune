@@ -286,21 +286,9 @@
   (../../test/lint/clean/execution_context.mli
    as
    test/lint/clean/execution_context.mli)
-  (../../test/lint/clean/fiber_blocking.ml
-   as
-   test/lint/clean/fiber_blocking.ml)
-  (../../test/lint/clean/fiber_blocking.mli
-   as
-   test/lint/clean/fiber_blocking.mli)
   (../../test/lint/violating/execution_context.ml
    as
    test/lint/violating/execution_context.ml)
   (../../test/lint/violating/execution_context.mli
    as
-   test/lint/violating/execution_context.mli)
-  (../../test/lint/violating/fiber_blocking.ml
-   as
-   test/lint/violating/fiber_blocking.ml)
-  (../../test/lint/violating/fiber_blocking.mli
-   as
-   test/lint/violating/fiber_blocking.mli)))
+   test/lint/violating/execution_context.mli)))

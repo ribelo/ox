@@ -1,10 +1,19 @@
-(* ^safe-sr6e ^safe-9hbm ^safe-eftp: known Eio candidates, not NoEio certification. *)
+(* ^safe-sr6e ^safe-9hbm ^safe-eftp: known execution-context candidates, not NoEio certification. *)
 open Ocaml_common
 open Typedtree
 
+let rec type_path_matches fuel expected ty =
+  if fuel = 0 then false
+  else
+    match Types.get_desc ty with
+    | Tlink body | Tpoly (body, _) -> type_path_matches (fuel - 1) expected body
+    | Tconstr (path, _, _) -> Path.same path expected
+    | _ -> false
+
 let base = Tast_iterator.default_iterator
 
-type role = Worker | Eio
+type role = Worker | Eio | Root | Wait | Pure | Callback
+type context = Outside | Owner | Native of string * Location.t
 
 type head = {
   path : Path.t;
@@ -18,6 +27,7 @@ type value =
   | Head of head * (arg_label * value) list
   | Closure of expression * environment * (arg_label * value) list
   | Group of value list
+  | Boolean of bool
   | Optional_value of value option
 
 and environment = (Path.t * value) list
@@ -74,7 +84,33 @@ let check ~caps ~emit ~undecided =
         (List.map
            (fun n -> [ "Eio"; "Fiber"; n ])
            [ "yield"; "check"; "await_cancel"; "both"; "pair"; "first" ]
-        @ [ [ "Eio"; "Switch"; "run" ] ])
+        @ List.map
+            (fun n -> [ "Eio"; "Fiber"; n ])
+            [ "fork"; "fork_promise"; "fork_daemon" ]
+        @ [
+            [ "Eio"; "Switch"; "run" ];
+            [ "Eio"; "Cancel"; "protect" ];
+            [ "Eio"; "Time"; "sleep" ];
+            [ "Eio"; "Time"; "Mono"; "sleep" ];
+          ])
+    @ catalogue Root
+        [
+          [ "Eio_main"; "run" ];
+          [ "Eio_linux"; "run" ];
+          [ "Eio_posix"; "run" ];
+          [ "Ox_test"; "run" ];
+        ]
+    @ catalogue Wait
+        [
+          [ "Unix"; "sleep" ];
+          [ "Unix"; "sleepf" ];
+          [ "Thread"; "delay" ];
+          [ "Thread"; "join" ];
+          [ "Stdlib"; "Domain"; "join" ];
+          [ "Stdlib"; "Semaphore"; "Counting"; "acquire" ];
+        ]
+    @ catalogue Pure [ [ "Stdlib"; "ignore" ] ]
+    @ catalogue Callback [ [ "Stdlib"; "Fun"; "protect" ] ]
   in
   let definitions = Path.Tbl.create 32 and reported = Hashtbl.create 16 in
   let normalize e p = Env.normalize_value_path None (Paths.env ~caps e.exp_env) p in
@@ -85,11 +121,16 @@ let check ~caps ~emit ~undecided =
   in
   let report output context loc reason =
     match context with
-    | None -> ()
-    | Some (entry, origin) ->
+    | Outside -> ()
+    | Owner | Native _ ->
         let message =
-          Printf.sprintf "%s native callback at %s:%d: %s" entry
-            origin.Location.loc_start.Lexing.pos_fname origin.loc_start.pos_lnum reason
+          match context with
+          | Native (entry, origin) ->
+              Printf.sprintf "%s native callback at %s:%d: %s" entry
+                origin.Location.loc_start.Lexing.pos_fname origin.loc_start.pos_lnum
+                reason
+          | Owner -> "Eio owner callback: " ^ reason
+          | Outside -> assert false
         in
         if not (Hashtbl.mem reported (loc, message)) then (
           Hashtbl.add reported (loc, message) ();
@@ -119,12 +160,19 @@ let check ~caps ~emit ~undecided =
   in
   (* This search selects actual known identities, including defaults and captured values.
      Its absence is only outside this catalogue, never a purity/context certificate. *)
-  let rec candidate seen = function
-    | Head _ -> true
-    | Group vs -> List.exists (candidate seen) vs
-    | Optional_value value -> Option.fold ~none:false ~some:(candidate seen) value
-    | Closure (e, env, _) -> candidate_expr seen env e
-  and candidate_expr seen env e =
+  let interesting context h =
+    match context with
+    | Outside -> false
+    | Owner -> h.role = Wait
+    | Native _ -> h.role = Eio || h.role = Worker
+  in
+  let rec candidate context seen = function
+    | Head (h, _) -> interesting context h
+    | Boolean _ -> false
+    | Group vs -> List.exists (candidate context seen) vs
+    | Optional_value value -> Option.fold ~none:false ~some:(candidate context seen) value
+    | Closure (e, env, _) -> candidate_expr context seen env e
+  and candidate_expr context seen env e =
     if List.exists (fun old -> old == e) seen then false
     else
       let seen = e :: seen and found = ref false in
@@ -136,13 +184,17 @@ let check ~caps ~emit ~undecided =
               (match child.exp_desc with
               | Texp_ident { path; desc; _ } -> (
                   let path = normalize child path in
-                  if Option.is_some (known child path desc.val_uid) then found := true
+                  if
+                    Option.fold ~none:false ~some:(interesting context)
+                      (known child path desc.val_uid)
+                  then found := true
                   else
                     match lookup env path with
-                    | Some v -> if candidate seen v then found := true
+                    | Some v -> if candidate context seen v then found := true
                     | None ->
                         Option.iter
-                          (fun body -> if candidate_expr seen env body then found := true)
+                          (fun body ->
+                            if candidate_expr context seen env body then found := true)
                           (Path.Tbl.find_opt definitions path))
               | _ -> ());
               if not !found then base.expr self child);
@@ -154,9 +206,9 @@ let check ~caps ~emit ~undecided =
   let data = Group [] in
   let rec eval context fuel active env e =
     if !fuel <= 0 then
-      if candidate_expr [] env e then (
+      if candidate_expr context [] env e then (
         report undecided context e.exp_loc
-          "unresolved known Eio candidate at local analysis horizon";
+          "unresolved known execution-context candidate at local analysis horizon";
         Group [ Closure (e, env, []) ])
       else data
     else (
@@ -171,17 +223,16 @@ let check ~caps ~emit ~undecided =
               | Some h -> Head (h, [])
               | None -> (
                   match Path.Tbl.find_opt definitions path with
-                  | Some body -> eval None fuel active env body
+                  | Some body -> eval Outside fuel active env body
                   | _ -> data)))
+      | Texp_construct (_, desc, _, [], _)
+        when type_path_matches 32 Predef.path_bool e.exp_type ->
+          Boolean (desc.cstr_name = "true")
       | Texp_construct (_, _, _, [], _)
-        when match Types.get_desc e.exp_type with
-             | Tconstr (path, _, _) -> Path.same path Predef.path_option
-             | _ -> false ->
+        when type_path_matches 32 Predef.path_option e.exp_type ->
           Optional_value None
       | Texp_construct (_, _, _, [ (_, value) ], _)
-        when match Types.get_desc e.exp_type with
-             | Tconstr (path, _, _) -> Path.same path Predef.path_option
-             | _ -> false ->
+        when type_path_matches 32 Predef.path_option e.exp_type ->
           Optional_value (Some (eval context fuel active env value))
       | Texp_function _ -> Closure (e, env, [])
       | Texp_apply (fn, args, _, _, _) ->
@@ -203,11 +254,15 @@ let check ~caps ~emit ~undecided =
       | Texp_sequence (first, _, last) ->
           ignore (eval context fuel active env first);
           eval context fuel active env last
-      | Texp_ifthenelse (condition, yes, no) ->
-          ignore (eval context fuel active env condition);
-          Group
-            (eval context fuel active env yes
-            :: Option.to_list (Option.map (eval context fuel active env) no))
+      | Texp_ifthenelse (condition, yes, no) -> (
+          match eval context fuel active env condition with
+          | Boolean true -> eval context fuel active env yes
+          | Boolean false ->
+              Option.fold ~none:data ~some:(eval context fuel active env) no
+          | _ ->
+              Group
+                (eval context fuel active env yes
+                :: Option.to_list (Option.map (eval context fuel active env) no)))
       | Texp_match (scrutinee, _, cases, _, _) ->
           let value = eval context fuel active env scrutinee in
           Group
@@ -241,28 +296,53 @@ let check ~caps ~emit ~undecided =
           match h.role with
           | Worker ->
               (match context with
-              | Some _ ->
+              | Native _ ->
                   report emit context loc (h.name ^ " requires the Eio caller context")
-              | None ->
+              | Outside | Owner ->
                   Option.iter
                     (fun (callback, _) ->
                       ignore
                         (invoke
-                           (Some (h.name, loc))
+                           (Native (h.name, loc))
                            (ref 512) [] loc callback
                            [ (Nolabel, data) ]))
                     (take Nolabel args));
               data
-          | Eio ->
-              report emit context loc (h.name ^ " requires an Eio fiber context");
+          | Wait ->
+              (match context with
+              | Owner -> report emit context loc (h.name ^ " blocks the Eio owner thread")
+              | _ -> ());
+              data
+          | Pure -> data
+          | Eio | Root | Callback ->
+              let native = match context with Native _ -> true | _ -> false in
+              if h.role = Eio && native then
+                report emit context loc (h.name ^ " requires an Eio fiber context")
+              else
+                List.iter
+                  (fun (_, v) ->
+                    match v with
+                    | Closure _ | Head _ ->
+                        let callback_args =
+                          if h.name = "Ox_test.run" then
+                            [ (Nolabel, data); (Nolabel, data) ]
+                          else [ (Nolabel, data) ]
+                        in
+                        ignore
+                          (invoke
+                             (if h.role = Callback then context else Owner)
+                             fuel active loc v callback_args)
+                    | _ -> ())
+                  args;
               data)
+    | Boolean _ -> data
     | Optional_value value ->
         invoke context fuel active loc (Group (Option.to_list value)) args
     | Group values ->
         let values = values @ List.map snd args in
-        if List.exists (candidate []) values then
+        if List.exists (candidate context []) values then
           report undecided context loc
-            "unresolved known Eio value escaping opaque call or scope";
+            "unresolved known execution-context value escaping opaque call or scope";
         Group values
     | Closure (closure, captured, saved) -> (
         let args = saved @ args in
@@ -282,9 +362,10 @@ let check ~caps ~emit ~undecided =
             else if
               List.exists (fun old -> old == closure) active || List.length active >= 32
             then (
-              if candidate [] value then
+              if candidate context [] value then
                 report undecided context loc
-                  "unresolved recursive known Eio helper or local call horizon";
+                  "unresolved recursive known execution-context helper or local call \
+                   horizon";
               data)
             else
               let env, remaining =
@@ -302,10 +383,10 @@ let check ~caps ~emit ~undecided =
                           match v with
                           | Optional_value (Some value) -> (p, value)
                           | _ ->
-                              if candidate_expr [] env default then
+                              if candidate_expr context [] env default then
                                 report undecided context loc
-                                  "unresolved optional default containing known Eio \
-                                   candidate";
+                                  "unresolved optional default containing known \
+                                   execution-context candidate";
                               (p, v))
                     in
                     (bind pattern v ((Path.Pident p.fp_param, v) :: env), args))
@@ -383,16 +464,16 @@ let check ~caps ~emit ~undecided =
         (match e.exp_desc with
         | Texp_apply (fn, args, _, _, _) -> (
             let fuel = ref 512 in
-            let v = eval None fuel [] [] fn in
+            let v = eval Outside fuel [] [] fn in
             match v with
-            | Head ({ role = Worker; _ }, _) ->
+            | Head ({ role = Worker | Root; _ }, _) ->
                 let args =
                   List.filter_map
                     (function
-                      | l, Arg (e, _) -> Some (l, eval None fuel [] [] e) | _ -> None)
+                      | l, Arg (e, _) -> Some (l, eval Outside fuel [] [] e) | _ -> None)
                     args
                 in
-                ignore (invoke None fuel [] fn.exp_loc v args)
+                ignore (invoke Outside fuel [] fn.exp_loc v args)
             | _ -> ())
         | _ -> ());
         base.expr self e);

@@ -6,7 +6,6 @@
   transaction_runner
   monotonic_elapsed_time
   execution_context
-  fiber_blocking
   identity_external
   catch_helper
   catch_all
