@@ -4,7 +4,7 @@ Read `GLOSSARY.md` (vocabulary), then `docs/why-ox.md` (why this tree exists and
 
 ## Landing
 
-Other agent sessions may work in this checkout at the same time. Uncommitted work is lost work: commit each verified slice to `master` (this checkout) with a message that cites the story IDs that justified it, staging only the paths you changed; never commit, revert or stash another session's changes. Before taking a delivery-map row number, re-read `docs/issues/README.md` from disk. Push only when asked.
+Other agent sessions may work in this checkout at the same time. Uncommitted work is lost work: commit each verified slice to `master` (this checkout) with a message that cites the story IDs that justified it, staging only the paths you changed; never commit, revert or stash another session's changes. Before taking a delivery-map row number, re-read `docs/issues/README.md` from disk. Push `master` to `origin` after each landed slice (owner's rule for his private repositories, 2026-11-02).
 
 ## The one rule
 
