@@ -71,7 +71,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 60 | `stress/01-stress.md` | `ox`, `ox_http`, `ox_ipc` | 45, 57 | stress and fuzz under the seams where every ox bug has lived | [x] |
 | 61 | [once-forks/01-once-forks.md](once-forks/01-once-forks.md) (P1) | `ox` | 45 | ownership: a value moved into one fiber or one release; ADR-0010 | [ ] |
 | 62 | [owned-handles/01-owned-handles.md](owned-handles/01-owned-handles.md) (P2) | `ox_process`, `ox_http`, `ox_sql` | 61 | done 2026-11-03: native leases delivered; `unique` Child and Pool withdrawn (shared by design, misuse already typed at run time); duplex close ownership moved to 63 | [x] |
-| 63 | [duplex-halves/01-duplex-halves.md](duplex-halves/01-duplex-halves.md) (P3) | `ox_http` | 57, 61, 62 | the row-57 class refused by the compiler; buffer mutexes go | [ ] |
+| 63 | [duplex-halves/01-duplex-halves.md](duplex-halves/01-duplex-halves.md) (P3) | `ox_http` | 57, 61, 62, 65 | the row-57 class refused by the compiler: TLS state branded by its lock (restated 2026-11-03; no halves, locks stay) | [ ] |
 | 64 | [spawner/01-spawner.md](spawner/01-spawner.md) (P5) | `ox`, `ox_ipc`, `ox_http`, `ox_rpc`, `ox_app` | 61 | forking after `create` is declared in `deps` | [ ] |
 | 65 | [ox-mutex/01-ox-mutex.md](ox-mutex/01-ox-mutex.md) (P7) | `ox` | 61 | branded guarded data; `Ox.Cancel.protect`; replacements for row 66 | [ ] |
 | 66 | [raw-concurrency-gate/01-raw-concurrency-gate.md](raw-concurrency-gate/01-raw-concurrency-gate.md) (P6) | gate rules, `ox_sql`, `ox_sql_dsl`, `ox_http` | 54, 61, 64, 65 | no raw Eio concurrency or Stdlib mutex; catch-all, `Fun.protect`, discarded result, public exception, `Obj.magic*` rules | [ ] |
