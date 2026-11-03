@@ -6,7 +6,8 @@
     allocates its mutable state internally, gives it the brand of the mutex
     that guards it, and exports operations that require a ['k Access.t]. Such
     an access exists only inside a critical section and is [local], so it
-    cannot be stored, returned or captured by a fork. Reading the state
+    cannot be stored, returned or captured by a fork. It is [unyielding], so a
+    nested short section may use an outer section's access. Reading the state
     without the lock, with another mutex's access, or after the section ends
     does not compile. A generic payload getter would leak an alias and is not
     an ownership boundary, so this module has none. ^ncrit-ihf2 ^ncrit-1px5
@@ -43,7 +44,7 @@ val create : unit -> packed
     Finalizers: none are registered.
     Locking: no lock is acquired. *)
 
-val with_access : 'k t -> ('k Access.t @ local -> 'b) @ local once unyielding -> 'b
+val with_access : 'k t -> ('k Access.t @ local unyielding -> 'b) @ local once unyielding -> 'b
 (** [with_access t f] runs [f] under [t] for short bookkeeping. [f] is
     [unyielding]: it cannot capture a yielding value. Suspension inside it is
     refused by the type only once Ox owns the suspension surface (row 71,
@@ -51,7 +52,21 @@ val with_access : 'k t -> ('k Access.t @ local -> 'b) @ local once unyielding ->
     [f] runs at most once and is not entered if acquisition is cancelled.
     ^ncrit-9sfw *)
 
-val with_access_waiting : 'k t -> ('k Access.t @ local -> 'b) @ local once -> 'b
+val with_access_waiting : 'k t -> ('k Access.t @ local unyielding -> 'b) @ local once -> 'b
 (** [with_access_waiting t f] runs [f] under [t] for a section that waits
     legitimately, such as a transport write under the lock or a condition
     wait. Other fibers wanting [t] wait for the whole section. ^ncrit-9sfw *)
+
+val with_access_protected :
+  'k t -> ('k Access.t @ local unyielding -> 'b) @ local once unyielding -> 'b
+(** [with_access_protected t f] is {!with_access} with acquisition shielded
+    from cancellation, for work that must follow an operation already done,
+    such as feeding bytes a raw read has consumed. Cancellation: protected
+    throughout acquisition; [f] is unyielding, and a cancellation that arrives
+    meanwhile is seen at the caller's next suspension. ^ncrit-9sfw *)
+
+val try_with_access_waiting :
+  'k t -> ('k Access.t @ local unyielding -> 'b) @ local once -> 'b option
+(** [try_with_access_waiting t f] runs [f] under [t] when [t] is free now, and
+    is [None] without entering [f] when another fiber holds it. Acquisition
+    never suspends; [f] may. ^ncrit-9sfw *)

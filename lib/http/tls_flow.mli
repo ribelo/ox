@@ -6,9 +6,10 @@
     flow/provider checks, Ox_http_tls_openssl native TLS, Cstruct buffers and Stdlib
     string/byte operations. Finalizers: create registers no hook and retains the supplied
     raw flow; the owning switch or caller must close it. Locking: separate read, write and
-    SSL Eio mutexes serialize the TLS state. Cancellation safety: unsafe because progress
-    is lost if a TLS record or handshake is interrupted; the connection state is not
-    rewindable. ^nlintd-z5p5 ^nlintd-vneh *)
+    SSL Ox.Mutex locks serialize the TLS state, and each piece of state has its lock's
+    brand (nduplex-87sz). Cancellation safety: unsafe because progress is lost if a TLS
+    record or handshake is interrupted; the connection state is not rewindable.
+    ^nlintd-z5p5 ^nlintd-vneh *)
 
 val failure_message : exn -> string option
 (** Return the diagnostic for a TLS failure, or [None] for any other defect. *)

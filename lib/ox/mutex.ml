@@ -29,3 +29,25 @@ let enter t (f @ local once) =
 let with_access t (f @ local once unyielding) = enter t f [@nontail]
 
 let with_access_waiting t (f @ local once) = enter t f [@nontail]
+
+let with_access_protected t (f @ local once unyielding) =
+  let mu = t.mu in
+  Eio.Cancel.protect (fun () -> Eio.Mutex.lock mu);
+  match f Access.Token with
+  | value ->
+      Eio.Mutex.unlock t.mu;
+      value
+  | exception exn ->
+      Eio.Mutex.unlock t.mu;
+      raise exn
+
+let try_with_access_waiting t (f @ local once) =
+  if Eio.Mutex.try_lock t.mu then
+    match f Access.Token with
+    | value ->
+        Eio.Mutex.unlock t.mu;
+        Some value
+    | exception exn ->
+        Eio.Mutex.unlock t.mu;
+        raise exn
+  else None

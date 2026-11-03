@@ -25,7 +25,7 @@ A mutex in the tree guards data by convention: nothing stops a read of `Tls_flow
 
 ## Progress
 
-2026-11-03: stories 1, 2, 5 and 6 delivered (`lib/ox/mutex.mli`, `test/core/ox_mutex`). `with_access_waiting` takes no `~io` yet; the suspension token comes with row 71 (`suspend-token`), and until then `unyielding` refuses captured yielding values but not a raw Eio wait. Open: story 3 (`Ox.Cancel.protect` needs a collector-safe local bridge into `Eio.Cancel.protect`; see Implementation Decisions) and story 4 (owners: `Tls_flow` first, with row 63).
+2026-11-03: stories 1, 2, 5 and 6 delivered (`lib/ox/mutex.mli`, `test/core/ox_mutex`). `with_access_waiting` takes no `~io` yet; the suspension token comes with row 71 (`suspend-token`), and until then `unyielding` refuses captured yielding values but not a raw Eio wait. Story 4 started: `Tls_flow` is an owner (row 63), with `with_access_protected` (shielded acquisition) and `try_with_access_waiting` (non-blocking acquisition) added for its feed and flush paths. Open: story 3 (`Ox.Cancel.protect` needs a collector-safe local bridge into `Eio.Cancel.protect`; see Implementation Decisions) and the rest of story 4 (`Rate_limiter` keeps its protected RW poisoning, so it needs a poisoning section kind; `Agent` and `Channel` get no lock; the IPC registry's cross-domain lock stays until its domain use is verified).
 
 ## Implementation Decisions
 

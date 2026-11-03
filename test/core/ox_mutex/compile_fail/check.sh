@@ -28,7 +28,7 @@ for file in good_*.ml; do
 done
 for file in bad_*.ml; do
   expected="local|global|yielding|unyielding|escape"
-  if [[ "$file" == bad_brand.ml ]]; then expected="existential"; fi
+  if [[ "$file" == bad_brand.ml || "$file" == bad_tls_wrong_lock.ml ]]; then expected="existential"; fi
   rc=0
   compile "$file" || rc=$?
   if [[ $rc != 2 ]]; then echo "FAIL: $file expected native compiler status 2, got $rc"; cat "$tmp/out"; status=1

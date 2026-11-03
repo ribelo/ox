@@ -1,3 +1,9 @@
 (executable
  (name correlator_alloc)
+ (modules correlator_alloc)
  (libraries ox_rpc ox ox_caps ox_caps.door eio eio_main))
+
+(executable
+ (name tls_duplex)
+ (modules tls_duplex)
+ (libraries ox_http ox_caps ox_caps.door eio eio_main cstruct mtime))

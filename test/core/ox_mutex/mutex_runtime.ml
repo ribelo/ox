@@ -86,6 +86,41 @@ let cancelled_acquisition () =
       check_int "a cancelled waiter never enters" 0 !entered;
       check_int "the holder finished" 1 (Ox.Mutex.with_access m (fun a -> Counter.get a c)))
 
+let try_when_held () =
+  Eio_mock.Backend.run (fun () ->
+      let (Ox.Mutex.P m) = Ox.Mutex.create () in
+      let c = Counter.make m in
+      let held =
+        Ox.Mutex.with_access m (fun _ ->
+            Ox.Mutex.try_with_access_waiting m (fun a -> Counter.incr a c))
+      in
+      (match held with Some () -> Alcotest.fail "a held mutex must refuse" | None -> ());
+      (match Ox.Mutex.try_with_access_waiting m (fun a -> Counter.incr a c) with
+      | Some () -> ()
+      | None -> Alcotest.fail "a free mutex must enter");
+      check_int "entered once" 1 (Ox.Mutex.with_access m (fun a -> Counter.get a c)))
+
+let protected_acquisition () =
+  Eio_mock.Backend.run (fun () ->
+      let (Ox.Mutex.P m) = Ox.Mutex.create () in
+      let c = Counter.make m in
+      let holding, holding_u = Eio.Promise.create () in
+      let finish, finish_u = Eio.Promise.create () in
+      Eio.Fiber.both
+        (fun () ->
+          Ox.Mutex.with_access_waiting m (fun _ ->
+              Eio.Promise.resolve holding_u ();
+              Eio.Promise.await finish))
+        (fun () ->
+          Eio.Promise.await holding;
+          Eio.Fiber.first
+            (fun () ->
+              Ox.Mutex.with_access_protected m (fun a -> Counter.incr a c);
+              Eio.Fiber.yield ())
+            (fun () -> Eio.Promise.resolve finish_u ()));
+      check_int "a shielded waiter still enters" 1
+        (Ox.Mutex.with_access m (fun a -> Counter.get a c)))
+
 let () =
   Alcotest.run "Ox.Mutex"
     [
@@ -96,5 +131,7 @@ let () =
           Alcotest.test_case "^ncrit-9sfw released on cancellation" `Quick
             released_on_cancellation;
           Alcotest.test_case "^ncrit-ihf2 cancelled acquisition" `Quick cancelled_acquisition;
+          Alcotest.test_case "^ncrit-9sfw try when held" `Quick try_when_held;
+          Alcotest.test_case "^ncrit-9sfw protected acquisition" `Quick protected_acquisition;
         ] );
     ]

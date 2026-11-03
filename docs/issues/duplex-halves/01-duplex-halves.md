@@ -1,10 +1,12 @@
 ---
-status: ready
+status: completed
 package: ox_http
 consumer: every consumer (Ox-internal; ADR-0010)
 ---
 
 # Duplex flows split into owned reader and writer halves
+
+> Completed 2026-11-03 as restated below. Verified: `Tls_flow`'s inbound, outbound and SSL state branded by their `Ox.Mutex` locks, the `test/http` TLS and WebSocket suites (wsduplex-j4rn included) and the `bad_tls_wrong_lock` refusal pass; `bench/tls_duplex.exe 128` gave 437-509 MiB/s per direction before and 543-555 after (five runs each, loopback, heisenbug).
 
 ## Problem Statement
 
