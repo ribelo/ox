@@ -5,6 +5,8 @@ lib/ox/cause.mli
 lib/ox/duration.mli
 lib/ox/exit.mli
 lib/ox/interrupt_id.mli
+lib/ox/mutex.ml
+lib/ox/mutex.mli
 lib/ox/rate_limiter.ml
 lib/ox/rate_limiter.mli
 lib/ox/resource.ml
@@ -102,3 +104,7 @@ test/core/safety_once_global/compile_fail/bad_resource_acquire_reuse.ml
 test/core/safety_once_global/compile_fail/bad_resource_release.ml
 test/core/safety_once_global/compile_fail/bad_two_branches.ml
 test/core/safety_once_global/compile_fail/bad_two_forks.ml
+# Ox.Mutex controls (ncrit-lpe4): modes in signatures and refused programs.
+test/core/ox_mutex/mutex_runtime.ml
+test/core/ox_mutex/compile_fail/*.ml
+test/core/ox_mutex/compile_fail/*.mli

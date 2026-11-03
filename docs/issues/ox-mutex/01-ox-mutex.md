@@ -23,6 +23,10 @@ A mutex in the tree guards data by convention: nothing stops a read of `Tls_flow
 5. As a service author, I want two section kinds: `with_access` (`@ local once unyielding`, for short bookkeeping — suspension inside it refused once row 71 lands) and `with_access_waiting ~io` (`yielding`, for sections that legitimately wait, such as a condition wait or a transport write under the lock), so that the 22 general Eio mutex sections in ox and Leash's declared-synchronous `tabs.ml` sections each get the contract they mean (row 75 Findings §3). ^ncrit-9sfw
 6. As a kernel maintainer, I want compile-fail cases (no lock, wrong brand, leaked access, write through `@ read` from `read-only-status` where relevant), so that each refusal is pinned. ^ncrit-lpe4
 
+## Progress
+
+2026-11-03: stories 1, 2, 5 and 6 delivered (`lib/ox/mutex.mli`, `test/core/ox_mutex`). `with_access_waiting` takes no `~io` yet; the suspension token comes with row 71 (`suspend-token`), and until then `unyielding` refuses captured yielding values but not a raw Eio wait. Open: story 3 (`Ox.Cancel.protect` needs a collector-safe local bridge into `Eio.Cancel.protect`; see Implementation Decisions) and story 4 (owners: `Tls_flow` first, with row 63).
+
 ## Implementation Decisions
 
 The brand/access refusals do not prove payload ownership. A retained alias, a mutable-field projection, or a `global`/`aliased` field can escape a generic getter even with a unique outer input and a local view. Guarded owners therefore allocate state internally and export operations rather than raw mutable projections. Their native/Eio providers remain explicit audited boundaries; custom limiter callbacks remain borrowed extensions, not exclusively owned captures.

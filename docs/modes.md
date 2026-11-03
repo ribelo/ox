@@ -49,6 +49,8 @@ proves neither must-run nor must-close, timely release, or domain portability.
 | `Ox.Resource.use_in_scope` | Acquire **local once**; release **global once** | Acquire is called directly in the caller's lifetime. Only the release is retained on the switch. |
 | `Ox.Resource.use_closeable_in_scope` | Acquire **local once** | Acquire runs directly; the returned global resource is closed by the switch's retained release. |
 | `Ox.Rate_limiter.run, run_or_drop` | **Local once** | Direct callback entry only after a permit; refusal or cancellation may drop it. No callback is stored in a heap guard. |
+| `Ox.Mutex.with_access` | **Local once unyielding**; its `'k Access.t` argument **local** | Called directly in the caller's frame after `Eio.Mutex.lock`, never handed to Eio, so no locality conversion exists. The access cannot be stored, returned or captured by a fork; another brand's state is a type error ([controls](<../test/core/ox_mutex/compile_fail/check.sh>), ncrit-lpe4). Cancelled acquisition does not enter. |
+| `Ox.Mutex.with_access_waiting` | **Local once** (yielding); access **local** | As above, for sections that wait under the lock. The lock is released on return, on a defect and on cancellation inside the section. |
 | `Ox.Retry.retry, repeat`; `Ox.Concurrent.for_each`; limiter `Custom` factory/algorithm; supervised `start` and scope `run, supervised_error, exit_on_error` | **Many**, retaining the locality decisions above | Retry/mapper/Custom/start can be invoked repeatedly, while the scope bodies cross upstream many-callback signatures without an affine adapter. No new one-shot promise is made. |
 
 Native consumers and refusals have authored interface peers in
