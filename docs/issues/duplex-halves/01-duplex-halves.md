@@ -24,7 +24,7 @@ A duplex flow splits once into a `reader @ unique` and a `writer @ unique`, each
 
 ## Implementation Decisions
 
-Depends on `once-forks` (moving a unique half into a fiber) and `owned-handles` (consuming close). A half closed by its owner ends its direction; the flow closes when both halves are closed (a shared close counter inside the `SSL*` holder).
+Depends on `once-forks` (moving a unique half into a fiber). The consuming close comes from `owned-handles` as restated on 2026-11-03: `close_reader : reader @ unique -> unit` and `close_writer : writer @ unique -> (unit, error) result` consume their half, and `Ws_client.close` consumes the writer it owns (^nown-ubbv). A half closed by its owner ends its direction; the flow closes when both halves are closed (a shared close counter inside the `SSL*` holder).
 
 ## Testing Decisions
 

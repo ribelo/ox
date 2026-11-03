@@ -1,10 +1,12 @@
 ---
-status: ready
+status: completed
 package: ox_process, ox_http, ox_sql
 consumer: every consumer (Ox-internal; ADR-0010)
 ---
 
 # Handles with an end are `unique`, and the end consumes them
+
+> Completed 2026-11-03. Verified: stories 7-10 by `Ox_blocking`'s native leases (`test/blocking/safety_native_leases`, installed-API consumer). Stories 1, 2, 5 and 6 are withdrawn, story 3 is covered by `ox-discarded-result`, and story 4 moves to `duplex-halves` story 5; see "Restated 2026-11-03" below.
 
 ## Problem Statement
 
@@ -31,6 +33,18 @@ Handles with a terminal operation are returned `@ unique`; the terminal operatio
 ## Implementation Decisions
 
 Verified pattern (ADR-0010): `close w; write w` is refused ("already been used as unique"). A record with an `aliased` payload must be destructured and rebuilt to be returned `unique` after reading the payload. Handles stored in a Service record and used from several fibers cannot be `unique`; those Services use `duplex-halves` or keep a borrowing API and are listed in this row's notes.
+
+## Restated 2026-11-03
+
+The problem statement is out of date. Each named misuse now has a defined result at run time, and no misuse is a defect:
+
+- `Child.signal` after `await` or `stop` is a no-op, and `stop` is repeatable and safe under cancellation (`lib/process/child.mli`).
+- `Pool` operations after `shutdown` return `Error \`Pool_shutdown` (`lib/sql/pool.ml`).
+- `Ws_client` operations after the close handshake return `Error (\`Closed _)`.
+
+`Child.t` and `Pool.t` are shared by design: a supervisor waits on a child while another fiber stops it, and a pool exists to be used from many fibers. A `unique` handle refuses exactly that use. It also changes signatures at many call sites in Pie, inn, nema, grip and Leash, only to turn typed run-time results into compile errors. The cost is higher than the gain, so stories 1, 2 (for `Pool.shutdown`), 5 and 6 are withdrawn (^nown-yxqr ^nown-ubbv ^nown-ws29 ^nown-xbnd).
+
+The ownership that prevents a real bug class is the duplex one: row 57's shared TLS buffer. `duplex-halves` gives each half one owner, and the close of a half consumes it. The `Ws_client.close` and `Tls_flow.close` part of story 2 and the throughput measurement of story 4 belong there (^nown-1hni). Story 3 is `ox-discarded-result` (`docs/rules/ox-discarded-result.md`; `raw-concurrency-gate` story 4) (^nown-lis8).
 
 ## Testing Decisions
 

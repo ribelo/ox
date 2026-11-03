@@ -70,7 +70,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 59 | [pie-api-gaps/01-pie-api-gaps.md](pie-api-gaps/01-pie-api-gaps.md) | `ox_ai`, `ox_ai_openrouter`, `ox_http` | 25, 35, 40, 57 | Pie: audio/text Responses and precise transport deadlines | [x] |
 | 60 | `stress/01-stress.md` | `ox`, `ox_http`, `ox_ipc` | 45, 57 | stress and fuzz under the seams where every ox bug has lived | [x] |
 | 61 | [once-forks/01-once-forks.md](once-forks/01-once-forks.md) (P1) | `ox` | 45 | ownership: a value moved into one fiber or one release; ADR-0010 | [ ] |
-| 62 | [owned-handles/01-owned-handles.md](owned-handles/01-owned-handles.md) (P2) | `ox_process`, `ox_http`, `ox_sql` | 61 | no use after close, wait or shutdown | [ ] |
+| 62 | [owned-handles/01-owned-handles.md](owned-handles/01-owned-handles.md) (P2) | `ox_process`, `ox_http`, `ox_sql` | 61 | done 2026-11-03: native leases delivered; `unique` Child and Pool withdrawn (shared by design, misuse already typed at run time); duplex close ownership moved to 63 | [x] |
 | 63 | [duplex-halves/01-duplex-halves.md](duplex-halves/01-duplex-halves.md) (P3) | `ox_http` | 57, 61, 62 | the row-57 class refused by the compiler; buffer mutexes go | [ ] |
 | 64 | [spawner/01-spawner.md](spawner/01-spawner.md) (P5) | `ox`, `ox_ipc`, `ox_http`, `ox_rpc`, `ox_app` | 61 | forking after `create` is declared in `deps` | [ ] |
 | 65 | [ox-mutex/01-ox-mutex.md](ox-mutex/01-ox-mutex.md) (P7) | `ox` | 61 | branded guarded data; `Ox.Cancel.protect`; replacements for row 66 | [ ] |
