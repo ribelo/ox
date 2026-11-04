@@ -1,0 +1,6 @@
+; ^nspawn-lhyg: spawner forks after create.
+
+(test
+ (name spawner_test)
+ (modules spawner_test)
+ (libraries ox eio eio.mock alcotest))

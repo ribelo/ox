@@ -22,6 +22,10 @@ Services that start fibers after `create` returns (an accept loop, a supervisor,
 4. As a consumer maintainer, I want Leash, nema, Pie, grip and inn moved off stored switches in the same row, so that the gate in `raw-concurrency-gate` can forbid `Eio.Switch.t` in consumer records. ^nspawn-wy83
 5. As a kernel maintainer, I want a test showing a Service without a spawner in its deps cannot fork after `create`, so that the property is pinned. ^nspawn-3yv0
 
+## Progress
+
+2026-11-04: story 1 delivered (`Scope.Spawner`, re-exported as `Ox.Spawner`; `Scope.spawner`; `test/core/spawner`), with `fork_daemon` and `fork_error_daemon` beside the three named forks because the Services of story 2 fork accept loops as daemons. `Scope.switch` stays public until stories 2-4 move its callers; removing it is the contract step. Stories 2-4 change Service and Door signatures used by Pie, inn, nema, grip and Leash and go expand, migrate, contract. Story 5 is pinned with `raw-concurrency-gate`, because without that gate a stored switch can still fork.
+
 ## Implementation Decisions
 
 `'e Spawner.t` retains the scope's error type alongside its global fork authority; `fork_error` must not erase that association or recover it with a cast. Its fork functions use `Ox.Once.guard`. Construction stays internal to the scope boundary, without a Scope–Spawner dependency cycle or a public raw-switch accessor.

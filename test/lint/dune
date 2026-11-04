@@ -229,6 +229,8 @@
   ../../lib/ox/.ox.objs/byte/ox__Mutex.cmti
   ../../lib/ox/.ox.objs/byte/ox__Once.cmt
   ../../lib/ox/.ox.objs/byte/ox__Once.cmti
+  ../../lib/ox/.ox.objs/byte/ox__Spawner.cmt
+  ../../lib/ox/.ox.objs/byte/ox__Spawner.cmti
   ../../lib/ox/.ox.objs/byte/ox__Rate_limiter.cmt
   ../../lib/ox/.ox.objs/byte/ox__Rate_limiter.cmti
   ../../lib/ox/.ox.objs/byte/ox__Resource.cmt

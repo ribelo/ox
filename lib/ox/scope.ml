@@ -176,3 +176,18 @@ let fork_error_daemon t (f @ once) =
 let on_release t (release @ once) = Eio.Switch.on_release t.sw (Once.guard release)
 
 let await = Eio.Promise.await
+
+(* ^nspawn-lhyg: the storable fork authority of a scope, without its switch. It is
+   the scope itself behind an abstract type, so the error type stays attached and
+   no cast recovers it. *)
+module Spawner = struct
+  type nonrec 'e t = 'e t
+
+  let fork = fork
+  let fork_daemon = fork_daemon
+  let fork_error = fork_error
+  let fork_error_daemon = fork_error_daemon
+  let on_release = on_release
+end
+
+let spawner t = t

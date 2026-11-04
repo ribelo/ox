@@ -147,6 +147,8 @@ lib/ox/mutex.ml lib/ox/.ox.objs/byte/ox__Mutex.cmt
 lib/ox/mutex.mli lib/ox/.ox.objs/byte/ox__Mutex.cmti
 lib/ox/once.ml lib/ox/.ox.objs/byte/ox__Once.cmt
 lib/ox/once.mli lib/ox/.ox.objs/byte/ox__Once.cmti
+lib/ox/spawner.ml lib/ox/.ox.objs/byte/ox__Spawner.cmt
+lib/ox/spawner.mli lib/ox/.ox.objs/byte/ox__Spawner.cmti
 lib/ox/rate_limiter.ml lib/ox/.ox.objs/byte/ox__Rate_limiter.cmt
 lib/ox/rate_limiter.mli lib/ox/.ox.objs/byte/ox__Rate_limiter.cmti
 lib/ox/resource.ml lib/ox/.ox.objs/byte/ox__Resource.cmt

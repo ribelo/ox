@@ -104,6 +104,41 @@ val on_release : 'e t -> (unit -> unit) @ once -> unit
     @raise Eio.Switch.Release_error if release raises during immediate registration on
       a finished switch; Eio wraps the release exception. *)
 
+module Spawner : sig
+  type 'e scope := 'e t
+
+  type 'e t
+  (** The permission to start fibers in one scope later, after the code that holds
+      it has returned: a Service that forks after [create] names a ['e Spawner.t] in
+      its deps. It is global and storable, keeps the scope's error type, and gives
+      no access to the switch. A spawner of a finished scope refuses like the scope
+      itself. ^nspawn-lhyg *)
+
+  val fork : 'e t -> (unit -> unit) @ once -> unit
+  (** {!Scope.fork} through the spawner. The delegated Eio fork raises
+      Invalid_argument if the scope's switch is finished or belongs to another domain. *)
+
+  val fork_daemon : 'e t -> (unit -> unit) @ once -> unit
+  (** {!Scope.fork_daemon} through the spawner. The delegated Eio fork raises
+      Invalid_argument if the scope's switch is finished or belongs to another domain. *)
+
+  val fork_error : 'e t -> (unit -> ('a, 'e) result) @ once -> ('a, 'e) fork
+  (** {!Scope.fork_error} through the spawner; the fork's [Error] ends the scope. The delegated Eio fork raises
+      Invalid_argument if the scope's switch is finished or belongs to another domain. *)
+
+  val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) @ once -> unit
+  (** {!Scope.fork_error_daemon} through the spawner. The delegated Eio fork raises
+      Invalid_argument if the scope's switch is finished or belongs to another domain. *)
+
+  val on_release : 'e t -> (unit -> unit) @ once -> unit
+  (** {!Scope.on_release} through the spawner. *)
+end
+
+val spawner : 'e t -> 'e Spawner.t
+(** [spawner t] is [t]'s fork authority, to store in a Service's deps.
+    Suspension: never suspends. Cancellation: not a cancellation point.
+    Finalizers: none are registered. Locking: no lock is acquired. ^nspawn-lhyg *)
+
 val switch : 'e t -> Eio.Switch.t
 (** The scope's Eio switch, for [Eio.Switch.on_release] and other Eio APIs. Suspension:
     never suspends; this call only reads or constructs OCaml values. Cancellation: not a
