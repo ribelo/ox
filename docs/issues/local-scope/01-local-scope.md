@@ -26,6 +26,10 @@ A switch or scope stored in a record, returned from its body, or captured by a l
 4. As a kernel maintainer, I want compile-fail cases (store, return, capture in a fork) and controls written through `let%bind`, so that the refusals and the ergonomics are pinned together. ^nlscope-dodx
 5. As a kernel maintainer, I want an OxCaml issue filed asking for `local`/`yielding` continuations in binding operators, with the two refused programs, so that the ppx can be retired if the compiler moves. ^nlscope-idqy
 
+## Progress
+
+2026-11-04, expand step: `Scope.supervised` passes the scope `local` (story 1 for the new entry); `fork`, `fork_daemon`, `fork_error`, `fork_error_daemon`, `on_release`, `switch` and `spawner` take `'e t @ local`, so they serve both kinds of scope (story 2, first half); `spawner` copies the two global fields into a fresh record (story 3); `test/core/local_scope` pins store, return and fork-capture refusals and a `let%bind` control, plus the `let*` refusal (story 4). A function value of type `'e t @ local -> ...` is not accepted where `'e t -> ...` is expected, so a consumer that passes one of these as a first-class value may need an eta-expansion. Open: the contract step (`supervised_error` and `Scope.run` pass the scope `local`, `Scope.switch` removed) after Leash (142 `supervised_error` and 142 `Scope.switch` sites), Pie (12 and 10) and nema (1) move; story 5 (an OxCaml issue) needs the owner's word because it is public.
+
 ## Implementation Decisions
 
 The scope record keeps its switch in a `global_` field and is abstract, so only Ox reaches the switch. Verified (ADR-0010) with the abstract type: escape, return and nested capture are refused; correct use compiles through `bind ... [@nontail]`.

@@ -136,10 +136,13 @@ let exit_on_error (type e a) (f : (e -> exn) -> a) : (a, e) result =
               Eio.Fiber.check ();
               Error e))
 
-type 'e t = { sw : Eio.Switch.t; ended : 'e -> exn }
+(* ^nlscope-0ngi: both fields are global, so a [local] scope still yields the
+   switch and the error injection its fibers need, and nothing else of it can
+   escape. *)
+type 'e t = { sw : Eio.Switch.t @@ global; ended : ('e -> exn) @@ global }
 type ('a, 'e) fork = ('a, 'e) result Eio.Promise.t
 
-let switch t = t.sw
+let switch (t @ local) = t.sw
 
 let supervised_error ~sw f =
   Eio.Switch.check sw;
@@ -149,45 +152,57 @@ let supervised_error ~sw f =
           | Ok value -> value
           | Error e -> raise (ended e)))
 
+(* ^nlscope-5jmh: the body receives the scope [local], allocated in Eio's switch
+   callback. The body itself is global because Eio retains that callback. *)
+let supervised ~sw f =
+  Eio.Switch.check sw;
+  exit_on_error (fun ended ->
+      Eio.Switch.run ~name:"supervised" (fun child ->
+          let scope @ local = { sw = child; ended } in
+          match f scope with Ok value -> value | Error e -> raise (ended e)))
+
 (* ^nonce-r7mi: retained Eio callbacks cross the guarded boundary. *)
-let fork_error t (f @ once) =
+let fork_error (t @ local) (f @ once) =
   let f = Once.guard f in
+  let ended = t.ended in
   let promise, resolve = Eio.Promise.create () in
   Eio.Fiber.fork ~sw:t.sw (fun () ->
       let result = f () in
       Eio.Promise.resolve resolve result;
-      match result with Ok _ -> () | Error e -> raise (t.ended e));
+      match result with Ok _ -> () | Error e -> raise (ended e));
   promise
 
-let fork t (f @ once) = Eio.Fiber.fork ~sw:t.sw (Once.guard f)
+let fork (t @ local) (f @ once) = Eio.Fiber.fork ~sw:t.sw (Once.guard f)
 
-let fork_daemon t (f @ once) =
+let fork_daemon (t @ local) (f @ once) =
   let f = Once.guard f in
   Eio.Fiber.fork_daemon ~sw:t.sw (fun () ->
       f ();
       `Stop_daemon)
 
-let fork_error_daemon t (f @ once) =
+let fork_error_daemon (t @ local) (f @ once) =
   let f = Once.guard f in
+  let ended = t.ended in
   Eio.Fiber.fork_daemon ~sw:t.sw (fun () ->
-      match f () with Ok () -> `Stop_daemon | Error e -> raise (t.ended e))
+      match f () with Ok () -> `Stop_daemon | Error e -> raise (ended e))
 
 (* ^nonce-4jzx: Eio retains releases beyond this call. *)
-let on_release t (release @ once) = Eio.Switch.on_release t.sw (Once.guard release)
+let on_release (t @ local) (release @ once) = Eio.Switch.on_release t.sw (Once.guard release)
 
 let await = Eio.Promise.await
 
 (* ^nspawn-lhyg: the storable fork authority of a scope, without its switch. It is
-   the scope itself behind an abstract type, so the error type stays attached and
-   no cast recovers it. *)
+   the scope's two global fields behind an abstract type, so the error type stays
+   attached and no cast recovers it. *)
 module Spawner = struct
   type nonrec 'e t = 'e t
 
-  let fork = fork
-  let fork_daemon = fork_daemon
-  let fork_error = fork_error
-  let fork_error_daemon = fork_error_daemon
-  let on_release = on_release
+  let fork t (f @ once) = fork t f
+  let fork_daemon t (f @ once) = fork_daemon t f
+  let fork_error t (f @ once) = fork_error t f
+  let fork_error_daemon t (f @ once) = fork_error_daemon t f
+  let on_release t (f @ once) = on_release t f
 end
 
-let spawner t = t
+(* ^nlscope-b9or: a fresh global record from a possibly local scope. *)
+let spawner (t @ local) = { sw = t.sw; ended = t.ended }

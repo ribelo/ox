@@ -52,7 +52,20 @@ val supervised_error : sw:Eio.Switch.t -> ('e t -> ('a, 'e) result) -> ('a, 'e) 
 
     @raise Invalid_argument if [sw] is finished. *)
 
-val fork_error : 'e t -> (unit -> ('a, 'e) result) @ once -> ('a, 'e) fork
+val supervised :
+  sw:Eio.Switch.t -> ('e t @ local -> ('a, 'e) result) -> ('a, 'e) result
+(** [supervised ~sw body] is {!supervised_error} with the scope passed [local]:
+    storing it, returning it or capturing it in a fork does not compile. Write the
+    body's binds with [let%bind] from [ppx_ox_let]; [let*] cannot carry a local
+    value. A body that must fork later takes {!spawner}. This becomes
+    [supervised_error] when the consumers have moved (^nlscope-5jmh ^nlscope-b9or).
+
+    [sw] is the caller's switch: it is checked ([Invalid_argument] if finished, the
+    cancellation if cancelled) and the scope owns nothing on it.
+
+    @raise Invalid_argument if [sw] is finished. *)
+
+val fork_error : 'e t @ local -> (unit -> ('a, 'e) result) @ once -> ('a, 'e) fork
 (** [fork_error scope f] starts [f] as a supervised fiber. [Ok] is the fork's outcome,
     joinable with {!await}; [Error e] ends the scope with [e] as {!supervised_error}
     describes. If the scope is already ending the fiber is not started (Eio's rule).
@@ -60,21 +73,21 @@ val fork_error : 'e t -> (unit -> ('a, 'e) result) @ once -> ('a, 'e) fork
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork : 'e t -> (unit -> unit) @ once -> unit
+val fork : 'e t @ local -> (unit -> unit) @ once -> unit
 (** [fork scope f] starts a plain fiber that cannot fail typed; an exception in it ends
     the scope, and its return value is not inspected.
 
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork_daemon : 'e t -> (unit -> unit) @ once -> unit
+val fork_daemon : 'e t @ local -> (unit -> unit) @ once -> unit
 (** Like {!fork} but the scope does not wait for it: it is cancelled when the body and the
     non-daemon forks have finished (Eio's [fork_daemon] split, unchanged).
 
     The delegated Eio fork raises Invalid_argument if the scope's switch is finished or
     belongs to another domain. *)
 
-val fork_error_daemon : 'e t -> (unit -> (unit, 'e) result) @ once -> unit
+val fork_error_daemon : 'e t @ local -> (unit -> (unit, 'e) result) @ once -> unit
 (** A daemon whose [Error e] ends the scope like {!fork_error}'s; [Ok ()] just ends the
     daemon and leaves the scope running. {!Concurrent.with_background} is this.
 
@@ -89,7 +102,7 @@ val await : ('a, 'e) fork -> ('a, 'e) result
     promise result. Finalizers: none are registered by this call. Locking: no lock is held
     by this wrapper; promise synchronisation is delegated to Eio. ^nlintd-a7oq *)
 
-val on_release : 'e t -> (unit -> unit) @ once -> unit
+val on_release : 'e t @ local -> (unit -> unit) @ once -> unit
 (** [on_release scope release] transfers an affine callback to the scope's switch.
     Eio runs releases protected, after forks finish, in reverse registration order.
     A finished switch runs [release] immediately under cancellation protection,
@@ -134,12 +147,12 @@ module Spawner : sig
   (** {!Scope.on_release} through the spawner. *)
 end
 
-val spawner : 'e t -> 'e Spawner.t
+val spawner : 'e t @ local -> 'e Spawner.t
 (** [spawner t] is [t]'s fork authority, to store in a Service's deps.
     Suspension: never suspends. Cancellation: not a cancellation point.
     Finalizers: none are registered. Locking: no lock is acquired. ^nspawn-lhyg *)
 
-val switch : 'e t -> Eio.Switch.t
+val switch : 'e t @ local -> Eio.Switch.t
 (** The scope's Eio switch, for [Eio.Switch.on_release] and other Eio APIs. Suspension:
     never suspends; this call only reads or constructs OCaml values. Cancellation: not a
     cancellation point; this call performs no Eio cancellation check. Finalizers: none are

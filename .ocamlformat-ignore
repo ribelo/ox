@@ -9,6 +9,8 @@ lib/ox/mutex.ml
 lib/ox/mutex.mli
 lib/ox/result.ml
 lib/ox/result.mli
+lib/ox/scope.ml
+lib/ox/scope.mli
 lib/http/tls_flow.ml
 lib/ox/rate_limiter.ml
 lib/ox/rate_limiter.mli
