@@ -281,6 +281,10 @@
   ../../lib/ox_lint/.lint_engine.objs/byte/rules.cmti
   ../../lib/ox_lint/.lint_engine.objs/byte/syntax.cmt
   ../../lib/ox_lint/.lint_engine.objs/byte/syntax.cmti
+  ../../lib/ppx_ox_let/.ppx_ox_let.objs/byte/ppx_ox_let__Expand.cmt
+  ../../lib/ppx_ox_let/.ppx_ox_let.objs/byte/ppx_ox_let__Expand.cmti
+  ../../lib/ppx_ox_let/.main.eobjs/byte/dune__exe__Main.cmt
+  ../../lib/ppx_ox_let/.main.eobjs/byte/dune__exe__Main.cmti
   ../../lib/ppx_yojson_minimal/.ppx_yojson_minimal.objs/byte/ppx_yojson_minimal__Derive.cmt
   ../../lib/ppx_yojson_minimal/.ppx_yojson_minimal.objs/byte/ppx_yojson_minimal__Derive.cmti
   ../../lib/ppx_yojson_minimal/.main.eobjs/byte/dune__exe__Main.cmt

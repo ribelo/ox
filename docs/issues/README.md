@@ -77,7 +77,7 @@ Everything an implementing agent needs, in order. Each row is one spec under thi
 | 66 | [raw-concurrency-gate/01-raw-concurrency-gate.md](raw-concurrency-gate/01-raw-concurrency-gate.md) (P6) | gate rules, `ox_sql`, `ox_sql_dsl`, `ox_http` | 54, 61, 64, 65 | no raw Eio concurrency or Stdlib mutex; catch-all, `Fun.protect`, discarded result, public exception, `Obj.magic*` rules | [ ] |
 | 67 | [ws-typestate/01-ws-typestate.md](ws-typestate/01-ws-typestate.md) (P8) | `ox_http` | 62, 63 | close codes, reasons and phases typed | [ ] |
 | 68 | [parse-dont-validate/01-parse-dont-validate.md](parse-dont-validate/01-parse-dont-validate.md) (P9) | `ox`, `ox_app`, `ox_http`, `ox_observability`, `ox_ai`, `ox_json`, `ox_blocking` | — | ADR-0008 applied to the kernel; one Door spec record | [ ] |
-| 69 | [ppx-let/01-ppx-let.md](ppx-let/01-ppx-let.md) | `ppx_ox_let` (new), `ox` | 15 | `local`/`yielding` values usable after a bind; unblocks 70 and 71 | [ ] |
+| 69 | [ppx-let/01-ppx-let.md](ppx-let/01-ppx-let.md) | `ppx_ox_let` (new), `ox` | 15 | `local`/`yielding` values usable after a bind; unblocks 70 and 71 | [x] |
 | 70 | [local-scope/01-local-scope.md](local-scope/01-local-scope.md) (P4) | `ox` | 61, 64, 69 | scope handles cannot escape (store, return, capture in a fork); built on row 69 | [ ] |
 | 71 | [suspend-token/01-suspend-token.md](suspend-token/01-suspend-token.md) | `ox`, `ox_http`, `ox_ipc`, `ox_rpc`, `ox_blocking` | 65, 66, 69 | suspending inside a critical section is a compile error | [ ] |
 | 72 | [read-only-status/01-read-only-status.md](read-only-status/01-read-only-status.md) | `ox_app`, `ox` | — | `status : t @ read`; decides `SERVICE` | [ ] |

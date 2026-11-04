@@ -1,10 +1,12 @@
 ---
-status: ready
+status: completed
 package: ppx_ox_let (new), ox
 consumer: every consumer (Ox-internal; ADR-0010)
 ---
 
 # `let%bind` whose continuations can be `local` and `yielding`
+
+> Completed 2026-11-04. Verified: `test/ppx_ox_let` expansion tests (bind, map, and; byte-identical untouched file; binary AST output; refusal located at the user's file and line) and mode controls (a local ref and a yielding closure used after `let%bind` compile; the same through `let*`, a store after the bind and a yielding capture in an unyielding closure are refused). The rewriter emits the compiler's binary AST, so locations are the user's own; story 5 cites the compiler's own markers, since filing an OxCaml issue is `local-scope` story 5 and needs the owner's word.
 
 ## Problem Statement
 

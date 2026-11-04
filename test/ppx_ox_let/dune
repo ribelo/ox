@@ -1,0 +1,22 @@
+; ^nlet-q3z3 ^nlet-axvf ^nlet-4eh4: expansion tests and mode controls.
+
+(test
+ (name expand_test)
+ (modules expand_test)
+ (libraries ppx_ox_let ocaml-compiler-libs.common alcotest))
+
+(rule
+ (alias runtest)
+ (deps
+  (package ox)
+  %{bin:ppx-ox-let}
+  (source_tree modes))
+ (action
+  (chdir
+   modes
+   (run
+    bash
+    check.sh
+    %{ocamlc}
+    %{bin:ppx-ox-let}
+    %{workspace_root}/../install/default/lib/ox))))

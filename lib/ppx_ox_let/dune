@@ -1,0 +1,23 @@
+; ^nlet-q3z3 ^nlet-z584: build-time let%bind rewriter on compiler-libs (ADR-0007).
+
+(library
+ (name ppx_ox_let)
+ (modules expand)
+ (package ppx_ox_let)
+ (synopsis "let%bind with local and yielding continuations for OxCaml")
+ (libraries ocaml-compiler-libs.common))
+
+(executable
+ (name main)
+ (modules main)
+ (package ppx_ox_let)
+ (public_name ppx-ox-let)
+ ; ^nlint-2nwm: retain byte CMT evidence even for the installed native tool.
+ (modes byte exe)
+ ; Capabilities belong to the driver only, never the rewriter library or its output.
+ (libraries ppx_ox_let ox_caps ox_caps.door))
+
+(alias
+ (name install)
+ (package ppx_ox_let)
+ (deps main.bc))

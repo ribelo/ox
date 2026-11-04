@@ -7,6 +7,8 @@ lib/ox/exit.mli
 lib/ox/interrupt_id.mli
 lib/ox/mutex.ml
 lib/ox/mutex.mli
+lib/ox/result.ml
+lib/ox/result.mli
 lib/http/tls_flow.ml
 lib/ox/rate_limiter.ml
 lib/ox/rate_limiter.mli
@@ -109,3 +111,5 @@ test/core/safety_once_global/compile_fail/bad_two_forks.ml
 test/core/ox_mutex/mutex_runtime.ml
 test/core/ox_mutex/compile_fail/*.ml
 test/core/ox_mutex/compile_fail/*.mli
+# ppx_ox_let mode controls (nlet-4eh4).
+test/ppx_ox_let/modes/*.ml

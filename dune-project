@@ -249,6 +249,25 @@
     (>= 1.6)))
   (alcotest :with-test)))
 
+; ^nlet-q3z3: build-time let%bind rewriter; the compiler-libs admission of ADR-0007.
+
+(package
+ (name ppx_ox_let)
+ (synopsis "let%bind with local and yielding continuations for OxCaml")
+ (description
+  "Rewrites let%bind and let%map into Ox.Result applications with [@nontail], so local and yielding values survive a bind. Retire it when OxCaml binding operators take mode-annotated continuations (parser.mly 'CR zqian: support mode annotation on letop'; oxcaml PR #6276).")
+ (depends
+  (ocaml
+   (>= 5.4.0))
+  (conf-ox-oxcaml
+   (= :version))
+  ocaml-compiler-libs
+  (ox_caps
+   (= :version))
+  (ox
+   (= :version))
+  (alcotest :with-test)))
+
 (package
  (name ppx_yojson_minimal)
  (synopsis "Minimal [@@deriving yojson] preprocessor for OxCaml")
